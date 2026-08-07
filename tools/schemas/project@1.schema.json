@@ -23,6 +23,28 @@
         "video_file_mb": {"type": "number", "minimum": 0, "description": "Бюджет одного видео-файла (ADR-0006)"}
       },
       "additionalProperties": false
+    },
+    "flavors": {
+      "type": "object",
+      "description": "Релизные флейворы (ADR-0006): vn release build --flavor <id>",
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*$": {
+          "type": "object",
+          "properties": {
+            "packs": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"},
+              "description": "Паки, чьи депот-артефакты входят в поставку флейвора (скрипты грузятся всегда — гейт логический, G9)"
+            },
+            "nsfw": {"type": "boolean", "description": "false = поддеревья assets/*/nsfw/** исключаются из дистрибутива"},
+            "early_content": {"type": "boolean", "description": "Ранний доступ: рантайм-гейт vn_build.early_content"},
+            "watermark": {"type": "boolean", "description": "Полупрозрачный build-id поверх игры (трассировка утечек patron-сборок)"}
+          },
+          "required": ["packs", "nsfw"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": ["schema", "version", "save_schema", "min_tools"],

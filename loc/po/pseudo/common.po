@@ -30,6 +30,11 @@ msgid "Пляжный эпизод"
 msgstr "[[Пляжный эпįзǫд~~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:meta.packs.nsfw.title"
+msgid "Контент 18+"
+msgstr "[[Кǫнтęнт 18+~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.common.back"
 msgid "Назад"
 msgstr "[[Нąзąд~~]"

@@ -38,3 +38,14 @@ init python:
                         build.classify("game/tl/%s/**" % _code, None)
             except (OSError, ValueError):
                 pass
+    # Флейворы (ADR-0006): vn release build кладёт game/build_id.json со списком
+    # исключений (NSFW-ассеты для public и т.п.) — применяем при distribute.
+    # Глобы вычисляет тулинг (release.py), здесь только исполнение.
+    _bi = _os.path.join(config.gamedir, "build_id.json")
+    if _os.path.isfile(_bi):
+        try:
+            with open(_bi, encoding="utf-8") as _f:
+                for _glob in (_json.load(_f).get("exclude") or []):
+                    build.classify(_glob, None)
+        except (OSError, ValueError):
+            pass

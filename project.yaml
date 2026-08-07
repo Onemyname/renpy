@@ -9,4 +9,15 @@ budgets:             # перф/размер-бюджеты (G19): превыш�
   cold_start_s: 30       # референс — CI-раннер (llvmpipe): ~14 c; RTX — ~1 c
   video_total_mb: 300    # суммарно game/assets/mov (ADR-0006)
   video_file_mb: 40      # один луп; больше — пересмотрите crf/длительность
+flavors:             # релизные флейворы (ADR-0006): vn release build --flavor <id>
+  public:            # публичный билд: без NSFW-ассетов, без раннего контента
+    packs: [ep_beach]
+    nsfw: false
+    early_content: false
+    watermark: false
+  patron:            # ранний доступ подписчикам: полный контент + вотермарка build-id
+    packs: [ep_beach, nsfw]
+    nsfw: true
+    early_content: true
+    watermark: true
 

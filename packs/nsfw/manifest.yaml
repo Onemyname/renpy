@@ -1,0 +1,13 @@
+schema: pack_manifest@1
+# NSFW-пак (ADR-0006): контент 18+ отделён от базовой игры с первого дня —
+# base никогда не требует этот пак (patch-модель дистрибуции: SFW-билд для
+# витрин + отдельный 18+-контент). Ассеты пака живут по конвенции
+# assets_src/png/cg/nsfw/**, assets_src/video_src/nsfw/** — флейвор public
+# исключает собранные поддеревья assets/*/nsfw/** на этапе distribute.
+id: nsfw
+kind: dlc
+version: 0.1.0
+title_key: meta.packs.nsfw.title
+api_level: {min: 1, below: 2}
+requires:
+  core: ">=0.1.0 <1"

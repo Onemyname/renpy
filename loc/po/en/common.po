@@ -231,3 +231,8 @@ msgid ""
 msgstr ""
 "The save was made in a newer version of the game. Update the game to "
 "continue."
+
+#. UI/мета-строка
+msgctxt "string:meta.packs.nsfw.title"
+msgid "Контент 18+"
+msgstr "Adult content (18+)"

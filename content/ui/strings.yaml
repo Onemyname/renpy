@@ -9,6 +9,7 @@ strings:
   meta.locations.rooftop.title: "Крыша"
   meta.chapters.ch90.title: "Эпизод: Пляж (DLC)"
   meta.packs.ep_beach.title: "Пляжный эпизод"
+  meta.packs.nsfw.title: "Контент 18+"
 
   # ── Навигация ───────────────────────────────────────────────────────────────
   ui.nav.start: "Начать игру"

@@ -4,6 +4,8 @@ game/assets/
 game/tl/
 game/cache/
 game/saves/
+# Метаданные флейвора: пишет vn release build на время distribute (ADR-0006)
+game/build_id.json
 *.rpyc
 *.rpymc
 *.rpyb

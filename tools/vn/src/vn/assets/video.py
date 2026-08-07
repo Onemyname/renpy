@@ -272,6 +272,40 @@ def build_meta(out_rel: str, opts: dict, summary: dict, src_rel: str,
     }
 
 
+def opts_from_meta(path: Path) -> dict:
+    """Опции валидации собранного .webm из его meta.json (loop/keep_audio)."""
+    opts = dict(DEFAULT_OPTS)
+    meta_path = path.with_name(path.name + META_SUFFIX)
+    if meta_path.is_file():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            opts["loop"] = meta.get("loop", True)
+            opts["keep_audio"] = meta.get("keep_audio", False)
+        except ValueError:
+            pass
+    return opts
+
+
+def validate_all(root: Path, file_budget_mb: float | None = None) -> tuple[list[str], list[str]]:
+    """Строгая проверка всех собранных game/assets/mov/**.webm (release-гейт)."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    mov = root / "game" / "assets" / "mov"
+    if not mov.is_dir():
+        return errors, warnings
+    workdir = root / ".vncache" / "video-tmp"
+    for f in sorted(mov.rglob("*.webm")):
+        try:
+            errs, warns, _s = validate_output(f, opts_from_meta(f), workdir,
+                                              file_budget_mb=file_budget_mb)
+        except VideoError as e:
+            errors.append(str(e))
+            continue
+        errors.extend(errs)
+        warnings.extend(warns)
+    return errors, warnings
+
+
 def movie_tree(root: Path) -> dict[str, dict]:
     """Скан собранных лупов: {"mov/<group>/<name>.webm": meta}. Источник meta —
     сгенерированный .meta.json; без него — консервативные дефолты."""

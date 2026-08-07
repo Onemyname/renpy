@@ -1,16 +1,24 @@
-"""vn release — манифест релиза и changelog (раздел 7/1.9): версии контента
-считаются по фактическому диффу реестров, а не по ручным пометкам («их забывают»)."""
+"""vn release — манифест релиза, changelog, флейворы и релизный гейт (раздел 7/1.9,
+ADR-0006): версии контента считаются по фактическому диффу реестров, а не по
+ручным пометкам («их забывают»); флейворы (public/patron) описаны в project.yaml
+и материализуются в game/build_id.json только на время distribute."""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .content.compile import CHAPTER_DIR_RE, SCENE_YAML_RE
-from .repo import load_project, load_yaml
+from .repo import git_sha, load_project, load_yaml
 
 MANIFEST_REL = "ci/release-manifest.json"
+BUILD_INFO_REL = "game/build_id.json"
+
+
+class ReleaseError(RuntimeError):
+    pass
 
 
 def _dir_size(path: Path) -> int:
@@ -107,3 +115,202 @@ def update_changelog(root: Path) -> ReleaseReport:
         {"schema": "release_manifest@1", "version": project["version"], "chapters": cur},
         ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     return rep
+
+
+# ── Флейворы и build-info (ADR-0006) ──────────────────────────────────────────
+
+def flavor_config(project: dict, name: str) -> dict:
+    flavors = project.get("flavors") or {}
+    if name not in flavors:
+        raise ReleaseError(f"флейвор {name!r} не описан в project.yaml "
+                           f"(есть: {', '.join(sorted(flavors)) or 'ни одного'})")
+    return flavors[name]
+
+
+def nsfw_exclude_globs(root: Path) -> list[str]:
+    """Глобы classify для SFW-флейворов: конвенция — NSFW-ассеты живут в
+    подпапке nsfw/ своей категории (assets/cg/nsfw/**, assets/mov/nsfw/** …).
+    Глобы считаются от фактических каталогов, без опоры на поддержку ** движком
+    в середине пути."""
+    globs: list[str] = []
+    assets = root / "game" / "assets"
+    if assets.is_dir():
+        for cat in sorted(p for p in assets.iterdir() if p.is_dir()):
+            if (cat / "nsfw").is_dir():
+                globs.append(f"game/assets/{cat.name}/nsfw/**")
+    return globs
+
+
+def compute_build_info(root: Path, flavor: str, patron_token: str | None = None,
+                       now: datetime | None = None) -> dict:
+    """Документ build_info@1: идентичность сборки + список исключений distribute.
+    Скрипты паков грузятся всегда (G9) — файлы сцен не исключаются, гейт
+    логический (vn_build/pack_registry); исключаются только NSFW-ассеты."""
+    project = load_project(root)
+    cfg = flavor_config(project, flavor)
+    sha = git_sha(root)
+    now = now or datetime.now(timezone.utc)
+    return {
+        "schema": "build_info@1",
+        "flavor": flavor,
+        "version": project["version"],
+        "build_id": f"{project['version']}+{sha}.{flavor}.{now.strftime('%Y%m%d%H%M')}",
+        "sha": sha,
+        "built_at": now.isoformat(timespec="seconds"),
+        "packs": sorted(cfg.get("packs") or []),
+        "nsfw": bool(cfg.get("nsfw")),
+        "early_content": bool(cfg.get("early_content", False)),
+        "watermark": bool(cfg.get("watermark", False)),
+        "patron_token": patron_token,
+        "exclude": [] if cfg.get("nsfw") else nsfw_exclude_globs(root),
+    }
+
+
+def write_build_info(root: Path, info: dict) -> Path:
+    from .schemas import SchemaRegistry
+
+    errors = SchemaRegistry(root / "tools" / "schemas").validate(info, BUILD_INFO_REL)
+    if errors:
+        raise ReleaseError("build-info не проходит схему:\n  " + "\n  ".join(errors))
+    path = root / BUILD_INFO_REL
+    path.write_text(json.dumps(info, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
+                    encoding="utf-8")
+    return path
+
+
+def clear_build_info(root: Path) -> None:
+    (root / BUILD_INFO_REL).unlink(missing_ok=True)
+
+
+# ── Релизный гейт: vn release validate --flavor <id> ─────────────────────────
+
+def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bool]:
+    """Полная предрелизная проверка. Возвращает ([(PASS|WARN|FAIL, строка)], ok).
+    Здесь агрегируются существующие проверки конвейера — своих правил у релиза
+    нет, чтобы гейт не расходился с vn build."""
+    checks: list[tuple[str, str]] = []
+    ok = True
+
+    def add(state: str, msg: str):
+        nonlocal ok
+        if state == "FAIL":
+            ok = False
+        checks.append((state, msg))
+
+    from .schemas import SchemaRegistry
+
+    project = load_project(root)
+    registry = SchemaRegistry(root / "tools" / "schemas")
+    p_errs = registry.validate(project, "project.yaml")
+    add("FAIL" if p_errs else "PASS",
+        "project.yaml: " + ("; ".join(p_errs) if p_errs else "схема валидна"))
+
+    try:
+        cfg = flavor_config(project, flavor)
+        add("PASS", f"флейвор {flavor}: packs={cfg.get('packs') or []}, "
+                    f"nsfw={cfg.get('nsfw')}, early={cfg.get('early_content', False)}")
+    except ReleaseError as e:
+        add("FAIL", str(e))
+        return checks, False
+
+    for pid in cfg.get("packs") or []:
+        mf = root / "packs" / pid / "manifest.yaml"
+        add("PASS" if mf.is_file() else "FAIL",
+            f"пак {pid}: " + ("manifest.yaml на месте" if mf.is_file()
+                              else f"нет packs/{pid}/manifest.yaml"))
+
+    from .content.lint import lint
+
+    rep = lint(root)
+    add("FAIL" if rep.errors else "PASS",
+        f"lint: {len(rep.errors)} ошибок, {len(rep.warnings)} предупреждений")
+
+    from .assets.pipeline import build_assets
+
+    ares = build_assets(root, check=True)
+    n_bad = len(ares.errors) + len(ares.stale)
+    add("FAIL" if n_bad else "PASS",
+        "ассеты: " + ("свежи" if not n_bad else
+                      f"{len(ares.errors)} ошибок, {len(ares.stale)} несвежих (vn build)"))
+
+    from .assets import video as videomod
+
+    file_budget = (project.get("budgets") or {}).get("video_file_mb")
+    v_errors, v_warnings = videomod.validate_all(root, file_budget_mb=file_budget)
+    if v_errors:
+        add("FAIL", f"видео: {len(v_errors)} ошибок — {v_errors[0]}")
+    elif v_warnings:
+        add("WARN", f"видео: {len(v_warnings)} предупреждений — {v_warnings[0]}")
+    else:
+        add("PASS", "видео: собранные лупы валидны")
+
+    from .content.compile import CompileError, compile_content
+
+    try:
+        cres = compile_content(root, check=True)
+        add("FAIL" if cres.stale else "PASS",
+            "генерат: " + ("свеж" if not cres.stale
+                           else f"{len(cres.stale)} несвежих (vn build)"))
+    except CompileError as e:
+        add("FAIL", f"генерат: {e}")
+
+    b_failures = budget_failures(root)
+    add("FAIL" if b_failures else "PASS",
+        "бюджеты G19: " + ("в рамках" if not b_failures else "; ".join(b_failures)))
+
+    from .assets.provenance import verify as prov_verify
+
+    prep = prov_verify(root)
+    if prep.errors:
+        add("FAIL", f"провенанс: {len(prep.errors)} ошибок — {prep.errors[0]}")
+    elif prep.warnings:
+        add("WARN", f"провенанс: {len(prep.warnings)} предупреждений")
+    else:
+        add("PASS", f"провенанс: {len(prep.checked)} цепочек согласованы")
+
+    from .assets.daz import validate_renders
+
+    drep = validate_renders(root, write_provenance=False)
+    if drep.errors:
+        add("FAIL", f"DAZ-декларации: {len(drep.errors)} ошибок — {drep.errors[0]}")
+    elif drep.warnings:
+        add("WARN", f"DAZ-декларации: {len(drep.warnings)} предупреждений "
+                    f"(неотрендеренные выходы)")
+    else:
+        add("PASS", f"DAZ-декларации: {len(drep.checked)} проверено")
+
+    from .assets.storage import StorageError, status
+
+    try:
+        srep = status(root)
+        dirty = [r for r in srep.rows if "ИЗМЕНЁН локально" in r]
+        if srep.errors:
+            add("FAIL", f"хранилище сырцов: {srep.errors[0]}")
+        elif dirty:
+            add("FAIL", f"сырцы изменены, но не запушены ({len(dirty)}): {dirty[0]} — "
+                        f"провенанс релиза обязан ссылаться на хранилище (G14)")
+        else:
+            add("PASS", "хранилище сырцов: локальные копии согласованы")
+    except StorageError as e:
+        add("WARN", f"хранилище сырцов недоступно: {e}")
+
+    manifest_path = root / MANIFEST_REL
+    if manifest_path.is_file():
+        m_version = json.loads(manifest_path.read_text(encoding="utf-8")).get("version")
+        add("PASS" if m_version == project["version"] else "WARN",
+            f"release-manifest: версия {m_version} "
+            + ("== project.yaml" if m_version == project["version"]
+               else f"!= {project['version']} — прогоните vn release changelog"))
+    else:
+        add("WARN", "ci/release-manifest.json нет — прогоните vn release changelog")
+
+    sha = git_sha(root)
+    add("WARN" if sha == "nogit" else "PASS", f"git sha: {sha}")
+
+    fixtures = list((root / "ci" / "fixtures" / "saves").glob("*.save"))
+    add("PASS" if fixtures else "WARN",
+        f"сейв-корпус: {len(fixtures)} фикстур" + ("" if fixtures else
+        " — создайте (vn save corpus --add) до релиза, иначе совместимость "
+        "сейвов не проверена"))
+
+    return checks, ok

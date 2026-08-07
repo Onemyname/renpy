@@ -231,3 +231,8 @@ msgid ""
 msgstr ""
 "Der Spielstand stammt aus einer neueren Version des Spiels. Aktualisieren "
 "Sie das Spiel, um fortzufahren."
+
+#. UI/мета-строка
+msgctxt "string:meta.packs.nsfw.title"
+msgid "Контент 18+"
+msgstr "Inhalte ab 18 (NSFW)"

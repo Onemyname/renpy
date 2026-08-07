@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/build_info@1",
+  "title": "build_info@1 — метаданные релизной сборки (game/build_id.json, ADR-0006)",
+  "description": "Пишется vn release build на время distribute и удаляется после; в dev-чекауте файла нет (framework подставляет flavor=dev). Не коммитится.",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "build_info@1"},
+    "flavor": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "build_id": {"type": "string", "minLength": 1},
+    "sha": {"type": "string", "minLength": 1},
+    "built_at": {"type": "string", "format": "date-time"},
+    "packs": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"}},
+    "nsfw": {"type": "boolean"},
+    "early_content": {"type": "boolean"},
+    "watermark": {"type": "boolean"},
+    "patron_token": {"type": ["string", "null"], "description": "Опциональная метка сборки конкретного получателя (трассировка утечек); никакого рантайм-трекинга"},
+    "exclude": {
+      "type": "array", "items": {"type": "string"},
+      "description": "Глобы build.classify(…, None): что НЕ уходит в дистрибутив этого флейвора (options.rpy применяет при distribute)"
+    }
+  },
+  "required": ["schema", "flavor", "version", "build_id", "sha", "built_at", "packs", "nsfw", "early_content", "watermark", "patron_token", "exclude"],
+  "additionalProperties": false
+}

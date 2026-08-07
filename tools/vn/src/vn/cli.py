@@ -280,7 +280,9 @@ def dev():
 @click.option("--package", "packages", multiple=True, default=("win",),
               help="Целевые пакеты launcher distribute (win/linux/mac/market).")
 @click.option("--timeout", "timeout_s", default=900)
-def package(packages: tuple, timeout_s: int):
+@click.option("--dest-suffix", "dest_suffix", default="", hidden=True,
+              help="Суффикс каталога dist (vn release build добавляет -<flavor>).")
+def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     """Дистрибутивы через launcher distribute + перенос .rpyc между релизами (G6)."""
     import shutil
 
@@ -339,7 +341,7 @@ def package(packages: tuple, timeout_s: int):
         _fail(f"renpy compile упал:\n{proc.stdout[-1500:]}\n{proc.stderr[-800:]}")
 
     # 4) Дистрибутивы: dest чистится — старые архивы не должны вкладываться в новые
-    dest = root / "build" / "dist" / version
+    dest = root / "build" / "dist" / (version + dest_suffix)
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)
@@ -604,12 +606,7 @@ def assets_video_validate(paths: tuple):
     workdir = root / ".vncache" / "video-tmp"
     n_err = 0
     for p in targets:
-        meta_path = p.with_name(p.name + videomod.META_SUFFIX)
-        opts = dict(videomod.DEFAULT_OPTS)
-        if meta_path.is_file():
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            opts["loop"] = meta.get("loop", True)
-            opts["keep_audio"] = meta.get("keep_audio", False)
+        opts = videomod.opts_from_meta(p)
         try:
             errors, warnings, s = videomod.validate_output(p, opts, workdir,
                                                            file_budget_mb=file_budget)
@@ -1345,6 +1342,67 @@ def release_changelog():
         click.secho(f"удалены сцены: {', '.join(rep.removed_scenes)} — проверьте renames.yaml!",
                     fg="yellow")
     click.secho("changelog обновлён", fg="green")
+
+
+@release.command("validate")
+@click.option("--flavor", required=True, help="Флейвор из project.yaml (public/patron/…).")
+def release_validate(flavor: str):
+    """Предрелизный гейт: схема, lint, свежесть ассетов/генерата, видео, бюджеты,
+    провенанс, DAZ-декларации, хранилище, версии, сейв-корпус."""
+    from .release import validate_release
+
+    checks, ok = validate_release(_root(), flavor)
+    colors = {"PASS": "green", "WARN": "yellow", "FAIL": "red"}
+    for state, msg in checks:
+        click.secho(f" {state:<4}  {msg}", fg=colors[state])
+    if not ok:
+        _fail(f"release validate --flavor {flavor}: есть FAIL")
+    click.secho(f"release validate: OK (флейвор {flavor})", fg="green")
+
+
+@release.command("build")
+@click.option("--flavor", required=True, help="Флейвор из project.yaml (public/patron/…).")
+@click.option("--patron-token", default=None,
+              help="Опциональная метка получателя сборки (трассировка утечек).")
+@click.option("--package", "packages", multiple=True, default=("win",),
+              help="Целевые пакеты launcher distribute.")
+@click.option("--timeout", "timeout_s", default=900)
+def release_build(flavor: str, patron_token: str | None, packages: tuple, timeout_s: int):
+    """Релизная сборка флейвора: гейт -> game/build_id.json -> vn package
+    (classify исключает NSFW-ассеты для SFW-флейворов) -> build-info в dist.
+
+    build_id.json живёт только на время сборки: dev-запуски остаются флейвором
+    dev, а вотермарка не течёт в рабочие прогоны."""
+    from .release import (ReleaseError, clear_build_info, compute_build_info,
+                          validate_release, write_build_info)
+
+    root = _root()
+    checks, ok = validate_release(root, flavor)
+    colors = {"PASS": "green", "WARN": "yellow", "FAIL": "red"}
+    for state, msg in checks:
+        click.secho(f" {state:<4}  {msg}", fg=colors[state])
+    if not ok:
+        _fail(f"release build --flavor {flavor}: гейт не пройден")
+
+    try:
+        info = compute_build_info(root, flavor, patron_token=patron_token)
+        write_build_info(root, info)
+    except ReleaseError as e:
+        _fail(str(e))
+    click.echo(f"build-id: {info['build_id']}"
+               + (f" (исключено: {', '.join(info['exclude'])})" if info["exclude"] else ""))
+    ctx = click.get_current_context()
+    try:
+        ctx.invoke(package, packages=packages, timeout_s=timeout_s,
+                   dest_suffix=f"-{flavor}")
+        dist = root / "build" / "dist" / f"{info['version']}-{flavor}"
+        (dist / "build-info.json").write_text(
+            json.dumps(info, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
+            encoding="utf-8")
+    finally:
+        clear_build_info(root)   # dev-чекаут не должен носить чужой флейвор
+    click.secho(f"release build: OK — {info['build_id']} -> "
+                f"build/dist/{info['version']}-{flavor}/", fg="green")
 
 
 release.command("steam", help="Steam-аплоад депотов (фаза 3: нужен аккаунт партнёра).")(_stub(3))
