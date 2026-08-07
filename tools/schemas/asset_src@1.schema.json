@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/asset_src@1",
+  "title": "asset_src@1 — манифест сырца в S3 (assets_src/**/*.manifest.json, G21)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "asset_src@1"},
+    "path": {"type": "string", "minLength": 1, "description": "Путь сырца относительно assets_src/"},
+    "version": {"type": "integer", "minimum": 1},
+    "size": {"type": "integer", "minimum": 0},
+    "hash": {
+      "type": "object",
+      "properties": {
+        "algo": {"const": "blake3"},
+        "hex": {"type": "string", "pattern": "^[0-9a-f]{16,64}$"}
+      },
+      "required": ["algo", "hex"],
+      "additionalProperties": false
+    },
+    "storage": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Логический id хранилища из .vnstorage.yaml"},
+    "key": {"type": "string", "minLength": 1},
+    "exports": {"type": "array", "items": {"type": "string"}},
+    "uploaded_by": {"type": "string"},
+    "uploaded_at": {"type": "string", "format": "date-time"}
+  },
+  "required": ["schema", "path", "version", "size", "hash", "storage", "key"],
+  "additionalProperties": false
+}

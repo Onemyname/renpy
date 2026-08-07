@@ -1,0 +1,26 @@
+# Владение зонами (раздел 1.7 ARCHITECTURE.md).
+# ПРАВИЛО: на каждый инструмент и каждый узкий кросс-главный файл — минимум ДВА владельца.
+# TODO(команда): заменить плейсхолдеры на реальные хэндлы при найме.
+
+/game/framework/                    @tech-lead @engine-dev-1
+/tools/                             @engine-dev-1 @engine-dev-2
+/tools/schemas/                     @engine-dev-1 @tech-lead
+/content/characters/                @lead-writer @art-director
+/content/locations/                 @lead-writer @art-director
+/content/variables/                 @tech-lead @lead-writer
+/content/flags.yaml                 @tech-lead @lead-writer
+/content/anchors.yaml               @tech-lead @engine-dev-1
+/content/audio/                     @tech-lead @lead-writer
+/content/migrations/                @tech-lead @engine-dev-1
+/content/renames.yaml               @tech-lead @lead-writer
+/content/registry/                  @tech-lead @engine-dev-1
+/loc/                               @loc-lead @lead-writer
+/docs/conventions/                  @tech-lead @lead-writer
+/docs/adr/                          @tech-lead @engine-dev-1
+/project.yaml                       @tech-lead @engine-dev-1
+/.vnstorage.yaml                    @tech-lead @engine-dev-1
+/ci/                                @engine-dev-1 @engine-dev-2
+/.gitlab-ci.yml                     @engine-dev-1 @engine-dev-2
+
+# Главы: одна глава = одна папка = один владелец. Добавлять при создании главы:
+# /content/chapters/ch01_awakening/   @writer-handle

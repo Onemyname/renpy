@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/gen_manifest@1",
+  "title": "gen_manifest@1 — манифест Content Compiler (game/generated/manifest.json): blake3 входов -> выходов; контракт инкрементальности, точечной очистки (G6) и vn build --use-artifact",
+  "type": "object",
+  "$defs": {
+    "hash_map": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{16,64}$"}
+    }
+  },
+  "properties": {
+    "schema": {"const": "gen_manifest@1"},
+    "tool": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "inputs": {"$ref": "#/$defs/hash_map"},
+    "outputs": {"$ref": "#/$defs/hash_map"}
+  },
+  "required": ["schema", "tool", "inputs", "outputs"],
+  "additionalProperties": false
+}

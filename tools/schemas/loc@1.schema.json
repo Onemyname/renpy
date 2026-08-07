@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/loc@1",
+  "title": "loc@1 — конфигурация локализации (loc/loc.yaml)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "loc@1"},
+    "source_lang": {"type": "string", "pattern": "^[a-z]{2}(_[A-Z]{2})?$"},
+    "languages": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z]{2}(_[A-Z]{2})?$"}
+    },
+    "release_coverage_min": {
+      "type": "number", "minimum": 0, "maximum": 1,
+      "description": "Порог покрытия перевода для release-гейта (по строкам релизного контента)"
+    }
+  },
+  "required": ["schema", "source_lang", "languages"],
+  "additionalProperties": false
+}

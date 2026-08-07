@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/anchors@1",
+  "title": "anchors@1 — стабильные инжект-якоря для модов (content/anchors.yaml, G10)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "anchors@1"},
+    "anchors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "scene": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"},
+          "since": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+          "desc": {"type": "string"}
+        },
+        "required": ["scene", "since"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "anchors"],
+  "additionalProperties": false
+}

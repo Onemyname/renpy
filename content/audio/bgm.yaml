@@ -1,0 +1,4 @@
+schema: audio@1
+kind: bgm
+# Логические id музыки: play music <id> в сценах; компилятор эмитит define audio.<id>.
+tracks: {}

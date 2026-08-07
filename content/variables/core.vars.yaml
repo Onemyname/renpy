@@ -1,0 +1,10 @@
+schema: vars@1
+# Глобальное сохраняемое состояние → named store g (раздел 1.8).
+# Только простые типы; никаких "_"-префиксов. Компилируется в generated/state/defaults.gen.rpy.
+store: g
+vars:
+  route:
+    type: str
+    default: common
+    doc: "Активный роут; common до первой развилки"
+    since: 1

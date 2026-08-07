@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/scene@1",
+  "title": "scene@1 — метаданные сцены (*.scene.yaml); диалоги живут в парном *.scene.rpy (G3)",
+  "type": "object",
+  "$defs": {
+    "target": {
+      "type": "string",
+      "pattern": "^(s\\d{3}|ch\\d{2}/s\\d{3})$",
+      "description": "Короткая ссылка внутри главы (s060) или межглавная (ch04/s010)"
+    },
+    "var_ref": {
+      "type": "string",
+      "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$"
+    },
+    "cond_exit": {
+      "type": "object",
+      "properties": {
+        "when": {"type": "string", "minLength": 1},
+        "to": {"$ref": "#/$defs/target"}
+      },
+      "required": ["to"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "schema": {"const": "scene@1"},
+    "id": {"type": "string", "pattern": "^s\\d{3}$", "description": "Короткий id; полный выводится из пути: <chapter_id>_<id>"},
+    "title_key": {"type": "string", "pattern": "^[a-z0-9_.]+$"},
+    "participants": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,23}$"}
+    },
+    "location": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)?$"},
+    "music": {"type": "string", "pattern": "^(bgm|amb)/[a-z][a-z0-9_]*$"},
+    "vars": {
+      "type": "object",
+      "properties": {
+        "reads": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/var_ref"}},
+        "writes": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/var_ref"}}
+      },
+      "additionalProperties": false
+    },
+    "exits": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "oneOf": [
+          {"$ref": "#/$defs/target"},
+          {"$ref": "#/$defs/cond_exit"},
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {"$ref": "#/$defs/cond_exit"}
+          }
+        ]
+      }
+    }
+  },
+  "required": ["schema", "id"],
+  "additionalProperties": false
+}

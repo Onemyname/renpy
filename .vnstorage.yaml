@@ -1,0 +1,7 @@
+schema: storage@1
+# Маппинг логических хранилищ сырцов на физические endpoint'ы (G21).
+# Меняется одним коммитом; локальные переопределения — .vnstorage.local.yaml (в .gitignore).
+# TODO(фаза 1): заменить на реальные endpoint'ы командного S3.
+storages:
+  default: {endpoint: "https://s3.example.com", bucket: "vn-assets"}
+  archive: {endpoint: "https://s3.example.com", bucket: "vn-assets-cold"}

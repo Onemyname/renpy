@@ -1,0 +1,7 @@
+schema: renames@1
+# Append-only: переименование = новый id + запись здесь; старый id нельзя переиспользовать (G7).
+# Компилятор генерирует из этого файла и config.label_overrides.update(...), и shim-метки.
+scenes: {}
+deleted_scenes: {}
+labels: {}
+vars: {}

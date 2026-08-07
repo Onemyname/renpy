@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/project@1",
+  "title": "project@1 — корневой манифест проекта (project.yaml)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "project@1"},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "save_schema": {"type": "integer", "minimum": 1},
+    "min_tools": {"type": "string", "pattern": "^\\d+\\.\\d+$"}
+  },
+  "required": ["schema", "version", "save_schema", "min_tools"],
+  "additionalProperties": false
+}

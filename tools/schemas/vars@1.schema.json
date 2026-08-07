@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/vars@1",
+  "title": "vars@1 — декларация сохраняемых переменных named store (*.vars.yaml, chapters/*/vars.yaml); формат канона 6.1",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "vars@1"},
+    "store": {
+      "type": "string",
+      "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+|persistent)$",
+      "description": "persistent: имена обязаны начинаться с vn_ (C9); проверяет компилятор"
+    },
+    "vars": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "type": {"enum": ["str", "int", "float", "bool", "list", "dict"]},
+          "default": {"type": ["string", "integer", "number", "boolean", "array", "object"]},
+          "doc": {"type": "string"},
+          "range": {
+            "type": "array", "minItems": 2, "maxItems": 2,
+            "items": {"type": "number"},
+            "description": "[min, max] для int/float; clamp в сеттере vn.set()"
+          },
+          "export": {
+            "type": "boolean",
+            "description": "true: переменную главы можно читать из других глав (правила видимости, 3.10)"
+          },
+          "since": {"type": "integer", "minimum": 1, "description": "save_schema, с которой переменная существует"}
+        },
+        "required": ["type", "default"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "store", "vars"],
+  "additionalProperties": false
+}

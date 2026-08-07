@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/character@1",
+  "title": "character@1 — единая декларация персонажа (character.yaml)",
+  "type": "object",
+  "$defs": {
+    "token": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+  },
+  "properties": {
+    "schema": {"const": "character@1"},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,23}$"},
+    "name": {"type": "string", "minLength": 1, "description": "Исходный язык; в генерате оборачивается в _() и переводится через translate strings"},
+    "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+    "voice_tag": {"$ref": "#/$defs/token"},
+    "canvas": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "matrix": {
+      "type": "object",
+      "properties": {
+        "poses": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/token"}},
+        "outfits": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/token"}},
+        "emotions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/token"}},
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pose": {"$ref": "#/$defs/token"},
+              "outfits": {"type": "array", "items": {"$ref": "#/$defs/token"}},
+              "emotions": {"type": "array", "items": {"$ref": "#/$defs/token"}}
+            },
+            "required": ["pose"],
+            "additionalProperties": false
+          }
+        },
+        "forbidden": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "pose": {"$ref": "#/$defs/token"},
+              "outfits": {"type": "array", "items": {"$ref": "#/$defs/token"}},
+              "emotions": {"type": "array", "items": {"$ref": "#/$defs/token"}}
+            },
+            "required": ["pose"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["poses", "outfits", "emotions"],
+      "additionalProperties": false
+    },
+    "animated": {
+      "type": "object",
+      "description": "Live2D/Spine-бэкенд (G12); prebaked fallback обязателен — валидирует vn assets validate",
+      "properties": {
+        "backend": {"enum": ["live2d", "spine"]},
+        "source": {"type": "string", "pattern": "^assets_src/(live2d|spine_export)/characters/[a-z][a-z0-9_]{1,23}/"},
+        "map": {"type": "object", "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"}, "additionalProperties": {"type": "string"}}
+      },
+      "required": ["backend", "source"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema", "id", "name", "color"],
+  "additionalProperties": false
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/renames@1",
+  "title": "renames@1 — переименования/удаления id (content/renames.yaml); только дописывается",
+  "type": "object",
+  "$defs": {
+    "scene_id": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"},
+    "label": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "var_ref": {"type": "string", "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$"}
+  },
+  "properties": {
+    "schema": {"const": "renames@1"},
+    "scenes": {
+      "type": "object",
+      "propertyNames": {"pattern": "^ch\\d{2}_s\\d{3}$"},
+      "additionalProperties": {"$ref": "#/$defs/scene_id"}
+    },
+    "deleted_scenes": {
+      "type": "object",
+      "propertyNames": {"pattern": "^ch\\d{2}_s\\d{3}$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "fallback": {"$ref": "#/$defs/scene_id"},
+          "since": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+        },
+        "required": ["fallback", "since"],
+        "additionalProperties": false
+      }
+    },
+    "labels": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {"$ref": "#/$defs/label"}
+    },
+    "vars": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/var_ref"}
+    }
+  },
+  "required": ["schema"],
+  "additionalProperties": false
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/flags@1",
+  "title": "flags@1 — фиче-флаги контента (content/flags.yaml); флаг = условие КОМПИЛЯЦИИ, не runtime-if",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "flags@1"},
+    "flags": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "desc": {"type": "string", "minLength": 1},
+          "default": {"type": "boolean"},
+          "expires": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$", "description": "Версия, к которой флаг обязан быть удалён (линтер напомнит)"}
+        },
+        "required": ["desc", "default"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "flags"],
+  "additionalProperties": false
+}

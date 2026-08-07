@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/migrations_registry@1",
+  "title": "migrations_registry@1 — реестр занятых номеров миграций (content/migrations/registry.yaml, G5)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "migrations_registry@1"},
+    "reserved": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "number": {"type": "integer", "minimum": 1},
+          "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_]+$"},
+          "by": {"type": "string"},
+          "released_in": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+        },
+        "required": ["number", "slug", "by"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "reserved"],
+  "additionalProperties": false
+}

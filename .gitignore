@@ -1,0 +1,30 @@
+# ═══ Производные зоны (G2/G4): восстанавливаются vn bootstrap / vn build ═══
+game/generated/
+game/assets/
+game/tl/
+game/cache/
+game/saves/
+*.rpyc
+*.rpymc
+*.rpyb
+log.txt
+errors.txt
+traceback.txt
+
+# ═══ Локальные артефакты и кэши ═══
+build/
+.vncache/
+.vnstorage.local.yaml
+
+# ═══ Python ═══
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# ═══ IDE / OS ═══
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

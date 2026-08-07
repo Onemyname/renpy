@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/audio@1",
+  "title": "audio@1 — логические id аудио (content/audio/{bgm,amb,sfx}.yaml)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "audio@1"},
+    "kind": {"enum": ["bgm", "amb", "sfx"]},
+    "tracks": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "file": {"type": "string", "pattern": "^assets/audio/(bgm|amb|sfx)/[a-z0-9_]+\\.ogg$"},
+          "loop": {"type": "boolean"},
+          "loop_start": {"type": "number", "minimum": 0},
+          "volume": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "required": ["file"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "kind", "tracks"],
+  "additionalProperties": false
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/chapter@1",
+  "title": "chapter@1 — метаданные главы (chapter.yaml)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "chapter@1"},
+    "id": {"type": "string", "pattern": "^ch\\d{2}$"},
+    "title_key": {"type": "string", "pattern": "^[a-z0-9_.]+$"},
+    "status": {"enum": ["draft", "playtest", "release"]},
+    "owner": {"type": "string", "pattern": "^@[A-Za-z0-9_-]+$"},
+    "entry_scene": {"type": "string", "pattern": "^s\\d{3}$"},
+    "scene_order": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^s\\d{3}$"}
+    },
+    "requires": {
+      "type": "object",
+      "properties": {
+        "systems": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}},
+        "chapters": {"type": "array", "items": {"type": "string", "pattern": "^ch\\d{2}$"}}
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema", "id", "title_key", "status", "entry_scene", "scene_order"],
+  "additionalProperties": false
+}

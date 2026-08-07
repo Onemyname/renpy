@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/pack_manifest@1",
+  "title": "pack_manifest@1 — манифест контент-пака (packs/<id>/manifest.yaml, G9/G10)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "pack_manifest@1"},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"},
+    "kind": {"enum": ["dlc", "voice_pack", "mod"]},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "title_key": {"type": "string", "pattern": "^[a-z0-9_.]+$"},
+    "api_level": {
+      "type": "object",
+      "description": "Диапазон api_level фасада vn.*: min ≤ level < below; несовместимый пак отключается с сообщением",
+      "properties": {
+        "min": {"type": "integer", "minimum": 1},
+        "below": {"type": "integer", "minimum": 2}
+      },
+      "required": ["min", "below"],
+      "additionalProperties": false
+    },
+    "requires": {
+      "type": "object",
+      "properties": {
+        "core": {"type": "string", "description": "Диапазон версий ядра, например \">=1.2.0 <2\""},
+        "packs": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"}}
+      },
+      "additionalProperties": false
+    },
+    "fallback_anchor": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"},
+    "lang": {"type": "string", "pattern": "^[a-z]{2}(_[A-Z]{2})?$", "description": "Только для kind: voice_pack"}
+  },
+  "required": ["schema", "id", "kind", "version", "api_level"],
+  "additionalProperties": false
+}

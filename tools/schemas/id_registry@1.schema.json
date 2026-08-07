@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/id_registry@1",
+  "title": "id_registry@1 — append-only реестр всех когда-либо выпущенных id (content/registry/id_registry.json, G7)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "id_registry@1"},
+    "chapters": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^ch\\d{2}$"}},
+    "scenes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"}},
+    "characters": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,23}$"}},
+    "vars": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$"}}
+  },
+  "required": ["schema", "chapters", "scenes", "characters", "vars"],
+  "additionalProperties": false
+}

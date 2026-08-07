@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/storage@1",
+  "title": "storage@1 — логические хранилища сырцов (.vnstorage.yaml)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "storage@1"},
+    "storages": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "endpoint": {"type": "string", "format": "uri"},
+          "bucket": {"type": "string", "minLength": 1}
+        },
+        "required": ["endpoint", "bucket"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "storages"],
+  "additionalProperties": false
+}
