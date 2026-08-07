@@ -650,6 +650,92 @@ def assets_video_inspect(path: Path):
             click.echo(side.read_text(encoding="utf-8").strip())
 
 
+# ── vn assets daz / provenance (ADR-0006) ─────────────────────────────────────
+
+@assets.group("daz")
+def assets_daz():
+    """Декларации DAZ-рендеров: assets_src/daz/**/<name>.render.yaml."""
+
+
+@assets_daz.command("validate")
+@click.option("--scope", default=None, help="Подпуть в assets_src/daz (например ch01).")
+@click.option("--no-provenance", is_flag=True, help="Только проверить, провенанс не писать.")
+def assets_daz_validate(scope: str | None, no_provenance: bool):
+    """Схема деклараций, наличие сцен (.duf или манифест), наличие выходов;
+    для готовых рендеров пишется/обновляется провенанс."""
+    from .assets.daz import validate_renders
+
+    rep = validate_renders(_root(), scope=scope, write_provenance=not no_provenance)
+    for w in rep.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    for p in rep.provenance_written:
+        click.echo(f"провенанс: {p}")
+    if rep.errors:
+        _fail(f"daz validate: {len(rep.errors)} ошибок")
+    if not rep.checked:
+        click.echo("деклараций нет (assets_src/daz/**/<name>.render.yaml) — "
+                   "см. docs/adr/0006 и docs/pipeline/phase-0.md")
+        return
+    click.secho(f"daz validate: OK ({len(rep.checked)} деклараций, "
+                f"{len(rep.warnings)} предупреждений)", fg="green")
+
+
+@assets.group("provenance")
+def assets_provenance():
+    """Провенанс сырцов: хэш исходника -> параметры обработки -> хэш артефакта."""
+
+
+@assets_provenance.command("record")
+@click.argument("artifact", type=click.Path(exists=True, path_type=Path))
+@click.option("--source", type=click.Path(exists=True, path_type=Path), default=None,
+              help="Исходник шага; его провенанс-цепочка станет префиксом.")
+@click.option("--workflow", "workflow_file", type=click.Path(exists=True, path_type=Path),
+              default=None, help="API-граф ComfyUI (json), если артефакт не PNG с метаданными.")
+@click.option("--note", default=None, help="Ручной шаг (Photoshop и т.п.): описание.")
+@click.option("--model", default=None, help="Переопределить имя модели.")
+@click.option("--seed", type=int, default=None, help="Переопределить seed.")
+def assets_provenance_record(artifact: Path, source: Path | None, workflow_file: Path | None,
+                             note: str | None, model: str | None, seed: int | None):
+    """Записать провенанс артефакта. PNG из ComfyUI разбирается автоматически
+    (workflow, seed, модель, LoRA, промпты из tEXt-чанков)."""
+    from .assets.provenance import ProvenanceError, record
+
+    try:
+        path, doc = record(_root(), Path(artifact), source=source,
+                           workflow_file=workflow_file, note=note,
+                           overrides={"model": model, "seed": seed})
+    except ProvenanceError as e:
+        _fail(str(e))
+    last = doc["chain"][-1]
+    click.echo(f"шагов в цепочке: {len(doc['chain'])}; последний: {last['kind']}"
+               + (f", seed {last.get('seed')}, модель {last.get('model')}"
+                  if last["kind"] == "comfyui" else ""))
+    click.secho(f"провенанс записан: {path.relative_to(_root()).as_posix()}", fg="green")
+
+
+@assets_provenance.command("verify")
+@click.option("--scope", default=None, help="Подпуть в assets_src.")
+def assets_provenance_verify(scope: str | None):
+    """Сверка всех провенанс-цепочек: схема, хэш артефакта, хэши источников
+    (локально или по манифестам хранилища)."""
+    from .assets.provenance import verify
+
+    rep = verify(_root(), scope=scope)
+    for w in rep.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    if rep.errors:
+        _fail(f"provenance verify: {len(rep.errors)} ошибок")
+    if not rep.checked:
+        click.echo("провенанс-сайдкаров нет (assets_src/**/*.provenance.json)")
+        return
+    click.secho(f"provenance verify: OK ({len(rep.checked)} цепочек, "
+                f"{len(rep.warnings)} предупреждений)", fg="green")
+
+
 def _sync_report(rep, ok_label: str):
     for e in rep.errors:
         click.secho(f"error: {e}", fg="red")

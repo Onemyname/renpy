@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/provenance@1",
+  "title": "provenance@1 — цепочка происхождения сырца (assets_src/**/<file>.provenance.json, ADR-0006)",
+  "description": "Хэш исходника -> параметры обработки -> хэш артефакта. Дальше по конвейеру провенанс продолжают манифест сборки ассетов и mov_meta@1 — второй системы метаданных нет.",
+  "type": "object",
+  "$defs": {
+    "hash": {
+      "type": "object",
+      "properties": {
+        "algo": {"const": "blake3"},
+        "hex": {"type": "string", "pattern": "^[0-9a-f]{16,64}$"}
+      },
+      "required": ["algo", "hex"],
+      "additionalProperties": false
+    },
+    "source_ref": {
+      "type": "object",
+      "properties": {
+        "path": {"type": "string", "description": "Относительно assets_src/"},
+        "hash": {"$ref": "#/$defs/hash"}
+      },
+      "required": ["path", "hash"],
+      "additionalProperties": false
+    }
+  },
+  "properties": {
+    "schema": {"const": "provenance@1"},
+    "artifact": {"$ref": "#/$defs/source_ref"},
+    "pipeline": {"type": "string", "description": "Версия тулинга (vn X.Y.Z), писавшего провенанс"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "chain": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {"const": "daz_render"},
+              "source": {"$ref": "#/$defs/source_ref"},
+              "declaration": {"type": "string", "description": "Путь <name>.render.yaml относительно assets_src/"},
+              "settings": {"type": "object", "description": "Снапшот блока render из декларации"}
+            },
+            "required": ["kind", "source", "settings"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {"const": "comfyui"},
+              "source": {"anyOf": [{"$ref": "#/$defs/source_ref"}, {"type": "null"}]},
+              "workflow": {"type": ["object", "null"], "description": "Полный граф ComfyUI (extract из PNG или --workflow)"},
+              "workflow_hash": {"anyOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+              "model": {"type": ["string", "null"]},
+              "model_hash": {"anyOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+              "seed": {"type": ["integer", "null"]},
+              "prompt": {"type": ["string", "null"]},
+              "negative_prompt": {"type": ["string", "null"]},
+              "loras": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": {"type": "string"},
+                    "strength": {"type": ["number", "null"]}
+                  },
+                  "required": ["name"],
+                  "additionalProperties": false
+                }
+              },
+              "resolution": {
+                "anyOf": [
+                  {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                  {"type": "null"}
+                ]
+              },
+              "sampler": {"type": ["string", "null"]},
+              "steps": {"type": ["integer", "null"]},
+              "cfg": {"type": ["number", "null"]},
+              "denoise": {"type": ["number", "null"]}
+            },
+            "required": ["kind"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {"const": "manual"},
+              "source": {"anyOf": [{"$ref": "#/$defs/source_ref"}, {"type": "null"}]},
+              "tool": {"type": ["string", "null"], "description": "Photoshop/Krita/…"},
+              "note": {"type": "string"}
+            },
+            "required": ["kind", "note"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "required": ["schema", "artifact", "pipeline", "chain"],
+  "additionalProperties": false
+}

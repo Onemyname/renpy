@@ -91,6 +91,10 @@ def _iter_declarations(root: Path):
     src = root / "assets_src"
     if src.is_dir():
         yield from sorted(src.rglob("*.manifest.json"))
+        # ADR-0006: декларации рендеров, sidecar-опции видео, провенанс —
+        # все несут schema: и валидируются наравне с контентом (G16).
+        yield from sorted(src.rglob("*.yaml"))
+        yield from sorted(src.rglob("*.provenance.json"))
 
 
 def _load_doc(path: Path):
