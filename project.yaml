@@ -4,7 +4,9 @@ save_schema: 2       # целое; бампает tech-lead при несовм�
 min_tools: "0.1"     # минимальная версия vn для этого дерева контента
 renpy_sdk: "8.5.3"   # пиннованный SDK (G18); апгрейд — отдельным PR с прогоном canary
 budgets:             # перф/размер-бюджеты (G19): превышение = красная сборка
-  assets_total_mb: 200
+  assets_total_mb: 500   # 200 статики хватало до видео; лупы съедают мегабайты — ADR-0006
   generated_total_kb: 2048
   cold_start_s: 30       # референс — CI-раннер (llvmpipe): ~14 c; RTX — ~1 c
+  video_total_mb: 300    # суммарно game/assets/mov (ADR-0006)
+  video_file_mb: 40      # один луп; больше — пересмотрите crf/длительность
 

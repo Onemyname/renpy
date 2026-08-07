@@ -70,6 +70,32 @@ def emit_images(root: Path, locations: dict[str, dict],
     if n_bg:
         out.append("")
 
+    # ── CG-стиллы (ADR-0006): скан собранной зоны, image cg <...> ────────────
+    # Реестр — от фактических выходов конвейера (как sprite_tree): CG не имеют
+    # своей декларации, их источник истины — assets_src/png/cg + провенанс.
+    cg_root = assets / "cg"
+    n_cg = 0
+    if cg_root.is_dir():
+        for f in sorted(cg_root.rglob("*.webp")):
+            rel = "cg/" + f.relative_to(cg_root).as_posix()
+            tokens = " ".join(rel[:-len(".webp")].split("/"))
+            out.append(f'image {tokens} = "assets/{rel}"')
+            n_cg += 1
+    if n_cg:
+        out.append("")
+
+    # ── Видео-лупы (ADR-0006): image mov <...> = Movie(...) из meta.json ─────
+    from ..assets.video import movie_tree
+
+    n_mov = 0
+    for rel, meta in sorted(movie_tree(root).items()):
+        tokens = " ".join(rel[:-len(".webm")].split("/"))
+        loop = bool(meta.get("loop", True))
+        out.append(f'image {tokens} = Movie(play="assets/{rel}", loop={loop})')
+        n_mov += 1
+    if n_mov:
+        out.append("")
+
     # ── layeredimage персонажей из matrix + собранных слоёв (G11) ────────────
     tree = sprite_tree(root)
     tagged: list[str] = []

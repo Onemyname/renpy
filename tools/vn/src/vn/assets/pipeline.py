@@ -11,11 +11,15 @@ id и ВЕРСИЯ конкретной трансформации + профи�
   assets_src/png/characters/<key>/<pose>/faces/<emotion>.png
   assets_src/png/characters/<key>/<pose>/overlays/<name>.png
   assets_src/png/backgrounds/<location>/<variant>.png
+  assets_src/png/cg/<...>/<name>.png                     # CG-стиллы (DAZ-рендеры, ADR-0006)
   assets_src/audio/{bgm,amb,sfx}/<id>.ogg
+  assets_src/video_src/<group>/<name>.(mp4|mov|mkv|webm|m4v|avi)   # видео (ADR-0006)
 Выходы:
   game/assets/spr/<key>/<pose>/{base@2.webp, outfits/<o>@2.webp, faces/<e>@2.webp, overlays/<n>@2.webp}
   game/assets/bg/<location>/<variant>.webp
+  game/assets/cg/<...>/<name>.webp
   game/assets/audio/{bgm,amb,sfx}/<id>.ogg
+  game/assets/mov/<group>/<name>.webm (+ .webm.meta.json — mov_meta@1)
 """
 
 from __future__ import annotations
@@ -30,10 +34,13 @@ from pathlib import Path
 import blake3
 
 # Версии трансформаций (G13): бамп инвалидирует только свою ветку кэша.
+# video2webm: версия = пресет ffmpeg (video.encode_args) — меняете пресет, бампайте.
 TRANSFORMS = {
     "png2webp_sprite": "1",
     "png2webp_bg": "1",
+    "png2webp_cg": "1",
     "copy_audio": "1",
+    "video2webm": "1",
 }
 
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -88,12 +95,12 @@ def _check_slug(rep: AssetBuildResult, rel: str, *parts: str) -> bool:
     return True
 
 
-def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str]]:
-    """[(источник, транформация, выход относительно game/assets/)].
+def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str, dict | None]]:
+    """[(источник, транформация, выход относительно game/assets/, extra)].
     Слои персонажей собираются из двух деревьев одной конвенции: ручной экспорт
     (assets_src/png) и staging PSD-нарезки (.vncache/psd_png); конфликт на один
-    выход ловится в build_assets."""
-    jobs: list[tuple[Path, str, str]] = []
+    выход ловится в build_assets. extra — только у видео (опции sidecar)."""
+    jobs: list[tuple[Path, str, str, dict | None]] = []
     png = root / "assets_src" / "png"
 
     char_bases = [png / "characters", root / ".vncache" / "psd_png" / "characters"]
@@ -108,7 +115,7 @@ def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str]]:
                 base = pose_dir / "base.png"
                 if base.is_file():
                     jobs.append((base, "png2webp_sprite",
-                                 f"spr/{key_dir.name}/{pose_dir.name}/base@2.webp"))
+                                 f"spr/{key_dir.name}/{pose_dir.name}/base@2.webp", None))
                 else:
                     rep.errors.append(f"{rel}: нет обязательного base.png")
                 for group in ("outfits", "faces", "overlays"):
@@ -120,7 +127,8 @@ def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str]]:
                         if not _check_slug(rep, f"{rel}/{group}/{f.name}", name):
                             continue
                         jobs.append((f, "png2webp_sprite",
-                                     f"spr/{key_dir.name}/{pose_dir.name}/{group}/{name}@2.webp"))
+                                     f"spr/{key_dir.name}/{pose_dir.name}/{group}/{name}@2.webp",
+                                     None))
 
     bgs = png / "backgrounds"
     if bgs.is_dir():
@@ -129,7 +137,19 @@ def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str]]:
                 rel = f"assets_src/png/backgrounds/{loc_dir.name}/{f.name}"
                 if not _check_slug(rep, rel, loc_dir.name, f.stem):
                     continue
-                jobs.append((f, "png2webp_bg", f"bg/{loc_dir.name}/{f.stem}.webp"))
+                jobs.append((f, "png2webp_bg", f"bg/{loc_dir.name}/{f.stem}.webp", None))
+
+    # CG-стиллы (DAZ-рендеры и AI-обработка, ADR-0006): вложенность произвольная,
+    # каждый сегмент — slug; nsfw-контент живёт в cg/nsfw/** (гейт флейворов).
+    cg = png / "cg"
+    if cg.is_dir():
+        for f in sorted(cg.rglob("*.png")):
+            rel_parts = f.relative_to(cg).parts
+            rel = f"assets_src/png/cg/{f.relative_to(cg).as_posix()}"
+            if not _check_slug(rep, rel, *rel_parts[:-1], f.stem):
+                continue
+            out = "cg/" + "/".join([*rel_parts[:-1], f.stem]) + ".webp"
+            jobs.append((f, "png2webp_cg", out, None))
 
     audio = root / "assets_src" / "audio"
     if audio.is_dir():
@@ -140,7 +160,40 @@ def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str]]:
             for f in sorted(kdir.glob("*.ogg")):
                 if not _check_slug(rep, f"assets_src/audio/{kind}/{f.name}", f.stem):
                     continue
-                jobs.append((f, "copy_audio", f"audio/{kind}/{f.name}"))
+                jobs.append((f, "copy_audio", f"audio/{kind}/{f.name}", None))
+
+    # Видео-лупы (ADR-0006): assets_src/video_src/<group>/<name>.<ext> [+ <name>.video.yaml]
+    from . import video as videomod
+
+    vsrc = root / "assets_src" / "video_src"
+    if vsrc.is_dir():
+        vfiles = [f for f in sorted(vsrc.rglob("*"))
+                  if f.is_file() and f.suffix.lower() in videomod.VIDEO_EXTS]
+        if vfiles:
+            from ..pipeline import find_ffmpeg, find_ffprobe
+
+            if find_ffmpeg() is None or find_ffprobe() is None:
+                rep.errors.append(
+                    "assets_src/video_src: есть видео-сырцы, но ffmpeg/ffprobe не найдены "
+                    "(vn pipeline doctor) — видео-трек не собирается")
+                return jobs
+        for f in vfiles:
+            rel_parts = f.relative_to(vsrc).parts
+            rel = f"assets_src/video_src/{f.relative_to(vsrc).as_posix()}"
+            if len(rel_parts) < 2:
+                rep.errors.append(f"{rel}: видео кладутся в группу — "
+                                  f"video_src/<group>/<name>.<ext> (naming.md)")
+                continue
+            if not _check_slug(rep, rel, *rel_parts[:-1], f.stem):
+                continue
+            sidecar = f.with_name(f.stem + videomod.SIDECAR_SUFFIX)
+            opts, opt_errors = videomod.load_opts(sidecar)
+            if opt_errors:
+                rep.errors.extend(opt_errors)
+                continue
+            out = "mov/" + "/".join([*rel_parts[:-1], f.stem]) + ".webm"
+            extra = {"opts": opts, "sidecar": sidecar if sidecar.is_file() else None}
+            jobs.append((f, "video2webm", out, extra))
 
     return jobs
 
@@ -150,17 +203,25 @@ def _transform(src: Path, transform: str, profile: str) -> bytes:
         return _webp_encode(src, quality=50 if profile == "draft" else 95)
     if transform == "png2webp_bg":
         return _webp_encode(src, quality=50 if profile == "draft" else 90)
+    if transform == "png2webp_cg":
+        return _webp_encode(src, quality=50 if profile == "draft" else 90)
     if transform == "copy_audio":
         return src.read_bytes()
     raise AssetError(f"неизвестная трансформация {transform!r}")
 
 
-def build_assets(root: Path, profile: str = "full", check: bool = False) -> AssetBuildResult:
+def build_assets(root: Path, profile: str = "full", check: bool = False,
+                 only_transforms: set[str] | None = None) -> AssetBuildResult:
     """Инкрементальная сборка game/assets из assets_src (+ нарезка PSD, psd.py).
-    check=True: НИЧЕГО не пишется — только discovery-ошибки и список несвежих выходов."""
+    check=True: НИЧЕГО не пишется — только discovery-ошибки и список несвежих выходов.
+    only_transforms: собрать подмножество трансформаций (например {"video2webm"});
+    манифест и orphan-очистка остальных веток не трогаются."""
+    from . import video as videomod
+
     rep = AssetBuildResult()
     out_root = root / "game" / "assets"
     cache_dir = root / ".vncache" / "assets"
+    video_tmp = root / ".vncache" / "video-tmp"
     if not check:
         cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -172,8 +233,21 @@ def build_assets(root: Path, profile: str = "full", check: bool = False) -> Asse
     if rep.errors:
         return rep
 
+    # Подмножество трансформаций: у видео два выхода (webm + meta), они одна ветка.
+    effective_only = set(only_transforms) if only_transforms else None
+    if effective_only and "video2webm" in effective_only:
+        effective_only.add("mov_meta")
+    if effective_only and not check:
+        jobs = [j for j in jobs if j[1] in effective_only]
+
+    from ..repo import load_project
+    try:
+        file_budget = (load_project(root).get("budgets") or {}).get("video_file_mb")
+    except Exception:
+        file_budget = None
+
     seen_outputs: dict[str, dict] = {}
-    for src, transform, out_rel in jobs:
+    for src, transform, out_rel, extra in jobs:
         if out_rel in seen_outputs:
             rep.errors.append(f"{out_rel}: два источника претендуют на один выход")
             continue
@@ -184,11 +258,17 @@ def build_assets(root: Path, profile: str = "full", check: bool = False) -> Asse
             rep.errors.append(f"{src.relative_to(root).as_posix()}: не читается: {e}")
             continue
         src_hash = _b3_bytes(src_bytes)
+        if transform == "video2webm" and extra:
+            # Sidecar-опции — часть источника: правка <name>.video.yaml инвалидирует выход.
+            sidecar = extra.get("sidecar")
+            sidecar_bytes = sidecar.read_bytes() if sidecar else b""
+            src_hash = _b3_bytes(src_bytes + b"\x00" + sidecar_bytes)
         key = _b3_bytes(
             f"{src_hash}:{transform}:{TRANSFORMS[transform]}:{profile}".encode()
         )
         blob = cache_dir / key[:2] / key
         dest = out_root / out_rel
+        meta_rel = out_rel + videomod.META_SUFFIX if transform == "video2webm" else None
 
         if check:
             seen_outputs[out_rel] = {
@@ -198,6 +278,14 @@ def build_assets(root: Path, profile: str = "full", check: bool = False) -> Asse
             }
             if not dest.is_file():
                 rep.stale.append(f"{out_rel} (нет файла)")
+            if meta_rel:
+                seen_outputs[meta_rel] = {
+                    "src_hash": src_hash,
+                    "transform": f"mov_meta@{TRANSFORMS[transform]}",
+                    "profile": profile,
+                }
+                if dest.is_file() and not (out_root / meta_rel).is_file():
+                    rep.stale.append(f"{meta_rel} (нет файла)")
             continue
 
         if blob.is_file():
@@ -205,18 +293,23 @@ def build_assets(root: Path, profile: str = "full", check: bool = False) -> Asse
             origin = "cache"
         else:
             try:
-                data = _transform(src, transform, profile)
-            except OSError as e:
+                if transform == "video2webm":
+                    data = videomod.encode_video(src, extra["opts"], profile, video_tmp)
+                else:
+                    data = _transform(src, transform, profile)
+            except (OSError, videomod.VideoError) as e:
                 rep.errors.append(f"{src.relative_to(root).as_posix()}: трансформация упала: {e}")
                 continue
             _write_atomic(blob, data)
             origin = "built"
 
+        wrote_now = False
         if dest.is_file() and dest.read_bytes() == data:
             rep.fresh.append(out_rel)
         else:
             _write_atomic(dest, data)
             (rep.from_cache if origin == "cache" else rep.built).append(out_rel)
+            wrote_now = True
 
         seen_outputs[out_rel] = {
             "src": src.relative_to(root).as_posix(),
@@ -225,6 +318,32 @@ def build_assets(root: Path, profile: str = "full", check: bool = False) -> Asse
             "transform": f"{transform}@{TRANSFORMS[transform]}",
             "profile": profile,
         }
+
+        if meta_rel:
+            # Валидация лупа/совместимости + метаданные (mov_meta@1) — контракт
+            # для эмиттера Movie-образов. Ошибки валидации = красная сборка.
+            meta_dest = out_root / meta_rel
+            if wrote_now or not meta_dest.is_file():
+                v_errors, v_warnings, summary = videomod.validate_output(
+                    dest, extra["opts"], video_tmp, file_budget_mb=file_budget)
+                rep.warnings.extend(v_warnings)
+                if v_errors:
+                    rep.errors.extend(v_errors)
+                    continue
+                meta = videomod.build_meta(
+                    out_rel, extra["opts"], summary,
+                    src.relative_to(root).as_posix(), src_hash,
+                    seen_outputs[out_rel]["out_hash"],
+                    f"{transform}@{TRANSFORMS[transform]}", profile)
+                _write_atomic(meta_dest, (json.dumps(
+                    meta, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+            seen_outputs[meta_rel] = {
+                "src": src.relative_to(root).as_posix(),
+                "src_hash": src_hash,
+                "out_hash": _b3_bytes(meta_dest.read_bytes()),
+                "transform": f"mov_meta@{TRANSFORMS[transform]}",
+                "profile": profile,
+            }
 
     manifest_path = root / ".vncache" / MANIFEST
     old_manifest: dict = {}
@@ -251,7 +370,14 @@ def build_assets(root: Path, profile: str = "full", check: bool = False) -> Asse
 
     # Точечная очистка: выходы прошлого манифеста, исчезнувшие из текущего,
     # плюс опустевшие каталоги (генерат не должен ссылаться в пустоту).
-    for orphan in sorted(set(old_manifest) - set(seen_outputs)):
+    # При only_transforms чужие ветки не трогаем — ни очисткой, ни манифестом.
+    def _branch(info: dict) -> str:
+        return (info.get("transform") or "@").split("@")[0]
+
+    candidates = set(old_manifest) - set(seen_outputs)
+    if effective_only:
+        candidates = {o for o in candidates if _branch(old_manifest[o]) in effective_only}
+    for orphan in sorted(candidates):
         p = out_root / orphan
         if p.is_file():
             p.unlink()
@@ -261,8 +387,14 @@ def build_assets(root: Path, profile: str = "full", check: bool = False) -> Asse
                 parent.rmdir()
                 parent = parent.parent
 
+    final_outputs = dict(seen_outputs)
+    if effective_only:
+        for out_rel, info in old_manifest.items():
+            if _branch(info) not in effective_only and out_rel not in final_outputs:
+                final_outputs[out_rel] = info
+
     _write_atomic(manifest_path, (json.dumps(
-        {"schema": "assets_manifest@1", "outputs": seen_outputs},
+        {"schema": "assets_manifest@1", "outputs": final_outputs},
         ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8"))
     return rep
 

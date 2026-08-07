@@ -64,10 +64,10 @@ def doctor():
     sys.exit(run_doctor())
 
 
-def _assets_build(root, profile: str):
+def _assets_build(root, profile: str, only_transforms: set[str] | None = None):
     from .assets.pipeline import build_assets
 
-    res = build_assets(root, profile=profile)
+    res = build_assets(root, profile=profile, only_transforms=only_transforms)
     for w in res.warnings:
         click.secho(f"warning: {w}", fg="yellow")
     if res.errors:
@@ -169,24 +169,11 @@ def _loc_import(root: Path):
         click.echo(f"tl: {len(lrep.changed)} файлов обновлено")
 
 
-def _dir_size(path: Path) -> int:
-    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.is_dir() else 0
-
-
 def _check_budgets(root: Path):
     """Размер-бюджеты (G19): превышение = красная сборка, а не сюрприз в релизе."""
-    from .repo import load_project
+    from .release import budget_failures
 
-    budgets = load_project(root).get("budgets") or {}
-    failures = []
-    if "assets_total_mb" in budgets:
-        actual = _dir_size(root / "game" / "assets") / (1024 * 1024)
-        if actual > budgets["assets_total_mb"]:
-            failures.append(f"game/assets: {actual:.1f} МБ > бюджета {budgets['assets_total_mb']} МБ")
-    if "generated_total_kb" in budgets:
-        actual = _dir_size(root / "game" / "generated") / 1024
-        if actual > budgets["generated_total_kb"]:
-            failures.append(f"game/generated: {actual:.0f} КБ > бюджета {budgets['generated_total_kb']} КБ")
+    failures = budget_failures(root)
     if failures:
         for f in failures:
             click.secho(f"бюджет: {f}", fg="red")
@@ -577,6 +564,90 @@ def assets_watch(profile: str):
         watch(root, on_assets, lambda: None)
     except KeyboardInterrupt:
         pass
+
+
+# ── vn assets video (ADR-0006) ────────────────────────────────────────────────
+
+@assets.group("video")
+def assets_video():
+    """Видео-трек: video_src -> VP9/WebM-лупы в game/assets/mov (ADR-0006)."""
+
+
+@assets_video.command("build")
+@click.option("--profile", type=click.Choice(["full", "draft"]), default="full",
+              help="draft — быстрый низкокачественный энкод для итераций.")
+def assets_video_build(profile: str):
+    """Собрать только видео-ветку (инкрементально, с loop-валидацией и meta.json)."""
+    _assets_build(_root(), profile, only_transforms={"video2webm"})
+
+
+@assets_video.command("validate")
+@click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path))
+def assets_video_validate(paths: tuple):
+    """Строгая проверка .webm: кодек/пиксели/размеры/fps/луп/бюджет.
+
+    Без аргументов проверяются все собранные game/assets/mov/**."""
+    from .assets import video as videomod
+    from .repo import load_project
+
+    root = _root()
+    if paths:
+        targets = [Path(p).resolve() for p in paths]
+    else:
+        mov = root / "game" / "assets" / "mov"
+        targets = sorted(mov.rglob("*.webm")) if mov.is_dir() else []
+    if not targets:
+        click.echo("видео нет: положите сырцы в assets_src/video_src/<group>/ и "
+                   "выполните vn assets video build")
+        return
+    file_budget = (load_project(root).get("budgets") or {}).get("video_file_mb")
+    workdir = root / ".vncache" / "video-tmp"
+    n_err = 0
+    for p in targets:
+        meta_path = p.with_name(p.name + videomod.META_SUFFIX)
+        opts = dict(videomod.DEFAULT_OPTS)
+        if meta_path.is_file():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            opts["loop"] = meta.get("loop", True)
+            opts["keep_audio"] = meta.get("keep_audio", False)
+        try:
+            errors, warnings, s = videomod.validate_output(p, opts, workdir,
+                                                           file_budget_mb=file_budget)
+        except videomod.VideoError as e:
+            _fail(str(e))
+        for w in warnings:
+            click.secho(f"warning: {w}", fg="yellow")
+        for e in errors:
+            click.secho(f"error: {e}", fg="red")
+        n_err += len(errors)
+        if not errors:
+            seam = f", стык {s['loop_seam']}" if s.get("loop_seam") is not None else ""
+            click.secho(f" ✓ {p.name}: {s['width']}x{s['height']} {s['fps']}fps "
+                        f"{s['duration_s']}c, {s['size_bytes'] / 1024 / 1024:.1f} МБ{seam}",
+                        fg="green")
+    if n_err:
+        _fail(f"video validate: {n_err} ошибок")
+    click.secho(f"video validate: OK ({len(targets)} файлов)", fg="green")
+
+
+@assets_video.command("inspect")
+@click.argument("path", type=click.Path(exists=True, path_type=Path))
+def assets_video_inspect(path: Path):
+    """Свойства видео + метаданные конвейера + провенанс (если есть)."""
+    from .assets import video as videomod
+
+    try:
+        s = videomod.summarize(Path(path))
+    except videomod.VideoError as e:
+        _fail(str(e))
+    for k, v in s.items():
+        click.echo(f"{k:>12}: {v}")
+    for suffix, label in ((videomod.META_SUFFIX, "meta"),
+                          (".provenance.json", "provenance")):
+        side = Path(path).with_name(Path(path).name + suffix)
+        if side.is_file():
+            click.secho(f"--- {label}: {side.name} ---", fg="cyan")
+            click.echo(side.read_text(encoding="utf-8").strip())
 
 
 def _sync_report(rep, ok_label: str):

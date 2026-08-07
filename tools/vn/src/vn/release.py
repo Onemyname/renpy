@@ -13,6 +13,38 @@ from .repo import load_project, load_yaml
 MANIFEST_REL = "ci/release-manifest.json"
 
 
+def _dir_size(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.is_dir() else 0
+
+
+def budget_failures(root: Path) -> list[str]:
+    """Размер-бюджеты (G19; видео-бюджеты — ADR-0006). Пустой список = всё в рамках.
+    Единая точка: и vn build, и vn release validate проверяют одно и то же."""
+    budgets = load_project(root).get("budgets") or {}
+    failures: list[str] = []
+    assets = root / "game" / "assets"
+    if "assets_total_mb" in budgets:
+        actual = _dir_size(assets) / (1024 * 1024)
+        if actual > budgets["assets_total_mb"]:
+            failures.append(f"game/assets: {actual:.1f} МБ > бюджета {budgets['assets_total_mb']} МБ")
+    if "generated_total_kb" in budgets:
+        actual = _dir_size(root / "game" / "generated") / 1024
+        if actual > budgets["generated_total_kb"]:
+            failures.append(f"game/generated: {actual:.0f} КБ > бюджета {budgets['generated_total_kb']} КБ")
+    mov = assets / "mov"
+    if "video_total_mb" in budgets:
+        actual = _dir_size(mov) / (1024 * 1024)
+        if actual > budgets["video_total_mb"]:
+            failures.append(f"game/assets/mov: {actual:.1f} МБ > бюджета {budgets['video_total_mb']} МБ")
+    if "video_file_mb" in budgets and mov.is_dir():
+        for f in sorted(mov.rglob("*.webm")):
+            size_mb = f.stat().st_size / (1024 * 1024)
+            if size_mb > budgets["video_file_mb"]:
+                failures.append(f"{f.relative_to(root).as_posix()}: {size_mb:.1f} МБ > "
+                                f"бюджета {budgets['video_file_mb']} МБ на файл")
+    return failures
+
+
 @dataclass
 class ReleaseReport:
     added_chapters: list[str] = field(default_factory=list)

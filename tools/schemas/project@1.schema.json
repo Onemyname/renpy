@@ -18,7 +18,9 @@
       "properties": {
         "assets_total_mb": {"type": "number", "minimum": 0},
         "generated_total_kb": {"type": "number", "minimum": 0},
-        "cold_start_s": {"type": "number", "minimum": 0}
+        "cold_start_s": {"type": "number", "minimum": 0},
+        "video_total_mb": {"type": "number", "minimum": 0, "description": "Суммарный бюджет game/assets/mov (ADR-0006)"},
+        "video_file_mb": {"type": "number", "minimum": 0, "description": "Бюджет одного видео-файла (ADR-0006)"}
       },
       "additionalProperties": false
     }

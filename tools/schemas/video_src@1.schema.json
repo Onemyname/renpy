@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/video_src@1",
+  "title": "video_src@1 — опции энкода видео-сырца (assets_src/video_src/**/<name>.video.yaml, ADR-0006)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "video_src@1"},
+    "loop": {"type": "boolean", "description": "true (дефолт) = луп: валидируется стык первого/последнего кадра, Movie эмитится с loop=True"},
+    "keep_audio": {"type": "boolean", "description": "Оставить аудиодорожку (Opus 96k); по умолчанию звук вырезается — лупы немые"},
+    "fps": {"type": ["number", "null"], "exclusiveMinimum": 0, "description": "Принудительный fps (фильтр fps=); null = fps источника"},
+    "max_height": {"type": ["integer", "null"], "minimum": 16, "description": "Потолок высоты production-энкода (даунскейл с сохранением пропорций); по умолчанию 1080"},
+    "crf": {"type": ["integer", "null"], "minimum": 4, "maximum": 63, "description": "VP9 CRF production-пресета; null = 30"}
+  },
+  "required": ["schema"],
+  "additionalProperties": false
+}

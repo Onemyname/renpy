@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/mov_meta@1",
+  "title": "mov_meta@1 — метаданные собранного видео (game/assets/mov/**/<name>.webm.meta.json, генерат)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "mov_meta@1"},
+    "id": {"type": "string", "pattern": "^mov/[a-z0-9_/]+$"},
+    "loop": {"type": "boolean"},
+    "keep_audio": {"type": "boolean"},
+    "width": {"type": "integer", "minimum": 2},
+    "height": {"type": "integer", "minimum": 2},
+    "fps": {"type": "number", "exclusiveMinimum": 0},
+    "duration_s": {"type": "number", "exclusiveMinimum": 0},
+    "size_bytes": {"type": "integer", "minimum": 1},
+    "loop_seam": {"type": ["number", "null"], "description": "RMS-разница первого/последнего кадров (0..255); null = не луп или кадры не извлеклись"},
+    "src": {"type": "string", "description": "Путь сырца относительно корня репозитория"},
+    "src_hash": {
+      "type": "object",
+      "properties": {
+        "algo": {"const": "blake3"},
+        "hex": {"type": "string", "pattern": "^[0-9a-f]{16,64}$"}
+      },
+      "required": ["algo", "hex"],
+      "additionalProperties": false
+    },
+    "out_hash": {
+      "type": "object",
+      "properties": {
+        "algo": {"const": "blake3"},
+        "hex": {"type": "string", "pattern": "^[0-9a-f]{16,64}$"}
+      },
+      "required": ["algo", "hex"],
+      "additionalProperties": false
+    },
+    "transform": {"type": "string"},
+    "profile": {"enum": ["full", "draft"]}
+  },
+  "required": ["schema", "id", "loop", "width", "height", "fps", "duration_s", "size_bytes", "transform", "profile"],
+  "additionalProperties": false
+}
