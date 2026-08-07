@@ -191,6 +191,11 @@ screen preferences():
 screen confirm(message, yes_action, no_action):
     modal True
     zorder 200
+    # QA-автопилот: модальные подтверждения (в т.ч. предупреждение save-токенов
+    # «сейв с другого устройства» при загрузке фикстур корпуса на CI) отвечают «Да»
+    # сами — иначе прогон висит до таймаута. Вне автопилота — no-op.
+    if vn_qa.autopilot_active():
+        timer 0.8 action yes_action repeat True
     add Solid("#00000088")
     frame:
         xalign 0.5
