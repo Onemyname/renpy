@@ -102,3 +102,62 @@ def test_pseudo_generates_expanded_strings(tmp_path):
     import_translations(root)                     # pseudo не в languages -> не поставляется
     pseudo_cov = report(root).coverage["pseudo"]
     assert pseudo_cov["translated"] == pseudo_cov["total"]
+
+
+def test_obsolete_entry_resurrects(tmp_path):
+    """Вернувшаяся строка переоткрывается (polib: obsolete — атрибут, не флаг)."""
+    root = _mk_loc_root(tmp_path)
+    extract(root)
+    ledger_path = root / "loc" / "ledger" / "ch01.json"
+    original = ledger_path.read_text(encoding="utf-8")
+    ledger = json.loads(original)
+    del ledger["says"]["ch01_s010_0002"]
+    ledger_path.write_text(json.dumps(ledger, ensure_ascii=False), encoding="utf-8")
+    extract(root)
+    po = polib.pofile(str(root / "loc" / "po" / "en" / "ch01.po"))
+    assert {e.msgctxt: e.obsolete for e in po}["ch01_s010_0002"]
+
+    ledger_path.write_text(original, encoding="utf-8")   # строка вернулась
+    extract(root)
+    po = polib.pofile(str(root / "loc" / "po" / "en" / "ch01.po"))
+    assert not {e.msgctxt: e.obsolete for e in po}["ch01_s010_0002"]
+    rep = extract(root)                                   # и extract снова идемпотентен
+    assert rep.changed == []
+
+
+def test_import_validates_markup_and_escapes(tmp_path):
+    root = _mk_loc_root(tmp_path)
+    extract(root)
+    po_path = root / "loc" / "po" / "en" / "ch01.po"
+    po = polib.pofile(str(po_path))
+    for e in po:
+        if e.msgctxt == "ch01_s010_0001":
+            e.msgstr = 'He said "stop"\nnow {b}bold'      # кавычки + \n + битый тег
+    po.save()
+    rep = import_translations(root)
+    assert any("незакрытые теги" in x for x in rep.errors)
+
+    po = polib.pofile(str(po_path))
+    for e in po:
+        if e.msgctxt == "ch01_s010_0001":
+            e.msgstr = 'He said "stop"\nnow {b}bold{/b}'
+    po.save()
+    rep = import_translations(root)
+    assert rep.errors == []
+    dlg = (root / "game" / "tl" / "en" / "dialogue_ch01.rpy").read_text(encoding="utf-8")
+    assert 'mira "He said \\"stop\\"\\nnow {b}bold{/b}"' in dlg
+
+
+def test_pseudo_delivered_to_game_tl(tmp_path):
+    """Псевдолокализация обязана доезжать до game/tl (иначе QA-прогон ложно-зелёный)."""
+    root = _mk_loc_root(tmp_path)
+    pseudo(root)
+    import_translations(root)
+    assert (root / "game" / "tl" / "pseudo" / "dialogue_ch01.rpy").is_file()
+
+
+def test_pseudo_preserves_interpolations(tmp_path):
+    from vn.loc.po import _pseudoize
+
+    assert "[name]" in _pseudoize("Привет, [name]! {b}Да{/b}")
+    assert "{b}" in _pseudoize("Привет, [name]! {b}Да{/b}")

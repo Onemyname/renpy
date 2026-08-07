@@ -37,12 +37,29 @@ init -999 python in vn:
 
     # ── Владение паками (G9/C14) ─────────────────────────────────────────────
     class _PackRegistry(object):
-        def owned(self, pack_id):
-            # Фаза 3: Steam ownership-check после инициализации (label splashscreen).
-            return pack_id == "core"
+        """Гейт владения — ЛОГИЧЕСКИЙ (наличие .rpa ничем не защищено, G9).
+        Установленность — по VN_PACKS (генерат); владение — через провайдера:
+        Steam ownership-check подключается set_ownership_provider после
+        инициализации Steam (label splashscreen). Без провайдера установленный
+        пак считается купленным (dev/DRM-free поставка)."""
+
+        def __init__(self):
+            self._provider = None
+
+        def set_ownership_provider(self, fn):
+            self._provider = fn
 
         def installed(self, pack_id):
-            return pack_id == "core"
+            return pack_id == "core" or pack_id in getattr(renpy.store, "VN_PACKS", {})
+
+        def owned(self, pack_id):
+            if pack_id == "core":
+                return True
+            if not self.installed(pack_id):
+                return False
+            if self._provider is not None:
+                return bool(self._provider(pack_id))
+            return True
 
     pack_registry = _PackRegistry()
 
@@ -69,7 +86,7 @@ init -999 python in vn_qa:
         """Каждый тик: скриншот средствами движка + продвижение диалога.
         VN_AUTOPILOT_SAVE_AT=N: на тике N создаётся сейв (фикстуры корпуса, G5/G6)."""
         shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
-        n = getattr(renpy.store, "_vn_ap_shot", 0)       # "_"-префикс: не попадает в сейв
+        n = getattr(renpy.store, "_vn_ap_shot", 0)       # служебный счётчик автопилота
         renpy.store._vn_ap_shot = n + 1
         if n == 0 and shots_dir:
             # Cold start (G19): init-фаза -> первая интеракция

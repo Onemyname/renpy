@@ -141,16 +141,21 @@ def _emit_menus(menus: dict, strings: dict, languages: list, sources) -> str:
 
 def _emit_snapshot(var_docs: list[tuple[str, dict]], sources) -> str:
     pairs = []
+    stores = set()
     for _rel, doc in sorted(var_docs):
         if doc["store"] == "persistent":
             continue    # persistent живёт своим механизмом, в снапшот не входит
+        stores.add(doc["store"])
         for name in sorted(doc.get("vars") or {}):
             pairs.append((doc["store"], name))
     return _header(sources) + (
         "init -970 python in vn_state:\n"
         "    # Единый маппинг stores<->dict (G5): миграции в игре и внешний тулинг\n"
         "    # исполняют одну и ту же цепочку над этим снапшотом.\n"
+        "    # snapshot() читает ВСЕ переменные управляемых stores (retired-переменные\n"
+        "    # старых сейвов видимы миграциям), apply — только объявленные.\n"
         f"    SNAPSHOT_VARS = {tuple(pairs)!r}\n"
+        f"    SNAPSHOT_STORES = {tuple(sorted(stores))!r}\n"
     )
 
 
@@ -234,70 +239,157 @@ def _emit_overrides(renames: dict, sources) -> str:
 
 # ── Сбор контента фазы 1 ─────────────────────────────────────────────────────
 
-def _collect_chapters(root: Path, src, registry, errors: list[str]):
-    """Читает content/chapters/: метаданные глав и SceneUnit'ы (без анализа rpy)."""
+# API-уровень фасада vn.* (зеркало framework/00_core/030_flow.rpy: API_LEVEL);
+# манифесты паков требуют диапазон api_level — несовместимый пак отключается (G9).
+VN_API_LEVEL = 1
+
+
+def _collect_packs(root: Path, src, registry, errors: list[str]) -> dict[str, dict]:
+    """packs/<id>/manifest.yaml: валидация + api_level против фасада (G9/G10)."""
+    packs: dict[str, dict] = {}
+    packs_dir = root / "packs"
+    if not packs_dir.is_dir():
+        return packs
+    for d in sorted(p for p in packs_dir.iterdir() if p.is_dir()):
+        mf = d / "manifest.yaml"
+        if not mf.is_file():
+            errors.append(f"packs/{d.name}: нет manifest.yaml (pack_manifest@1)")
+            continue
+        rel, _digest = src(mf)
+        manifest = load_yaml(mf)
+        m_errs = registry.validate(manifest, rel)
+        if m_errs:
+            errors.extend(m_errs)
+            continue
+        if manifest["id"] != d.name:
+            errors.append(f"{rel}: id ({manifest['id']}) != имени папки ({d.name})")
+            continue
+        api = manifest["api_level"]
+        if not (api["min"] <= VN_API_LEVEL < api["below"]):
+            errors.append(
+                f"{rel}: api_level [{api['min']}, {api['below']}) несовместим с фасадом "
+                f"vn.* (текущий {VN_API_LEVEL}) — пак не собирается (G9)"
+            )
+            continue
+        core_req = (manifest.get("requires") or {}).get("core")
+        if core_req and not _semver_in_range(_current_version(root), core_req):
+            errors.append(
+                f"{rel}: requires.core {core_req!r} несовместим с версией ядра "
+                f"{_current_version(root)} — пак не собирается (G9)"
+            )
+            continue
+        packs[manifest["id"]] = manifest
+    return packs
+
+
+def _current_version(root: Path) -> str:
+    return load_project(root)["version"]
+
+
+def _semver_in_range(version: str, spec: str) -> bool:
+    """Диапазоны вида '>=0.1.0 <1' / '==1.2.3' (пробел = И). Неизвестный оператор
+    трактуется строго (False) — совместимость не угадывается."""
+    def parse(v: str):
+        return tuple(int(x) for x in (v.split(".") + ["0", "0"])[:3])
+
+    v = parse(version)
+    for clause in spec.split():
+        for op in (">=", "<=", "==", "<", ">"):
+            if clause.startswith(op):
+                bound = parse(clause[len(op):])
+                ok = {"<": v < bound, "<=": v <= bound, ">": v > bound,
+                      ">=": v >= bound, "==": v == bound}[op]
+                if not ok:
+                    return False
+                break
+        else:
+            return False
+    return True
+
+
+def _collect_chapters(root: Path, src, registry, errors: list[str],
+                      packs: dict[str, dict] | None = None):
+    """Главы ядра (content/chapters/) и паков (packs/<id>/chapters/): принадлежность
+    паку — по расположению (C10), поле chapter.yaml pack: не существует."""
     chapters: list[dict] = []
     units: list[sc.SceneUnit] = []
-    chapters_dir = root / "content" / "chapters"
-    if not chapters_dir.is_dir():
-        return chapters, units
-    for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
-        m = CHAPTER_DIR_RE.match(d.name)
-        if not m:
-            errors.append(f"content/chapters/{d.name}: имя папки вне конвенции (naming.md)")
+    zones = [("core", root / "content" / "chapters")]
+    for pack_id in sorted(packs or {}):
+        zones.append((pack_id, root / "packs" / pack_id / "chapters"))
+    for pack_id, chapters_dir in zones:
+        if not chapters_dir.is_dir():
             continue
-        ch_id = f"ch{m.group(1)}"
-        ch_yaml = d / "chapter.yaml"
-        if not ch_yaml.is_file():
-            errors.append(f"content/chapters/{d.name}: нет chapter.yaml")
-            continue
-        rel, _digest = src(ch_yaml)
-        meta = load_yaml(ch_yaml)
-        errs = registry.validate(meta, rel)
-        if errs:
-            errors.extend(errs)
-            continue
-        chapters.append(meta)
-
-        scenes_dir = d / "scenes"
-        seen_short: dict[str, str] = {}
-        if scenes_dir.is_dir():
-            for f in sorted(scenes_dir.glob("*.scene.yaml")):
-                sm = SCENE_YAML_RE.match(f.name)
-                if not sm:
-                    errors.append(f"{rel}: файл сцены вне конвенции: {f.name}")
-                    continue
-                if f"s{sm.group(1)}" in seen_short:
-                    errors.append(
-                        f"content/chapters/{d.name}/scenes: дубликат id s{sm.group(1)}: "
-                        f"{seen_short[f's{sm.group(1)}']} и {f.name} — одна из сцен молча "
-                        f"выпала бы из генерата"
-                    )
-                    continue
-                seen_short[f"s{sm.group(1)}"] = f.name
-                yaml_rel, _d1 = src(f)
-                smeta = load_yaml(f)
-                s_errs = registry.validate(smeta, yaml_rel)
-                if s_errs:
-                    errors.extend(s_errs)
-                    continue
-                rpy = f.parent / (f.name[: -len(".yaml")] + ".rpy")
-                if not rpy.is_file():
-                    errors.append(f"{yaml_rel}: нет парного .scene.rpy (G3)")
-                    continue
-                rpy_rel, _d2 = src(rpy)
-                short_id = f"s{sm.group(1)}"
-                units.append(sc.SceneUnit(
-                    full_id=f"{ch_id}_{short_id}",
-                    chapter_id=ch_id,
-                    short_id=short_id,
-                    yaml_rel=yaml_rel,
-                    rpy_rel=rpy_rel,
-                    meta=smeta,
-                    rpy_text=rpy.read_text(encoding="utf-8"),
-                    analysis={},
-                ))
+        for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
+            _collect_chapter_dir(root, src, registry, errors, chapters, units, d, pack_id)
     return chapters, units
+
+
+def _collect_chapter_dir(root: Path, src, registry, errors, chapters, units, d, pack_id):
+    zone = d.parent.relative_to(root).as_posix()
+    m = CHAPTER_DIR_RE.match(d.name)
+    if not m:
+        errors.append(f"{zone}/{d.name}: имя папки вне конвенции (naming.md)")
+        return
+    ch_id = f"ch{m.group(1)}"
+    if any(c["id"] == ch_id for c in chapters):
+        errors.append(f"{zone}/{d.name}: id {ch_id} уже занят другой главой (ядро/пак)")
+        return
+    ch_yaml = d / "chapter.yaml"
+    if not ch_yaml.is_file():
+        errors.append(f"{zone}/{d.name}: нет chapter.yaml")
+        return
+    rel, _digest = src(ch_yaml)
+    meta = load_yaml(ch_yaml)
+    errs = registry.validate(meta, rel)
+    if errs:
+        errors.extend(errs)
+        return
+    if meta["id"] != ch_id:
+        errors.append(f"{rel}: id ({meta['id']}) != префиксу папки ({ch_id}) — "
+                      f"entry_label разошёлся бы с метками сцен")
+        return
+    meta["pack"] = pack_id    # принадлежность по расположению (C10)
+    chapters.append(meta)
+
+    scenes_dir = d / "scenes"
+    seen_short: dict[str, str] = {}
+    if not scenes_dir.is_dir():
+        return
+    for f in sorted(scenes_dir.glob("*.scene.yaml")):
+        sm = SCENE_YAML_RE.match(f.name)
+        if not sm:
+            errors.append(f"{rel}: файл сцены вне конвенции: {f.name}")
+            continue
+        if f"s{sm.group(1)}" in seen_short:
+            errors.append(
+                f"{zone}/{d.name}/scenes: дубликат id s{sm.group(1)}: "
+                f"{seen_short[f's{sm.group(1)}']} и {f.name} — одна из сцен молча "
+                f"выпала бы из генерата"
+            )
+            continue
+        seen_short[f"s{sm.group(1)}"] = f.name
+        yaml_rel, _d1 = src(f)
+        smeta = load_yaml(f)
+        s_errs = registry.validate(smeta, yaml_rel)
+        if s_errs:
+            errors.extend(s_errs)
+            continue
+        rpy = f.parent / (f.name[: -len(".yaml")] + ".rpy")
+        if not rpy.is_file():
+            errors.append(f"{yaml_rel}: нет парного .scene.rpy (G3)")
+            continue
+        rpy_rel, _d2 = src(rpy)
+        short_id = f"s{sm.group(1)}"
+        units.append(sc.SceneUnit(
+            full_id=f"{ch_id}_{short_id}",
+            chapter_id=ch_id,
+            short_id=short_id,
+            yaml_rel=yaml_rel,
+            rpy_rel=rpy_rel,
+            meta=smeta,
+            rpy_text=rpy.read_text(encoding="utf-8"),
+            analysis={},
+        ))
 
 
 # ── Оркестрация ───────────────────────────────────────────────────────────────
@@ -398,8 +490,9 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     # Локации
     locations = load_locations(root, src, registry, errors)
 
-    # Главы и сцены (фаза 1)
-    chapters, units = _collect_chapters(root, src, registry, errors)
+    # Паки (G9/G10) и главы: ядро + packs/<id>/chapters
+    packs = _collect_packs(root, src, registry, errors)
+    chapters, units = _collect_chapters(root, src, registry, errors, packs)
     if errors:
         raise CompileError(f"{len(errors)} ошибок:\n" + "\n".join(errors))
 
@@ -473,7 +566,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "state/migrations.gen.rpy": _emit_migrations(migrations, [proj_src]),
         "registry/audio.gen.rpy": _emit_audio(audio_docs, audio_sources or [proj_src]),
         "registry/chapters.gen.rpy": sc.emit_chapter_registry(
-            sorted(chapters, key=lambda c: c["id"]), _header([proj_src])
+            sorted(chapters, key=lambda c: c["id"]), packs, _header([proj_src])
         ),
         "registry/scenes.gen.rpy": sc.emit_scene_registry(units, _header([proj_src])),
         "registry/characters.gen.rpy": sc.emit_characters(char_docs, _header(char_sources or [proj_src])),

@@ -1,0 +1,35 @@
+#
+msgid ""
+msgstr ""
+"Language: pseudo\n"
+"Content-Type: text/plain; charset=utf-8\n"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch01.title"
+msgid "Глава 1. Пробуждение"
+msgstr "[[Глąвą 1. Прǫбųждęнįę~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch90.title"
+msgid "Эпизод: Пляж (DLC)"
+msgstr "[[Эпįзǫд: Пляж (DLC)~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.locations.rooftop.title"
+msgid "Крыша"
+msgstr "[[Крышą~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.locations.school_gate.title"
+msgid "Школьные ворота"
+msgstr "[[Шкǫльныę вǫрǫтą~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.packs.ep_beach.title"
+msgid "Пляжный эпизод"
+msgstr "[[Пляжный эпįзǫд~~~~~]"
+
+#. имя персонажа
+msgctxt "char:mira"
+msgid "Мира"
+msgstr "[[Мįрą~~]"

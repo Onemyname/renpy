@@ -103,6 +103,16 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
                     f"межсценовые переходы только через return \"<exit_id>\" + exits (C2)"
                 )
 
+    # Условные пункты меню запрещены: движок фильтрует их ДО screen choice,
+    # и перевод по runtime-индексу (G8) сдвинулся бы на соседние пункты.
+    for menu in a.get("menus", []):
+        for i, cond in enumerate(menu.get("conditions", [])):
+            if cond not in ("True", "None"):
+                rep.errors.append(
+                    f"{src}:{menu['line']}: условный пункт меню #{i} ({cond!r}) — "
+                    f"запрещено (ломает перевод по индексу); используйте ветвление сцены"
+                )
+
     exits: dict = unit.meta.get("exits") or {}
     returned: set[str | None] = set()
     for r in a["returns"]:
@@ -228,22 +238,26 @@ def emit_scene(unit: SceneUnit, dispatch: dict, audio_ids: set[str],
     return "\n".join(lines)
 
 
-def emit_chapter_registry(chapters: list[dict], header: str) -> str:
+def emit_chapter_registry(chapters: list[dict], packs: dict, header: str) -> str:
     rows = tuple(
         {
             "id": c["id"],
             "title_key": c["title_key"],
             "entry_label": f"{c['id']}_{c['entry_scene']}",
             "status": c["status"],
-            "pack": "core",
+            "pack": c.get("pack", "core"),
         }
         for c in chapters
     )
+    pack_rows = {
+        pid: {"kind": m["kind"], "version": m["version"]} for pid, m in sorted(packs.items())
+    }
     return header + (
         "init offset = -100\n\n"
         "# Chapter Registry: читается vn_registry.chapters() (framework/00_core/010_registry.rpy).\n"
-        "# title_key показывается как есть до подключения локализации (фаза 2, G8).\n"
-        f"define VN_CHAPTERS = {rows!r}\n"
+        f"define VN_CHAPTERS = {rows!r}\n\n"
+        "# Установленные паки (G9): владение проверяет vn.pack_registry.owned().\n"
+        f"define VN_PACKS = {pack_rows!r}\n"
     )
 
 
@@ -287,6 +301,8 @@ screen chapter_select():
         vbox:
             spacing 12
             for ch in VN_CHAPTERS:
-                textbutton vn_loc.t(ch["title_key"]) action Start(ch["entry_label"])
+                # Владение паком — логический гейт (G9): непокупные главы не видны
+                if vn.pack_registry.owned(ch["pack"]):
+                    textbutton vn_loc.t(ch["title_key"]) action Start(ch["entry_label"])
         textbutton _("Назад") action Return()
 '''

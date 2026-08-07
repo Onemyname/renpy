@@ -115,14 +115,20 @@ def extract(root: Path) -> LocReport:
                     po.append(polib.POEntry(msgctxt=ctx, msgid=msgid, msgstr="",
                                             comment=comment))
                     dirty = True
-                elif e.msgid != msgid:
+                    continue
+                if e.obsolete:
+                    # Строка вернулась (восстановили сцену/пункт) — переоткрываем.
+                    e.obsolete = False
+                    dirty = True
+                if e.msgid != msgid:
                     # Исходник изменился: перевод остаётся, но помечается fuzzy.
                     e.msgid = msgid
                     if e.msgstr and "fuzzy" not in e.flags:
                         e.flags.append("fuzzy")
                     dirty = True
             for ctx, e in existing.items():
-                if ctx not in seen and "obsolete" not in e.flags:
+                if ctx not in seen and not e.obsolete:
+                    # polib: obsolete — атрибут записи, не флаг
                     e.obsolete = True
                     dirty = True
             if dirty or not po_path.is_file():
@@ -146,7 +152,41 @@ def _load_translations(root: Path, lang: str) -> dict[str, tuple[str, bool]]:
 
 
 def _rpy_str(s: str) -> str:
-    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return ('"' + s.replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\t", "\\t") + '"')
+
+
+_INTERP_RE = __import__("re").compile(r"\[([a-zA-Z_][a-zA-Z0-9_.]*)[^\]]*\]")
+_TAG_RE = __import__("re").compile(r"\{(/?)([a-zA-Z_#][a-zA-Z0-9_]*)[^{}]*\}")
+
+# Самозакрывающиеся текстовые теги Ren'Py — парного {/x} не требуют
+_SELF_CLOSING = {"w", "p", "nw", "fast", "done", "clear", "space", "vspace",
+                 "image", "#", "_"}
+
+
+def _validate_markup(msgid: str, msgstr: str) -> str | None:
+    """Битая Ren'Py-разметка в переводе всплывает у ИГРОКА при показе реплики —
+    ловим на импорте: парность {тегов} и совпадение набора [подстановок] с исходником."""
+    if msgstr.count("{") != msgstr.count("}") or msgstr.count("[") != msgstr.count("]"):
+        return "непарные скобки {}/[]"
+    stack: list[str] = []
+    for m in _TAG_RE.finditer(msgstr):
+        closing, name = m.group(1), m.group(2)
+        if name in _SELF_CLOSING:
+            continue
+        if closing:
+            if not stack or stack[-1] != name:
+                return f"незакрытый/лишний тег {{{closing}{name}}}"
+            stack.pop()
+        else:
+            stack.append(name)
+    if stack:
+        return f"незакрытые теги: {', '.join('{%s}' % t for t in stack)}"
+    src_vars = sorted(_INTERP_RE.findall(msgid))
+    dst_vars = sorted(_INTERP_RE.findall(msgstr))
+    if src_vars != dst_vars:
+        return f"набор [подстановок] расходится с исходником: {src_vars} != {dst_vars}"
+    return None
 
 
 def import_translations(root: Path) -> LocReport:
@@ -154,6 +194,23 @@ def import_translations(root: Path) -> LocReport:
     (имена персонажей), данные меню/строк для рантайм-lookup (vn_loc)."""
     rep = LocReport()
     langs = _languages(root)
+    # pseudo доставляется наравне с языками (зеркально compile.py: VN_LANGUAGES)
+    if (root / "loc" / "po" / "pseudo").is_dir():
+        langs = langs + ["pseudo"]
+
+    # Валидация разметки переводов ДО генерации: битый тег не должен доехать до игрока
+    units_by_ctx = {ctx: msgid for rows in _units(root).values() for ctx, msgid, _c in rows}
+    for lang in langs:
+        if lang == "pseudo":
+            continue    # обрамляющие [·] псевдолокализации — намеренные
+        for ctx, (msgstr, fuzzy) in _load_translations(root, lang).items():
+            if fuzzy or ctx not in units_by_ctx:
+                continue
+            problem = _validate_markup(units_by_ctx[ctx], msgstr)
+            if problem:
+                rep.errors.append(f"po/{lang}: {ctx}: {problem}")
+    if rep.errors:
+        return rep
     tl_root = root / "game" / "tl"
     ledgers = _ledgers(root)
     strings = _strings(root)
@@ -238,6 +295,18 @@ def import_translations(root: Path) -> LocReport:
     return rep
 
 
+_KEEP_RE = __import__("re").compile(r"(\{[^{}]*\}|\[[^\[\]]*\])")
+
+
+def _pseudoize(s: str) -> str:
+    """Акцентирование текста, НЕ трогая {теги} и [подстановки] — иначе pseudo
+    ломал бы интерполяции и тестировал бы не UI, а краши."""
+    return "".join(
+        p if _KEEP_RE.fullmatch(p) else p.translate(PSEUDO_MAP)
+        for p in _KEEP_RE.split(s)
+    )
+
+
 def pseudo(root: Path) -> LocReport:
     """Псевдолокализация (QA переполнений UI): язык 'pseudo' с удлинением x1.4."""
     rep = LocReport()
@@ -248,10 +317,11 @@ def pseudo(root: Path) -> LocReport:
         po.metadata["Content-Type"] = "text/plain; charset=utf-8"
         po.metadata["Language"] = "pseudo"
         for ctx, msgid, comment in rows:
-            pad = "·" * max(2, int(len(msgid) * 0.4))
+            pad = "~" * max(2, int(len(msgid) * 0.4))
+            # "[[" — эскейп Ren'Py: голый "[" начал бы интерполяцию и уронил бы текст
             po.append(polib.POEntry(
                 msgctxt=ctx, msgid=msgid,
-                msgstr=f"[{msgid.translate(PSEUDO_MAP)}{pad}]",
+                msgstr=f"[[{_pseudoize(msgid)}{pad}]",
                 comment=comment,
             ))
         path = lang_dir / f"{domain}.po"

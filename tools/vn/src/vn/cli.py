@@ -128,6 +128,7 @@ def build(check: bool, profile: str):
             for rel in res.stale:
                 click.secho(f"устарело: {rel}", fg="red")
             _fail("генерат не свеж — выполните vn build")
+        _check_budgets(root)    # бюджеты G19 проверяются и в CI-режиме
         click.secho("check: генерат свеж", fg="green")
         return
     click.echo(
@@ -275,34 +276,54 @@ def package(packages: tuple, timeout_s: int):
     project = load_project(root)
     version = project["version"]
 
-    # 1) Перенос .rpyc прошлого релиза (G6): statement-имена — основа save-совместимости.
+    # 1) Полная сборка: генерат (.rpy) должен существовать ДО восстановления .rpyc
+    ctx = click.get_current_context()
+    ctx.invoke(build, check=False, profile="full")
+
+    # 2) Перенос .rpyc прошлого релиза (G6): кэш релиза — КАНОНИЧЕСКИЙ носитель
+    # statement-имён, локальные .rpyc таковым не являются -> восстановление
+    # С ПЕРЕЗАПИСЬЮ; движок при перекомпиляции изменённых .rpy перенесёт имена.
+    # Кэш покрывает весь game/ (framework-метки тоже попадают в сейвы/rollback).
+    def _semver_key(p: Path):
+        try:
+            return tuple(int(x) for x in p.name.split("."))
+        except ValueError:
+            return (0,)
+
     cache_root = root / "build" / "rpyc-cache"
-    caches = sorted(cache_root.iterdir(), key=lambda p: p.stat().st_mtime) if cache_root.is_dir() else []
+    caches = sorted((p for p in cache_root.iterdir() if p.is_dir()),
+                    key=_semver_key) if cache_root.is_dir() else []
     if caches:
-        restored = 0
         latest = caches[-1]
+        restored = 0
         for rpyc in latest.rglob("*.rpyc"):
             rel = rpyc.relative_to(latest)
-            target = root / "game" / "generated" / rel
-            if target.with_suffix(".rpy").is_file() and not target.is_file():
+            target = root / "game" / rel
+            if not target.with_suffix(".rpy").is_file():
+                # legacy-раскладка кэша (относительно game/generated/)
+                target = root / "game" / "generated" / rel
+            if target.with_suffix(".rpy").is_file():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(rpyc, target)
                 restored += 1
-        click.echo(f"rpyc-перенос: {restored} файлов из {latest.name} (G6)")
+        if restored == 0:
+            _fail(f"rpyc-перенос: кэш {latest.name} есть, но не восстановлено ни одного "
+                  f".rpyc — save-совместимость под угрозой (G6), сборка остановлена")
+        click.echo(f"rpyc-перенос: {restored} файлов из релиза {latest.name} (G6, с перезаписью)")
     else:
         click.echo("rpyc-перенос: кэша прошлых релизов нет (первый релиз)")
 
-    # 2) Полная сборка + компиляция движком (создаёт/обновляет .rpyc с переносом имён)
-    ctx = click.get_current_context()
-    ctx.invoke(build, check=False, profile="full")
+    # 3) Компиляция движком (обновляет .rpyc с переносом statement-имён)
     exe = sdk / ("renpy.exe" if sys.platform == "win32" else "renpy.sh")
     proc = subprocess.run([str(exe), str(root), "compile"], capture_output=True,
                           text=True, timeout=timeout_s)
     if proc.returncode != 0:
         _fail(f"renpy compile упал:\n{proc.stdout[-1500:]}\n{proc.stderr[-800:]}")
 
-    # 3) Дистрибутивы
+    # 4) Дистрибутивы: dest чистится — старые архивы не должны вкладываться в новые
     dest = root / "build" / "dist" / version
+    if dest.exists():
+        shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)
     cmd = [str(exe), str(sdk / "launcher"), "distribute", "--dest", str(dest)]
     for p in packages:
@@ -313,13 +334,13 @@ def package(packages: tuple, timeout_s: int):
     if proc.returncode != 0:
         _fail(f"distribute упал:\n{proc.stdout[-2000:]}\n{proc.stderr[-800:]}")
 
-    # 4) Кэш .rpyc этого релиза — для переноса имён в следующем (G6)
+    # 5) Кэш .rpyc этого релиза — для переноса имён в следующем (G6): весь game/
     save_dir = cache_root / version
     if save_dir.exists():
         shutil.rmtree(save_dir)
     n = 0
-    for rpyc in (root / "game" / "generated").rglob("*.rpyc"):
-        rel = rpyc.relative_to(root / "game" / "generated")
+    for rpyc in (root / "game").rglob("*.rpyc"):
+        rel = rpyc.relative_to(root / "game")
         target = save_dir / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(rpyc, target)
@@ -700,8 +721,10 @@ def save_corpus(add_name: str | None, timeout_s: int):
         if savedir.exists():
             shutil.rmtree(savedir)
         savedir.mkdir(parents=True)
-        # Имя слота с токеном локации (Ren'Py 8.5): renpy.load("1-1") найдёт его
+        # Имя слота с токеном локации зависит от версии SDK — кладём оба варианта,
+        # движок подхватит известный ему (renpy.load("1-1"))
         shutil.copy(fixture, savedir / "1-1-LT1.save")
+        shutil.copy(fixture, savedir / "1-1.save")
         shots = root / ".vncache" / "corpus"
         rc, timed_out = _autopilot_run(
             root, shots, {"VN_AUTOPILOT_LOAD": "1-1"}, timeout_s, savedir=savedir,
@@ -824,6 +847,9 @@ def _autopilot_run(root: Path, shots: Path, extra_env: dict, timeout_s: int,
 def test_smoke(picks: str, lang: str, timeout_s: int):
     """Автопрохождение игры автопилотом: авто-advance, авто-выбор, скриншоты движка."""
     root = _root()
+    if lang and not (root / "game" / "tl" / lang).is_dir():
+        _fail(f"языка {lang!r} нет в game/tl/ — выполните vn loc import "
+              f"(change_language молча показал бы исходный язык — ложно-зелёный прогон)")
     shots = root / ".vncache" / "smoke"
     returncode, timed_out = _autopilot_run(
         root, shots, {"VN_AUTOPILOT_PICKS": picks, "VN_AUTOPILOT_LANG": lang}, timeout_s
@@ -890,7 +916,69 @@ def release_changelog():
 
 
 release.command("steam", help="Steam-аплоад депотов (фаза 3: нужен аккаунт партнёра).")(_stub(3))
-_stub_group("pack", "Сборка DLC/voice-паков (раздел 6).", {"build": 3, "validate": 3})
+# ── vn pack ───────────────────────────────────────────────────────────────────
+
+@main.group()
+def pack():
+    """DLC/voice-паки (раздел 6, G9/G10)."""
+
+
+@pack.command("validate")
+def pack_validate():
+    """Манифесты паков: схема, api_level против фасада vn.*, структура."""
+    from .content.compile import VN_API_LEVEL, _collect_packs
+    from .schemas import SchemaRegistry
+
+    root = _root()
+    registry = SchemaRegistry(root / "tools" / "schemas")
+    errors: list[str] = []
+    inputs = {}
+
+    def src(p):
+        rel = p.relative_to(root).as_posix()
+        inputs[rel] = "-"
+        return rel, "-"
+
+    packs = _collect_packs(root, src, registry, errors)
+    for e in errors:
+        click.secho(f"error: {e}", fg="red")
+    if errors:
+        _fail(f"pack validate: {len(errors)} ошибок")
+    for pid, m in sorted(packs.items()):
+        click.echo(f" ✓ {pid}: {m['kind']} v{m['version']}, api_level "
+                   f"[{m['api_level']['min']}, {m['api_level']['below']}) (фасад {VN_API_LEVEL})")
+    click.secho(f"pack validate: OK ({len(packs)} паков)", fg="green")
+
+
+@pack.command("build")
+@click.argument("pack_id")
+def pack_build(pack_id: str):
+    """Содержимое Steam-депота пака: генерат его глав + манифест -> build/packs/<id>.zip.
+    Скрипты пака грузятся всегда (управлять загрузкой нельзя, G9) — гейт логический."""
+    import zipfile
+
+    root = _root()
+    manifest = root / "packs" / pack_id / "manifest.yaml"
+    if not manifest.is_file():
+        _fail(f"пака {pack_id!r} нет (packs/{pack_id}/manifest.yaml)")
+    from .repo import load_yaml
+    chapters = [d.name[:4] for d in sorted((root / "packs" / pack_id / "chapters").glob("ch*"))
+                if d.is_dir()]
+    gen = root / "game" / "generated"
+    out = root / "build" / "packs" / f"{pack_id}.zip"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    n = 0
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.write(manifest, f"packs/{pack_id}/manifest.yaml")
+        n += 1
+        for ch in chapters:
+            for f in sorted((gen / "scenes" / ch).glob("*")) if (gen / "scenes" / ch).is_dir() else []:
+                z.write(f, f"game/generated/scenes/{ch}/{f.name}")
+                n += 1
+    if not n:
+        _fail(f"pack build: у пака {pack_id!r} нет скомпилированных сцен — сначала vn build")
+    click.secho(f"pack build: OK — {out.relative_to(root).as_posix()} ({n} файлов, "
+                f"главы: {', '.join(chapters)})", fg="green")
 
 
 if __name__ == "__main__":

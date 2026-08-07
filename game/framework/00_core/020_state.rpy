@@ -19,17 +19,31 @@ init -999 python in vn_state:
     def current_schema():
         return getattr(renpy.store, "vn_save_schema", None)
 
-    # SNAPSHOT_VARS наполняет generated/state/snapshot.gen.rpy (init -970) из деклараций
-    # *.vars.yaml — единый маппинг stores<->dict для миграций в игре и внешнего тулинга (G5).
+    # SNAPSHOT_VARS/SNAPSHOT_STORES наполняет generated/state/snapshot.gen.rpy (init -970)
+    # из деклараций *.vars.yaml — единый маппинг stores<->dict (G5).
     SNAPSHOT_VARS = ()
+    SNAPSHOT_STORES = ()
+
+    _SIMPLE = (str, int, float, bool, list, dict, type(None))
 
     def snapshot():
-        """stores -> плоский dict простых типов (ключи 'store.var')."""
+        """stores -> плоский dict простых типов (ключи 'store.var').
+        Читаются ВСЕ не-'_' переменные управляемых stores, а не только объявленные:
+        переменная, удалённая из новой схемы, лежит в старом сейве и обязана быть
+        видима migrate(state) — иначе миграциям нечего переносить (слепое пятно G5)."""
         out = {}
-        for store_name, var in SNAPSHOT_VARS:
+        for store_name in SNAPSHOT_STORES:
             module = getattr(renpy.store, store_name, None)
-            if module is not None and hasattr(module, var):
-                out["%s.%s" % (store_name, var)] = getattr(module, var)
+            if module is None:
+                continue
+            for var, value in vars(module).items():
+                if var.startswith("_") or callable(value) or type(value).__name__ == "module":
+                    continue
+                if not isinstance(value, _SIMPLE):
+                    vn_log("snapshot: %s.%s пропущен (не-простой тип %s)"
+                           % (store_name, var, type(value).__name__))
+                    continue
+                out["%s.%s" % (store_name, var)] = value
         out["vn_save_schema"] = getattr(renpy.store, "vn_save_schema", None)
         return out
 

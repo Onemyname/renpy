@@ -41,12 +41,15 @@ init python:
                     entry["menu_markers"].append({"line": line, "source": src.strip()})
             elif cls == "Menu":
                 captions = []
+                conditions = []
                 for item in node.items:
-                    caption, _condition, block = item[0], item[1], item[2]
+                    caption, condition, block = item[0], item[1], item[2]
                     captions.append(caption)
+                    conditions.append(str(condition))
                     if block:
                         _vn_walk_ast(block, entry)
-                entry["menus"].append({"line": line, "items": captions})
+                entry["menus"].append({"line": line, "items": captions,
+                                       "conditions": conditions})
             elif cls == "If":
                 for _condition, block in node.entries:
                     _vn_walk_ast(block, entry)

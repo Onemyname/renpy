@@ -22,6 +22,7 @@ screen vn_debug_jump():
         text _("Состояние глав НЕ выставляется — переменные останутся текущими") size 24 color gui.idle_color
         vpgrid:
             cols 4
+            allow_underfull True
             spacing 12
             mousewheel True
             ymaximum 800

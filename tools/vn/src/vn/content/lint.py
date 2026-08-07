@@ -127,10 +127,14 @@ def lint(root: Path, layout: bool = True) -> LintReport:
             invalid.add(rel)
         docs[rel] = data if isinstance(data, dict) else {}
 
-    # ── 2. Структура глав ────────────────────────────────────────────────────
+    # ── 2. Структура глав: ядро + packs/*/chapters (C10) ────────────────────
     chapters: dict[str, dict] = {}   # ch_id -> {"scenes": set, "status": str}
-    chapters_dir = root / "content" / "chapters"
-    if chapters_dir.is_dir():
+    chapter_zones = [root / "content" / "chapters"]
+    if (root / "packs").is_dir():
+        chapter_zones += sorted((root / "packs").glob("*/chapters"))
+    for chapters_dir in chapter_zones:
+        if not chapters_dir.is_dir():
+            continue
         for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
             m = CHAPTER_DIR_RE.match(d.name)
             if not m:
@@ -188,10 +192,13 @@ def lint(root: Path, layout: bool = True) -> LintReport:
     for rel, data in docs.items():
         if rel in invalid or not rel.endswith(".scene.yaml") or data.get("schema") != "scene@1":
             continue
-        parts = Path(rel).parts   # content/chapters/<chdir>/scenes/<file>
-        if len(parts) < 4 or parts[1] != "chapters":
+        parts = Path(rel).parts   # content/chapters/... или packs/<id>/chapters/...
+        if "chapters" not in parts:
             continue
-        ch_id = parts[2][:4]
+        ch_dir_idx = parts.index("chapters") + 1
+        if len(parts) <= ch_dir_idx + 1:
+            continue
+        ch_id = parts[ch_dir_idx][:4]
         status = chapters.get(ch_id, {}).get("status", "draft")
         complain = rep.warn if status == "draft" else rep.error
         exits = data.get("exits") or {}
