@@ -14,8 +14,11 @@ Id неизменяемы навсегда: переименование = но�
 | say-id | `^ch\d{2}_s\d{3}_\d{4}$` | `ch07_s030_0042` |
 | id меню (`vn_menu`) | `^ch\d{2}_s\d{3}_m\d{3}$` | `ch07_s030_m001` |
 | id персонажа | `^[a-z][a-z0-9_]{1,23}$` | `mira` |
-| Логический id ассета | `^(bg\|cg\|spr\|ui\|vfx\|bgm\|amb\|sfx)/[a-z0-9_/]+$` | `bg/school_gate/day` |
+| Логический id ассета | `^(bg\|cg\|spr\|mov\|ui\|vfx\|bgm\|amb\|sfx)/[a-z0-9_/]+$` | `bg/school_gate/day`, `mov/demo/ambient` |
 | Файл спрайт-слоя | `^assets/spr/<char>/(<pose>/(base\|outfits/*\|faces/*\|overlays/*)\|side/*)@2\.webp$` | `assets/spr/mira/a/faces/smile@2.webp` |
+| Видео-сырец (ADR-0006) | `video_src/<group>/…/<name>.(mp4\|mov\|mkv\|webm\|m4v\|avi)`, сегменты — слуги | `video_src/demo/ambient.mp4` |
+| Декларация DAZ-рендера | `assets_src/daz/**/<name>.render.yaml` (schema daz_render@1) | `daz/ch01/kiss/kiss.render.yaml` |
+| NSFW-контент (ADR-0006) | подпапка `nsfw/` внутри категории: `cg/nsfw/…`, `mov/nsfw/…` | `assets_src/video_src/nsfw/scene01.mp4` |
 | Переменная состояния | `^(g\|ch\d{2}\|mech_[a-z0-9_]+\|dlc_[a-z0-9_]+)\.[a-z][a-z0-9_]*$` | `ch07.roof_visited` |
 | Файл миграции | `^\d{4}_[a-z][a-z0-9_]+\.py$` | `0007_route_points_clamp.py` |
 

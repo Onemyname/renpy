@@ -12,6 +12,11 @@
 | `tools/vn/src/vn/content/lint.py` | Схемы, naming, структура глав, exits, id_registry, layout |
 | `tools/vn/src/vn/content/compile.py` | Генерат фазы 0 + манифест, инкрементальность, точечная очистка (G6) |
 | `tools/vn/src/vn/doctor.py` | Самодиагностика окружения |
+| `tools/vn/src/vn/pipeline.py` | Окружение production-конвейера (ADR-0006): doctor, манифест моделей |
+| `tools/vn/src/vn/assets/video.py` | Видео-трек: VP9-энкод, loop-валидация, mov_meta, movie_tree |
+| `tools/vn/src/vn/assets/provenance.py` | Цепочки происхождения: extract ComfyUI, record/verify |
+| `tools/vn/src/vn/assets/daz.py` | Декларации DAZ-рендеров (daz_render@1) |
+| `tools/vn/src/vn/release.py` | Changelog, бюджеты G19, флейворы/build-info, релизный гейт |
 | `tools/vn/tests/` | pytest; test_compile — регрессионная сетка идемпотентности/очистки |
 
 ## Незыблемые контракты (не ломать молча)

@@ -24,14 +24,16 @@ vn/
 ├── content/                # источник истины: chapters/, characters/, locations/, audio/,
 │   │                       #   variables/, migrations/, registry/, renames.yaml, anchors.yaml, flags.yaml
 ├── packs/                  # DLC: <pack_id>/manifest.yaml + chapters/ characters/ loc/
-├── assets_src/             # сырцы: psd/, live2d/, spine_export/, audio_stems/, video_src/
-│                           #   (в git только *.manifest.json)
+│                           #   (nsfw — контент 18+, база его не требует; ADR-0006)
+├── assets_src/             # сырцы: psd/, png/ (+cg/), daz/, live2d/, spine_export/,
+│                           #   audio_stems/, video_src/ (в git — манифесты, декларации
+│                           #   *.render.yaml, сайдкары *.video.yaml и *.provenance.json)
 ├── loc/                    # loc.yaml, po/<lang>/, ledger/chNN.json
 ├── tools/
 │   ├── vn/                 # единственный CLI (src/vn/…)
 │   ├── schemas/            # реестр JSON Schema: <name>@<int>.schema.json
 │   └── vn.lock             # пиннованный тулчейн
 ├── build/                  # локальные артефакты (в .gitignore)
-├── docs/                   # ARCHITECTURE.md, adr/, conventions/, runbooks/, onboarding/
+├── docs/                   # ARCHITECTURE.md, adr/, conventions/, runbooks/, onboarding/, pipeline/
 └── ci/                     # скрипты проверок CI
 ```
