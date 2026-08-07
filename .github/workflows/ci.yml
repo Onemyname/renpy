@@ -1,0 +1,70 @@
+# CI (раздел 7 ARCHITECTURE.md): schema/lint -> build (компиляция сцен через
+# build-bridge) -> renpy lint -> тесты. Вся логика — в CLI vn, конфиг тонкий.
+# Headless-режима у Ren'Py нет (G23) — движок гоняется под xvfb-run.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  RENPY_VERSION: "8.5.3"          # обязан совпадать с пином renpy_sdk в project.yaml
+  RENPY_SDK: ${{ github.workspace }}/.sdk/renpy-8.5.3-sdk
+  SDL_AUDIODRIVER: dummy
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install --quiet -e "tools/vn[dev]"
+      - run: vn content lint
+
+  build-test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install --quiet -e "tools/vn[dev]"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 > /dev/null
+
+      - name: Кэш Ren'Py SDK (пин G18)
+        uses: actions/cache@v4
+        with:
+          path: .sdk
+          key: renpy-sdk-${{ env.RENPY_VERSION }}-linux
+
+      - name: Установка SDK при холодном кэше
+        run: |
+          if [ ! -f "$RENPY_SDK/renpy.py" ]; then
+            mkdir -p .sdk
+            curl -sL -o .sdk/sdk.zip "https://www.renpy.org/dl/$RENPY_VERSION/renpy-$RENPY_VERSION-sdk.zip"
+            unzip -q .sdk/sdk.zip -d .sdk && rm .sdk/sdk.zip
+          fi
+          chmod +x "$RENPY_SDK/renpy.sh" || true
+
+      - name: vn build (ассеты + компиляция сцен через build-bridge)
+        run: xvfb-run -a vn build
+
+      - name: renpy lint по framework и генерату
+        run: xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint
+
+      - name: Свежесть генерата (режим без записи, G1)
+        run: xvfb-run -a vn content compile --check
+
+      - name: pytest (юнит + e2e с движком)
+        run: xvfb-run -a python -m pytest tools/vn/tests -q
+
+      - name: Артефакт generated (аварийный режим G4)
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-${{ github.sha }}
+          path: game/generated/
+          retention-days: 30
