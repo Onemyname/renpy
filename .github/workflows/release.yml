@@ -1,0 +1,108 @@
+# Релизы (раздел 7): тег v<semver> -> дистрибутивы win/linux/mac + dmg -> GitHub Release.
+# .rpyc переносится между релизами через actions/cache (G6: statement-имена — основа
+# save-совместимости; vn package восстанавливает кэш с перезаписью и сохраняет новый).
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  RENPY_VERSION: "8.5.3"
+  RENPY_SDK: ${{ github.workspace }}/.sdk/renpy-8.5.3-sdk
+  SDL_AUDIODRIVER: dummy
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install --quiet -e "tools/vn[dev]"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 > /dev/null
+
+      - name: Тег обязан совпадать с версией project.yaml
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VER=$(python -c "import yaml; print(yaml.safe_load(open('project.yaml'))['version'])")
+          if [ "$TAG" != "$VER" ]; then
+            echo "::error::тег v$TAG != project.yaml version $VER — бампните версию или тег"
+            exit 1
+          fi
+
+      - name: Кэш Ren'Py SDK
+        uses: actions/cache@v4
+        with:
+          path: .sdk
+          key: renpy-sdk-${{ env.RENPY_VERSION }}-linux
+
+      - name: Установка SDK при холодном кэше
+        run: |
+          if [ ! -f "$RENPY_SDK/renpy.py" ]; then
+            mkdir -p .sdk
+            curl -sL -o .sdk/sdk.zip "https://www.renpy.org/dl/$RENPY_VERSION/renpy-$RENPY_VERSION-sdk.zip"
+            unzip -q .sdk/sdk.zip -d .sdk && rm .sdk/sdk.zip
+          fi
+          chmod +x "$RENPY_SDK/renpy.sh" || true
+
+      - name: Кэш .rpyc прошлых релизов (G6)
+        uses: actions/cache@v4
+        with:
+          path: build/rpyc-cache
+          key: rpyc-${{ github.ref_name }}
+          restore-keys: rpyc-
+
+      - name: Дистрибутивы (vn package)
+        run: xvfb-run -a vn package --package win --package linux --package mac --timeout 1800
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: build/dist/*/*
+          retention-days: 7
+
+  dmg:
+    # DMG создаётся штатным hdiutil на macOS-раннере из mac-zip (движок не нужен)
+    runs-on: macos-latest
+    needs: build
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: dist, path: dist}
+      - name: mac-zip -> dmg
+        run: |
+          ZIP=$(find dist -name "*-mac.zip" | head -1)
+          [ -n "$ZIP" ] || { echo "::error::mac-zip не найден среди артефактов"; exit 1; }
+          unzip -q "$ZIP" -d macapp
+          APP=$(find macapp -maxdepth 3 -name "*.app" -type d | head -1)
+          [ -n "$APP" ] || { echo "::error::.app не найден в $ZIP"; exit 1; }
+          hdiutil create -volname "VN" -srcfolder "$APP" -ov -format UDZO \
+            "$(basename "${ZIP%.zip}").dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: "*.dmg"
+          retention-days: 7
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: [build, dmg]
+    steps:
+      - uses: actions/checkout@v4   # gh release нужен git-контекст репозитория
+      - uses: actions/download-artifact@v4
+        with: {name: dist, path: out}
+      - uses: actions/download-artifact@v4
+        with: {name: dmg, path: out}
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          find out -type f \( -name "*.zip" -o -name "*.tar.bz2" -o -name "*.dmg" \) -print
+          gh release create "$GITHUB_REF_NAME" \
+            $(find out -type f \( -name "*.zip" -o -name "*.tar.bz2" -o -name "*.dmg" \)) \
+            --title "VN $GITHUB_REF_NAME" --generate-notes --verify-tag

@@ -1,7 +1,9 @@
 schema: storage@1
-# Маппинг логических хранилищ сырцов на физические endpoint'ы (G21).
-# Меняется одним коммитом; локальные переопределения — .vnstorage.local.yaml (в .gitignore).
-# TODO(фаза 1): заменить на реальные endpoint'ы командного S3.
+# Логические хранилища сырцов (G21): манифесты в git ссылаются на ИМЯ хранилища,
+# физика задаётся здесь и меняется одним коммитом. Локальные переопределения —
+# .vnstorage.local.yaml (в .gitignore): например, другой путь к NAS на вашей машине.
+#
+# Переход на облако = замена type: file на type: s3 — манифесты не трогаются:
+#   default: {type: s3, endpoint: "https://s3.eu-central-1.backblazeb2.com", bucket: "vn-assets"}
 storages:
-  default: {endpoint: "https://s3.example.com", bucket: "vn-assets"}
-  archive: {endpoint: "https://s3.example.com", bucket: "vn-assets-cold"}
+  default: {type: file, path: "~/vn-assets-store"}

@@ -1,0 +1,42 @@
+# Weekly canary (G18): сборка и тесты на СВЕЖЕМ Ren'Py — расхождения с пиннованным SDK
+# всплывают по одному в неделю, а не скопом в момент вынужденного апгрейда.
+# Отдельный workflow: красный canary не должен маскировать красный nightly.
+
+name: canary
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+env:
+  SDL_AUDIODRIVER: dummy
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  fresh-renpy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install --quiet -e "tools/vn[dev]"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 > /dev/null
+
+      - name: Свежайший Ren'Py вместо пина
+        run: |
+          LATEST=$(curl -s https://www.renpy.org/latest.html | grep -oE '/dl/[0-9]+\.[0-9]+\.[0-9]+/' | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
+          echo "canary: Ren'Py $LATEST (пин: $(python -c "import yaml; print(yaml.safe_load(open('project.yaml'))['renpy_sdk'])"))"
+          mkdir -p .sdk
+          curl -sL -o .sdk/sdk.zip "https://www.renpy.org/dl/$LATEST/renpy-$LATEST-sdk.zip"
+          unzip -q .sdk/sdk.zip -d .sdk && rm .sdk/sdk.zip
+          SDK="$PWD/.sdk/renpy-$LATEST-sdk"
+          chmod +x "$SDK/renpy.sh" || true
+          echo "RENPY_SDK=$SDK" >> "$GITHUB_ENV"
+
+      - name: Сборка, движковый lint, тесты на свежем SDK
+        run: |
+          xvfb-run -a vn build
+          xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint
+          xvfb-run -a python -m pytest tools/vn/tests -q
+          xvfb-run -a vn test smoke --picks 0,0

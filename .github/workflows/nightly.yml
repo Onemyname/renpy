@@ -1,0 +1,66 @@
+# Nightly QA (раздел 7): полный smoke по веткам и языкам, корпус сейвов, бюджеты.
+# Ловит то, что MR-пайплайн не гоняет ради бюджета < 10 минут (G15).
+
+name: nightly
+
+on:
+  schedule:
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+
+env:
+  RENPY_VERSION: "8.5.3"
+  RENPY_SDK: ${{ github.workspace }}/.sdk/renpy-8.5.3-sdk
+  SDL_AUDIODRIVER: dummy
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install --quiet -e "tools/vn[dev]"
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 > /dev/null
+
+      - name: Кэш Ren'Py SDK
+        uses: actions/cache@v4
+        with:
+          path: .sdk
+          key: renpy-sdk-${{ env.RENPY_VERSION }}-linux
+
+      - name: Установка SDK при холодном кэше
+        run: |
+          if [ ! -f "$RENPY_SDK/renpy.py" ]; then
+            mkdir -p .sdk
+            curl -sL -o .sdk/sdk.zip "https://www.renpy.org/dl/$RENPY_VERSION/renpy-$RENPY_VERSION-sdk.zip"
+            unzip -q .sdk/sdk.zip -d .sdk && rm .sdk/sdk.zip
+          fi
+          chmod +x "$RENPY_SDK/renpy.sh" || true
+
+      - name: Сборка + переводы (tl генерируется из PO)
+        run: |
+          xvfb-run -a vn build
+          vn loc import
+          vn loc report
+
+      - name: Smoke-матрица (ветки x языки)
+        run: |
+          xvfb-run -a vn test smoke --picks 0,0
+          xvfb-run -a vn test smoke --picks 0,1 --lang en
+          xvfb-run -a vn test smoke --picks 1
+          xvfb-run -a vn test smoke --picks 0,0 --lang pseudo
+
+      - name: Корпус сейвов (загрузка + миграции, G5/G6)
+        run: |
+          xvfb-run -a vn save check
+          xvfb-run -a vn save corpus
+
+      - name: Скриншоты последнего прогона
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-shots-${{ github.run_id }}
+          path: .vncache/smoke/
+          retention-days: 7

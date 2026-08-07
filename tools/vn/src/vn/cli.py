@@ -548,8 +548,85 @@ def assets_watch(profile: str):
         pass
 
 
-for _cmd, _phase in {"pull": 2, "push": 2, "lock": 2, "status": 2}.items():
-    assets.command(name=_cmd, help=f"S3-хранилище сырцов и локи (фаза {_phase}).")(_stub(_phase))
+def _sync_report(rep, ok_label: str):
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    for r in rep.pushed:
+        click.echo(f"залит: {r}")
+    for r in rep.pulled:
+        click.echo(f"получен: {r}")
+    for r in rep.locked:
+        click.secho(f"лок взят: {r}", fg="cyan")
+    for r in rep.rows:
+        click.echo(f" {r}")
+    if rep.errors:
+        _fail(f"{ok_label}: {len(rep.errors)} ошибок")
+    click.secho(f"{ok_label}: OK", fg="green")
+
+
+@assets.command("push")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+@click.option("--storage", default="default", help="Логическое хранилище для новых файлов.")
+def assets_push(paths: tuple, storage: str):
+    """Залить сырцы в хранилище (ТРЕБУЕТ лока, G14) и обновить манифесты."""
+    from .assets.storage import StorageError, push
+
+    root = _root()
+    try:
+        rep = push(root, list(paths), storage=storage)
+    except StorageError as e:
+        _fail(str(e))
+    for r in rep.fresh:
+        click.echo(f"актуален: {r}")
+    _sync_report(rep, "assets push")
+
+
+@assets.command("pull")
+@click.option("--scope", default=None, help="Подпуть в assets_src (например psd/characters/mira).")
+@click.option("--edit", is_flag=True, help="Заодно взять лок на полученные файлы.")
+def assets_pull(scope: str | None, edit: bool):
+    """Восстановить бинари сырцов по манифестам из хранилища."""
+    from .assets.storage import StorageError, pull
+
+    root = _root()
+    try:
+        rep = pull(root, scope=scope, edit=edit)
+    except StorageError as e:
+        _fail(str(e))
+    click.echo(f"актуально: {len(rep.fresh)}")
+    _sync_report(rep, "assets pull")
+
+
+@assets.command("lock")
+@click.argument("rel_path")
+@click.option("--release", is_flag=True, help="Снять свой лок.")
+@click.option("--force", is_flag=True, help="Снять ЧУЖОЙ лок (эскалация на лида, G14).")
+def assets_lock(rel_path: str, release: bool, force: bool):
+    """Взять/снять лок на сырец (путь относительно assets_src/)."""
+    from .assets.storage import StorageError, lock
+
+    root = _root()
+    try:
+        rep = lock(root, rel_path.replace("\\", "/"), release=release, force=force)
+    except StorageError as e:
+        _fail(str(e))
+    _sync_report(rep, "assets lock")
+
+
+@assets.command("status")
+def assets_status():
+    """Сводка сырцов: версии, локальное состояние, держатели локов."""
+    from .assets.storage import StorageError, status
+
+    root = _root()
+    try:
+        rep = status(root)
+    except StorageError as e:
+        _fail(str(e))
+    if not rep.rows and not rep.errors:
+        click.echo("манифестов нет — сырцы ещё не пушились (vn assets lock + push)")
+        return
+    _sync_report(rep, "assets status")
 
 _stub_group("char", "Персонажи: new, validate, sheet (раздел 4).", {"new": 1, "validate": 1, "sheet": 2})
 # ── vn loc ────────────────────────────────────────────────────────────────────
