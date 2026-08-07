@@ -1108,6 +1108,62 @@ def test_smoke(picks: str, lang: str, timeout_s: int):
 for _cmd, _phase in {"replay": 2, "screens": 3, "paths": 2}.items():
     test.command(name=_cmd, help=f"Появится в фазе {_phase} (раздел 8).")(_stub(_phase))
 
+# ── vn pipeline ───────────────────────────────────────────────────────────────
+
+@main.group()
+def pipeline():
+    """Окружение production-конвейера DAZ/ComfyUI/ffmpeg (ADR-0006, phase-0.md)."""
+
+
+@pipeline.command("doctor")
+@click.option("--comfyui", "comfy_opt", default=None,
+              help="Корень ComfyUI (по умолчанию VN_COMFYUI, затем D:/ и C:/ComfyUI).")
+def pipeline_doctor(comfy_opt: str | None):
+    """PASS/WARN/FAIL-сводка: Python, ffmpeg/VP9, GPU, CUDA/PyTorch, ComfyUI,
+    модели, DAZ, диски, SDK."""
+    from .pipeline import run_pipeline_doctor
+
+    sys.exit(run_pipeline_doctor(_root(), comfy_opt))
+
+
+@pipeline.command("models")
+@click.option("--pull", is_flag=True, help="Скачать недостающие модели (auth: none, с докачкой).")
+@click.option("--all", "include_optional", is_flag=True,
+              help="С --pull: включая опциональные (required: false).")
+@click.option("--only", default=None, help="Только перечисленные id (через запятую).")
+@click.option("--comfyui", "comfy_opt", default=None, help="Корень ComfyUI.")
+def pipeline_models(pull: bool, include_optional: bool, only: str | None, comfy_opt: str | None):
+    """Статус моделей по манифесту tools/comfyui-models.yaml; --pull — загрузка.
+
+    Модели с auth: manual (Civitai и т.п.) не качаются автоматически: команда
+    печатает точную инструкцию и целевой путь."""
+    from .pipeline import PipelineError, comfyui_root, models_table, pull_models
+
+    root = _root()
+    comfy = comfyui_root(comfy_opt)
+    only_set = {s.strip() for s in only.split(",")} if only else None
+    try:
+        if pull or only_set:
+            sys.exit(pull_models(root, comfy, only=only_set, include_optional=include_optional))
+        statuses, _lock = models_table(root, comfy)
+    except PipelineError as e:
+        _fail(str(e))
+    marks = {"ok": ("✓", "green"), "missing": ("✗", "red"),
+             "undersized": ("!", "yellow"), "no_root": ("?", "yellow")}
+    for st in statuses:
+        mark, color = marks[st.state]
+        e = st.entry
+        size = f"{st.actual_mb:.0f} МБ" if st.actual_mb else (
+            f"~{e['size_mb']:.0f} МБ" if e.get("size_mb") else "?")
+        note = "" if e["auth"] == "none" else " [ручная установка]"
+        req = "" if e["required"] else " (опц.)"
+        click.secho(f" {mark} {e['id']:<22} {size:>10}  models/{e['dest']}{req}{note}",
+                    fg=color)
+    if comfy is None:
+        click.secho("ComfyUI не найден — статусы условны (tools/setup-comfyui.ps1)", fg="yellow")
+    click.echo("загрузка: vn pipeline models --pull  (ручные шаги будут перечислены)")
+
+
 # ── vn release ────────────────────────────────────────────────────────────────
 
 @main.group()

@@ -1,0 +1,117 @@
+schema: comfyui_models@1
+# Манифест моделей ComfyUI (Фаза 0, ADR-0006). Сами модели НЕ в git и не в
+# vn-assets-store — это внешние зависимости конвейера, как SDK.
+#
+#   статус:   vn pipeline models
+#   загрузка: vn pipeline models --pull          (только auth: none)
+#   проверка: vn pipeline doctor
+#
+# size_mb — ориентир для быстрой проверки целостности (порог 50%); фактический
+# размер и sha256 фиксируются после первой успешной загрузки в
+# <ComfyUI>/models/.vn-models.json и сверяются при повторных прогонах.
+# auth: manual = загрузка требует аккаунта/принятия лицензии (Civitai и т.п.) —
+# загрузчик сознательно останавливается на этом шаге и печатает инструкцию.
+
+models:
+  # ── Wan 2.2 I2V A14B — базовая модель видео-вставок (Apache-2.0) ────────────
+  - id: wan22_i2v_high_fp8
+    kind: diffusion_models
+    dest: diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors
+    source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors
+    size_mb: 13900
+    sha256: null
+    license: Apache-2.0
+    auth: none
+    required: true
+    role: "Wan 2.2 I2V, high-noise эксперт (первая половина шагов)"
+
+  - id: wan22_i2v_low_fp8
+    kind: diffusion_models
+    dest: diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors
+    source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors
+    size_mb: 13900
+    sha256: null
+    license: Apache-2.0
+    auth: none
+    required: true
+    role: "Wan 2.2 I2V, low-noise эксперт (вторая половина шагов)"
+
+  - id: umt5_xxl_fp8
+    kind: text_encoders
+    dest: text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
+    size_mb: 6740
+    sha256: null
+    license: Apache-2.0
+    auth: none
+    required: true
+    role: "Текст-энкодер UMT5-XXL для Wan"
+
+  - id: wan21_vae
+    kind: vae
+    dest: vae/wan_2.1_vae.safetensors
+    source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors
+    size_mb: 254
+    sha256: null
+    license: Apache-2.0
+    auth: none
+    required: true
+    role: "VAE Wan 2.1 (14B-модели Wan 2.2 используют его же)"
+
+  # ── Дистилляция 4 шага: без неё клип считается в ~10 раз дольше ─────────────
+  - id: wan22_lightx2v_high
+    kind: loras
+    dest: loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors
+    source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors
+    size_mb: 700
+    sha256: null
+    license: Apache-2.0
+    auth: none
+    required: true
+    role: "LightX2V 4-step LoRA (high-noise)"
+
+  - id: wan22_lightx2v_low
+    kind: loras
+    dest: loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors
+    source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors
+    size_mb: 700
+    sha256: null
+    license: Apache-2.0
+    auth: none
+    required: true
+    role: "LightX2V 4-step LoRA (low-noise)"
+
+  # ── Апскейл кадров/стиллов ──────────────────────────────────────────────────
+  - id: realesrgan_x4plus
+    kind: upscale_models
+    dest: upscale_models/RealESRGAN_x4plus.pth
+    source: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
+    size_mb: 64
+    sha256: null
+    license: BSD-3-Clause
+    auth: none
+    required: false
+    role: "4x-апскейлер рендеров и кадров видео"
+
+  # ── Ручные шаги: аккаунт/лицензия Civitai — обходить запрещено ──────────────
+  - id: sdxl_photoreal
+    kind: checkpoints
+    dest: checkpoints/sdxl_photoreal.safetensors
+    source: https://civitai.com/  # выбрать фотореал-SDXL (bigASP / RealVisXL и т.п.) под стиль проекта
+    size_mb: 6900
+    sha256: null
+    license: null
+    auth: manual
+    required: false
+    role: "SDXL-фотореал для img2img-полировки DAZ-рендеров (снятие «пластика»)"
+
+  - id: wan22_nsfw_lora
+    kind: loras
+    dest: loras/wan22_nsfw_i2v.safetensors
+    source: https://civitai.com/  # NSFW-LoRA под Wan 2.2 I2V: требуется аккаунт 18+ и принятие лицензии конкретной модели
+    size_mb: null
+    sha256: null
+    license: null
+    auth: manual
+    required: false
+    role: "NSFW-motion LoRA для Wan 2.2 (контент 18+)"

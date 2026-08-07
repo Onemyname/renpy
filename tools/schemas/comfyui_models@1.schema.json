@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/comfyui_models@1",
+  "title": "comfyui_models@1 — манифест моделей ComfyUI (tools/comfyui-models.yaml, ADR-0006)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "comfyui_models@1"},
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "kind": {"enum": ["checkpoints", "diffusion_models", "text_encoders", "vae", "loras", "upscale_models"]},
+          "dest": {"type": "string", "minLength": 1, "description": "Путь файла относительно <ComfyUI>/models/"},
+          "source": {"type": ["string", "null"], "description": "Прямой URL (auth: none) или страница для ручной загрузки (auth: manual)"},
+          "size_mb": {"type": ["number", "null"], "minimum": 0, "description": "Ориентировочный размер; фактический размер и sha256 фиксируются загрузчиком в <models>/.vn-models.json"},
+          "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+          "license": {"type": ["string", "null"]},
+          "auth": {"enum": ["none", "manual"], "description": "manual = требуется логин/принятие лицензии/выбор версии — загрузчик останавливается на этом шаге и объясняет, что сделать (обходить запрещено)"},
+          "required": {"type": "boolean", "description": "true = без модели базовый видео-конвейер не работает"},
+          "role": {"type": "string"}
+        },
+        "required": ["id", "kind", "dest", "auth", "required", "role"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "models"],
+  "additionalProperties": false
+}
