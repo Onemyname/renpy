@@ -11,7 +11,7 @@ def test_lint_clean_repo(repo_root):
 
 
 def _copy_skeleton(repo_root, tmp_path):
-    """Копия скелета репозитория без тяжёлых зон."""
+    """Копия скелета репозитория без тяжёлых зон и без глав (тесты создают свои)."""
     from vn.content.lint import REQUIRED_DIRS
 
     for name in ("project.yaml", ".vnstorage.yaml"):
@@ -19,6 +19,8 @@ def _copy_skeleton(repo_root, tmp_path):
     shutil.copytree(repo_root / "tools" / "schemas", tmp_path / "tools" / "schemas",
                     dirs_exist_ok=True)
     shutil.copytree(repo_root / "content", tmp_path / "content")
+    shutil.rmtree(tmp_path / "content" / "chapters")
+    (tmp_path / "content" / "chapters").mkdir()
     for d in REQUIRED_DIRS:
         (tmp_path / d).mkdir(parents=True, exist_ok=True)
     return tmp_path

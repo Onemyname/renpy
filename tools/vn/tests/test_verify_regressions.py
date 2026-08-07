@@ -11,6 +11,7 @@ from vn.content.lint import lint
 
 
 def _copy_skeleton(repo_root, tmp_path):
+    """Скелет без глав: lint-тесты создают свои главы, compile-тесты не требуют SDK."""
     from vn.content.lint import REQUIRED_DIRS
 
     for name in ("project.yaml", ".vnstorage.yaml"):
@@ -18,6 +19,8 @@ def _copy_skeleton(repo_root, tmp_path):
     shutil.copytree(repo_root / "tools" / "schemas", tmp_path / "tools" / "schemas",
                     dirs_exist_ok=True)
     shutil.copytree(repo_root / "content", tmp_path / "content")
+    shutil.rmtree(tmp_path / "content" / "chapters")
+    (tmp_path / "content" / "chapters").mkdir()
     for d in REQUIRED_DIRS:
         (tmp_path / d).mkdir(parents=True, exist_ok=True)
     return tmp_path
@@ -70,17 +73,18 @@ def test_compile_invalid_project_is_compile_error(repo_root, tmp_path):
 
 
 def test_check_mode_writes_nothing_and_detects_stale(repo_root, tmp_path):
+    root = _copy_skeleton(repo_root, tmp_path)
     gen = tmp_path / "generated"
-    res = compile_content(repo_root, out_dir=gen, check=True)
+    res = compile_content(root, out_dir=gen, check=True)
     assert not gen.exists() or not any(gen.iterdir())   # ничего не записано
-    assert len(res.stale) == 6                          # всё «устарело» (генерата нет)
+    assert len(res.stale) == 8                          # всё «устарело» (генерата нет)
 
-    compile_content(repo_root, out_dir=gen)
-    res2 = compile_content(repo_root, out_dir=gen, check=True)
+    compile_content(root, out_dir=gen)
+    res2 = compile_content(root, out_dir=gen, check=True)
     assert res2.stale == []                             # после сборки — свежо
 
     (gen / "version.gen.rpy").write_text("# испорчено руками\n", encoding="utf-8")
-    res3 = compile_content(repo_root, out_dir=gen, check=True)
+    res3 = compile_content(root, out_dir=gen, check=True)
     assert res3.stale == ["version.gen.rpy"]
 
 
@@ -115,8 +119,9 @@ def test_persistent_vars_require_vn_prefix(repo_root, tmp_path):
 def test_gen_manifest_matches_schema(repo_root, tmp_path):
     from vn.schemas import SchemaRegistry
 
+    root = _copy_skeleton(repo_root, tmp_path)
     gen = tmp_path / "generated"
-    compile_content(repo_root, out_dir=gen)
+    compile_content(root, out_dir=gen)
     reg = SchemaRegistry(repo_root / "tools" / "schemas")
     manifest = json.loads((gen / "manifest.json").read_text(encoding="utf-8"))
     assert reg.validate(manifest, "manifest.json") == []

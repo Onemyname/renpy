@@ -3,7 +3,7 @@
 # Идентичность меню держит переменная vn_menu (default — во framework/00_core/020_state.rpy),
 # которую vn loc keys вставляет в авторский scene.rpy перед каждым menu-стейтментом.
 
-init -1000 python in vn_loc:
+init -999 python in vn_loc:
     from store import renpy
 
     def choice_text(menu_id, idx, caption):

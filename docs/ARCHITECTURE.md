@@ -145,7 +145,7 @@
 Все загружаемые пути в генерате — с префиксом зоны: `"assets/spr/..."`. Regex раздела 1.4 и примеры 1.5/2.4/2.6 привести к этой схеме.
 
 **C8. Единая таблица init-приоритетов**
-Канон — шкала раздела 7 (полнее): ядро −1000, named stores −980, engine_compat −950, build_info −900, данные реестров −100, themes −60…−50, styles/screens 0, контентные define 500, DLC-слоты 999. Таблицу 1.8 заменить ссылкой/копией этой шкалы; `init -55`/`init -50` для stores → `init -980`; загрузка Asset Registry `init -900` (2.8) → `init -100`.
+Канон — шкала раздела 7 (полнее): ядро −999 (движковый предел: init-приоритеты пользовательского кода — только −999..999), named stores −980, engine_compat −950, build_info −900, данные реестров −100, themes −60…−50, styles/screens 0, контентные define 500, DLC-слоты 999. Таблицу 1.8 заменить ссылкой/копией этой шкалы; `init -55`/`init -50` для stores → `init -980`; загрузка Asset Registry `init -900` (2.8) → `init -100`.
 
 **C9. Контракт persistent**
 Плоская модель с префиксом: `persistent.vn_*` (никакого dict-корня `persistent.vn`). Формулировку 6.1 переписать. Разблокировка галереи — штатный механизм `Gallery` + `persistent._seen_images` (свой dict не ведётся); `persistent.gallery_unlocked` не существует.
@@ -314,7 +314,7 @@ vn/                                  # корень monorepo
 │
 ├── game/                            # ═══ Ren'Py-проект: единственное, что видит движок ═══
 │   ├── framework/                   # рукописный код надстройки (контентщики не трогают)
-│   │   ├── 00_core/                 # init -1000: bootstrap ядра (шкала приоритетов — 1.8 / разд. 7)
+│   │   ├── 00_core/                 # init -999: bootstrap ядра (шкала приоритетов — 1.8 / разд. 7)
 │   │   │   ├── 001_boot.rpy         #   config.*, логгер, config.exception_handler
 │   │   │   ├── 010_registry.rpy     #   классы реестров (Asset/Character/Scene/Pack Registry)
 │   │   │   ├── 020_state.rpy        #   state-инфраструктура, раннер миграций, label after_load
@@ -726,7 +726,7 @@ CI-стражи процесса:
 Шкала едина для всего проекта (полная версия с обоснованиями — раздел 7):
 
 ```
-init -1000    ядро: config, классы, логгер, state/registry-инфраструктура  (framework/00_core)
+init -999    ядро: config, классы, логгер, state/registry-инфраструктура  (framework/00_core)
 init  -980    named stores: g, chNN, mech_*, dlc_*                        (generated/state)
 init  -950    engine_compat                                               (00_core/engine_compat)
 init  -900    build_info                                                  (generated/version.gen.rpy)
@@ -1323,7 +1323,7 @@ packs/                                # DLC-паки: каждый packs/<pack_i
 game/
 ├── framework/                        # рукописный код надстройки (см. разделы 1, 6, 7)
 │   ├── 00_core/runtime.rpy           # vn.checkpoint/scene_enter/leave, unwind_call_stack, dev-хуки
-│   ├── 00_core/check_generated.rpy   # init -1000: проверка свежести generated/ в dev-режиме
+│   ├── 00_core/check_generated.rpy   # init -999: проверка свежести generated/ в dev-режиме
 │   ├── 00_core/engine_compat/        # единственный модуль с полудокументированными API (см. раздел 9)
 │   └── 10_systems/
 │       └── fishing/
@@ -1378,7 +1378,7 @@ game/generated/
 - **Копия сцены именуется только по id** (`ch03_s050.gen.rpy`), без слуга. Statement-имена Ren'Py включают имя файла — значит, косметическое переименование авторского файла (смена слуга) не меняет ни одного statement-имени и не трогает сейвы.
 - В копию компилятор **инжектирует** служебные стейтменты: QA-якоря веток меню (см. 3.7) и явные `voice`-операторы из voice-манифестов (см. раздел 5). Авторский источник остаётся чистым.
 - `game/generated/` и `game/assets/` **не коммитятся**. В отличие от ранней версии дизайна, где `game/assets/` жил в Git LFS «ради runnable-from-clone»: derived-бинари недетерминированы между версиями энкодеров и платформами (provenance-проверка байт-в-байт вечно флапала бы), а каждая массовая перегенерация раздувала бы append-only LFS-историю на десятки ГБ. Гарантию «clone → игра запускается ≤ 5 минут» вместо LFS даёт обязательный **`vn bootstrap`** — скачивание собранных `game/assets/` + `game/generated/` + `game/tl/` последнего зелёного main из remote cache/CI-артефактов, без установки asset-тулчейна; гарантия измерима и проверяется отдельной CI-джобой (см. разделы 1 и 2).
-- Рассинхрон генерата ловится дважды: `vn content compile --check` в CI и проверка хэшей `manifest.json` при dev-запуске (`framework/00_core/check_generated.rpy`, init -1000, экран «запусти vn content compile»).
+- Рассинхрон генерата ловится дважды: `vn content compile --check` в CI и проверка хэшей `manifest.json` при dev-запуске (`framework/00_core/check_generated.rpy`, init -999, экран «запусти vn content compile»).
 
 ### 3.3. Идентификаторы и конвенции именования (enforced линтером)
 
@@ -1661,7 +1661,7 @@ screen vn_gallery():
 # game/framework/00_core/runtime.rpy
 default vn_menu = None
 
-init -1000 python in vn:
+init -999 python in vn:
     from store import persistent
 
     def scene_enter(scene_id):
@@ -2985,7 +2985,7 @@ default vn_save_schema = 12          # единственный счётчик �
 
 ```renpy
 # game/framework/00_core/save_meta.rpy
-init -1000 python:
+init -999 python:
     def vn_save_json(d):
         d["save_schema"] = vn_save_schema
         d["version"]     = config.version                       # semver игры из project.yaml
@@ -3042,7 +3042,7 @@ define vn_state.FIELDS = (
 
 ```renpy
 # game/framework/00_core/save_migrations.rpy
-init -1000 python:
+init -999 python:
     def vn_snapshot():
         out = {"vn_save_schema": vn_save_schema,
                "vn_pos_scene": vn_pos_scene, "vn_pos_beat": vn_pos_beat}
@@ -3093,7 +3093,7 @@ label after_load:
         jump expression _target
     return
 
-init -1000 python:
+init -999 python:
     def vn_validate_state():               # after_load_callbacks: только валидация, без переходов
         vn_schema_validate()                # типы и дефолты — из деклараций vars.yaml
     config.after_load_callbacks.append(vn_validate_state)
@@ -3190,7 +3190,7 @@ label ch03_s009:               # сцена вырезана в 2.1.0 -> fallbac
 
 ```renpy
 # game/framework/00_core/scene_stack.rpy (фрагмент фасада vn.*)
-init -1000 python in vn:
+init -999 python in vn:
     def unwind_call_stack():
         # Инвариант: глубина call-стека == 0 на входе в сцену.
         while renpy.call_stack_depth() > 0:
@@ -3963,7 +3963,7 @@ screen chapter_select():
 
 ```renpy
 # game/framework/00_core/slots.rpy
-init -1000 python in vn_ui:
+init -999 python in vn_ui:
     _slots = {}
     def register(slot, screen_name, priority=100, when=None):
         _slots.setdefault(slot, []).append((priority, screen_name, when))

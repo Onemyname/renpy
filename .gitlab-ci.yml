@@ -1,34 +1,53 @@
-# CI фазы 0 (раздел 7 ARCHITECTURE.md): schema-валидация -> lint -> build -> тесты.
-# Логика живёт в CLI vn — CI-конфиг тонкий и переносимый (GitHub Actions = те же 4 команды).
-# Фаза 1 добавит: renpy lint по генерату, smoke затронутых глав (xvfb), bootstrap-джобу
-# «clone -> запуск ≤ 5 минут»; фаза 2 — сейв-корпус, перф-бюджеты, каналы сборки.
+# CI фазы 1 (раздел 7 ARCHITECTURE.md): schema/lint -> build (с компиляцией сцен
+# через build-bridge) -> renpy lint -> тесты. Логика живёт в CLI vn — конфиг тонкий.
+# Headless-режима у Ren'Py нет (G23) — движок гоняется под xvfb-run.
+# Фаза 2 добавит: smoke затронутых глав, сейв-корпус, перф-бюджеты, каналы сборки,
+# weekly canary на свежем Ren'Py (G18).
 
 image: python:3.12-slim
 
+variables:
+  RENPY_VERSION: "8.5.3"          # обязан совпадать с пином renpy_sdk в project.yaml
+  RENPY_SDK: "$CI_PROJECT_DIR/.sdk/renpy-$RENPY_VERSION-sdk"
+
 stages: [lint, build, test]
 
-default:
+.with-sdk:
+  cache:
+    key: "renpy-sdk-$RENPY_VERSION"
+    paths: [.sdk/]
   before_script:
+    - apt-get update -qq && apt-get install -y -qq curl unzip xvfb libgl1 libglu1-mesa > /dev/null
     - pip install --quiet -e tools/vn[dev]
+    - |
+      if [ ! -f "$RENPY_SDK/renpy.py" ]; then
+        mkdir -p .sdk
+        curl -sL -o .sdk/sdk.zip "https://www.renpy.org/dl/$RENPY_VERSION/renpy-$RENPY_VERSION-sdk.zip"
+        unzip -q .sdk/sdk.zip -d .sdk && rm .sdk/sdk.zip
+      fi
 
 lint:
   stage: lint
+  before_script:
+    - pip install --quiet -e tools/vn[dev]
   script:
     - vn content lint
 
 build:
+  extends: .with-sdk
   stage: build
   script:
-    - vn build
+    - xvfb-run -a vn build
+    - xvfb-run -a "$RENPY_SDK/renpy.sh" . lint
   artifacts:
     # Аварийный режим (G4): generated каждого зелёного main доступен как артефакт
-    # для vn build --use-artifact <sha>
     paths: [game/generated/]
     expire_in: 30 days
 
 test:
+  extends: .with-sdk
   stage: test
   script:
     # Свежесть генерата из артефакта стадии build (режим без записи, G1)
-    - vn content compile --check
-    - python -m pytest tools/vn/tests -q
+    - xvfb-run -a vn content compile --check
+    - xvfb-run -a python -m pytest tools/vn/tests -q

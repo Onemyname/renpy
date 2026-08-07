@@ -75,6 +75,8 @@ screen navigation():
         spacing 14
         if main_menu:
             textbutton _("Начать игру") action Start()
+            if vn_registry.chapters():
+                textbutton _("Главы") action ShowMenu("chapter_select")
         else:
             textbutton _("Вернуться") action Return()
             textbutton _("Сохранить") action ShowMenu("save")

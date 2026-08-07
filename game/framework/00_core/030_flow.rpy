@@ -1,7 +1,7 @@
 # Фасад vn.* — ЕДИНСТВЕННЫЙ API, через который сгенерированный код обращается к движку
 # (правило 1.8/3; его api_level проверяют манифесты DLC-паков, раздел 6).
 
-init -1000 python in vn:
+init -999 python in vn:
     from store import renpy, vn_log, vn_registry
     # ВАЖНО: store vn_compat создаётся на init -950 (C8) — позже этого блока,
     # поэтому доступ к нему ТОЛЬКО ленивый, из тел функций (они зовутся в рантайме).
@@ -47,7 +47,7 @@ init -1000 python in vn:
     pack_registry = _PackRegistry()
 
 
-init -1000 python in vn_qa:
+init -999 python in vn_qa:
     def choice(scene_id, menu_id, idx):
         """Якорь ветки выбора (C1): эмитится компилятором первым стейтментом каждой ветки.
         Фаза 2: запись в прогон-лог QA/телеметрию."""
@@ -68,4 +68,9 @@ label start:
 label vn_scene_unavailable:
     "Эта сцена недоступна в текущей версии игры."
     "Возврат в главное меню."
+    $ renpy.full_restart()
+
+
+label vn_end_of_content:
+    "Продолжение следует…"
     $ renpy.full_restart()

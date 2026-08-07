@@ -1,7 +1,7 @@
 # Реестры (раздел 1.8, слой 0). Данные реестров — генерат (init -100 и 500),
 # здесь — только доступ к ним. Framework никогда не ссылается на конкретные главы.
 
-init -1000 python in vn_registry:
+init -999 python in vn_registry:
     from store import renpy
 
     def chapters():

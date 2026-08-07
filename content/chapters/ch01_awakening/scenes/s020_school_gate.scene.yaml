@@ -1,0 +1,7 @@
+schema: scene@1
+id: s020
+participants: [mira]
+vars:
+  reads: [ch01.met_mira]
+exits:
+  roof: s030

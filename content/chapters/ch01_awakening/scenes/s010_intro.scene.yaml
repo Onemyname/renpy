@@ -1,0 +1,7 @@
+schema: scene@1
+id: s010
+vars:
+  writes: [ch01.met_mira]
+exits:
+  gate: s020
+  roof: s030

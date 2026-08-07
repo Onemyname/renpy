@@ -1,0 +1,5 @@
+schema: character@1
+id: mira
+name: "Мира"
+color: "#c94f7c"
+voice_tag: mira

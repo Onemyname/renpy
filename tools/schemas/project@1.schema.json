@@ -7,7 +7,11 @@
     "schema": {"const": "project@1"},
     "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
     "save_schema": {"type": "integer", "minimum": 1},
-    "min_tools": {"type": "string", "pattern": "^\\d+\\.\\d+$"}
+    "min_tools": {"type": "string", "pattern": "^\\d+\\.\\d+$"},
+    "renpy_sdk": {
+      "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Пиннованная версия Ren'Py SDK (G18); vn doctor сверяет с RENPY_SDK"
+    }
   },
   "required": ["schema", "version", "save_schema", "min_tools"],
   "additionalProperties": false

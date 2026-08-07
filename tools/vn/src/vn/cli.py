@@ -81,6 +81,8 @@ def build(check: bool):
         res = compile_content(root, check=check)
     except CompileError as e:
         _fail(str(e))
+    for w in res.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
     if check:
         if res.stale:
             for rel in res.stale:
@@ -156,6 +158,8 @@ def content_compile(check: bool):
         res = compile_content(root, check=check)
     except CompileError as e:
         _fail(str(e))
+    for w in res.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
     if check:
         if res.stale:
             for rel in res.stale:
@@ -172,6 +176,53 @@ def content_compile(check: bool):
 content.command("graph", help="Экспорт графа сцен в DOT/Mermaid (фаза 1).")(_stub(1))
 
 
+# ── vn chapter / vn scene ─────────────────────────────────────────────────────
+
+@main.group()
+def chapter():
+    """Главы: new."""
+
+
+@chapter.command("new")
+@click.argument("slug")
+def chapter_new(slug: str):
+    """Создать главу: папка chNN_<slug> со скелетом (chapter.yaml, vars.yaml, s010)."""
+    from .content.scaffold import ScaffoldError, new_chapter
+
+    root = _root()
+    try:
+        ch_dir = new_chapter(root, slug)
+    except ScaffoldError as e:
+        _fail(str(e))
+    click.secho(f"создана глава: {ch_dir.relative_to(root).as_posix()}/", fg="green")
+    click.echo("не забудьте: владельца главы в CODEOWNERS; vn build для регистрации в меню")
+
+
+@main.group()
+def scene():
+    """Сцены: new, stub."""
+
+
+@scene.command("new")
+@click.argument("chapter")
+@click.argument("slug")
+def scene_new(chapter: str, slug: str):
+    """Создать сцену в главе: пара sNNN_<slug>.scene.{yaml,rpy} (следующий номер, шаг 10)."""
+    from .content.scaffold import ScaffoldError, new_scene
+
+    root = _root()
+    try:
+        yaml_path = new_scene(root, chapter, slug)
+    except ScaffoldError as e:
+        _fail(str(e))
+    rel = yaml_path.relative_to(root).as_posix()
+    click.secho(f"создана сцена: {rel} (+ парный .rpy)", fg="green")
+    click.echo("не забудьте: добавить сцену в scene_order главы и связать exits")
+
+
+scene.command("stub", help="Placeholder-сцена для объявленной цели перехода (фаза 1).")(_stub(1))
+
+
 # ── Остальные домены (заглушки с номером фазы) ────────────────────────────────
 
 def _stub_group(name: str, help_text: str, commands: dict[str, int]):
@@ -185,8 +236,6 @@ def _stub_group(name: str, help_text: str, commands: dict[str, int]):
 _stub_group("assets", "Конвейер ассетов (раздел 2).", {
     "build": 1, "validate": 1, "watch": 1, "pull": 1, "push": 1, "lock": 1, "status": 1,
 })
-_stub_group("scene", "Сцены: new, stub.", {"new": 1, "stub": 1})
-_stub_group("chapter", "Главы: new.", {"new": 1})
 _stub_group("char", "Персонажи: new, validate, sheet (раздел 4).", {"new": 1, "validate": 1, "sheet": 2})
 _stub_group("loc", "Локализация (раздел 5).", {"extract": 2, "import": 2, "report": 2, "pseudo": 2, "keys": 2})
 _stub_group("voice", "Озвучка (C5).", {"manifest": 2, "import": 2, "tts": 2, "validate": 2})

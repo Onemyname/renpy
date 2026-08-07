@@ -1,13 +1,15 @@
-# Слой 0, ядро (init -1000). Правило 1.8: 00_core не знает ни об одной главе,
+# Слой 0, ядро (init -999). Правило 1.8: 00_core не знает ни об одной главе,
 # системе или персонаже — ни одного chNN-идентификатора
 # (CI-проверка vn content lint --arch появится в фазе 2).
 
-init -1000 python:
+init -999 python:
 
     # ── Базовая конфигурация движка ──────────────────────────────────────────
     config.rollback_enabled = True
     config.hard_rollback_limit = 100
     config.autosave_on_quit = True
+    # Рекомендация renpy lint: ловить конфликтующие style-свойства на этапе анализа.
+    config.check_conflicting_properties = True
 
     # Автоопределение образов по game/images/ НЕ используется (раздел 1.2):
     # компилятор эмитит явные image-стейтменты из Asset Registry.

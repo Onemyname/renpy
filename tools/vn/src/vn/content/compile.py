@@ -1,8 +1,10 @@
-"""vn content compile — ядро Content Compiler, фаза 0.
+"""vn content compile — Content Compiler.
 
-Что умеет сейчас: version.gen.rpy, state/defaults.gen.rpy (named stores из *.vars.yaml),
-registry/{audio,chapters,menus,overrides}.gen.rpy, manifest.json с инкрементальностью
-и точечной очисткой осиротевших выходов (G6). Компиляция сцен (парсером Ren'Py) — фаза 1.
+Фаза 0: version, defaults (named stores), audio, overrides, менюшный реестр, манифест,
+инкрементальность и точечная очистка (G6).
+Фаза 1: главы и сцены — авторские scene.rpy разбираются парсером Ren'Py через build-bridge
+(G24, analyze.py), валидируется контракт C2, эмитится label-обвязка, Chapter/Scene Registry,
+персонажи, экран выбора глав.
 
 Контракты генерата:
 - каждый файл несёт заголовок AUTO-GENERATED + blake3 источников;
@@ -13,6 +15,7 @@ registry/{audio,chapters,menus,overrides}.gen.rpy, manifest.json с инкрем
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -20,8 +23,12 @@ import blake3
 
 from .. import __version__
 from ..repo import git_sha, load_project, load_yaml
+from . import scenes as sc
+from .analyze import AnalyzeError, analyze_scene_files
 
 MANIFEST_NAME = "manifest.json"
+CHAPTER_DIR_RE = re.compile(r"^ch(\d{2})_([a-z][a-z0-9_]{2,30})$")
+SCENE_YAML_RE = re.compile(r"^s(\d{3})_([a-z][a-z0-9_]{2,40})\.scene\.yaml$")
 
 
 class CompileError(RuntimeError):
@@ -33,7 +40,8 @@ class CompileResult:
     written: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     deleted: list[str] = field(default_factory=list)
-    stale: list[str] = field(default_factory=list)   # только в режиме check
+    stale: list[str] = field(default_factory=list)      # только в режиме check
+    warnings: list[str] = field(default_factory=list)
 
 
 def _b3(data: bytes) -> str:
@@ -68,7 +76,7 @@ def _py_literal(value) -> str:
     raise CompileError(f"недопустимый тип default-значения: {type(value).__name__}")
 
 
-# ── Эмиттеры ──────────────────────────────────────────────────────────────────
+# ── Эмиттеры фазы 0 ───────────────────────────────────────────────────────────
 
 def _emit_version(project: dict, sha: str, sources) -> str:
     version = f"{project['version']}+{sha}"
@@ -82,7 +90,7 @@ def _emit_defaults(project: dict, var_docs: list[tuple[str, dict]], sources) -> 
     stores = sorted({doc["store"] for _, doc in var_docs if doc["store"] != "persistent"})
     out = [_header(sources)]
     if stores:
-        out.append("# Создание named stores (шкала init-приоритетов — C8)")
+        out.append("# Создание named stores (шкала init-приоритетов — C8/ADR-0003)")
         for store in stores:
             out.append(f"init -980 python in {store}:\n    pass\n")
     for rel, doc in sorted(var_docs):
@@ -114,17 +122,10 @@ def _emit_audio(audio_docs: list[tuple[str, dict]], sources) -> str:
     return "\n".join(out) + "\n"
 
 
-def _emit_chapters(chapters: list[dict], sources) -> str:
-    out = [_header(sources), "init offset = -100\n"]
-    out.append("# Chapter Registry: читается vn_registry.chapters() (framework/00_core/010_registry.rpy).")
-    out.append(f"define VN_CHAPTERS = {tuple(chapters)!r}")
-    return "\n".join(out) + "\n"
-
-
 def _emit_menus(sources) -> str:
     return _header(sources) + (
         "init offset = -100\n\n"
-        "# Реестр choice-id (G8/C1): наполняется при компиляции сцен (фаза 1);\n"
+        "# Реестр choice-id (G8/C1): наполняется vn loc keys (фаза 2);\n"
         "# vn_loc.choice_text() делает по нему lookup переводов пунктов меню.\n"
         "define VN_MENUS = {}\n"
     )
@@ -153,27 +154,76 @@ def _emit_overrides(renames: dict, sources) -> str:
     return "\n".join(out) + "\n"
 
 
+# ── Сбор контента фазы 1 ─────────────────────────────────────────────────────
+
+def _collect_chapters(root: Path, src, registry, errors: list[str]):
+    """Читает content/chapters/: метаданные глав и SceneUnit'ы (без анализа rpy)."""
+    chapters: list[dict] = []
+    units: list[sc.SceneUnit] = []
+    chapters_dir = root / "content" / "chapters"
+    if not chapters_dir.is_dir():
+        return chapters, units
+    for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
+        m = CHAPTER_DIR_RE.match(d.name)
+        if not m:
+            errors.append(f"content/chapters/{d.name}: имя папки вне конвенции (naming.md)")
+            continue
+        ch_id = f"ch{m.group(1)}"
+        ch_yaml = d / "chapter.yaml"
+        if not ch_yaml.is_file():
+            errors.append(f"content/chapters/{d.name}: нет chapter.yaml")
+            continue
+        rel, _digest = src(ch_yaml)
+        meta = load_yaml(ch_yaml)
+        errs = registry.validate(meta, rel)
+        if errs:
+            errors.extend(errs)
+            continue
+        chapters.append(meta)
+
+        scenes_dir = d / "scenes"
+        if scenes_dir.is_dir():
+            for f in sorted(scenes_dir.glob("*.scene.yaml")):
+                sm = SCENE_YAML_RE.match(f.name)
+                if not sm:
+                    errors.append(f"{rel}: файл сцены вне конвенции: {f.name}")
+                    continue
+                yaml_rel, _d1 = src(f)
+                smeta = load_yaml(f)
+                s_errs = registry.validate(smeta, yaml_rel)
+                if s_errs:
+                    errors.extend(s_errs)
+                    continue
+                rpy = f.parent / (f.name[: -len(".yaml")] + ".rpy")
+                if not rpy.is_file():
+                    errors.append(f"{yaml_rel}: нет парного .scene.rpy (G3)")
+                    continue
+                rpy_rel, _d2 = src(rpy)
+                short_id = f"s{sm.group(1)}"
+                units.append(sc.SceneUnit(
+                    full_id=f"{ch_id}_{short_id}",
+                    chapter_id=ch_id,
+                    short_id=short_id,
+                    yaml_rel=yaml_rel,
+                    rpy_rel=rpy_rel,
+                    meta=smeta,
+                    rpy_text=rpy.read_text(encoding="utf-8"),
+                    analysis={},
+                ))
+    return chapters, units
+
+
 # ── Оркестрация ───────────────────────────────────────────────────────────────
 
 def compile_content(root: Path, out_dir: Path | None = None, check: bool = False) -> CompileResult:
     gen = out_dir if out_dir is not None else root / "game" / "generated"
 
-    # Валидация входа по схеме — трейсбеки KeyError вместо ошибок недопустимы.
     from ..schemas import SchemaRegistry
     registry = SchemaRegistry(root / "tools" / "schemas")
     project = load_project(root)
     proj_errors = registry.validate(project, "project.yaml")
     if proj_errors:
         raise CompileError("невалидный project.yaml: " + "; ".join(proj_errors))
-
-    # Фаза 0: компиляция сцен ещё не реализована — честный отказ вместо тихой пустоты.
-    chapters_dir = root / "content" / "chapters"
-    chapter_dirs = [p for p in chapters_dir.iterdir() if p.is_dir()] if chapters_dir.is_dir() else []
-    if chapter_dirs:
-        raise CompileError(
-            "компиляция сцен (парсером Ren'Py из пиннованного SDK) — фаза 1 (раздел 8 ARCHITECTURE.md); "
-            f"найдены главы: {', '.join(sorted(d.name for d in chapter_dirs))}"
-        )
 
     inputs: dict[str, str] = {}
 
@@ -189,35 +239,104 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         return rel, digest
 
     proj_src = src(root / "project.yaml")
+    result = CompileResult()
+    errors: list[str] = []
 
+    # Переменные: глобальные + главные (chNN)
     var_docs, var_sources = [], []
     variables_dir = root / "content" / "variables"
     if variables_dir.is_dir():
         for f in sorted(variables_dir.glob("*.vars.yaml")):
             var_sources.append(src(f))
             var_docs.append((f.name, load_yaml(f)))
+    for f in sorted((root / "content" / "chapters").glob("*/vars.yaml")):
+        rel, _d = src(f)
+        var_docs.append((rel, load_yaml(f)))
+        var_sources.append((rel, inputs[rel]))
 
+    # Аудио
     audio_docs, audio_sources = [], []
     audio_dir = root / "content" / "audio"
     if audio_dir.is_dir():
         for f in sorted(audio_dir.glob("*.yaml")):
             audio_sources.append(src(f))
             audio_docs.append((f.name, load_yaml(f)))
+    audio_ids = {tid for _, doc in audio_docs for tid in (doc.get("tracks") or {})}
+
+    # Персонажи
+    char_docs, char_sources = [], []
+    for f in sorted((root / "content" / "characters").glob("*/character.yaml")):
+        rel, _d = src(f)
+        doc = load_yaml(f)
+        c_errs = registry.validate(doc, rel)
+        if c_errs:
+            errors.extend(c_errs)
+            continue
+        char_docs.append((rel, doc))
+        char_sources.append((rel, inputs[rel]))
 
     renames_path = root / "content" / "renames.yaml"
     renames_src = src(renames_path)
     renames = load_yaml(renames_path)
 
+    # Главы и сцены (фаза 1)
+    chapters, units = _collect_chapters(root, src, registry, errors)
+    if errors:
+        raise CompileError(f"{len(errors)} ошибок:\n" + "\n".join(errors))
+
+    scene_rep = sc.SceneCompileReport()
+    scene_outputs: dict[str, str] = {}
+    if units:
+        try:
+            analysis = analyze_scene_files(root, [root / u.rpy_rel for u in units])
+        except AnalyzeError as e:
+            raise CompileError(str(e))
+        known_scenes = {u.full_id for u in units}
+        status_by_ch = {c["id"]: c["status"] for c in chapters}
+        for u in units:
+            u.analysis = analysis.get(str(root / u.rpy_rel).replace("\\", "/"), None) or \
+                         analysis.get(str(root / u.rpy_rel), None) or {}
+            if not u.analysis:
+                scene_rep.errors.append(f"{u.rpy_rel}: build-bridge не вернул анализ")
+                continue
+            dispatch = sc.validate_scene(
+                u, known_scenes, status_by_ch.get(u.chapter_id, "draft"), scene_rep
+            )
+            header = _header([(u.yaml_rel, inputs[u.yaml_rel]), (u.rpy_rel, inputs[u.rpy_rel])])
+            scene_outputs[f"scenes/{u.chapter_id}/{u.full_id}.gen.rpy"] = sc.emit_scene(
+                u, dispatch, audio_ids, scene_rep, header
+            )
+        # Валидация глав: entry_scene и scene_order существуют
+        for c in chapters:
+            ch_scenes = {u.short_id for u in units if u.chapter_id == c["id"]}
+            complain = (scene_rep.warnings if c["status"] == "draft" else scene_rep.errors)
+            if c["entry_scene"] not in ch_scenes:
+                complain.append(f"{c['id']}: entry_scene {c['entry_scene']} не существует")
+            for s in c.get("scene_order", []):
+                if s not in ch_scenes:
+                    complain.append(f"{c['id']}: scene_order: сцена {s} не существует")
+
+    result.warnings.extend(scene_rep.warnings)
+    if scene_rep.errors:
+        raise CompileError(
+            f"{len(scene_rep.errors)} ошибок компиляции сцен:\n" + "\n".join(scene_rep.errors)
+        )
+
     outputs: dict[str, str] = {
         "version.gen.rpy": _emit_version(project, git_sha(root), [proj_src]),
         "state/defaults.gen.rpy": _emit_defaults(project, var_docs, [proj_src] + var_sources),
         "registry/audio.gen.rpy": _emit_audio(audio_docs, audio_sources or [proj_src]),
-        "registry/chapters.gen.rpy": _emit_chapters([], [proj_src]),
+        "registry/chapters.gen.rpy": sc.emit_chapter_registry(
+            sorted(chapters, key=lambda c: c["id"]), _header([proj_src])
+        ),
+        "registry/scenes.gen.rpy": sc.emit_scene_registry(units, _header([proj_src])),
+        "registry/characters.gen.rpy": sc.emit_characters(char_docs, _header(char_sources or [proj_src])),
         "registry/menus.gen.rpy": _emit_menus([proj_src]),
         "registry/overrides.gen.rpy": _emit_overrides(renames, [renames_src]),
     }
-
-    result = CompileResult()
+    outputs.update(scene_outputs)
+    if chapters:
+        outputs["screens/chapter_select.gen.rpy"] = sc.emit_chapter_select(_header([proj_src]))
 
     old_manifest_path = gen / MANIFEST_NAME
     old_outputs: set[str] = set()

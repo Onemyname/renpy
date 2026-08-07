@@ -1,0 +1,6 @@
+schema: scene@1
+id: s030
+participants: [mira]
+vars:
+  reads: [ch01.met_mira]
+exits: {}

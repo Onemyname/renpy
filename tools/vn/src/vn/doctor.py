@@ -30,6 +30,18 @@ def sdk_path() -> Path | None:
     return None
 
 
+def sdk_version(sdk: Path) -> str | None:
+    """Фактическая версия SDK из renpy/vc_version.py (например '8.5.3.26051504')."""
+    vc = sdk / "renpy" / "vc_version.py"
+    if not vc.is_file():
+        return None
+    for line in vc.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line.startswith("version ") or line.startswith("version="):
+            return line.split("=", 1)[1].strip().strip("'\"")
+    return None
+
+
 def run_doctor() -> int:
     checks: list[tuple[bool | None, str, str]] = []   # (ok | None=warn, заголовок, рецепт починки)
 
@@ -71,7 +83,18 @@ def run_doctor() -> int:
 
     sdk = sdk_path()
     if sdk:
-        checks.append((True, f"Ren'Py SDK: {sdk}", ""))
+        actual = sdk_version(sdk) or "?"
+        pinned = None
+        if root is not None:
+            try:
+                pinned = load_project(root).get("renpy_sdk")
+            except Exception:
+                pass
+        if pinned and not actual.startswith(pinned):
+            checks.append((False, f"Ren'Py SDK {actual} != пину {pinned} (project.yaml)",
+                           "поставьте пиннованную версию SDK или обновите пин отдельным PR (G18)"))
+        else:
+            checks.append((True, f"Ren'Py SDK {actual}: {sdk}", ""))
     else:
         checks.append((None, "Ren'Py SDK не найден",
                        "скачайте SDK с renpy.org и укажите путь: setx RENPY_SDK <путь>; "

@@ -9,7 +9,7 @@ default vn_menu = None
 # Текущая сцена (пишет vn.checkpoint) — якорь восстановления позиции сейва.
 default vn_scene = None
 
-init -1000 python in vn_state:
+init -999 python in vn_state:
     from store import renpy, vn_log
 
     # Цепочка миграций: генерат (фаза 2) наполняет из content/migrations/*.py.

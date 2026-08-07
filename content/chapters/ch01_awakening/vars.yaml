@@ -1,0 +1,8 @@
+schema: vars@1
+store: ch01
+vars:
+  met_mira:
+    type: bool
+    default: false
+    doc: "Игрок встретил Миру у ворот в первой сцене"
+    since: 1
