@@ -1,4 +1,7 @@
-schema: loc@1
-source_lang: ru
-languages: [en]
+schema: loc@2
+# Исходный язык проекта (в Ren'Py — language=None). Переводы — пакеты loc/po/<code>/:
+# наличие каталога с language.yaml = язык существует (автодискавери, ADR-0005).
+source:
+  code: ru
+  name: Русский
 release_coverage_min: 0.98

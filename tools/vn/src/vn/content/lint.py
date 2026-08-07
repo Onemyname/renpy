@@ -76,6 +76,11 @@ def _iter_declarations(root: Path):
     loc = root / "loc" / "loc.yaml"
     if loc.is_file():
         yield loc
+    # Манифесты языковых пакетов (ADR-0005): наличие файла = язык существует,
+    # поэтому битый манифест = сломанный язык — валидируем наравне с декларациями.
+    po_dir = root / "loc" / "po"
+    if po_dir.is_dir():
+        yield from sorted(po_dir.glob("*/language.yaml"))
     for base in (root / "content", root / "packs"):
         if base.is_dir():
             yield from sorted(base.rglob("*.yaml"))
@@ -126,6 +131,19 @@ def lint(root: Path, layout: bool = True) -> LintReport:
         if errs:
             invalid.add(rel)
         docs[rel] = data if isinstance(data, dict) else {}
+
+    # ── 1a. Пакеты языков: code == имени каталога, каталоги без манифеста ────
+    po_dir = root / "loc" / "po"
+    if po_dir.is_dir():
+        for d in sorted(p for p in po_dir.iterdir() if p.is_dir()):
+            mf_rel = _rel(root, d / "language.yaml")
+            if not (d / "language.yaml").is_file():
+                rep.error(f"loc/po/{d.name}/: нет language.yaml — пакет языка не собран "
+                          f"(vn loc add {d.name} --name <native>)")
+                continue
+            code = docs.get(mf_rel, {}).get("code")
+            if mf_rel not in invalid and code != d.name:
+                rep.error(f"{mf_rel}: code ({code}) != имени каталога ({d.name})")
 
     # ── 2. Структура глав: ядро + packs/*/chapters (C10) ────────────────────
     chapters: dict[str, dict] = {}   # ch_id -> {"scenes": set, "status": str}

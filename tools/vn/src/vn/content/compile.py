@@ -123,19 +123,22 @@ def _emit_audio(audio_docs: list[tuple[str, dict]], sources) -> str:
     return "\n".join(out) + "\n"
 
 
-def _emit_menus(menus: dict, strings: dict, languages: list, sources) -> str:
+def _emit_menus(menus: dict, strings: dict, source_lang: dict, sources) -> str:
     return _header(sources) + (
         "init offset = -100\n\n"
-        "# Реестр choice-id (G8/C1): источник — loc/ledger/ (vn loc keys);\n"
-        "# vn_loc.choice_text() делает по нему lookup переводов пунктов меню.\n"
+        "# Реестр choice-id (G8/C1): исходные подписи пунктов по id (источник —\n"
+        "# loc/ledger/, vn loc keys). Валидация/QA; переводы пунктов рантайм берёт\n"
+        "# из VN_MENUS_TL (vn_loc.choice_text).\n"
         f"define VN_MENUS = {menus!r}\n\n"
         "# Переводы наполняют tl/<lang>/common.rpy на init 600 (vn loc import).\n"
         "define VN_MENUS_TL = {}\n"
         "define VN_STRINGS_TL = {}\n\n"
         "# UI/мета-строки (content/ui/strings.yaml): vn_loc.t(key) -> текст/перевод.\n"
         f"define VN_STRINGS = {strings!r}\n\n"
-        "# Языки для экрана настроек (loc/loc.yaml + pseudo при наличии).\n"
-        f"define VN_LANGUAGES = {languages!r}\n"
+        "# Исходный язык проекта (loc/loc.yaml, в Ren'Py — language=None).\n"
+        "# Списка языков здесь НЕТ: Language Registry (store vn_lang) сканирует\n"
+        "# game/tl/*/language.json в рантайме (ADR-0005).\n"
+        f"define VN_SOURCE_LANG = {source_lang!r}\n"
     )
 
 
@@ -476,13 +479,15 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     if strings_path.is_file():
         rel, _d = src(strings_path)
         ui_strings = dict(load_yaml(strings_path).get("strings") or {})
-    languages: list[str] = []
+    source_lang = {"code": "source", "name": "Source"}
     loc_cfg_path = root / "loc" / "loc.yaml"
     if loc_cfg_path.is_file():
         rel, _d = src(loc_cfg_path)
-        languages = list(load_yaml(loc_cfg_path).get("languages") or [])
-    if (root / "loc" / "po" / "pseudo").is_dir():
-        languages = languages + ["pseudo"]
+        loc_cfg = load_yaml(loc_cfg_path)
+        errors.extend(registry.validate(loc_cfg, rel))
+        if isinstance(loc_cfg.get("source"), dict):
+            source_lang = {"code": loc_cfg["source"].get("code", "source"),
+                           "name": loc_cfg["source"].get("name", "Source")}
 
     # Миграции сейвов (G5)
     migrations = _collect_migrations(root, src, project, errors)
@@ -570,7 +575,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         ),
         "registry/scenes.gen.rpy": sc.emit_scene_registry(units, _header([proj_src])),
         "registry/characters.gen.rpy": sc.emit_characters(char_docs, _header(char_sources or [proj_src])),
-        "registry/menus.gen.rpy": _emit_menus(menus, ui_strings, languages, [proj_src]),
+        "registry/menus.gen.rpy": _emit_menus(menus, ui_strings, source_lang, [proj_src]),
         "registry/overrides.gen.rpy": _emit_overrides(renames, [renames_src]),
     }
     outputs.update(scene_outputs)

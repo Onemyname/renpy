@@ -26,6 +26,28 @@ def _copy_skeleton(repo_root, tmp_path):
     return tmp_path
 
 
+def test_lint_catches_broken_language_packages(repo_root, tmp_path):
+    """Инвариант «lint зелёный => build не падает»: битые пакеты языков
+    (ADR-0005) обязаны краснить lint ДО того, как build упадёт LocError."""
+    root = _copy_skeleton(repo_root, tmp_path)
+
+    (root / "loc").mkdir(exist_ok=True)
+    (root / "loc" / "loc.yaml").write_text(
+        "schema: loc@2\nsource:\n  code: ru\n  name: Русский\n", encoding="utf-8"
+    )
+    # Каталог без манифеста
+    (root / "loc" / "po" / "xx").mkdir(parents=True)
+    # code != имени каталога (схемно-валидный манифест)
+    (root / "loc" / "po" / "de").mkdir(parents=True)
+    (root / "loc" / "po" / "de" / "language.yaml").write_text(
+        "schema: language@1\ncode: fr\nname: Deutsch\n", encoding="utf-8"
+    )
+
+    rep = lint(root)
+    assert any("loc/po/xx" in e and "language.yaml" in e for e in rep.errors)
+    assert any("loc/po/de/language.yaml" in e and "fr" in e for e in rep.errors)
+
+
 def test_lint_catches_bad_chapter_and_orphan_pair(repo_root, tmp_path):
     root = _copy_skeleton(repo_root, tmp_path)
 

@@ -128,6 +128,17 @@ def build(check: bool, profile: str):
             for rel in res.stale:
                 click.secho(f"устарело: {rel}", fg="red")
             _fail("генерат не свеж — выполните vn build")
+        # Разметка переводов (read-only): полный build упал бы на импорте tl —
+        # check обязан ловить то же самое до мержа
+        from .loc.po import LocError, validate_translations
+        try:
+            po_errors = validate_translations(root)
+        except LocError as e:
+            _fail(str(e))
+        if po_errors:
+            for e in po_errors:
+                click.secho(f"error: {e}", fg="red")
+            _fail(f"переводы: {len(po_errors)} ошибок разметки")
         _check_budgets(root)    # бюджеты G19 проверяются и в CI-режиме
         click.secho("check: генерат свеж", fg="green")
         return
@@ -135,8 +146,27 @@ def build(check: bool, profile: str):
         f"generated: {len(res.written)} записано, {len(res.skipped)} без изменений, "
         f"{len(res.deleted)} осиротевших удалено"
     )
+    # game/tl генерируется и НЕ в git: без импорта здесь релиз (vn package -> build)
+    # уехал бы без переводов — сборка обязана оставлять tl свежим.
+    _loc_import(root)
     _check_budgets(root)
     click.secho("build: OK", fg="green")
+
+
+def _loc_import(root: Path):
+    """Регенерация game/tl из loc/po (часть сборки: tl — производная зона)."""
+    from .loc.po import LocError, import_translations
+
+    try:
+        lrep = import_translations(root)
+    except LocError as e:
+        _fail(str(e))
+    if lrep.errors:
+        for e in lrep.errors:
+            click.secho(f"error: {e}", fg="red")
+        _fail(f"loc import: {len(lrep.errors)} ошибок разметки переводов")
+    if lrep.changed:
+        click.echo(f"tl: {len(lrep.changed)} файлов обновлено")
 
 
 def _dir_size(path: Path) -> int:
@@ -201,6 +231,7 @@ def bootstrap():
         _fail(str(e))
     for w in res.warnings:
         click.secho(f"warning: {w}", fg="yellow")
+    _loc_import(root)    # game/tl не в git — чекаут без импорта был бы без переводов
     click.secho("bootstrap: OK — запускайте vn play", fg="green")
 
 
@@ -654,9 +685,10 @@ def loc_keys(check: bool):
     if check:
         if rep.missing:
             for m in rep.missing:
-                click.secho(f"нет id: {m}", fg="red")
-            _fail("loc keys --check: есть строки без id — выполните vn loc keys")
-        click.secho("loc keys --check: все строки с id", fg="green")
+                click.secho(f"расхождение: {m}", fg="red")
+            _fail("loc keys --check: есть строки без id или устаревший ledger — "
+                  "выполните vn loc keys")
+        click.secho("loc keys --check: все строки с id, ledger свеж", fg="green")
         return
     for c in rep.changed:
         click.echo(f"обновлён: {c}")
@@ -665,12 +697,38 @@ def loc_keys(check: bool):
     click.secho(f"loc keys: OK ({len(rep.changed)} файлов изменено)", fg="green")
 
 
+@loc.command("add")
+@click.argument("code")
+@click.option("--name", default="", help="Native-название (Deutsch, 日本語); "
+                                         "для известных кодов подставится само.")
+def loc_add(code: str, name: str):
+    """Создать пакет языка loc/po/<code>/ (ADR-0005) и заполнить PO-заготовки."""
+    from .loc.po import LocError, extract, scaffold_language
+
+    root = _root()
+    try:
+        mf = scaffold_language(root, code, name)
+        click.echo(f"создан: {mf.relative_to(root).as_posix()}")
+        rep = extract(root)
+    except LocError as e:
+        _fail(str(e))
+    for w in rep.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    for c in rep.changed:
+        click.echo(f"обновлён: {c}")
+    click.secho(f"loc add: OK — пакет {code} готов; переводите loc/po/{code}/*.po "
+                f"и выполните vn loc import", fg="green")
+
+
 @loc.command("extract")
 def loc_extract():
     """Обновить PO всех языков из ledger/strings/персонажей (переводы сохраняются)."""
-    from .loc.po import extract
+    from .loc.po import LocError, extract
 
-    rep = extract(_root())
+    try:
+        rep = extract(_root())
+    except LocError as e:
+        _fail(str(e))
     for w in rep.warnings:
         click.secho(f"warning: {w}", fg="yellow")
     for c in rep.changed:
@@ -680,10 +738,18 @@ def loc_extract():
 
 @loc.command("import")
 def loc_import():
-    """PO -> game/tl/<lang>/: translate-блоки, данные меню/строк (ручные правки tl запрещены)."""
-    from .loc.po import import_translations
+    """PO -> game/tl/<lang>/: translate-блоки, данные меню/строк, манифест языка
+    (ручные правки tl запрещены)."""
+    from .loc.po import LocError, import_translations
 
-    rep = import_translations(_root())
+    try:
+        rep = import_translations(_root())
+    except LocError as e:
+        _fail(str(e))
+    if rep.errors:
+        for e in rep.errors:
+            click.secho(f"error: {e}", fg="red")
+        _fail(f"loc import: {len(rep.errors)} ошибок разметки переводов")
     for c in rep.changed:
         click.echo(f"{c}")
     click.secho(f"loc import: OK ({len(rep.changed)} файлов)", fg="green")
@@ -691,23 +757,33 @@ def loc_import():
 
 @loc.command("pseudo")
 def loc_pseudo():
-    """Псевдолокализация (язык pseudo): QA переполнений UI до реальных переводов."""
-    from .loc.po import import_translations, pseudo
+    """Псевдолокализация (synthetic-пакет pseudo): QA переполнений UI до реальных переводов."""
+    from .loc.po import LocError, import_translations, pseudo
 
     root = _root()
-    rep = pseudo(root)
-    import_translations(root)
+    try:
+        rep = pseudo(root)
+        imp = import_translations(root)
+    except LocError as e:
+        _fail(str(e))
+    if imp.errors:
+        for e in imp.errors:
+            click.secho(f"error: {e}", fg="red")
+        _fail(f"loc pseudo: {len(imp.errors)} ошибок разметки при импорте")
     click.secho(f"loc pseudo: OK ({len(rep.changed)} PO-файлов; язык 'pseudo' готов)", fg="green")
 
 
 @loc.command("report")
 def loc_report():
     """Покрытие перевода по языкам."""
-    from .loc.po import report
+    from .loc.po import LocError, report
 
-    rep = report(_root())
+    try:
+        rep = report(_root())
+    except LocError as e:
+        _fail(str(e))
     if not rep.coverage:
-        click.echo("языков нет (loc/loc.yaml languages пуст)")
+        click.echo("пакетов языков нет (loc/po/*/language.yaml) — vn loc add <code>")
         return
     for lang, cov in sorted(rep.coverage.items()):
         pct = (cov["translated"] / cov["total"] * 100) if cov["total"] else 100.0
@@ -974,14 +1050,25 @@ def _autopilot_run(root: Path, shots: Path, extra_env: dict, timeout_s: int,
 
 @test.command("smoke")
 @click.option("--picks", default="", help="Индексы выборов в меню через запятую (например 0,1).")
-@click.option("--lang", default="", help="Язык прогона (код из loc/loc.yaml или pseudo).")
+@click.option("--lang", default="", help="Язык прогона (код пакета loc/po/<code>/, включая pseudo).")
 @click.option("--timeout", "timeout_s", default=180, help="Лимит прогона, сек.")
 def test_smoke(picks: str, lang: str, timeout_s: int):
     """Автопрохождение игры автопилотом: авто-advance, авто-выбор, скриншоты движка."""
     root = _root()
-    if lang and not (root / "game" / "tl" / lang).is_dir():
-        _fail(f"языка {lang!r} нет в game/tl/ — выполните vn loc import "
-              f"(change_language молча показал бы исходный язык — ложно-зелёный прогон)")
+    if lang:
+        from .loc.po import LocError, source_language
+
+        try:
+            src_code = source_language(root).code
+        except LocError:
+            src_code = None
+        if lang == src_code:
+            # Исходный язык: tl/<code>/ не существует по определению — прогон
+            # с явным сбросом на language=None (маркер @source в автопилоте)
+            lang = "@source"
+        elif not (root / "game" / "tl" / lang).is_dir():
+            _fail(f"языка {lang!r} нет в game/tl/ — выполните vn loc import "
+                  f"(change_language молча показал бы исходный язык — ложно-зелёный прогон)")
     shots = root / ".vncache" / "smoke"
     returncode, timed_out = _autopilot_run(
         root, shots, {"VN_AUTOPILOT_PICKS": picks, "VN_AUTOPILOT_LANG": lang}, timeout_s

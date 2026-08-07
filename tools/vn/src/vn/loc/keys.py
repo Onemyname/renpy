@@ -61,6 +61,9 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
                 if sm:
                     scene_files.append((ch_id, f"{ch_id}_s{sm.group(1)}", f))
     if not scene_files:
+        # Сцен нет, но осиротевшие шарды ledger всё равно подлежат проверке/очистке:
+        # ранний выход без этого тихо оставлял бы «переводы исчезнувших глав».
+        _reconcile_stale_ledgers(root, alive=set(), check=check, rep=rep)
         return rep
 
     analysis = analyze_scene_files(root, [f for _, _, f in scene_files])
@@ -172,7 +175,24 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
             rep.changed.append(rpy.relative_to(root).as_posix())
             originals[rpy] = "\n".join(original) + ("\n" if original else "")
 
-    if rep.errors or check:
+    if check:
+        # Свежесть ledger: правка ТЕКСТА реплики не трогает id в scene.rpy,
+        # но обязана доехать до ledger — иначе extract и переводчики молча
+        # работают со старым текстом. Сравниваем пересобранный ledger с диском.
+        ledger_dir = root / "loc" / "ledger"
+        for ch_id, ledger in sorted(ledgers.items()):
+            path = ledger_dir / f"{ch_id}.json"
+            data = json.dumps(ledger, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+            on_disk = path.read_text(encoding="utf-8") if path.is_file() else ""
+            if on_disk != data:
+                rep.missing.append(
+                    f"loc/ledger/{ch_id}.json устарел (тексты/структура разошлись "
+                    f"со сценами) — выполните vn loc keys"
+                )
+        _reconcile_stale_ledgers(root, {ch_id for ch_id, _f, _p in scene_files},
+                                 check=True, rep=rep)
+        return rep
+    if rep.errors:
         return rep
 
     # ── Верификация раунд-трипа парсером: правки не должны ломать сцены.
@@ -207,9 +227,23 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
         if not path.is_file() or path.read_text(encoding="utf-8") != data:
             path.write_text(data, encoding="utf-8")
             rep.ledgers.append(f"loc/ledger/{ch_id}.json")
-    alive = {ch_id for ch_id, _f, _p in scene_files}
+    _reconcile_stale_ledgers(root, {ch_id for ch_id, _f, _p in scene_files},
+                             check=False, rep=rep)
+    return rep
+
+
+def _reconcile_stale_ledgers(root: Path, alive: set[str], check: bool, rep: KeysReport):
+    """Шарды ledger исчезнувших глав: --check репортует, обычный прогон удаляет."""
+    ledger_dir = root / "loc" / "ledger"
+    if not ledger_dir.is_dir():
+        return
     for stale in sorted(ledger_dir.glob("ch*.json")):
-        if stale.stem not in alive:
+        if stale.stem in alive:
+            continue
+        if check:
+            rep.missing.append(
+                f"loc/ledger/{stale.name}: глава исчезла — выполните vn loc keys"
+            )
+        else:
             stale.unlink()
             rep.ledgers.append(f"удалён (глава исчезла): loc/ledger/{stale.name}")
-    return rep

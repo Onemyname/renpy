@@ -53,6 +53,9 @@ jobs:
       - name: vn build (ассеты + компиляция сцен через build-bridge)
         run: xvfb-run -a vn build
 
+      - name: Свежесть say-id и ledger (гейт G8 — устаревший текст не доедет до переводчиков)
+        run: xvfb-run -a vn loc keys --check
+
       - name: renpy lint по framework и генерату
         run: xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint
 

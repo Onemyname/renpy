@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/language@1",
+  "title": "language@1 — манифест языкового пакета (loc/po/<code>/language.yaml). Наличие файла = язык существует: ни в каких конфигах он не регистрируется (ADR-0005)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "language@1"},
+    "code": {
+      "type": "string", "pattern": "^[a-z][a-z0-9_]{1,15}$",
+      "description": "Код языка; обязан совпадать с именем каталога пакета (сверяет lint)"
+    },
+    "name": {
+      "type": "string", "minLength": 1,
+      "description": "Native-название для UI: Deutsch, 日本語 — на самом языке, не на английском"
+    },
+    "font": {
+      "type": "string", "minLength": 1,
+      "description": "Опциональный шрифт (путь относительно game/): для языков, чьи глифы не покрыты базовым шрифтом (CJK и т.п.). Применяется translate <code> python и в списке языков"
+    },
+    "synthetic": {
+      "type": "boolean",
+      "description": "true = язык генерируется инструментом (pseudo): extract не мержит его PO, а целиком регенерирует генератором (vn loc pseudo); в настройках виден только при config.developer; в дистрибутив не поставляется"
+    }
+  },
+  "required": ["schema", "code", "name"],
+  "additionalProperties": false
+}

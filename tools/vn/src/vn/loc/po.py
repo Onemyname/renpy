@@ -1,5 +1,10 @@
-"""PO round-trip (раздел 5, G8): экстракция строк в gettext PO с msgctxt,
-импорт переводов в генерируемый game/tl/, псевдолокализация, отчёт покрытия.
+"""PO round-trip (раздел 5, G8; пакеты языков — ADR-0005): экстракция строк в gettext PO
+с msgctxt, импорт переводов в генерируемый game/tl/, псевдолокализация, отчёт покрытия.
+
+Язык = самоописывающийся пакет loc/po/<code>/ с манифестом language.yaml
+(code, native-название, опц. font/synthetic). Списка языков нет нигде:
+discover_languages() сканирует пакеты; рантайм сканирует сгенерированные
+game/tl/<code>/language.json (Language Registry, store vn_lang).
 
 Источник истины переводов — loc/po/<lang>/*.po; game/tl/ целиком генерируется
 (ручные правки запрещены). msgctxt — стабильный id:
@@ -12,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +34,43 @@ PSEUDO_MAP = str.maketrans({
     "А": "Ą", "Е": "Ę", "О": "Ǫ", "У": "Ų", "И": "Į",
 })
 
+# Native-названия для `vn loc add` (подсказка при скаффолде пакета, НЕ реестр
+# доступных языков — язык существует, только если существует его пакет).
+NATIVE_NAMES = {
+    "ru": "Русский", "en": "English", "de": "Deutsch", "es": "Español",
+    "fr": "Français", "it": "Italiano", "pt": "Português", "pt_br": "Português (Brasil)",
+    "pl": "Polski", "uk": "Українська", "cs": "Čeština", "sk": "Slovenčina",
+    "hu": "Magyar", "ro": "Română", "bg": "Български", "sr": "Српски",
+    "hr": "Hrvatski", "el": "Ελληνικά", "tr": "Türkçe", "nl": "Nederlands",
+    "sv": "Svenska", "no": "Norsk", "da": "Dansk", "fi": "Suomi",
+    "et": "Eesti", "lv": "Latviešu", "lt": "Lietuvių", "ja": "日本語",
+    "ko": "한국어", "zh_hans": "简体中文", "zh_hant": "繁體中文", "th": "ไทย",
+    "vi": "Tiếng Việt", "id": "Bahasa Indonesia", "ms": "Bahasa Melayu",
+    "ar": "العربية", "he": "עברית", "fa": "فارسی", "hi": "हिन्दी",
+    "kk": "Қазақша", "be": "Беларуская", "ka": "ქართული", "hy": "Հայերեն",
+}
+
+
+class LocError(Exception):
+    pass
+
+
+@dataclass
+class Language:
+    """Языковой пакет loc/po/<code>/ (манифест language.yaml, ADR-0005)."""
+    code: str
+    name: str
+    font: str | None = None
+    synthetic: bool = False
+
+    def manifest(self) -> dict:
+        """Рантайм-манифест game/tl/<code>/language.json для Language Registry.
+        generator — маркер владения: очистка tl трогает только свои файлы
+        (модовый/ручной перевод, брошенный в game/tl, не наш — не удаляем)."""
+        return {"code": self.code, "name": self.name,
+                "font": self.font, "synthetic": self.synthetic,
+                "generator": "vn loc import"}
+
 
 @dataclass
 class LocReport:
@@ -37,9 +80,89 @@ class LocReport:
     coverage: dict = field(default_factory=dict)   # lang -> {total, translated, fuzzy}
 
 
-def _languages(root: Path) -> list[str]:
-    cfg = load_yaml(root / "loc" / "loc.yaml")
-    return list(cfg.get("languages") or [])
+def _load_yaml_dict(root: Path, path: Path) -> dict:
+    """load_yaml с контрактом CLI: битый/пустой YAML — это LocError с путём,
+    а не голый трейсбек (yaml.ScannerError / AttributeError на None)."""
+    try:
+        doc = load_yaml(path)
+    except Exception as e:
+        raise LocError(f"{path.relative_to(root).as_posix()}: не парсится: {e}")
+    if not isinstance(doc, dict):
+        raise LocError(f"{path.relative_to(root).as_posix()}: не YAML-маппинг "
+                       f"(пустой файл или список)")
+    return doc
+
+
+def discover_languages(root: Path) -> list[Language]:
+    """Автодискавери пакетов loc/po/*/ (ADR-0005). Каталог без language.yaml —
+    ошибка с подсказкой: молча пропущенный язык = тихо непоставленный перевод."""
+    po_root = root / "loc" / "po"
+    if not po_root.is_dir():
+        return []
+    out = []
+    for d in sorted(p for p in po_root.iterdir() if p.is_dir()):
+        mf = d / "language.yaml"
+        if not mf.is_file():
+            raise LocError(
+                f"loc/po/{d.name}/: нет language.yaml — пакет языка не собран; "
+                f"создайте манифест (vn loc add {d.name} --name <native>)"
+            )
+        doc = _load_yaml_dict(root, mf)
+        code = doc.get("code")
+        if code != d.name:
+            raise LocError(
+                f"loc/po/{d.name}/language.yaml: code {code!r} != имени каталога "
+                f"{d.name!r} — идентичность пакета обязана совпадать с путём"
+            )
+        name = doc.get("name")
+        if name is not None and not isinstance(name, str):
+            # 123/true из небрежного YAML доехали бы до language.json и уронили
+            # сортировку native-названий в рантайм-реестре (vn_lang.refresh)
+            raise LocError(f"loc/po/{d.name}/language.yaml: name обязан быть строкой, "
+                           f"получен {type(name).__name__}")
+        out.append(Language(
+            code=code,
+            name=name or code,
+            font=doc.get("font"),
+            synthetic=bool(doc.get("synthetic")),
+        ))
+    return out
+
+
+def source_language(root: Path) -> Language:
+    """Исходный язык проекта из loc/loc.yaml (loc@2). В Ren'Py это language=None."""
+    cfg = _load_yaml_dict(root, root / "loc" / "loc.yaml")
+    src = cfg.get("source") or {}
+    return Language(code=src.get("code", "source"), name=src.get("name", "Source"))
+
+
+def scaffold_language(root: Path, code: str, name: str = "") -> Path:
+    """`vn loc add`: создать пакет языка. Возвращает путь манифеста."""
+    if not re.fullmatch(r"[a-z][a-z0-9_]{1,15}", code):
+        raise LocError(f"код языка {code!r} вне конвенции ^[a-z][a-z0-9_]{{1,15}}$")
+    if code == "pseudo":
+        raise LocError("pseudo — synthetic-пакет, его создаёт vn loc pseudo")
+    lang_dir = root / "loc" / "po" / code
+    mf = lang_dir / "language.yaml"
+    if mf.is_file():
+        raise LocError(f"пакет loc/po/{code}/ уже существует")
+    native = name or NATIVE_NAMES.get(code)
+    if not native:
+        raise LocError(
+            f"native-название для {code!r} неизвестно — задайте явно: "
+            f"vn loc add {code} --name <native>"
+        )
+    lang_dir.mkdir(parents=True, exist_ok=True)
+    # name — JSON-строкой (валидный YAML-скаляр всегда): «Português: Brasil»
+    # или « # » в голой f-строке дали бы битый/молча обрезанный манифест,
+    # валящий все последующие loc-команды
+    mf.write_text(
+        "schema: language@1\n"
+        f"code: {code}\n"
+        f"name: {json.dumps(native, ensure_ascii=False)}\n",
+        encoding="utf-8",
+    )
+    return mf
 
 
 def _ledgers(root: Path) -> dict[str, dict]:
@@ -90,21 +213,33 @@ def _units(root: Path) -> dict[str, list[tuple[str, str, str]]]:
 
 def extract(root: Path) -> LocReport:
     """Обновить PO всех языков из текущих источников: новые строки добавляются,
-    изменённые исходники помечаются fuzzy, переводы сохраняются."""
+    изменённые исходники помечаются fuzzy, переводы сохраняются.
+    Пакет pseudo (synthetic) не мержится, а регенерируется целиком — иначе
+    псевдолокализация тихо отставала бы от исходников до ручного vn loc pseudo."""
     rep = LocReport()
-    langs = _languages(root)
+    all_langs = discover_languages(root)
+    if any(l.code == "pseudo" for l in all_langs):
+        rep.changed.extend(pseudo(root).changed)
+    for l in all_langs:
+        if l.synthetic and l.code != "pseudo":
+            # Единственный известный генератор synthetic-пакетов — vn loc pseudo;
+            # чужой synthetic без генератора молча отставал бы от исходников.
+            rep.warnings.append(f"loc/po/{l.code}: synthetic-пакет без генератора — "
+                                f"PO не обновлены (устаревает)")
+    langs = [l for l in all_langs if not l.synthetic]
     if not langs:
-        rep.warnings.append("loc/loc.yaml: languages пуст — экстрактировать некуда")
+        rep.warnings.append("пакетов языков нет (loc/po/*/language.yaml) — "
+                            "экстрактировать некуда; создайте: vn loc add <code>")
         return rep
     domains = _units(root)
     for lang in langs:
-        lang_dir = root / "loc" / "po" / lang
+        lang_dir = root / "loc" / "po" / lang.code
         lang_dir.mkdir(parents=True, exist_ok=True)
         for domain, rows in sorted(domains.items()):
             po_path = lang_dir / f"{domain}.po"
             po = polib.pofile(str(po_path)) if po_path.is_file() else polib.POFile()
             po.metadata.setdefault("Content-Type", "text/plain; charset=utf-8")
-            po.metadata["Language"] = lang
+            po.metadata["Language"] = lang.code
             existing = {e.msgctxt: e for e in po}
             seen = set()
             dirty = False
@@ -156,23 +291,35 @@ def _rpy_str(s: str) -> str:
             .replace("\n", "\\n").replace("\t", "\\t") + '"')
 
 
-_INTERP_RE = __import__("re").compile(r"\[([a-zA-Z_][a-zA-Z0-9_.]*)[^\]]*\]")
-_TAG_RE = __import__("re").compile(r"\{(/?)([a-zA-Z_#][a-zA-Z0-9_]*)[^{}]*\}")
+_INTERP_RE = re.compile(r"\[([a-zA-Z_][a-zA-Z0-9_.]*)[^\]]*\]")
+_TAG_RE = re.compile(r"\{(/?)([a-zA-Z_#][a-zA-Z0-9_]*)[^{}]*\}")
 
 # Самозакрывающиеся текстовые теги Ren'Py — парного {/x} не требуют
 _SELF_CLOSING = {"w", "p", "nw", "fast", "done", "clear", "space", "vspace",
                  "image", "#", "_"}
 
 
+_BRACKET_RE = re.compile(r"\[[^\[\]]*\]")
+
+
 def _validate_markup(msgid: str, msgstr: str) -> str | None:
     """Битая Ren'Py-разметка в переводе всплывает у ИГРОКА при показе реплики —
     ловим на импорте: парность {тегов} и совпадение набора [подстановок] с исходником."""
-    if msgstr.count("{") != msgstr.count("}") or msgstr.count("[") != msgstr.count("]"):
-        return "непарные скобки {}/[]"
+    # Эскейпы Ren'Py {{ и [[ — легитимные литералы «{»/«[»: убираем до проверок,
+    # иначе валидатор ложно браковал бы перевод с литеральной скобкой
+    msgid = msgid.replace("{{", "").replace("[[", "")
+    msgstr = msgstr.replace("{{", "").replace("[[", "")
+    # Незакрытая [подстановка] или {тег} роняет текст в рантайме; одинокие ]/}
+    # — легальные литералы. Вырезаем валидные конструкции — остаток с открывающей
+    # скобкой означает незакрытую.
+    residue = _TAG_RE.sub("", _BRACKET_RE.sub("", msgstr))
+    if "[" in residue or "{" in residue:
+        return "незакрытая скобка [ или { (литеральная скобка эскейпится: [[ и {{)"
     stack: list[str] = []
     for m in _TAG_RE.finditer(msgstr):
         closing, name = m.group(1), m.group(2)
-        if name in _SELF_CLOSING:
+        # {#...} — контекст-теги переводов ({#file_time}%H:%M) — всегда самозакрытые
+        if name in _SELF_CLOSING or name.startswith("#"):
             continue
         if closing:
             if not stack or stack[-1] != name:
@@ -189,26 +336,31 @@ def _validate_markup(msgid: str, msgstr: str) -> str | None:
     return None
 
 
-def import_translations(root: Path) -> LocReport:
-    """PO -> game/tl/<lang>/: translate-блоки диалогов (по say-id), translate strings
-    (имена персонажей), данные меню/строк для рантайм-lookup (vn_loc)."""
-    rep = LocReport()
-    langs = _languages(root)
-    # pseudo доставляется наравне с языками (зеркально compile.py: VN_LANGUAGES)
-    if (root / "loc" / "po" / "pseudo").is_dir():
-        langs = langs + ["pseudo"]
-
-    # Валидация разметки переводов ДО генерации: битый тег не должен доехать до игрока
+def validate_translations(root: Path) -> list[str]:
+    """Валидация разметки переводов (read-only, для vn build --check и import):
+    битый тег/потерянная подстановка не должны доехать до игрока."""
+    errors: list[str] = []
     units_by_ctx = {ctx: msgid for rows in _units(root).values() for ctx, msgid, _c in rows}
-    for lang in langs:
-        if lang == "pseudo":
+    for lang in discover_languages(root):
+        if lang.synthetic:
             continue    # обрамляющие [·] псевдолокализации — намеренные
-        for ctx, (msgstr, fuzzy) in _load_translations(root, lang).items():
+        for ctx, (msgstr, fuzzy) in _load_translations(root, lang.code).items():
             if fuzzy or ctx not in units_by_ctx:
                 continue
             problem = _validate_markup(units_by_ctx[ctx], msgstr)
             if problem:
-                rep.errors.append(f"po/{lang}: {ctx}: {problem}")
+                errors.append(f"po/{lang.code}: {ctx}: {problem}")
+    return errors
+
+
+def import_translations(root: Path) -> LocReport:
+    """PO -> game/tl/<lang>/: translate-блоки диалогов (по say-id), translate strings
+    (имена персонажей), данные меню/строк для рантайм-lookup (vn_loc) и манифест
+    language.json для Language Registry (vn_lang)."""
+    rep = LocReport()
+    langs = discover_languages(root)
+
+    rep.errors.extend(validate_translations(root))
     if rep.errors:
         return rep
     tl_root = root / "game" / "tl"
@@ -218,8 +370,8 @@ def import_translations(root: Path) -> LocReport:
 
     expected_files: set[Path] = set()
     for lang in langs:
-        tr = _load_translations(root, lang)
-        lang_dir = tl_root / lang
+        tr = _load_translations(root, lang.code)
+        lang_dir = tl_root / lang.code
         lang_dir.mkdir(parents=True, exist_ok=True)
 
         # Диалоги: translate <lang> <say_id>
@@ -232,7 +384,7 @@ def import_translations(root: Path) -> LocReport:
                 text, fuzzy = tr[sid]
                 if fuzzy:
                     continue    # fuzzy не поставляется — исходник изменился
-                out.append(f"translate {lang} {sid}:")
+                out.append(f"translate {lang.code} {sid}:")
                 who = say.get("who")
                 out.append(f"    {who + ' ' if who else ''}{_rpy_str(text)}")
                 out.append("")
@@ -268,14 +420,24 @@ def import_translations(root: Path) -> LocReport:
 
         out = [GEN_HEADER]
         if pairs:
-            out.append(f"translate {lang} strings:")
+            out.append(f"translate {lang.code} strings:")
             for old, new in pairs:
                 out.append(f"    old {_rpy_str(old)}")
                 out.append(f"    new {_rpy_str(new)}")
             out.append("")
+        # Гарантированная регистрация языка в движке: renpy.known_languages()
+        # видит только языки хотя бы с одним translate-стейтментом — язык,
+        # у которого переведён только UI (lookup-словари ниже), без этого блока
+        # не появился бы в Language Registry. Здесь же — языкозависимый шрифт.
+        out.append(f"translate {lang.code} python:")
+        if lang.font:
+            out.append(f"    gui.text_font = {lang.font!r}")
+        else:
+            out.append("    pass")
+        out.append("")
         out.append("init 600 python:")
-        out.append(f"    VN_MENUS_TL[{lang!r}] = {menus_tl!r}")
-        out.append(f"    VN_STRINGS_TL[{lang!r}] = {strings_tl!r}")
+        out.append(f"    VN_MENUS_TL[{lang.code!r}] = {menus_tl!r}")
+        out.append(f"    VN_STRINGS_TL[{lang.code!r}] = {strings_tl!r}")
         path = lang_dir / "common.rpy"
         expected_files.add(path)
         data = "\n".join(out) + "\n"
@@ -283,19 +445,63 @@ def import_translations(root: Path) -> LocReport:
             path.write_text(data, encoding="utf-8")
             rep.changed.append(path.relative_to(root).as_posix())
 
-    # Очистка: tl-файлы, которых больше не должно быть (язык убран и т.п.)
+        if lang.font and not (root / "game" / lang.font).is_file():
+            rep.warnings.append(f"loc/po/{lang.code}: font {lang.font!r} не найден "
+                                f"в game/ — рантайм откатится на базовый шрифт")
+
+        # Манифест языка для рантайм-дискавери (store vn_lang, ADR-0005)
+        mf_path = lang_dir / "language.json"
+        expected_files.add(mf_path)
+        mf_data = json.dumps(lang.manifest(), ensure_ascii=False, indent=1) + "\n"
+        if not mf_path.is_file() or mf_path.read_text(encoding="utf-8") != mf_data:
+            mf_path.write_text(mf_data, encoding="utf-8")
+            rep.changed.append(mf_path.relative_to(root).as_posix())
+
+    # Очистка: наши tl-файлы, которых больше не должно быть (язык убран и т.п.).
+    # Владение — по маркеру (GEN_HEADER / generator в манифесте): модовые и
+    # ручные переводы, положенные в game/tl мимо конвейера, не трогаем.
     if tl_root.is_dir():
-        for f in tl_root.rglob("*.rpy"):
-            if f not in expected_files:
-                f.unlink()
-                for c in (f.with_suffix(".rpyc"),):
-                    if c.is_file():
-                        c.unlink()
-                rep.changed.append(f"удалён: {f.relative_to(root).as_posix()}")
+        for f in sorted(tl_root.rglob("*.rpy")):
+            if f in expected_files or not _is_generated_rpy(f):
+                continue
+            f.unlink()
+            c = f.with_suffix(".rpyc")
+            if c.is_file():
+                c.unlink()
+            rep.changed.append(f"удалён: {f.relative_to(root).as_posix()}")
+        for mf in sorted(tl_root.rglob("language.json")):
+            if mf in expected_files or not _is_generated_manifest(mf):
+                continue
+            mf.unlink()
+            rep.changed.append(f"удалён: {mf.relative_to(root).as_posix()}")
+            # Осиротевшие .rpyc нашего генерата в каталоге убранного языка:
+            # без этого «призрачный» перевод продолжал бы загружаться движком.
+            for c in mf.parent.glob("*.rpyc"):
+                if not c.with_suffix(".rpy").exists():
+                    c.unlink()
+        # Пустые каталоги удалённых языков не оставляем
+        for d in sorted(tl_root.iterdir()):
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
     return rep
 
 
-_KEEP_RE = __import__("re").compile(r"(\{[^{}]*\}|\[[^\[\]]*\])")
+def _is_generated_rpy(path: Path) -> bool:
+    try:
+        with path.open(encoding="utf-8", errors="ignore") as f:
+            return f.readline() == GEN_HEADER
+    except OSError:
+        return False
+
+
+def _is_generated_manifest(path: Path) -> bool:
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("generator") == "vn loc import"
+    except (OSError, ValueError):
+        return False
+
+
+_KEEP_RE = re.compile(r"(\{[^{}]*\}|\[[^\[\]]*\])")
 
 
 def _pseudoize(s: str) -> str:
@@ -308,10 +514,22 @@ def _pseudoize(s: str) -> str:
 
 
 def pseudo(root: Path) -> LocReport:
-    """Псевдолокализация (QA переполнений UI): язык 'pseudo' с удлинением x1.4."""
+    """Псевдолокализация (QA переполнений UI): synthetic-пакет 'pseudo' с удлинением x1.4."""
     rep = LocReport()
     lang_dir = root / "loc" / "po" / "pseudo"
     lang_dir.mkdir(parents=True, exist_ok=True)
+    mf = lang_dir / "language.yaml"
+    if not mf.is_file():
+        # Обычный пакет языка (ADR-0005): никаких спецвечестей в дискавери,
+        # synthetic лишь прячет его из настроек release-сборки.
+        mf.write_text(
+            "schema: language@1\n"
+            "code: pseudo\n"
+            "name: Pseudo (QA)\n"
+            "synthetic: true\n",
+            encoding="utf-8",
+        )
+        rep.changed.append(mf.relative_to(root).as_posix())
     for domain, rows in sorted(_units(root).items()):
         po = polib.POFile()
         po.metadata["Content-Type"] = "text/plain; charset=utf-8"
@@ -325,8 +543,12 @@ def pseudo(root: Path) -> LocReport:
                 comment=comment,
             ))
         path = lang_dir / f"{domain}.po"
-        po.save(str(path))
-        rep.changed.append(path.relative_to(root).as_posix())
+        # Идемпотентность: extract зовёт pseudo() на каждый прогон — неизменившийся
+        # файл не перезаписываем и не рапортуем «обновлён»
+        data = str(po)
+        if not path.is_file() or path.read_text(encoding="utf-8") != data:
+            po.save(str(path))
+            rep.changed.append(path.relative_to(root).as_posix())
     return rep
 
 
@@ -334,15 +556,11 @@ def report(root: Path) -> LocReport:
     rep = LocReport()
     domains = _units(root)
     total = sum(len(rows) for rows in domains.values())
-    langs = _languages(root)
-    pseudo_dir = root / "loc" / "po" / "pseudo"
-    if pseudo_dir.is_dir():
-        langs = langs + ["pseudo"]
-    for lang in langs:
-        tr = _load_translations(root, lang)
+    for lang in discover_languages(root):
+        tr = _load_translations(root, lang.code)
         translated = sum(1 for rows in domains.values() for ctx, _m, _c in rows
                         if ctx in tr and not tr[ctx][1])
         fuzzy = sum(1 for rows in domains.values() for ctx, _m, _c in rows
                     if ctx in tr and tr[ctx][1])
-        rep.coverage[lang] = {"total": total, "translated": translated, "fuzzy": fuzzy}
+        rep.coverage[lang.code] = {"total": total, "translated": translated, "fuzzy": fuzzy}
     return rep

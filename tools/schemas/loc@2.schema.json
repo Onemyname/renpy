@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/loc@2",
+  "title": "loc@2 — конфигурация локализации (loc/loc.yaml): исходный язык и релизные пороги. Списка языков НЕТ — языки автодискаверятся как пакеты loc/po/<code>/language.yaml (ADR-0005)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "loc@2"},
+    "source": {
+      "type": "object",
+      "description": "Исходный язык проекта: код и native-название для экрана настроек (в Ren'Py это language=None)",
+      "properties": {
+        "code": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,15}$"},
+        "name": {"type": "string", "minLength": 1}
+      },
+      "required": ["code", "name"],
+      "additionalProperties": false
+    },
+    "release_coverage_min": {
+      "type": "number", "minimum": 0, "maximum": 1,
+      "description": "Порог покрытия перевода для release-гейта (по строкам релизного контента)"
+    }
+  },
+  "required": ["schema", "source"],
+  "additionalProperties": false
+}
