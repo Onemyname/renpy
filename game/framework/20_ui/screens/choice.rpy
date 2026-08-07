@@ -1,30 +1,8 @@
 # Кастомный screen choice (G8/C1): перевод пунктов меню идёт НЕ через translate strings
-# (коллизии «Да»/«Нет» между сценами неизбежны), а по choice-id из реестра меню.
+# (коллизии «Да»/«Нет» между сценами неизбежны), а по choice-id из реестра меню
+# (lookup vn_loc.choice_text — framework/00_core/040_localization.rpy).
 # Идентичность меню держит переменная vn_menu (default — во framework/00_core/020_state.rpy),
 # которую vn loc keys вставляет в авторский scene.rpy перед каждым menu-стейтментом.
-
-init -999 python in vn_loc:
-    from store import renpy
-
-    def _lang():
-        return renpy.game.preferences.language
-
-    def choice_text(menu_id, idx, caption):
-        """Перевод пункта (menu_id, idx) по VN_MENUS_TL (наполняется tl/<lang>/common.rpy).
-        Исходный язык / нет перевода -> авторский caption."""
-        tl = getattr(renpy.store, "VN_MENUS_TL", {}).get(_lang())
-        if tl and menu_id in tl and idx < len(tl[menu_id]):
-            return tl[menu_id][idx]
-        return caption
-
-    def t(key):
-        """UI/мета-строка по ключу (content/ui/strings.yaml): исходник или перевод."""
-        source = getattr(renpy.store, "VN_STRINGS", {}).get(key, key)
-        tl = getattr(renpy.store, "VN_STRINGS_TL", {}).get(_lang())
-        if tl and key in tl:
-            return tl[key]
-        return source
-
 
 screen choice(items):
     style_prefix "choice"

@@ -1,7 +1,9 @@
 # Тонкий options.rpy (раздел 1.2): почти всё вынесено в framework/00_core.
 # config.version НЕ задаётся здесь — его эмитит generated/version.gen.rpy из project.yaml.
 
-define config.name = _("VN")
+# Имя игры — бренд-константа (заголовок окна ОС): сознательно НЕ переводится.
+# Захочется переводить — через translate strings, define вычисляется один раз.
+define config.name = "VN"
 define config.save_directory = "vn-1755000000"
 define config.has_autosave = True
 define config.autosave_slots = 10
@@ -22,3 +24,17 @@ init python:
     build.classify("game/framework/90_debug/**", None)
     build.classify("game/generated/qa/**", None)
     build.classify("game/generated/manifest.json", None)
+    # Synthetic-языки (pseudo, ADR-0005) — QA-инструмент: из дистрибутива
+    # исключаются по манифесту пакета, без хардкода кодов языков.
+    import json as _json
+    import os as _os
+    _tl_dir = _os.path.join(config.gamedir, "tl")
+    if _os.path.isdir(_tl_dir):
+        for _code in _os.listdir(_tl_dir):
+            _mf = _os.path.join(_tl_dir, _code, "language.json")
+            try:
+                with open(_mf, encoding="utf-8") as _f:
+                    if _json.load(_f).get("synthetic"):
+                        build.classify("game/tl/%s/**" % _code, None)
+            except (OSError, ValueError):
+                pass

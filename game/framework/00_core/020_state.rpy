@@ -85,8 +85,12 @@ label after_load:
         _loaded_schema = vn_state.current_schema()
         _target_schema = getattr(renpy.store, "vn_build_save_schema", _loaded_schema)
     if _loaded_schema is not None and _target_schema is not None and _loaded_schema > _target_schema:
-        # Сейв из будущей версии: не мигрируем вниз.
-        "Сохранение сделано в более новой версии игры. Обновите игру, чтобы продолжить."
+        # Сейв из будущей версии: не мигрируем вниз. block_rollback ДО say —
+        # иначе гейт обходится колёсиком мыши (say = интеракция, откат за неё
+        # вернул бы игрока в немигрируемое состояние). Текст — через vn_loc.t():
+        # литерал в label не попадает в PO-экстракцию (ADR-0005).
+        $ renpy.block_rollback()
+        $ renpy.say(None, vn_loc.t("ui.flow.save_from_newer"))
         $ renpy.full_restart()
     if _loaded_schema is not None and _target_schema is not None and _loaded_schema < _target_schema:
         python:

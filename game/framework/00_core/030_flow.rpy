@@ -129,7 +129,11 @@ init -999 python in vn_qa:
         """Вызывается из label main_menu qa-файла ОДНИМ выражением: никаких import
         в рантайм-python — rollback-лог записал бы модуль в сейв (module_pickle)."""
         lang = os.environ.get("VN_AUTOPILOT_LANG") or None
-        if lang:
+        if lang == "@source":
+            # Прогон на исходном языке: явный сброс (персистентный language
+            # от прошлых прогонов иначе тихо подменил бы язык теста)
+            renpy.change_language(None)
+        elif lang:
             renpy.change_language(lang)
         slot = os.environ.get("VN_AUTOPILOT_LOAD")
         if slot:
@@ -153,11 +157,13 @@ init -999 python in vn_qa:
 
 
 # ── Точка входа ──────────────────────────────────────────────────────────────
+# Реплики framework-меток — через vn_loc.t(): литерал в label не попадает
+# в PO-экстракцию (леджер собирается только из сцен) и не переводился бы (ADR-0005).
 label start:
     $ _chapters = vn_registry.chapters()
     if not _chapters:
-        "Контент не найден."
-        "Добавьте главу в content/chapters/ и выполните {b}vn build{/b} (раздел 3 ARCHITECTURE.md)."
+        $ renpy.say(None, vn_loc.t("ui.flow.no_content"))
+        $ renpy.say(None, vn_loc.t("ui.flow.no_content_hint"))
         return
     # Маршрутизация к entry-сцене первой доступной главы (генерат кладёт метку в реестр).
     $ renpy.jump(_chapters[0]["entry_label"])
@@ -166,13 +172,13 @@ label start:
 label vn_scene_unavailable:
     if vn_qa.autopilot_active():
         $ vn_qa.autopilot_finish("FAIL: vn_scene_unavailable")
-    "Эта сцена недоступна в текущей версии игры."
-    "Возврат в главное меню."
+    $ renpy.say(None, vn_loc.t("ui.flow.scene_unavailable"))
+    $ renpy.say(None, vn_loc.t("ui.flow.return_to_menu"))
     $ renpy.full_restart()
 
 
 label vn_end_of_content:
     if vn_qa.autopilot_active():
         $ vn_qa.autopilot_finish("OK: vn_end_of_content")
-    "Продолжение следует…"
+    $ renpy.say(None, vn_loc.t("ui.flow.end_of_content"))
     $ renpy.full_restart()
