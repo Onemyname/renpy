@@ -1,0 +1,5 @@
+schema: strings@1
+strings:
+  meta.chapters.ch01.title: "Глава 1. Пробуждение"
+  meta.locations.school_gate.title: "Школьные ворота"
+  meta.locations.rooftop.title: "Крыша"

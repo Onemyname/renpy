@@ -436,7 +436,89 @@ for _cmd, _phase in {"pull": 2, "push": 2, "lock": 2, "status": 2}.items():
     assets.command(name=_cmd, help=f"S3-хранилище сырцов и локи (фаза {_phase}).")(_stub(_phase))
 
 _stub_group("char", "Персонажи: new, validate, sheet (раздел 4).", {"new": 1, "validate": 1, "sheet": 2})
-_stub_group("loc", "Локализация (раздел 5).", {"extract": 2, "import": 2, "report": 2, "pseudo": 2, "keys": 2})
+# ── vn loc ────────────────────────────────────────────────────────────────────
+
+@main.group()
+def loc():
+    """Локализация (раздел 5, G8)."""
+
+
+@loc.command("keys")
+@click.option("--check", is_flag=True, help="Только проверить (CI): все ли say/menu имеют id.")
+def loc_keys(check: bool):
+    """Дописать say-id и маркеры меню в авторские scene.rpy (парсером Ren'Py, G24)."""
+    from .loc.keys import KeysError, assign_ids
+
+    root = _root()
+    try:
+        rep = assign_ids(root, check=check)
+    except KeysError as e:
+        _fail(str(e))
+    if rep.errors:
+        for e in rep.errors:
+            click.secho(f"error: {e}", fg="red")
+        _fail(f"loc keys: {len(rep.errors)} ошибок")
+    if check:
+        if rep.missing:
+            for m in rep.missing:
+                click.secho(f"нет id: {m}", fg="red")
+            _fail("loc keys --check: есть строки без id — выполните vn loc keys")
+        click.secho("loc keys --check: все строки с id", fg="green")
+        return
+    for c in rep.changed:
+        click.echo(f"обновлён: {c}")
+    for l in rep.ledgers:
+        click.echo(f"ledger: {l}")
+    click.secho(f"loc keys: OK ({len(rep.changed)} файлов изменено)", fg="green")
+
+
+@loc.command("extract")
+def loc_extract():
+    """Обновить PO всех языков из ledger/strings/персонажей (переводы сохраняются)."""
+    from .loc.po import extract
+
+    rep = extract(_root())
+    for w in rep.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    for c in rep.changed:
+        click.echo(f"обновлён: {c}")
+    click.secho(f"loc extract: OK ({len(rep.changed)} PO-файлов)", fg="green")
+
+
+@loc.command("import")
+def loc_import():
+    """PO -> game/tl/<lang>/: translate-блоки, данные меню/строк (ручные правки tl запрещены)."""
+    from .loc.po import import_translations
+
+    rep = import_translations(_root())
+    for c in rep.changed:
+        click.echo(f"{c}")
+    click.secho(f"loc import: OK ({len(rep.changed)} файлов)", fg="green")
+
+
+@loc.command("pseudo")
+def loc_pseudo():
+    """Псевдолокализация (язык pseudo): QA переполнений UI до реальных переводов."""
+    from .loc.po import import_translations, pseudo
+
+    root = _root()
+    rep = pseudo(root)
+    import_translations(root)
+    click.secho(f"loc pseudo: OK ({len(rep.changed)} PO-файлов; язык 'pseudo' готов)", fg="green")
+
+
+@loc.command("report")
+def loc_report():
+    """Покрытие перевода по языкам."""
+    from .loc.po import report
+
+    rep = report(_root())
+    if not rep.coverage:
+        click.echo("языков нет (loc/loc.yaml languages пуст)")
+        return
+    for lang, cov in sorted(rep.coverage.items()):
+        pct = (cov["translated"] / cov["total"] * 100) if cov["total"] else 100.0
+        click.echo(f"{lang}: {cov['translated']}/{cov['total']} ({pct:.0f}%), fuzzy: {cov['fuzzy']}")
 _stub_group("voice", "Озвучка (C5).", {"manifest": 2, "import": 2, "tts": 2, "validate": 2})
 _stub_group("save", "Сейвы: check, migrate, corpus (раздел 6).", {"check": 2, "migrate": 2, "corpus": 2})
 # ── vn test ───────────────────────────────────────────────────────────────────
@@ -448,8 +530,9 @@ def test():
 
 @test.command("smoke")
 @click.option("--picks", default="", help="Индексы выборов в меню через запятую (например 0,1).")
+@click.option("--lang", default="", help="Язык прогона (код из loc/loc.yaml или pseudo).")
 @click.option("--timeout", "timeout_s", default=180, help="Лимит прогона, сек.")
-def test_smoke(picks: str, timeout_s: int):
+def test_smoke(picks: str, lang: str, timeout_s: int):
     """Автопрохождение игры автопилотом ВНУТРИ процесса игры: авто-advance,
     авто-выбор, скриншоты движка. Никакого синтетического ввода на рабочий стол."""
     import shutil
@@ -482,6 +565,11 @@ def test_smoke(picks: str, timeout_s: int):
         "label main_menu:\n"
         "    if not vn_qa.autopilot_active():\n"
         "        $ renpy.quit(save=False)   # осиротевший прогон-файл вне smoke: не играем сами с собой\n"
+        "    python:\n"
+        "        import os as _os\n"
+        "        _l = _os.environ.get(\"VN_AUTOPILOT_LANG\") or None\n"
+        "        if _l:\n"
+        "            renpy.change_language(_l)\n"
         "    return\n\n"
         "init python:\n"
         "    if vn_qa.autopilot_active():\n"
@@ -492,7 +580,7 @@ def test_smoke(picks: str, timeout_s: int):
     )
     exe = sdk / ("renpy.exe" if sys.platform == "win32" else "renpy.sh")
     env = dict(os.environ, VN_AUTOPILOT="1", VN_AUTOPILOT_DIR=str(shots),
-               VN_AUTOPILOT_PICKS=picks)
+               VN_AUTOPILOT_PICKS=picks, VN_AUTOPILOT_LANG=lang)
     tb = root / "traceback.txt"
     if tb.is_file():
         tb.unlink()

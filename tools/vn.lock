@@ -1,19 +1,20 @@
 # Пиннованный тулчейн (G17): откат = git revert этого файла.
 # Обновляется PR-ом engine-team; регенерация: pip freeze по зависимостям vn-tools.
+Pillow==12.3.0
+PyYAML==6.0.3
 attrs==26.1.0
 blake3==1.0.9
 click==8.4.2
 colorama==0.4.6
 iniconfig==2.3.0
-jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
+jsonschema==4.26.0
 numpy==2.5.1
 packaging==26.3
-Pillow==12.3.0
 pluggy==1.6.0
+polib==1.2.0
 psd-tools==1.18.0
 pytest==9.1.1
-PyYAML==6.0.3
 referencing==0.37.0
 rpds-py==2026.6.3
 typing-extensions==4.16.0

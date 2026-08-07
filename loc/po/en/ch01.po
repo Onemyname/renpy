@@ -1,0 +1,83 @@
+#
+msgid ""
+msgstr ""
+"Language: en\n"
+"Content-Type: text/plain; charset=utf-8\n"
+
+#. говорит: рассказчик; сцена ch01_s010
+msgctxt "ch01_s010_0001"
+msgid ""
+"Первый учебный день. Звонок уже прозвенел, а ты всё ещё стоишь у ворот."
+msgstr ""
+"First day of school. The bell has rung, and you're still standing at the "
+"gate."
+
+#. говорит: рассказчик; сцена ch01_s010
+msgctxt "ch01_s010_0002"
+msgid "У ворот кто-то есть."
+msgstr "There's someone at the gate."
+
+#. говорит: mira; сцена ch01_s020
+msgctxt "ch01_s020_0001"
+msgid "Ты опять проспал?"
+msgstr "Overslept again?"
+
+#. говорит: mira; сцена ch01_s020
+msgctxt "ch01_s020_0002"
+msgid "Ну-ну. Очень убедительно."
+msgstr "Uh-huh. Very convincing."
+
+#. говорит: mira; сцена ch01_s020
+msgctxt "ch01_s020_0003"
+msgid "Хотя бы честно. Пойдём, провожу до крыши."
+msgstr "At least you're honest. Come on, I'll walk you to the rooftop."
+
+#. говорит: mira; сцена ch01_s020
+msgctxt "ch01_s020_0004"
+msgid "Ладно. Беги, звонок уже был."
+msgstr "Fine. Run, the bell already rang."
+
+#. говорит: рассказчик; сцена ch01_s030
+msgctxt "ch01_s030_0001"
+msgid "Крыша. Ветер. Город до горизонта."
+msgstr "The rooftop. Wind. The city stretches to the horizon."
+
+#. говорит: mira; сцена ch01_s030
+msgctxt "ch01_s030_0002"
+msgid "А ты быстрее, чем кажешься."
+msgstr "You're faster than you look."
+
+#. говорит: рассказчик; сцена ch01_s030
+msgctxt "ch01_s030_0003"
+msgid "Она смеётся. Кажется, этот год будет интересным."
+msgstr "She laughs. Looks like this year is going to be interesting."
+
+#. говорит: рассказчик; сцена ch01_s030
+msgctxt "ch01_s030_0004"
+msgid "Ты здесь один. Тихо. Слишком тихо."
+msgstr "You're here alone. Quiet. Too quiet."
+
+#. говорит: рассказчик; сцена ch01_s030
+msgctxt "ch01_s030_0005"
+msgid "КОНЕЦ ДЕМО-ГЛАВЫ"
+msgstr "END OF DEMO CHAPTER"
+
+#. пункт меню 0; сцена ch01_s010
+msgctxt "ch01_s010_m001[0]"
+msgid "Подойти к воротам"
+msgstr "Approach the gate"
+
+#. пункт меню 1; сцена ch01_s010
+msgctxt "ch01_s010_m001[1]"
+msgid "Подняться сразу на крышу"
+msgstr "Head straight to the rooftop"
+
+#. пункт меню 0; сцена ch01_s020
+msgctxt "ch01_s020_m001[0]"
+msgid "Соврать"
+msgstr "Lie"
+
+#. пункт меню 1; сцена ch01_s020
+msgctxt "ch01_s020_m001[1]"
+msgid "Сказать правду"
+msgstr "Tell the truth"

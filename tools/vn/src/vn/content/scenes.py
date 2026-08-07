@@ -287,6 +287,6 @@ screen chapter_select():
         vbox:
             spacing 12
             for ch in VN_CHAPTERS:
-                textbutton ch["title_key"] action Start(ch["entry_label"])
+                textbutton vn_loc.t(ch["title_key"]) action Start(ch["entry_label"])
         textbutton _("Назад") action Return()
 '''

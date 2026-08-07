@@ -1,0 +1,25 @@
+#
+msgid ""
+msgstr ""
+"Language: en\n"
+"Content-Type: text/plain; charset=utf-8\n"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch01.title"
+msgid "Глава 1. Пробуждение"
+msgstr "Chapter 1. Awakening"
+
+#. UI/мета-строка
+msgctxt "string:meta.locations.rooftop.title"
+msgid "Крыша"
+msgstr "Rooftop"
+
+#. UI/мета-строка
+msgctxt "string:meta.locations.school_gate.title"
+msgid "Школьные ворота"
+msgstr "School Gate"
+
+#. имя персонажа
+msgctxt "char:mira"
+msgid "Мира"
+msgstr "Mira"

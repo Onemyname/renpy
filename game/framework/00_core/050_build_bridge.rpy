@@ -29,6 +29,16 @@ init python:
                 })
             elif cls == "Say":
                 entry["says"] += 1
+                entry["say_list"].append({
+                    "line": line,
+                    "who": node.who if isinstance(node.who, str) else None,
+                    "what": node.what,
+                    "id": getattr(node, "identifier", None),
+                })
+            elif cls == "Python":
+                src = getattr(getattr(node, "code", None), "source", "") or ""
+                if src.strip().startswith("vn_menu"):
+                    entry["menu_markers"].append({"line": line, "source": src.strip()})
             elif cls == "Menu":
                 captions = []
                 for item in node.items:
@@ -60,7 +70,8 @@ init python:
         for fn in args.files:
             entry = {
                 "labels": [], "jumps": [], "calls": [], "returns": [],
-                "menus": [], "says": 0, "errors": [],
+                "menus": [], "says": 0, "say_list": [], "menu_markers": [],
+                "errors": [],
             }
             try:
                 with io.open(fn, "r", encoding="utf-8") as f:

@@ -123,12 +123,19 @@ def _emit_audio(audio_docs: list[tuple[str, dict]], sources) -> str:
     return "\n".join(out) + "\n"
 
 
-def _emit_menus(sources) -> str:
+def _emit_menus(menus: dict, strings: dict, languages: list, sources) -> str:
     return _header(sources) + (
         "init offset = -100\n\n"
-        "# Реестр choice-id (G8/C1): наполняется vn loc keys (фаза 2);\n"
+        "# Реестр choice-id (G8/C1): источник — loc/ledger/ (vn loc keys);\n"
         "# vn_loc.choice_text() делает по нему lookup переводов пунктов меню.\n"
-        "define VN_MENUS = {}\n"
+        f"define VN_MENUS = {menus!r}\n\n"
+        "# Переводы наполняют tl/<lang>/common.rpy на init 600 (vn loc import).\n"
+        "define VN_MENUS_TL = {}\n"
+        "define VN_STRINGS_TL = {}\n\n"
+        "# UI/мета-строки (content/ui/strings.yaml): vn_loc.t(key) -> текст/перевод.\n"
+        f"define VN_STRINGS = {strings!r}\n\n"
+        "# Языки для экрана настроек (loc/loc.yaml + pseudo при наличии).\n"
+        f"define VN_LANGUAGES = {languages!r}\n"
     )
 
 
@@ -289,6 +296,32 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     renames_src = src(renames_path)
     renames = load_yaml(renames_path)
 
+    # Локализация: ledger'ы (реестр меню), UI-строки, языки
+    menus: dict[str, list] = {}
+    ledger_dir = root / "loc" / "ledger"
+    if ledger_dir.is_dir():
+        for f in sorted(ledger_dir.glob("ch*.json")):
+            rel, _d = src(f)
+            ledger = json.loads(f.read_text(encoding="utf-8"))
+            l_errs = registry.validate(ledger, rel)
+            if l_errs:
+                errors.extend(l_errs)
+                continue
+            for mid, menu in (ledger.get("menus") or {}).items():
+                menus[mid] = list(menu["items"])
+    ui_strings: dict[str, str] = {}
+    strings_path = root / "content" / "ui" / "strings.yaml"
+    if strings_path.is_file():
+        rel, _d = src(strings_path)
+        ui_strings = dict(load_yaml(strings_path).get("strings") or {})
+    languages: list[str] = []
+    loc_cfg_path = root / "loc" / "loc.yaml"
+    if loc_cfg_path.is_file():
+        rel, _d = src(loc_cfg_path)
+        languages = list(load_yaml(loc_cfg_path).get("languages") or [])
+    if (root / "loc" / "po" / "pseudo").is_dir():
+        languages = languages + ["pseudo"]
+
     # Локации
     locations = load_locations(root, src, registry, errors)
 
@@ -327,6 +360,13 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
             scene_outputs[f"scenes/{u.chapter_id}/{u.full_id}.gen.rpy"] = sc.emit_scene(
                 u, dispatch, audio_ids, locations, scene_rep, header
             )
+        # title_key глав обязан существовать в strings.yaml (иначе в меню — сырой ключ)
+        for c in chapters:
+            if c["title_key"] not in ui_strings:
+                result.warnings.append(
+                    f"{c['id']}: title_key {c['title_key']!r} нет в content/ui/strings.yaml — "
+                    f"в меню глав отобразится сырой ключ"
+                )
         # Валидация глав: entry_scene и scene_order существуют
         for c in chapters:
             ch_scenes = {u.short_id for u in units if u.chapter_id == c["id"]}
@@ -362,7 +402,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         ),
         "registry/scenes.gen.rpy": sc.emit_scene_registry(units, _header([proj_src])),
         "registry/characters.gen.rpy": sc.emit_characters(char_docs, _header(char_sources or [proj_src])),
-        "registry/menus.gen.rpy": _emit_menus([proj_src]),
+        "registry/menus.gen.rpy": _emit_menus(menus, ui_strings, languages, [proj_src]),
         "registry/overrides.gen.rpy": _emit_overrides(renames, [renames_src]),
     }
     outputs.update(scene_outputs)

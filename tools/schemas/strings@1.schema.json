@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/strings@1",
+  "title": "strings@1 — исходные тексты UI/мета-ключей (content/ui/strings.yaml): title_key глав/локаций и системные строки",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "strings@1"},
+    "strings": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9_.]+$"},
+      "additionalProperties": {"type": "string", "minLength": 1}
+    }
+  },
+  "required": ["schema", "strings"],
+  "additionalProperties": false
+}

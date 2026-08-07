@@ -6,10 +6,24 @@
 init -999 python in vn_loc:
     from store import renpy
 
+    def _lang():
+        return renpy.game.preferences.language
+
     def choice_text(menu_id, idx, caption):
-        """Lookup перевода пункта (menu_id, idx) в VN_MENUS (generated/registry/menus.gen.rpy).
-        Исходный язык / отсутствующий перевод -> авторский caption. Полный lookup — фаза 2."""
+        """Перевод пункта (menu_id, idx) по VN_MENUS_TL (наполняется tl/<lang>/common.rpy).
+        Исходный язык / нет перевода -> авторский caption."""
+        tl = getattr(renpy.store, "VN_MENUS_TL", {}).get(_lang())
+        if tl and menu_id in tl and idx < len(tl[menu_id]):
+            return tl[menu_id][idx]
         return caption
+
+    def t(key):
+        """UI/мета-строка по ключу (content/ui/strings.yaml): исходник или перевод."""
+        source = getattr(renpy.store, "VN_STRINGS", {}).get(key, key)
+        tl = getattr(renpy.store, "VN_STRINGS_TL", {}).get(_lang())
+        if tl and key in tl:
+            return tl[key]
+        return source
 
 
 screen choice(items):

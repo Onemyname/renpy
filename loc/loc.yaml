@@ -1,4 +1,4 @@
 schema: loc@1
 source_lang: ru
-languages: []          # целевые языки добавляются в фазе 2 (vn loc extract/import)
+languages: [en]
 release_coverage_min: 0.98

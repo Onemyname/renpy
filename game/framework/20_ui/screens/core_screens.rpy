@@ -162,6 +162,15 @@ screen preferences():
                 label _("Пропуск")
                 textbutton _("Всего текста") action Preference("skip", "toggle")
                 textbutton _("После выборов") action Preference("after choices", "toggle")
+        if getattr(store, "VN_LANGUAGES", []):
+            vbox:
+                spacing 10
+                label _("Язык / Language")
+                hbox:
+                    spacing 20
+                    textbutton "ru" action Language(None)
+                    for code in VN_LANGUAGES:
+                        textbutton code action Language(code)
         vbox:
             spacing 14
             label _("Громкость")
