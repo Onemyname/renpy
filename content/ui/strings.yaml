@@ -1,7 +1,59 @@
 schema: strings@1
+# Все пользовательские строки интерфейса и мета-тексты (раздел 5.4, ADR-0005).
+# В экранах — ТОЛЬКО ключи через vn_loc.t(key): литерал в .rpy не попадёт
+# в PO-экстракцию и останется непереведённым при смене языка.
 strings:
+  # ── Мета: главы, локации, паки (title_key деклараций) ──────────────────────
   meta.chapters.ch01.title: "Глава 1. Пробуждение"
   meta.locations.school_gate.title: "Школьные ворота"
   meta.locations.rooftop.title: "Крыша"
   meta.chapters.ch90.title: "Эпизод: Пляж (DLC)"
   meta.packs.ep_beach.title: "Пляжный эпизод"
+
+  # ── Навигация ───────────────────────────────────────────────────────────────
+  ui.nav.start: "Начать игру"
+  ui.nav.chapters: "Главы"
+  ui.nav.return: "Вернуться"
+  ui.nav.save: "Сохранить"
+  ui.nav.load: "Загрузить"
+  ui.nav.prefs: "Настройки"
+  ui.nav.main_menu: "Главное меню"
+  ui.nav.quit: "Выход"
+  ui.main.version: "версия [config.version]"
+  ui.common.back: "Назад"
+
+  # ── Сохранение / загрузка ───────────────────────────────────────────────────
+  ui.file.save_title: "Сохранение"
+  ui.file.load_title: "Загрузка"
+  ui.file.autopage: "Авто"
+  ui.file.empty_slot: "пустой слот"
+  ui.file.time_format: "{#file_time}%d.%m.%Y %H:%M"
+
+  # ── Настройки ───────────────────────────────────────────────────────────────
+  ui.prefs.title: "Настройки"
+  ui.prefs.display: "Режим экрана"
+  ui.prefs.windowed: "Оконный"
+  ui.prefs.fullscreen: "Полный экран"
+  ui.prefs.skip: "Пропуск"
+  ui.prefs.skip_all: "Всего текста"
+  ui.prefs.skip_after_choices: "После выборов"
+  ui.prefs.language: "Язык"
+  ui.prefs.volume: "Громкость"
+  ui.prefs.volume_music: "Музыка"
+  ui.prefs.volume_sound: "Звук"
+  ui.prefs.volume_voice: "Голос"
+
+  # ── Подтверждения (свой текст: движковые layout.* остались бы английскими) ──
+  ui.confirm.yes: "Да"
+  ui.confirm.no: "Нет"
+  ui.confirm.quit: "Выйти из игры? Несохранённый прогресс будет потерян."
+  ui.confirm.main_menu: "Выйти в главное меню? Несохранённый прогресс будет потерян."
+  ui.confirm.load: "Загрузить сохранение? Текущий прогресс будет потерян."
+
+  # ── Служебные сообщения потока (framework/00_core/030_flow.rpy) ─────────────
+  ui.flow.save_from_newer: "Сохранение сделано в более новой версии игры. Обновите игру, чтобы продолжить."
+  ui.flow.no_content: "Контент не найден."
+  ui.flow.no_content_hint: "Добавьте главу в content/chapters/ и выполните {b}vn build{/b} (раздел 3 ARCHITECTURE.md)."
+  ui.flow.scene_unavailable: "Эта сцена недоступна в текущей версии игры."
+  ui.flow.return_to_menu: "Возврат в главное меню."
+  ui.flow.end_of_content: "Продолжение следует…"

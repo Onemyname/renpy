@@ -1,8 +1,20 @@
 # Минимальный набор экранов фазы 0: игра запускается, сохраняется и загружается.
 # Компонентная библиотека UI и темы из токенов (раздел 7 ARCHITECTURE.md) — фаза 2;
 # этот файл сознательно простой и без картинок (Solid-фоны): game/assets ещё не собирается.
+#
+# Локализация (ADR-0005): в экранах НЕТ строковых литералов — только ключи
+# content/ui/strings.yaml через vn_loc.t(key). Смена языка горячая: интеракция
+# перезапускается, экраны переоцениваются — включая открытый в этот момент.
 
 init offset = -1
+
+init python:
+    # Закрытие окна ОС (X / Alt+F4): движковый путь показывает confirm с
+    # английской layout.QUIT-строкой — подменяем на наш локализованный текст.
+    # Лямбда, не Action: сообщение обязано вычисляться в момент показа,
+    # а не кешироваться на init (иначе смена языка его не тронет).
+    config.quit_action = lambda: renpy.run(
+        Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False)))
 
 ## ── Базовые стили ────────────────────────────────────────────────────────────
 
@@ -74,18 +86,20 @@ screen navigation():
         yalign 0.5
         spacing 14
         if main_menu:
-            textbutton _("Начать игру") action Start()
+            textbutton vn_loc.t("ui.nav.start") action Start()
             if vn_registry.chapters():
-                textbutton _("Главы") action ShowMenu("chapter_select")
+                textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select")
         else:
-            textbutton _("Вернуться") action Return()
-            textbutton _("Сохранить") action ShowMenu("save")
-        textbutton _("Загрузить") action ShowMenu("load")
-        textbutton _("Настройки") action ShowMenu("preferences")
+            textbutton vn_loc.t("ui.nav.return") action Return()
+            textbutton vn_loc.t("ui.nav.save") action ShowMenu("save")
+        textbutton vn_loc.t("ui.nav.load") action ShowMenu("load")
+        textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences")
         if main_menu:
-            textbutton _("Выход") action Quit(confirm=True)
+            # Confirm со СВОИМ текстом: дефолтные Quit(confirm)/MainMenu(confirm)
+            # показывают layout.*-строки движка, которых нет в нашем конвейере переводов.
+            textbutton vn_loc.t("ui.nav.quit") action Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False))
         else:
-            textbutton _("Главное меню") action MainMenu()
+            textbutton vn_loc.t("ui.nav.main_menu") action Confirm(vn_loc.t("ui.confirm.main_menu"), MainMenu(confirm=False))
 
 
 screen main_menu():
@@ -97,20 +111,20 @@ screen main_menu():
         yalign 0.95
         spacing 8
         text "[config.name!t]" size gui.title_text_size color gui.accent_color xalign 1.0
-        text _("версия [config.version]") size 24 color gui.idle_color xalign 1.0
+        text vn_loc.t("ui.main.version") size 24 color gui.idle_color xalign 1.0
 
 
 ## ── Сохранение / загрузка ────────────────────────────────────────────────────
 
 screen save():
     tag menu
-    use file_menu(_("Сохранение"))
+    use file_menu(vn_loc.t("ui.file.save_title"), True)
 
 screen load():
     tag menu
-    use file_menu(_("Загрузка"))
+    use file_menu(vn_loc.t("ui.file.load_title"), False)
 
-screen file_menu(title):
+screen file_menu(title, is_save):
     add Solid(gui.interface_bg)
     use navigation
     vbox:
@@ -120,23 +134,28 @@ screen file_menu(title):
         label title
         hbox:
             spacing 20
-            textbutton _("Авто") action FilePage("auto")
+            textbutton vn_loc.t("ui.file.autopage") action FilePage("auto")
             for p in range(1, 4):
                 textbutton "[p]" action FilePage(p)
         grid 3 3:
             spacing 20
             for i in range(1, 10):
+                # Загрузка в игре теряет прогресс — подтверждаем СВОИМ текстом
+                # (движковый confirm у FileLoad — английская layout-строка);
+                # confirm_selected: подсветка свежайшего слота — от FileLoad.
+                $ _slot_action = FileSave(i) if is_save else (FileLoad(i) if main_menu else Confirm(vn_loc.t("ui.confirm.load"), FileLoad(i, confirm=False), confirm_selected=True))
                 button:
-                    action FileAction(i)
+                    action _slot_action
+                    sensitive (True if is_save else FileLoadable(i))
                     xsize 440
                     ysize 130
                     background Solid("#2a2a36")
                     hover_background Solid("#3a3a4a")
                     vbox:
                         spacing 6
-                        text FileTime(i, format=_("{#file_time}%d.%m.%Y %H:%M"), empty=_("пустой слот")) size 24
+                        text FileTime(i, format=vn_loc.t("ui.file.time_format"), empty=vn_loc.t("ui.file.empty_slot")) size 24
                         text FileSaveName(i) size 22 color gui.idle_color
-        textbutton _("Назад") action Return()
+        textbutton vn_loc.t("ui.common.back") action Return()
 
 
 ## ── Настройки ────────────────────────────────────────────────────────────────
@@ -149,41 +168,84 @@ screen preferences():
         xpos 420
         ypos 80
         spacing 30
-        label _("Настройки")
+        label vn_loc.t("ui.prefs.title")
         hbox:
             spacing 80
             vbox:
                 spacing 10
-                label _("Режим экрана")
-                textbutton _("Оконный") action Preference("display", "window")
-                textbutton _("Полный экран") action Preference("display", "fullscreen")
+                label vn_loc.t("ui.prefs.display")
+                textbutton vn_loc.t("ui.prefs.windowed") action Preference("display", "window")
+                textbutton vn_loc.t("ui.prefs.fullscreen") action Preference("display", "fullscreen")
             vbox:
                 spacing 10
-                label _("Пропуск")
-                textbutton _("Всего текста") action Preference("skip", "toggle")
-                textbutton _("После выборов") action Preference("after choices", "toggle")
-        if getattr(store, "VN_LANGUAGES", []):
-            vbox:
-                spacing 10
-                label _("Язык / Language")
-                hbox:
-                    spacing 20
-                    textbutton "ru" action Language(None)
-                    for code in VN_LANGUAGES:
-                        textbutton code action Language(code)
+                label vn_loc.t("ui.prefs.skip")
+                textbutton vn_loc.t("ui.prefs.skip_all") action Preference("skip", "toggle")
+                textbutton vn_loc.t("ui.prefs.skip_after_choices") action Preference("after choices", "toggle")
+            use language_picker
         vbox:
             spacing 14
-            label _("Громкость")
+            label vn_loc.t("ui.prefs.volume")
             hbox:
-                text _("Музыка") min_width 260 size 28
+                text vn_loc.t("ui.prefs.volume_music") min_width 260 size 28
                 bar value Preference("music volume") xsize 600 ysize 30 left_bar Solid(gui.accent_color) right_bar Solid("#444450")
             hbox:
-                text _("Звук") min_width 260 size 28
+                text vn_loc.t("ui.prefs.volume_sound") min_width 260 size 28
                 bar value Preference("sound volume") xsize 600 ysize 30 left_bar Solid(gui.accent_color) right_bar Solid("#444450")
             hbox:
-                text _("Голос") min_width 260 size 28
+                text vn_loc.t("ui.prefs.volume_voice") min_width 260 size 28
                 bar value Preference("voice volume") xsize 600 ysize 30 left_bar Solid(gui.accent_color) right_bar Solid("#444450")
-        textbutton _("Назад") action Return()
+        textbutton vn_loc.t("ui.common.back") action Return()
+
+
+# Список языков (ADR-0005): данные — ТОЛЬКО из Language Registry (vn_lang).
+# Native-названия, вертикальный список, скролл (мышь/колесо/драг/клавиатура/
+# геймпад — фокус сам доскролливает viewport), автопрокрутка к выбранному.
+# Масштабируется на десятки языков без правок UI: добавление языка = пакет
+# loc/po/<code>/ (тулинг) или каталог game/tl/<code>/ (мод) — кода не требует.
+screen language_picker():
+    $ _langs = vn_lang.available()
+    $ _cur = vn_lang.current()
+    $ _sel = next((_i for _i, _l in enumerate(_langs) if _l["code"] == _cur), 0)
+    vbox:
+        spacing 10
+        label vn_loc.t("ui.prefs.language")
+        viewport id "vp_languages":
+            mousewheel True
+            draggable True
+            pagekeys True
+            scrollbars "vertical"
+            xsize 460
+            ymaximum 420
+            # Автопрокрутка к выбранному языку при открытии экрана
+            yinitial (_sel / float(max(1, len(_langs) - 1)))
+            # Скроллбар — Solid-стили: gui-ассетов (картинок бара) в проекте нет,
+            # дефолтный vscrollbar без них не отрисовывается (как и volume-бары выше)
+            vscrollbar_unscrollable "hide"
+            vscrollbar_base_bar Solid("#2a2a36")
+            vscrollbar_thumb Solid(gui.accent_color)
+            vscrollbar_xsize 10
+            vbox:
+                spacing 4
+                for _l in _langs:
+                    textbutton _l["name"]:
+                        style "pref_lang_button"
+                        # Шрифт пакета (CJK и т.п.): native-название рисуется им же;
+                        # битый путь из манифеста не должен ронять экран настроек
+                        text_font (_l["font"] if _l["font"] and renpy.loadable(_l["font"]) else gui.text_font)
+                        action vn_lang.action(_l["code"])
+
+style pref_lang_button:
+    xsize 420
+    padding (16, 8)
+    background None
+    hover_background Solid("#2a2a36")
+    selected_background Solid("#2f2b22")
+
+style pref_lang_button_text:
+    size 30
+    color gui.idle_color
+    hover_color gui.hover_color
+    selected_color gui.accent_color
 
 
 ## ── Служебные ────────────────────────────────────────────────────────────────
@@ -207,8 +269,8 @@ screen confirm(message, yes_action, no_action):
             hbox:
                 xalign 0.5
                 spacing 100
-                textbutton _("Да") action yes_action
-                textbutton _("Нет") action no_action
+                textbutton vn_loc.t("ui.confirm.yes") action yes_action
+                textbutton vn_loc.t("ui.confirm.no") action no_action
 
 
 screen notify(message):

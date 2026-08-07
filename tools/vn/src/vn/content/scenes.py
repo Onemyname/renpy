@@ -297,12 +297,12 @@ screen chapter_select():
         xpos 420
         ypos 80
         spacing 24
-        label _("Главы")
+        label vn_loc.t("ui.nav.chapters")
         vbox:
             spacing 12
             for ch in VN_CHAPTERS:
                 # Владение паком — логический гейт (G9): непокупные главы не видны
                 if vn.pack_registry.owned(ch["pack"]):
                     textbutton vn_loc.t(ch["title_key"]) action Start(ch["entry_label"])
-        textbutton _("Назад") action Return()
+        textbutton vn_loc.t("ui.common.back") action Return()
 '''
