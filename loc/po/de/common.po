@@ -1,103 +1,98 @@
 #
 msgid ""
 msgstr ""
-"Language: pseudo\n"
+"Language: de\n"
 "Content-Type: text/plain; charset=utf-8\n"
 
 #. UI/мета-строка
 msgctxt "string:meta.chapters.ch01.title"
 msgid "Глава 1. Пробуждение"
-msgstr "[[Глąвą 1. Прǫбųждęнįę~~~~~~~~]"
+msgstr "Kapitel 1. Das Erwachen"
 
 #. UI/мета-строка
 msgctxt "string:meta.chapters.ch90.title"
 msgid "Эпизод: Пляж (DLC)"
-msgstr "[[Эпįзǫд: Пляж (DLC)~~~~~~~]"
+msgstr "Episode: Strand (DLC)"
 
 #. UI/мета-строка
 msgctxt "string:meta.locations.rooftop.title"
 msgid "Крыша"
-msgstr "[[Крышą~~]"
+msgstr "Dach"
 
 #. UI/мета-строка
 msgctxt "string:meta.locations.school_gate.title"
 msgid "Школьные ворота"
-msgstr "[[Шкǫльныę вǫрǫтą~~~~~~]"
+msgstr "Schultor"
 
 #. UI/мета-строка
 msgctxt "string:meta.packs.ep_beach.title"
 msgid "Пляжный эпизод"
-msgstr "[[Пляжный эпįзǫд~~~~~]"
+msgstr "Strand-Episode"
 
 #. UI/мета-строка
 msgctxt "string:ui.common.back"
 msgid "Назад"
-msgstr "[[Нąзąд~~]"
+msgstr "Zurück"
 
 #. UI/мета-строка
 msgctxt "string:ui.confirm.load"
 msgid "Загрузить сохранение? Текущий прогресс будет потерян."
-msgstr ""
-"[[Зąгрųзįть сǫхрąнęнįę? Тęкųщįй прǫгрęсс бųдęт "
-"пǫтęрян.~~~~~~~~~~~~~~~~~~~~~]"
+msgstr "Spielstand laden? Aktueller Fortschritt geht verloren."
 
 #. UI/мета-строка
 msgctxt "string:ui.confirm.main_menu"
 msgid "Выйти в главное меню? Несохранённый прогресс будет потерян."
-msgstr ""
-"[[Выйтį в глąвнǫę мęню? Нęсǫхрąнённый прǫгрęсс бųдęт "
-"пǫтęрян.~~~~~~~~~~~~~~~~~~~~~~~]"
+msgstr "Zurück zum Hauptmenü? Nicht gespeicherter Fortschritt geht verloren."
 
 #. UI/мета-строка
 msgctxt "string:ui.confirm.no"
 msgid "Нет"
-msgstr "[[Нęт~~]"
+msgstr "Nein"
 
 #. UI/мета-строка
 msgctxt "string:ui.confirm.quit"
 msgid "Выйти из игры? Несохранённый прогресс будет потерян."
-msgstr ""
-"[[Выйтį įз įгры? Нęсǫхрąнённый прǫгрęсс бųдęт пǫтęрян.~~~~~~~~~~~~~~~~~~~~]"
+msgstr "Spiel beenden? Nicht gespeicherter Fortschritt geht verloren."
 
 #. UI/мета-строка
 msgctxt "string:ui.confirm.yes"
 msgid "Да"
-msgstr "[[Дą~~]"
+msgstr "Ja"
 
 #. UI/мета-строка
 msgctxt "string:ui.file.autopage"
 msgid "Авто"
-msgstr "[[Ąвтǫ~~]"
+msgstr "Auto"
 
 #. UI/мета-строка
 msgctxt "string:ui.file.empty_slot"
 msgid "пустой слот"
-msgstr "[[пųстǫй слǫт~~~~]"
+msgstr "leerer Slot"
 
 #. UI/мета-строка
 msgctxt "string:ui.file.load_title"
 msgid "Загрузка"
-msgstr "[[Зąгрųзкą~~~]"
+msgstr "Laden"
 
 #. UI/мета-строка
 msgctxt "string:ui.file.save_title"
 msgid "Сохранение"
-msgstr "[[Сǫхрąнęнįę~~~~]"
+msgstr "Speichern"
 
 #. UI/мета-строка
 msgctxt "string:ui.file.time_format"
 msgid "{#file_time}%d.%m.%Y %H:%M"
-msgstr "[[{#file_time}%d.%m.%Y %H:%M~~~~~~~~~~]"
+msgstr "{#file_time}%d.%m.%Y %H:%M"
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.end_of_content"
 msgid "Продолжение следует…"
-msgstr "[[Прǫдǫлжęнįę слęдųęт…~~~~~~~~]"
+msgstr "Fortsetzung folgt…"
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.no_content"
 msgid "Контент не найден."
-msgstr "[[Кǫнтęнт нę нąйдęн.~~~~~~~]"
+msgstr "Kein Inhalt gefunden."
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.no_content_hint"
@@ -105,13 +100,128 @@ msgid ""
 "Добавьте главу в content/chapters/ и выполните {b}vn build{/b} (раздел 3 "
 "ARCHITECTURE.md)."
 msgstr ""
-"[[Дǫбąвьтę глąвų в cøntênt/chåptêrs/ į выпǫлнįтę {b}vn bûïld{/b} (рąздęл 3 "
-"ÅRCHÏTÊCTÛRÊ.md).~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]"
+"Fügen Sie ein Kapitel in content/chapters/ hinzu und führen Sie {b}vn "
+"build{/b} aus (Abschnitt 3 ARCHITECTURE.md)."
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.return_to_menu"
 msgid "Возврат в главное меню."
-msgstr "[[Вǫзврąт в глąвнǫę мęню.~~~~~~~~~]"
+msgstr "Zurück zum Hauptmenü."
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.scene_unavailable"
+msgid "Эта сцена недоступна в текущей версии игры."
+msgstr "Diese Szene ist in der aktuellen Spielversion nicht verfügbar."
+
+#. UI/мета-строка
+msgctxt "string:ui.main.version"
+msgid "версия [config.version]"
+msgstr "Version [config.version]"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.chapters"
+msgid "Главы"
+msgstr "Kapitel"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.load"
+msgid "Загрузить"
+msgstr "Laden"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.main_menu"
+msgid "Главное меню"
+msgstr "Hauptmenü"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.prefs"
+msgid "Настройки"
+msgstr "Einstellungen"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.quit"
+msgid "Выход"
+msgstr "Beenden"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.return"
+msgid "Вернуться"
+msgstr "Zurück zum Spiel"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.save"
+msgid "Сохранить"
+msgstr "Speichern"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.start"
+msgid "Начать игру"
+msgstr "Spiel starten"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.display"
+msgid "Режим экрана"
+msgstr "Anzeigemodus"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.fullscreen"
+msgid "Полный экран"
+msgstr "Vollbild"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.language"
+msgid "Язык"
+msgstr "Sprache"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.skip"
+msgid "Пропуск"
+msgstr "Überspringen"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.skip_after_choices"
+msgid "После выборов"
+msgstr "Nach Entscheidungen"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.skip_all"
+msgid "Всего текста"
+msgstr "Gesamten Text"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.title"
+msgid "Настройки"
+msgstr "Einstellungen"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.volume"
+msgid "Громкость"
+msgstr "Lautstärke"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.volume_music"
+msgid "Музыка"
+msgstr "Musik"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.volume_sound"
+msgid "Звук"
+msgstr "Sound"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.volume_voice"
+msgid "Голос"
+msgstr "Stimme"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.windowed"
+msgid "Оконный"
+msgstr "Fenster"
+
+#. имя персонажа
+msgctxt "char:mira"
+msgid "Мира"
+msgstr "Mira"
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.save_from_newer"
@@ -119,120 +229,5 @@ msgid ""
 "Сохранение сделано в более новой версии игры. Обновите игру, чтобы "
 "продолжить."
 msgstr ""
-"[[Сǫхрąнęнįę сдęлąнǫ в бǫлęę нǫвǫй вęрсįį įгры. Ǫбнǫвįтę įгрų, чтǫбы "
-"прǫдǫлжįть.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.flow.scene_unavailable"
-msgid "Эта сцена недоступна в текущей версии игры."
-msgstr "[[Этą сцęнą нęдǫстųпнą в тęкųщęй вęрсįį įгры.~~~~~~~~~~~~~~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.main.version"
-msgid "версия [config.version]"
-msgstr "[[вęрсįя [config.version]~~~~~~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.nav.chapters"
-msgid "Главы"
-msgstr "[[Глąвы~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.nav.load"
-msgid "Загрузить"
-msgstr "[[Зąгрųзįть~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.nav.main_menu"
-msgid "Главное меню"
-msgstr "[[Глąвнǫę мęню~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.nav.prefs"
-msgid "Настройки"
-msgstr "[[Нąстрǫйкį~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.nav.quit"
-msgid "Выход"
-msgstr "[[Выхǫд~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.nav.return"
-msgid "Вернуться"
-msgstr "[[Вęрнųться~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.nav.save"
-msgid "Сохранить"
-msgstr "[[Сǫхрąнįть~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.nav.start"
-msgid "Начать игру"
-msgstr "[[Нąчąть įгрų~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.display"
-msgid "Режим экрана"
-msgstr "[[Рęжįм экрąнą~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.fullscreen"
-msgid "Полный экран"
-msgstr "[[Пǫлный экрąн~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.language"
-msgid "Язык"
-msgstr "[[Язык~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.skip"
-msgid "Пропуск"
-msgstr "[[Прǫпųск~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.skip_after_choices"
-msgid "После выборов"
-msgstr "[[Пǫслę выбǫрǫв~~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.skip_all"
-msgid "Всего текста"
-msgstr "[[Всęгǫ тęкстą~~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.title"
-msgid "Настройки"
-msgstr "[[Нąстрǫйкį~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.volume"
-msgid "Громкость"
-msgstr "[[Грǫмкǫсть~~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.volume_music"
-msgid "Музыка"
-msgstr "[[Мųзыкą~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.volume_sound"
-msgid "Звук"
-msgstr "[[Звųк~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.volume_voice"
-msgid "Голос"
-msgstr "[[Гǫлǫс~~]"
-
-#. UI/мета-строка
-msgctxt "string:ui.prefs.windowed"
-msgid "Оконный"
-msgstr "[[Ǫкǫнный~~]"
-
-#. имя персонажа
-msgctxt "char:mira"
-msgid "Мира"
-msgstr "[[Мįрą~~]"
+"Der Spielstand stammt aus einer neueren Version des Spiels. Aktualisieren "
+"Sie das Spiel, um fortzufahren."

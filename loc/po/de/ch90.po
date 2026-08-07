@@ -1,0 +1,20 @@
+#
+msgid ""
+msgstr ""
+"Language: de\n"
+"Content-Type: text/plain; charset=utf-8\n"
+
+#. говорит: рассказчик; сцена ch90_s010
+msgctxt "ch90_s010_0001"
+msgid "Море. DLC-эпизод начинается здесь."
+msgstr "Das Meer. Die DLC-Episode beginnt hier."
+
+#. говорит: mira; сцена ch90_s010
+msgctxt "ch90_s010_0002"
+msgid "Догоняй!"
+msgstr "Fang mich doch!"
+
+#. говорит: рассказчик; сцена ch90_s010
+msgctxt "ch90_s010_0003"
+msgid "КОНЕЦ ДЕМО DLC"
+msgstr "ENDE DER DLC-DEMO"
