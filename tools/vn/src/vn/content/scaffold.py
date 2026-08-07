@@ -78,10 +78,10 @@ def new_chapter(root: Path, slug: str) -> Path:
     return ch_dir
 
 
-def new_scene(root: Path, chapter: str, slug: str) -> Path:
-    if not SLUG_RE.match(slug):
-        raise ScaffoldError(f"слуг {slug!r} вне конвенции ^[a-z][a-z0-9_]{{2,30}}$")
+def _find_chapter(root: Path, chapter: str) -> tuple[Path, str]:
     chapters = root / "content" / "chapters"
+    if not chapters.is_dir():
+        raise ScaffoldError("каталог content/chapters/ не существует")
     matches = [d for d in chapters.iterdir()
                if d.is_dir() and (d.name == chapter or d.name.startswith(chapter + "_"))]
     if len(matches) != 1:
@@ -89,8 +89,38 @@ def new_scene(root: Path, chapter: str, slug: str) -> Path:
             f"глава {chapter!r} не найдена (или неоднозначна): "
             f"{[d.name for d in matches] or 'нет совпадений'}"
         )
-    ch_dir = matches[0]
-    ch_id = ch_dir.name[:4]
+    m = re.match(r"^(ch\d{2})_", matches[0].name)
+    if not m:
+        raise ScaffoldError(f"папка {matches[0].name!r} вне конвенции ch<NN>_<slug>")
+    return matches[0], m.group(1)
+
+
+def new_stub(root: Path, chapter: str, short_id: str) -> Path:
+    """Placeholder-сцена для объявленной, но не написанной цели перехода (G15):
+    smoke-прогон draft-главы не падает, игрок видит заглушку."""
+    if not re.match(r"^s\d{3}$", short_id):
+        raise ScaffoldError(f"id сцены {short_id!r} вне конвенции ^s\\d{{3}}$")
+    ch_dir, ch_id = _find_chapter(root, chapter)
+    scenes = ch_dir / "scenes"
+    scenes.mkdir(exist_ok=True)
+    if list(scenes.glob(f"{short_id}_*.scene.yaml")):
+        raise ScaffoldError(f"сцена {short_id} уже существует в {ch_dir.name}")
+    full_id = f"{ch_id}_{short_id}"
+    yaml_path = scenes / f"{short_id}_stub.scene.yaml"
+    yaml_path.write_text(f"schema: scene@1\nid: {short_id}\nexits: {{}}\n", encoding="utf-8")
+    (scenes / f"{short_id}_stub.scene.rpy").write_text(
+        f"label {full_id}__body:\n"
+        "    \"Заглушка: сцена в разработке.\"\n"
+        "    return\n",
+        encoding="utf-8",
+    )
+    return yaml_path
+
+
+def new_scene(root: Path, chapter: str, slug: str) -> Path:
+    if not SLUG_RE.match(slug):
+        raise ScaffoldError(f"слуг {slug!r} вне конвенции ^[a-z][a-z0-9_]{{2,30}}$")
+    ch_dir, ch_id = _find_chapter(root, chapter)
     scenes = ch_dir / "scenes"
     scenes.mkdir(exist_ok=True)
     used = set()

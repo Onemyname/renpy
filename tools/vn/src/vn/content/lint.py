@@ -157,6 +157,8 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                         continue
                     sid = f"s{sm.group(1)}"
                     if f.suffix == ".yaml":
+                        if sid in scenes:
+                            rep.error(f"{_rel(root, f)}: дубликат id сцены {sid} в главе")
                         scenes.add(sid)
                         pair = f.parent / (f.name[: -len(".yaml")] + ".rpy")
                         if not pair.is_file():

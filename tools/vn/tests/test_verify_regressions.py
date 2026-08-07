@@ -21,6 +21,10 @@ def _copy_skeleton(repo_root, tmp_path):
     shutil.copytree(repo_root / "content", tmp_path / "content")
     shutil.rmtree(tmp_path / "content" / "chapters")
     (tmp_path / "content" / "chapters").mkdir()
+    # Локации требуют собранного game/assets — скелет без ассетов их не несёт
+    if (tmp_path / "content" / "locations").is_dir():
+        shutil.rmtree(tmp_path / "content" / "locations")
+        (tmp_path / "content" / "locations").mkdir()
     for d in REQUIRED_DIRS:
         (tmp_path / d).mkdir(parents=True, exist_ok=True)
     return tmp_path
@@ -77,7 +81,7 @@ def test_check_mode_writes_nothing_and_detects_stale(repo_root, tmp_path):
     gen = tmp_path / "generated"
     res = compile_content(root, out_dir=gen, check=True)
     assert not gen.exists() or not any(gen.iterdir())   # ничего не записано
-    assert len(res.stale) == 8                          # всё «устарело» (генерата нет)
+    assert len(res.stale) == 9                          # всё «устарело» (генерата нет)
 
     compile_content(root, out_dir=gen)
     res2 = compile_content(root, out_dir=gen, check=True)

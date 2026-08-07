@@ -17,6 +17,10 @@ screen choice(items):
     vbox:
         for idx, i in enumerate(items):
             textbutton vn_loc.choice_text(vn_menu, idx, i.caption) action i.action
+    # QA-автопилот (vn test smoke): авто-выбор пункта; вне автопилота — no-op.
+    # Побочных эффектов в screen-выражениях нет: выбор делает Function в момент тика.
+    if vn_qa.autopilot_active():
+        timer 1.0 action Function(vn_qa.autopilot_choose, items) repeat True
 
 
 style choice_vbox is vbox:

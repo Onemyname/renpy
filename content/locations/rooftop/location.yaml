@@ -1,0 +1,5 @@
+schema: location@1
+id: rooftop
+title_key: meta.locations.rooftop.title
+backgrounds:
+  day: assets/bg/rooftop/day.webp

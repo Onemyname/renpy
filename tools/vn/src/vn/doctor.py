@@ -81,6 +81,11 @@ def run_doctor() -> int:
         if local_storage.is_file():
             checks.append((None, "локальное переопределение .vnstorage.local.yaml активно", ""))
 
+    # С главами в content/ SDK перестаёт быть опциональным: компиляция сцен идёт
+    # через build-bridge (тёплый кэш анализа может маскировать отсутствие SDK).
+    has_chapters = bool(root) and any(
+        p.is_dir() for p in (root / "content" / "chapters").glob("ch*")
+    )
     sdk = sdk_path()
     if sdk:
         actual = sdk_version(sdk) or "?"
@@ -96,9 +101,10 @@ def run_doctor() -> int:
         else:
             checks.append((True, f"Ren'Py SDK {actual}: {sdk}", ""))
     else:
-        checks.append((None, "Ren'Py SDK не найден",
-                       "скачайте SDK с renpy.org и укажите путь: setx RENPY_SDK <путь>; "
-                       "нужен для vn play (сборка vn build работает без SDK)"))
+        checks.append((False if has_chapters else None, "Ren'Py SDK не найден",
+                       "скачайте SDK с renpy.org и укажите путь: setx RENPY_SDK <путь>"
+                       + ("; в content/ есть главы — без SDK сцены не компилируются (G24)"
+                          if has_chapters else "; нужен для vn play")))
 
     hard_fail = False
     for ok, title, hint in checks:

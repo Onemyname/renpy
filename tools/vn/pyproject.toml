@@ -12,6 +12,8 @@ dependencies = [
     "PyYAML>=6.0",
     "jsonschema>=4.21",
     "blake3>=0.4",
+    "Pillow>=10.0",
+    "psd-tools>=1.9",
 ]
 
 [project.optional-dependencies]

@@ -13,7 +13,13 @@ init -999 python:
 
     # Автоопределение образов по game/images/ НЕ используется (раздел 1.2):
     # компилятор эмитит явные image-стейтменты из Asset Registry.
-    config.automatic_images = None
+    # (вторая линия обороны — lint-запрет каталога game/images в FORBIDDEN_PATHS)
+    config.images_directory = None
+
+    # Выделенный слой персонажей (раздел 4): сгенерированный config.tag_layer
+    # привязывает к нему все персонажные теги, и `camera sprites` тонирует всех
+    # разом matrixcolor-профилем локации. Без слоя show упадёт в рантайме.
+    renpy.add_layer("sprites", above="master")
 
     # ── Логгер ────────────────────────────────────────────────────────────────
     def vn_log(msg):

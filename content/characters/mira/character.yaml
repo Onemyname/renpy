@@ -3,3 +3,10 @@ id: mira
 name: "Мира"
 color: "#c94f7c"
 voice_tag: mira
+canvas: [1200, 2200]
+matrix:
+  poses: [a]
+  outfits: [school, casual]
+  emotions: [neutral, smile, angry]
+  required:
+    - {pose: a, outfits: [school, casual], emotions: [neutral, smile, angry]}

@@ -74,13 +74,33 @@ def test_emit_scene_wrapper():
     rep = sc.SceneCompileReport()
     unit = _unit(meta={"exits": {"done": "s020"}})
     dispatch = {"done": [{"to_label": "ch01_s020", "when": None}]}
-    text = sc.emit_scene(unit, dispatch, set(), rep, "# header\n")
+    text = sc.emit_scene(unit, dispatch, set(), {}, rep, "# header\n")
     assert 'label ch01_s010:' in text
     assert '$ vn.checkpoint("ch01_s010")' in text
+    # scene чистит только master — слой sprites обвязка чистит явно (иначе утечка спрайтов)
+    assert '$ renpy.scene("sprites")' in text
+    assert "scene vn_black with dissolve" in text       # без локации — нейтральный фон
     assert 'call ch01_s010__body from _call_ch01_s010__body' in text
     assert 'if _return == "done":\n        jump ch01_s020' in text
     assert 'jump vn_scene_unavailable' in text
     assert unit.rpy_text.strip() in text                # авторский источник скопирован
+
+
+def test_emit_scene_location():
+    locations = {"gate": {"id": "gate", "backgrounds": {"day": "assets/bg/gate/day.webp"}}}
+    rep = sc.SceneCompileReport()
+    text = sc.emit_scene(_unit(meta={"location": "gate/day"}), {}, set(), locations, rep, "# h\n")
+    assert "scene bg gate day with dissolve" in text
+    assert rep.errors == []
+
+    rep2 = sc.SceneCompileReport()
+    text2 = sc.emit_scene(_unit(meta={"location": "gate/night"}), {}, set(), locations, rep2, "# h\n")
+    assert any("нет варианта 'night'" in e for e in rep2.errors)
+    assert "scene vn_black" in text2                    # fallback при невалидной локации
+
+    rep3 = sc.SceneCompileReport()
+    sc.emit_scene(_unit(meta={"location": "gate"}), {}, set(), locations, rep3, "# h\n")
+    assert any("без варианта" in e for e in rep3.errors)
 
 
 SDK = os.environ.get("RENPY_SDK")

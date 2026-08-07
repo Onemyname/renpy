@@ -15,6 +15,7 @@ BASE_OUTPUTS = {
     "registry/chapters.gen.rpy",
     "registry/scenes.gen.rpy",
     "registry/characters.gen.rpy",
+    "registry/images.gen.rpy",
     "registry/menus.gen.rpy",
     "registry/overrides.gen.rpy",
 }
@@ -32,6 +33,10 @@ def skeleton_no_chapters(repo_root, tmp_path):
     shutil.copytree(repo_root / "content", root / "content")
     shutil.rmtree(root / "content" / "chapters")
     (root / "content" / "chapters").mkdir()
+    # Локации требуют собранного game/assets — скелет без ассетов их не несёт
+    if (root / "content" / "locations").is_dir():
+        shutil.rmtree(root / "content" / "locations")
+        (root / "content" / "locations").mkdir()
     for d in REQUIRED_DIRS:
         (root / d).mkdir(parents=True, exist_ok=True)
     return root

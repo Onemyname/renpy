@@ -48,10 +48,61 @@ init -999 python in vn:
 
 
 init -999 python in vn_qa:
+    import os
+    from store import renpy, vn_log
+
     def choice(scene_id, menu_id, idx):
         """Якорь ветки выбора (C1): эмитится компилятором первым стейтментом каждой ветки.
         Фаза 2: запись в прогон-лог QA/телеметрию."""
         pass
+
+    # ── Автопилот (vn test smoke, G23): работает ТОЛЬКО внутри процесса игры, ──
+    # без синтетического ввода на рабочий стол. Активируется переменной окружения
+    # VN_AUTOPILOT; label main_menu-override подкладывает раннер (cli: vn test smoke).
+    def autopilot_active():
+        return "VN_AUTOPILOT" in os.environ
+
+    def autopilot_tick():
+        """Каждый тик: скриншот средствами движка + продвижение диалога."""
+        shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
+        if shots_dir:
+            n = getattr(renpy.store, "_vn_ap_shot", 0)   # "_"-префикс: не попадает в сейв
+            renpy.store._vn_ap_shot = n + 1
+            try:
+                renpy.screenshot(os.path.join(shots_dir, "shot%03d.png" % n))
+            except Exception as e:
+                vn_log("autopilot screenshot failed: %s" % e)
+        renpy.queue_event("dismiss")
+
+    def autopilot_choose(items):
+        """Выбор пункта меню — вызывается ТОЛЬКО из timer-action (side effect в
+        screen-выражении запрещён: экран переоценивается предикцией и каждым тиком
+        оверлея, и счётчик picks дрейфовал бы). Пишет фактический путь в picks.log."""
+        actionable = [(i, it) for i, it in enumerate(items) if it.action is not None]
+        if not actionable:
+            return
+        picks = [p for p in os.environ.get("VN_AUTOPILOT_PICKS", "").split(",") if p.strip()]
+        n = getattr(renpy.store, "_vn_ap_menu", 0)
+        renpy.store._vn_ap_menu = n + 1
+        idx = int(picks[n]) if n < len(picks) else 0
+        idx = min(idx, len(items) - 1)
+        if items[idx].action is None:
+            idx = actionable[0][0]
+        shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
+        if shots_dir:
+            with open(os.path.join(shots_dir, "picks.log"), "a", encoding="utf-8") as f:
+                f.write("menu %d -> pick %d (%s)\n" % (n, idx, renpy.store.vn_menu))
+        # ВАЖНО: значение action обязано вернуться из Function — интеракция меню
+        # завершается только non-None результатом action (иначе вечное перевыбирание).
+        return renpy.run(items[idx].action)
+
+    def autopilot_finish(reason):
+        """Конец прогона: маркер результата + выход из процесса."""
+        shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
+        if shots_dir:
+            with open(os.path.join(shots_dir, "RESULT.txt"), "w", encoding="utf-8") as f:
+                f.write(reason + "\n")
+        renpy.quit(save=False)
 
 
 # ── Точка входа ──────────────────────────────────────────────────────────────
@@ -66,11 +117,15 @@ label start:
 
 
 label vn_scene_unavailable:
+    if vn_qa.autopilot_active():
+        $ vn_qa.autopilot_finish("FAIL: vn_scene_unavailable")
     "Эта сцена недоступна в текущей версии игры."
     "Возврат в главное меню."
     $ renpy.full_restart()
 
 
 label vn_end_of_content:
+    if vn_qa.autopilot_active():
+        $ vn_qa.autopilot_finish("OK: vn_end_of_content")
     "Продолжение следует…"
     $ renpy.full_restart()

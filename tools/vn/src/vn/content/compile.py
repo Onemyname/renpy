@@ -25,6 +25,7 @@ from .. import __version__
 from ..repo import git_sha, load_project, load_yaml
 from . import scenes as sc
 from .analyze import AnalyzeError, analyze_scene_files
+from .images import ImagesReport, emit_images, load_locations
 
 MANIFEST_NAME = "manifest.json"
 CHAPTER_DIR_RE = re.compile(r"^ch(\d{2})_([a-z][a-z0-9_]{2,30})$")
@@ -182,12 +183,21 @@ def _collect_chapters(root: Path, src, registry, errors: list[str]):
         chapters.append(meta)
 
         scenes_dir = d / "scenes"
+        seen_short: dict[str, str] = {}
         if scenes_dir.is_dir():
             for f in sorted(scenes_dir.glob("*.scene.yaml")):
                 sm = SCENE_YAML_RE.match(f.name)
                 if not sm:
                     errors.append(f"{rel}: файл сцены вне конвенции: {f.name}")
                     continue
+                if f"s{sm.group(1)}" in seen_short:
+                    errors.append(
+                        f"content/chapters/{d.name}/scenes: дубликат id s{sm.group(1)}: "
+                        f"{seen_short[f's{sm.group(1)}']} и {f.name} — одна из сцен молча "
+                        f"выпала бы из генерата"
+                    )
+                    continue
+                seen_short[f"s{sm.group(1)}"] = f.name
                 yaml_rel, _d1 = src(f)
                 smeta = load_yaml(f)
                 s_errs = registry.validate(smeta, yaml_rel)
@@ -279,10 +289,15 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     renames_src = src(renames_path)
     renames = load_yaml(renames_path)
 
+    # Локации
+    locations = load_locations(root, src, registry, errors)
+
     # Главы и сцены (фаза 1)
     chapters, units = _collect_chapters(root, src, registry, errors)
     if errors:
         raise CompileError(f"{len(errors)} ошибок:\n" + "\n".join(errors))
+
+    char_ids = {doc["id"] for _, doc in char_docs}
 
     scene_rep = sc.SceneCompileReport()
     scene_outputs: dict[str, str] = {}
@@ -299,12 +314,18 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
             if not u.analysis:
                 scene_rep.errors.append(f"{u.rpy_rel}: build-bridge не вернул анализ")
                 continue
+            for p in u.meta.get("participants") or []:
+                if p not in char_ids:
+                    scene_rep.errors.append(
+                        f"{u.yaml_rel}: участник {p!r} не объявлен в content/characters/ "
+                        f"(say упадёт NameError в рантайме)"
+                    )
             dispatch = sc.validate_scene(
                 u, known_scenes, status_by_ch.get(u.chapter_id, "draft"), scene_rep
             )
             header = _header([(u.yaml_rel, inputs[u.yaml_rel]), (u.rpy_rel, inputs[u.rpy_rel])])
             scene_outputs[f"scenes/{u.chapter_id}/{u.full_id}.gen.rpy"] = sc.emit_scene(
-                u, dispatch, audio_ids, scene_rep, header
+                u, dispatch, audio_ids, locations, scene_rep, header
             )
         # Валидация глав: entry_scene и scene_order существуют
         for c in chapters:
@@ -322,7 +343,17 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
             f"{len(scene_rep.errors)} ошибок компиляции сцен:\n" + "\n".join(scene_rep.errors)
         )
 
+    # Реестр образов: фоны локаций + layeredimage из matrix и собранных слоёв (G11)
+    img_rep = ImagesReport()
+    images_out = emit_images(root, locations, char_docs, img_rep, _header(char_sources or [proj_src]))
+    result.warnings.extend(img_rep.warnings)
+    if img_rep.errors:
+        raise CompileError(
+            f"{len(img_rep.errors)} ошибок реестра образов:\n" + "\n".join(img_rep.errors)
+        )
+
     outputs: dict[str, str] = {
+        "registry/images.gen.rpy": images_out,
         "version.gen.rpy": _emit_version(project, git_sha(root), [proj_src]),
         "state/defaults.gen.rpy": _emit_defaults(project, var_docs, [proj_src] + var_sources),
         "registry/audio.gen.rpy": _emit_audio(audio_docs, audio_sources or [proj_src]),

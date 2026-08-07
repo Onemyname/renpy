@@ -1,6 +1,7 @@
 schema: scene@1
 id: s020
 participants: [mira]
+location: school_gate/day
 vars:
   reads: [ch01.met_mira]
 exits:

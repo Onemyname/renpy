@@ -153,12 +153,41 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
 
 
 def emit_scene(unit: SceneUnit, dispatch: dict, audio_ids: set[str],
-               rep: SceneCompileReport, header: str) -> str:
+               locations: dict, rep: SceneCompileReport, header: str) -> str:
     lines = [header]
     lines.append(f"label {unit.full_id}:")
     lines.append(f'    $ vn.checkpoint("{unit.full_id}")')
-    # Локации появятся с ассет-пайплайном (раздел 2) — пока нейтральный фон.
-    lines.append("    scene vn_black with dissolve")
+    # scene очищает ТОЛЬКО свой слой (master) — слой sprites чистим явно,
+    # иначе персонажи предыдущей сцены протекают в следующую (сверено с SDK).
+    lines.append('    $ renpy.scene("sprites")')
+
+    location = unit.meta.get("location")
+    if location:
+        if "/" not in location:
+            rep.errors.append(
+                f"{unit.yaml_rel}: location {location!r} без варианта — нужно "
+                f"<location>/<variant> (например {location}/day)"
+            )
+            location = None
+        else:
+            loc_id, variant = location.split("/", 1)
+            loc = locations.get(loc_id)
+            if loc is None:
+                rep.errors.append(
+                    f"{unit.yaml_rel}: location {loc_id!r} не объявлена в content/locations/"
+                )
+                location = None
+            elif variant not in (loc.get("backgrounds") or {}):
+                rep.errors.append(
+                    f"{unit.yaml_rel}: у локации {loc_id!r} нет варианта {variant!r} "
+                    f"(есть: {sorted(loc.get('backgrounds') or {})})"
+                )
+                location = None
+            else:
+                lines.append(f"    scene bg {loc_id} {variant} with dissolve")
+    if not location:
+        # Нейтральный фон: сцена без локации (или локация не прошла валидацию).
+        lines.append("    scene vn_black with dissolve")
 
     music = unit.meta.get("music")
     if music:
