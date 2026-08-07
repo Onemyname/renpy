@@ -49,7 +49,10 @@ init -999 python in vn:
 
 init -999 python in vn_qa:
     import os
+    import time
     from store import renpy, vn_log
+
+    _T0 = time.time()    # init-время: точка отсчёта cold start (G19)
 
     def choice(scene_id, menu_id, idx):
         """Якорь ветки выбора (C1): эмитится компилятором первым стейтментом каждой ветки.
@@ -68,6 +71,10 @@ init -999 python in vn_qa:
         shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
         n = getattr(renpy.store, "_vn_ap_shot", 0)       # "_"-префикс: не попадает в сейв
         renpy.store._vn_ap_shot = n + 1
+        if n == 0 and shots_dir:
+            # Cold start (G19): init-фаза -> первая интеракция
+            with open(os.path.join(shots_dir, "startup.txt"), "w", encoding="utf-8") as f:
+                f.write("%.2f\n" % (time.time() - _T0))
         if shots_dir:
             try:
                 renpy.screenshot(os.path.join(shots_dir, "shot%03d.png" % n))

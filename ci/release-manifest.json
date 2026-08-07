@@ -1,0 +1,14 @@
+{
+ "chapters": {
+  "ch01": {
+   "scenes": [
+    "ch01_s010",
+    "ch01_s020",
+    "ch01_s030"
+   ],
+   "status": "draft"
+  }
+ },
+ "schema": "release_manifest@1",
+ "version": "0.1.0"
+}

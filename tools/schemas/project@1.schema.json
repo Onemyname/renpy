@@ -11,6 +11,16 @@
     "renpy_sdk": {
       "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$",
       "description": "Пиннованная версия Ren'Py SDK (G18); vn doctor сверяет с RENPY_SDK"
+    },
+    "budgets": {
+      "type": "object",
+      "description": "Перф/размер-бюджеты (G19): превышение = ошибка vn build",
+      "properties": {
+        "assets_total_mb": {"type": "number", "minimum": 0},
+        "generated_total_kb": {"type": "number", "minimum": 0},
+        "cold_start_s": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": false
     }
   },
   "required": ["schema", "version", "save_schema", "min_tools"],

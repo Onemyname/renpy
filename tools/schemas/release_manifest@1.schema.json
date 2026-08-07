@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/release_manifest@1",
+  "title": "release_manifest@1 — снимок контента релиза (ci/release-manifest.json): база диффа для changelog и переиздания переводов",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "release_manifest@1"},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "chapters": {
+      "type": "object",
+      "propertyNames": {"pattern": "^ch\\d{2}$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {"enum": ["draft", "playtest", "release"]},
+          "scenes": {"type": "array", "items": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"}}
+        },
+        "required": ["status", "scenes"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "version", "chapters"],
+  "additionalProperties": false
+}

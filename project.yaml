@@ -3,3 +3,8 @@ version: 0.1.0       # semver игры; патч — фиксы, НОВАЯ ГЛ
 save_schema: 2       # целое; бампает tech-lead при несовместимом изменении vars
 min_tools: "0.1"     # минимальная версия vn для этого дерева контента
 renpy_sdk: "8.5.3"   # пиннованный SDK (G18); апгрейд — отдельным PR с прогоном canary
+budgets:             # перф/размер-бюджеты (G19): превышение = красная сборка
+  assets_total_mb: 200
+  generated_total_kb: 2048
+  cold_start_s: 10
+

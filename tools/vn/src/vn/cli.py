@@ -134,7 +134,32 @@ def build(check: bool, profile: str):
         f"generated: {len(res.written)} записано, {len(res.skipped)} без изменений, "
         f"{len(res.deleted)} осиротевших удалено"
     )
+    _check_budgets(root)
     click.secho("build: OK", fg="green")
+
+
+def _dir_size(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.is_dir() else 0
+
+
+def _check_budgets(root: Path):
+    """Размер-бюджеты (G19): превышение = красная сборка, а не сюрприз в релизе."""
+    from .repo import load_project
+
+    budgets = load_project(root).get("budgets") or {}
+    failures = []
+    if "assets_total_mb" in budgets:
+        actual = _dir_size(root / "game" / "assets") / (1024 * 1024)
+        if actual > budgets["assets_total_mb"]:
+            failures.append(f"game/assets: {actual:.1f} МБ > бюджета {budgets['assets_total_mb']} МБ")
+    if "generated_total_kb" in budgets:
+        actual = _dir_size(root / "game" / "generated") / 1024
+        if actual > budgets["generated_total_kb"]:
+            failures.append(f"game/generated: {actual:.0f} КБ > бюджета {budgets['generated_total_kb']} КБ")
+    if failures:
+        for f in failures:
+            click.secho(f"бюджет: {f}", fg="red")
+        _fail("бюджеты G19 превышены (project.yaml: budgets)")
 
 
 @main.command()
@@ -232,7 +257,76 @@ def dev():
     watcher.join(timeout=3)
 
 
-main.command(name="package", help="Сборка дистрибутивов (фаза 2).")(_stub(2))
+@main.command()
+@click.option("--package", "packages", multiple=True, default=("win",),
+              help="Целевые пакеты launcher distribute (win/linux/mac/market).")
+@click.option("--timeout", "timeout_s", default=900)
+def package(packages: tuple, timeout_s: int):
+    """Дистрибутивы через launcher distribute + перенос .rpyc между релизами (G6)."""
+    import shutil
+
+    from .doctor import sdk_path
+    from .repo import load_project
+
+    root = _root()
+    sdk = sdk_path()
+    if sdk is None:
+        _fail("Ren'Py SDK не найден (RENPY_SDK)")
+    project = load_project(root)
+    version = project["version"]
+
+    # 1) Перенос .rpyc прошлого релиза (G6): statement-имена — основа save-совместимости.
+    cache_root = root / "build" / "rpyc-cache"
+    caches = sorted(cache_root.iterdir(), key=lambda p: p.stat().st_mtime) if cache_root.is_dir() else []
+    if caches:
+        restored = 0
+        latest = caches[-1]
+        for rpyc in latest.rglob("*.rpyc"):
+            rel = rpyc.relative_to(latest)
+            target = root / "game" / "generated" / rel
+            if target.with_suffix(".rpy").is_file() and not target.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(rpyc, target)
+                restored += 1
+        click.echo(f"rpyc-перенос: {restored} файлов из {latest.name} (G6)")
+    else:
+        click.echo("rpyc-перенос: кэша прошлых релизов нет (первый релиз)")
+
+    # 2) Полная сборка + компиляция движком (создаёт/обновляет .rpyc с переносом имён)
+    ctx = click.get_current_context()
+    ctx.invoke(build, check=False, profile="full")
+    exe = sdk / ("renpy.exe" if sys.platform == "win32" else "renpy.sh")
+    proc = subprocess.run([str(exe), str(root), "compile"], capture_output=True,
+                          text=True, timeout=timeout_s)
+    if proc.returncode != 0:
+        _fail(f"renpy compile упал:\n{proc.stdout[-1500:]}\n{proc.stderr[-800:]}")
+
+    # 3) Дистрибутивы
+    dest = root / "build" / "dist" / version
+    dest.mkdir(parents=True, exist_ok=True)
+    cmd = [str(exe), str(sdk / "launcher"), "distribute", "--dest", str(dest)]
+    for p in packages:
+        cmd += ["--package", p]
+    cmd.append(str(root))
+    click.echo(f"distribute {', '.join(packages)} -> {dest.relative_to(root).as_posix()} …")
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s)
+    if proc.returncode != 0:
+        _fail(f"distribute упал:\n{proc.stdout[-2000:]}\n{proc.stderr[-800:]}")
+
+    # 4) Кэш .rpyc этого релиза — для переноса имён в следующем (G6)
+    save_dir = cache_root / version
+    if save_dir.exists():
+        shutil.rmtree(save_dir)
+    n = 0
+    for rpyc in (root / "game" / "generated").rglob("*.rpyc"):
+        rel = rpyc.relative_to(root / "game" / "generated")
+        target = save_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(rpyc, target)
+        n += 1
+    artifacts = [p.name for p in dest.iterdir()]
+    click.echo(f"rpyc-кэш релиза: {n} файлов -> build/rpyc-cache/{version}/")
+    click.secho(f"package: OK — {', '.join(artifacts)}", fg="green")
 main.command(name="migrate", help="Миграции схем деклараций (фаза 2).")(_stub(2))
 main.command(name="shell", help="Docker-репро CI-окружения (фаза 2).")(_stub(2))
 
@@ -746,6 +840,15 @@ def test_smoke(picks: str, lang: str, timeout_s: int):
     n_shots = len(list(shots.glob("shot*.png")))
     picks_log = shots / "picks.log"
     click.echo(f"скриншоты: {n_shots} -> {shots}")
+    startup_file = shots / "startup.txt"
+    if startup_file.is_file():
+        from .repo import load_project
+
+        cold = float(startup_file.read_text().strip())
+        click.echo(f"cold start (init -> первая интеракция): {cold:.2f} c")
+        budget = (load_project(root).get("budgets") or {}).get("cold_start_s")
+        if budget and cold > budget:
+            _fail(f"cold start {cold:.2f} c > бюджета {budget} c (G19)")
     if picks_log.is_file():
         for line in picks_log.read_text(encoding="utf-8").splitlines():
             click.echo(f"путь: {line}")
@@ -760,7 +863,33 @@ def test_smoke(picks: str, lang: str, timeout_s: int):
 for _cmd, _phase in {"replay": 2, "screens": 3, "paths": 2}.items():
     test.command(name=_cmd, help=f"Появится в фазе {_phase} (раздел 8).")(_stub(_phase))
 
-_stub_group("release", "Релизы: changelog, Steam-аплоад (раздел 7).", {"changelog": 2, "steam": 2})
+# ── vn release ────────────────────────────────────────────────────────────────
+
+@main.group()
+def release():
+    """Релизы: changelog из фактического диффа контента, Steam-аплоад."""
+
+
+@release.command("changelog")
+def release_changelog():
+    """Обновить docs/CHANGELOG.md и ci/release-manifest.json по диффу реестров."""
+    from .release import update_changelog
+
+    rep = update_changelog(_root())
+    if not rep.changed:
+        click.echo("контент не менялся с прошлого манифеста")
+        return
+    if rep.added_chapters:
+        click.echo(f"новые главы: {', '.join(rep.added_chapters)}")
+    if rep.added_scenes:
+        click.echo(f"новые сцены: {len(rep.added_scenes)}")
+    if rep.removed_scenes:
+        click.secho(f"удалены сцены: {', '.join(rep.removed_scenes)} — проверьте renames.yaml!",
+                    fg="yellow")
+    click.secho("changelog обновлён", fg="green")
+
+
+release.command("steam", help="Steam-аплоад депотов (фаза 3: нужен аккаунт партнёра).")(_stub(3))
 _stub_group("pack", "Сборка DLC/voice-паков (раздел 6).", {"build": 3, "validate": 3})
 
 
