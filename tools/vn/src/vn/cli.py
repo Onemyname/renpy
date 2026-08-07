@@ -752,13 +752,55 @@ def save_check():
     click.secho(f"save check: OK ({len(fixtures)} фикстур)", fg="green")
 
 
+RPYC_LINE_DIR = "ci/fixtures/rpyc-line"
+
+
+def _rpyc_line_restore(root: Path) -> int:
+    """Линия statement-имён (G6): фикстуры сейвов валидны ТОЛЬКО против .rpyc,
+    с которыми создавались. Канонический носитель линии — ci/fixtures/rpyc-line/
+    в git: восстановление с перезаписью перед прогоном корпуса делает корпус
+    детерминированным на любой машине (движок перенесёт имена при перекомпиляции)."""
+    import shutil
+
+    line = root / RPYC_LINE_DIR
+    if not line.is_dir():
+        return 0
+    n = 0
+    for rpyc in line.rglob("*.rpyc"):
+        rel = rpyc.relative_to(line)
+        target = root / "game" / rel
+        if target.with_suffix(".rpy").is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(rpyc, target)
+            n += 1
+    return n
+
+
+def _rpyc_line_snapshot(root: Path) -> int:
+    import shutil
+
+    line = root / RPYC_LINE_DIR
+    if line.exists():
+        shutil.rmtree(line)
+    n = 0
+    for rpyc in (root / "game").rglob("*.rpyc"):
+        rel = rpyc.relative_to(root / "game")
+        target = line / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(rpyc, target)
+        n += 1
+    return n
+
+
 @save.command("corpus")
 @click.option("--add", "add_name", default=None,
               help="Создать фикстуру: прогон с сохранением на тике N, копия в ci/fixtures/saves/.")
 @click.option("--timeout", "timeout_s", default=180)
 def save_corpus(add_name: str | None, timeout_s: int):
     """Корпус сейвов: каждая фикстура ЗАГРУЖАЕТСЯ в реальной игре (--savedir),
-    миграции прогоняются в after_load, автопилот доигрывает до конца."""
+    миграции прогоняются в after_load, автопилот доигрывает до конца.
+    Линия .rpyc фикстур живёт в git (ci/fixtures/rpyc-line/) — корпус работает
+    одинаково на любой машине и в CI (G6)."""
     import shutil
 
     from .repo import load_project
@@ -785,9 +827,22 @@ def save_corpus(add_name: str | None, timeout_s: int):
         name = add_name if add_name.endswith(".save") else f"{add_name}.save"
         dest = fixtures_dir / name
         shutil.copy(slot, dest)
+        others = [f for f in fixtures_dir.glob("*.save") if f != dest]
+        if others:
+            click.secho(
+                f"ВНИМАНИЕ: линия .rpyc перезаписывается — старые фикстуры "
+                f"({', '.join(f.name for f in others)}) могли быть созданы на другой линии",
+                fg="yellow",
+            )
+        n = _rpyc_line_snapshot(root)
         click.secho(f"фикстура создана: {dest.relative_to(root).as_posix()} "
-                    f"(schema {project['save_schema']})", fg="green")
+                    f"(schema {project['save_schema']}); линия имён: {n} .rpyc -> "
+                    f"{RPYC_LINE_DIR}/", fg="green")
         return
+
+    restored = _rpyc_line_restore(root)
+    if restored:
+        click.echo(f"линия имён: {restored} .rpyc восстановлено из {RPYC_LINE_DIR}/ (G6)")
 
     fixtures = sorted(fixtures_dir.glob("*.save"))
     if not fixtures:

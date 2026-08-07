@@ -7,6 +7,9 @@ game/saves/
 *.rpyc
 *.rpymc
 *.rpyb
+# Линия statement-имён фикстур сейв-корпуса — ЕДИНСТВЕННЫЕ .rpyc в git (G6):
+# без неё фикстуры валидны только на машине, где создавались
+!ci/fixtures/rpyc-line/**
 log.txt
 errors.txt
 traceback.txt
