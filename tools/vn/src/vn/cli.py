@@ -7,6 +7,7 @@ assets, content, scene, chapter, char, loc, voice, save, test, release, pack.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -520,7 +521,122 @@ def loc_report():
         pct = (cov["translated"] / cov["total"] * 100) if cov["total"] else 100.0
         click.echo(f"{lang}: {cov['translated']}/{cov['total']} ({pct:.0f}%), fuzzy: {cov['fuzzy']}")
 _stub_group("voice", "Озвучка (C5).", {"manifest": 2, "import": 2, "tts": 2, "validate": 2})
-_stub_group("save", "Сейвы: check, migrate, corpus (раздел 6).", {"check": 2, "migrate": 2, "corpus": 2})
+# ── vn save ───────────────────────────────────────────────────────────────────
+
+FIXTURES_DIR = "ci/fixtures/saves"
+
+
+@main.group()
+def save():
+    """Сейвы: check, corpus (раздел 6, G5/G6). Миграции исполняются автоматически
+    при загрузке (label after_load); корпусный прогон и есть их проверка."""
+
+
+@save.command("check")
+def save_check():
+    """Оффлайн-проверка фикстур: структура слота, JSON-метаданные, версия схемы."""
+    import zipfile
+
+    root = _root()
+    fixtures = sorted((root / FIXTURES_DIR).glob("*.save"))
+    if not fixtures:
+        click.echo(f"фикстур нет ({FIXTURES_DIR}/) — создайте: vn save corpus --add")
+        return
+    failed = 0
+    for f in fixtures:
+        try:
+            with zipfile.ZipFile(f) as z:
+                meta = json.loads(z.read("json"))
+            schema = meta.get("vn_save_schema")
+            if not isinstance(schema, int):
+                raise ValueError("в JSON-заголовке нет vn_save_schema (int)")
+            click.echo(f" ✓ {f.name}: schema {schema}, версия {meta.get('vn_version', '?')}, "
+                       f"сцена {meta.get('vn_scene', '?')}")
+        except Exception as e:
+            click.secho(f" ✗ {f.name}: {e}", fg="red")
+            failed += 1
+    if failed:
+        _fail(f"save check: {failed} битых фикстур")
+    click.secho(f"save check: OK ({len(fixtures)} фикстур)", fg="green")
+
+
+@save.command("corpus")
+@click.option("--add", "add_name", default=None,
+              help="Создать фикстуру: прогон с сохранением на тике N, копия в ci/fixtures/saves/.")
+@click.option("--timeout", "timeout_s", default=180)
+def save_corpus(add_name: str | None, timeout_s: int):
+    """Корпус сейвов: каждая фикстура ЗАГРУЖАЕТСЯ в реальной игре (--savedir),
+    миграции прогоняются в after_load, автопилот доигрывает до конца."""
+    import shutil
+
+    from .repo import load_project
+
+    root = _root()
+    project = load_project(root)
+    fixtures_dir = root / FIXTURES_DIR
+    fixtures_dir.mkdir(parents=True, exist_ok=True)
+
+    if add_name is not None:
+        savedir = root / ".vncache" / "corpus-savedir"
+        if savedir.exists():
+            shutil.rmtree(savedir)
+        shots = root / ".vncache" / "corpus"
+        rc, timed_out = _autopilot_run(
+            root, shots, {"VN_AUTOPILOT_SAVE_AT": "4", "VN_AUTOPILOT_PICKS": "0,1"},
+            timeout_s, savedir=savedir,
+        )
+        # Ren'Py 8.5 добавляет к имени слота токен локации: 1-1-LT1.save
+        slots = sorted(savedir.glob("1-1*.save"))
+        if timed_out or not slots:
+            _fail("corpus --add: прогон не создал сейв (см. traceback.txt / RESULT.txt)")
+        slot = slots[0]
+        name = add_name if add_name.endswith(".save") else f"{add_name}.save"
+        dest = fixtures_dir / name
+        shutil.copy(slot, dest)
+        click.secho(f"фикстура создана: {dest.relative_to(root).as_posix()} "
+                    f"(schema {project['save_schema']})", fg="green")
+        return
+
+    fixtures = sorted(fixtures_dir.glob("*.save"))
+    if not fixtures:
+        _fail(f"фикстур нет ({FIXTURES_DIR}/) — создайте: vn save corpus --add <имя>")
+    failed = 0
+    for fixture in fixtures:
+        savedir = root / ".vncache" / "corpus-savedir"
+        if savedir.exists():
+            shutil.rmtree(savedir)
+        savedir.mkdir(parents=True)
+        # Имя слота с токеном локации (Ren'Py 8.5): renpy.load("1-1") найдёт его
+        shutil.copy(fixture, savedir / "1-1-LT1.save")
+        shots = root / ".vncache" / "corpus"
+        rc, timed_out = _autopilot_run(
+            root, shots, {"VN_AUTOPILOT_LOAD": "1-1"}, timeout_s, savedir=savedir,
+        )
+        result_file = shots / "RESULT.txt"
+        verdict = (result_file.read_text(encoding="utf-8").strip()
+                   if result_file.is_file() else "нет RESULT.txt")
+        state_file = shots / "state.json"
+        schema_after = None
+        if state_file.is_file():
+            schema_after = json.loads(state_file.read_text(encoding="utf-8")).get("vn_save_schema")
+        ok = (not timed_out and verdict.startswith("OK")
+              and schema_after == project["save_schema"])
+        mark = "✓" if ok else "✗"
+        line = (f" {mark} {fixture.name}: {verdict}; schema после загрузки: {schema_after} "
+                f"(цель {project['save_schema']})")
+        click.secho(line, fg=("green" if ok else "red"))
+        if not ok:
+            failed += 1
+            tb = root / "traceback.txt"
+            if tb.is_file():
+                click.secho(tb.read_text(encoding="utf-8", errors="replace")[-1200:], fg="red")
+    if failed:
+        _fail(f"save corpus: {failed} фикстур не прошли")
+    click.secho(f"save corpus: OK ({len(fixtures)} фикстур загружены и мигрированы)", fg="green")
+
+
+save.command("migrate", help="Оффлайн-миграция файла сейва — при необходимости (фаза 3); "
+                             "в игре миграции идут автоматически в after_load.")(_stub(3))
 # ── vn test ───────────────────────────────────────────────────────────────────
 
 @main.group()
@@ -528,26 +644,38 @@ def test():
     """QA-прогоны (7.4): smoke, replay, screens, paths."""
 
 
-@test.command("smoke")
-@click.option("--picks", default="", help="Индексы выборов в меню через запятую (например 0,1).")
-@click.option("--lang", default="", help="Язык прогона (код из loc/loc.yaml или pseudo).")
-@click.option("--timeout", "timeout_s", default=180, help="Лимит прогона, сек.")
-def test_smoke(picks: str, lang: str, timeout_s: int):
-    """Автопрохождение игры автопилотом ВНУТРИ процесса игры: авто-advance,
-    авто-выбор, скриншоты движка. Никакого синтетического ввода на рабочий стол."""
+_AUTOPILOT_RPY = (
+    "# AUTO-GENERATED by vn (test smoke / save corpus) — временный файл, удаляется после.\n"
+    "# Всё гейтится на VN_AUTOPILOT: даже осиротевший .rpyc без env-переменной мёртв.\n"
+    "label main_menu:\n"
+    "    if not vn_qa.autopilot_active():\n"
+    "        $ renpy.quit(save=False)   # осиротевший прогон-файл вне smoke: не играем сами с собой\n"
+    "    # Одно выражение, без runtime-import: rollback-лог записал бы модуль в сейв.\n"
+    "    $ vn_qa.autopilot_boot()\n"
+    "    return\n\n"
+    "init python:\n"
+    "    if vn_qa.autopilot_active():\n"
+    '        config.overlay_screens.append("vn_autopilot")\n\n'
+    "screen vn_autopilot():\n"
+    "    timer 0.6 action Function(vn_qa.autopilot_tick) repeat True\n"
+)
+
+
+def _autopilot_run(root: Path, shots: Path, extra_env: dict, timeout_s: int,
+                   savedir: Path | None = None) -> tuple[int, bool]:
+    """Прогон игры автопилотом ВНУТРИ её процесса. Возвращает (returncode, timed_out).
+    Никакого синтетического ввода на рабочий стол — только in-process автоматизация."""
     import shutil
     import subprocess
 
     from .doctor import sdk_path
 
-    root = _root()
     sdk = sdk_path()
     if sdk is None:
         _fail("Ren'Py SDK не найден (RENPY_SDK) — vn doctor подскажет")
     if not (root / "game" / "generated" / "manifest.json").is_file():
         _fail("game/generated/ пуст — сначала vn build")
 
-    shots = root / ".vncache" / "smoke"
     if shots.exists():
         shutil.rmtree(shots)
     shots.mkdir(parents=True)
@@ -559,36 +687,18 @@ def test_smoke(picks: str, lang: str, timeout_s: int):
         shutil.rmtree(qa_dir)
     qa_dir.mkdir(parents=True)
     autopilot = qa_dir / "autopilot.gen.rpy"
-    autopilot.write_text(
-        "# AUTO-GENERATED by vn test smoke — временный файл прогона, удаляется после.\n"
-        "# Всё гейтится на VN_AUTOPILOT: даже осиротевший .rpyc без env-переменной мёртв.\n"
-        "label main_menu:\n"
-        "    if not vn_qa.autopilot_active():\n"
-        "        $ renpy.quit(save=False)   # осиротевший прогон-файл вне smoke: не играем сами с собой\n"
-        "    python:\n"
-        "        import os as _os\n"
-        "        _l = _os.environ.get(\"VN_AUTOPILOT_LANG\") or None\n"
-        "        if _l:\n"
-        "            renpy.change_language(_l)\n"
-        "    return\n\n"
-        "init python:\n"
-        "    if vn_qa.autopilot_active():\n"
-        '        config.overlay_screens.append("vn_autopilot")\n\n'
-        "screen vn_autopilot():\n"
-        "    timer 0.6 action Function(vn_qa.autopilot_tick) repeat True\n",
-        encoding="utf-8",
-    )
+    autopilot.write_text(_AUTOPILOT_RPY, encoding="utf-8")
+
     exe = sdk / ("renpy.exe" if sys.platform == "win32" else "renpy.sh")
-    env = dict(os.environ, VN_AUTOPILOT="1", VN_AUTOPILOT_DIR=str(shots),
-               VN_AUTOPILOT_PICKS=picks, VN_AUTOPILOT_LANG=lang)
+    env = dict(os.environ, VN_AUTOPILOT="1", VN_AUTOPILOT_DIR=str(shots), **extra_env)
+    cmd = [str(exe), str(root)]
+    if savedir is not None:
+        cmd += ["--savedir", str(savedir)]
     tb = root / "traceback.txt"
     if tb.is_file():
         tb.unlink()
     timed_out = False
-    popen = subprocess.Popen(
-        [str(exe), str(root)], env=env,
-        start_new_session=(sys.platform != "win32"),
-    )
+    popen = subprocess.Popen(cmd, env=env, start_new_session=(sys.platform != "win32"))
     try:
         returncode = popen.wait(timeout=timeout_s)
     except subprocess.TimeoutExpired:
@@ -610,6 +720,21 @@ def test_smoke(picks: str, lang: str, timeout_s: int):
             qa_dir.rmdir()
         except OSError:
             pass
+    return returncode, timed_out
+
+
+@test.command("smoke")
+@click.option("--picks", default="", help="Индексы выборов в меню через запятую (например 0,1).")
+@click.option("--lang", default="", help="Язык прогона (код из loc/loc.yaml или pseudo).")
+@click.option("--timeout", "timeout_s", default=180, help="Лимит прогона, сек.")
+def test_smoke(picks: str, lang: str, timeout_s: int):
+    """Автопрохождение игры автопилотом: авто-advance, авто-выбор, скриншоты движка."""
+    root = _root()
+    shots = root / ".vncache" / "smoke"
+    returncode, timed_out = _autopilot_run(
+        root, shots, {"VN_AUTOPILOT_PICKS": picks, "VN_AUTOPILOT_LANG": lang}, timeout_s
+    )
+    tb = root / "traceback.txt"
     if timed_out:
         if tb.is_file():
             click.secho(tb.read_text(encoding="utf-8", errors="replace")[-1500:], fg="red")

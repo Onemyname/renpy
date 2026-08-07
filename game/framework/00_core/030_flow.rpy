@@ -63,15 +63,20 @@ init -999 python in vn_qa:
         return "VN_AUTOPILOT" in os.environ
 
     def autopilot_tick():
-        """Каждый тик: скриншот средствами движка + продвижение диалога."""
+        """Каждый тик: скриншот средствами движка + продвижение диалога.
+        VN_AUTOPILOT_SAVE_AT=N: на тике N создаётся сейв (фикстуры корпуса, G5/G6)."""
         shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
+        n = getattr(renpy.store, "_vn_ap_shot", 0)       # "_"-префикс: не попадает в сейв
+        renpy.store._vn_ap_shot = n + 1
         if shots_dir:
-            n = getattr(renpy.store, "_vn_ap_shot", 0)   # "_"-префикс: не попадает в сейв
-            renpy.store._vn_ap_shot = n + 1
             try:
                 renpy.screenshot(os.path.join(shots_dir, "shot%03d.png" % n))
             except Exception as e:
                 vn_log("autopilot screenshot failed: %s" % e)
+        save_at = os.environ.get("VN_AUTOPILOT_SAVE_AT")
+        if save_at and int(save_at) == n:
+            renpy.save("1-1")
+            vn_log("autopilot: fixture save at tick %d" % n)
         renpy.queue_event("dismiss")
 
     def autopilot_choose(items):
@@ -96,12 +101,30 @@ init -999 python in vn_qa:
         # завершается только non-None результатом action (иначе вечное перевыбирание).
         return renpy.run(items[idx].action)
 
+    def autopilot_boot():
+        """Вызывается из label main_menu qa-файла ОДНИМ выражением: никаких import
+        в рантайм-python — rollback-лог записал бы модуль в сейв (module_pickle)."""
+        lang = os.environ.get("VN_AUTOPILOT_LANG") or None
+        if lang:
+            renpy.change_language(lang)
+        slot = os.environ.get("VN_AUTOPILOT_LOAD")
+        if slot:
+            renpy.load(slot)    # не возвращается: контекст перезапускается, затем after_load
+
     def autopilot_finish(reason):
-        """Конец прогона: маркер результата + выход из процесса."""
+        """Конец прогона: маркер результата + снапшот состояния + выход из процесса.
+        state.json позволяет корпусу проверить фактическую пост-миграционную схему."""
         shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
         if shots_dir:
             with open(os.path.join(shots_dir, "RESULT.txt"), "w", encoding="utf-8") as f:
                 f.write(reason + "\n")
+            try:
+                import json
+                from store import vn_state
+                with open(os.path.join(shots_dir, "state.json"), "w", encoding="utf-8") as f:
+                    json.dump(vn_state.snapshot(), f, ensure_ascii=False, indent=1)
+            except Exception as e:
+                vn_log("autopilot state dump failed: %s" % e)
         renpy.quit(save=False)
 
 

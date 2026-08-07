@@ -5,6 +5,6 @@ store: g
 vars:
   route:
     type: str
-    default: common
-    doc: "Активный роут; common до первой развилки"
+    default: prologue
+    doc: "Активный роут; prologue до первой развилки"
     since: 1

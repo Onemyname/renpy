@@ -19,18 +19,37 @@ init -999 python in vn_state:
     def current_schema():
         return getattr(renpy.store, "vn_save_schema", None)
 
+    # SNAPSHOT_VARS наполняет generated/state/snapshot.gen.rpy (init -970) из деклараций
+    # *.vars.yaml — единый маппинг stores<->dict для миграций в игре и внешнего тулинга (G5).
+    SNAPSHOT_VARS = ()
+
     def snapshot():
-        """stores -> плоский dict. Фаза 2: генерируемый маппинг (G5); пока пустой снапшот."""
-        return {}
+        """stores -> плоский dict простых типов (ключи 'store.var')."""
+        out = {}
+        for store_name, var in SNAPSHOT_VARS:
+            module = getattr(renpy.store, store_name, None)
+            if module is not None and hasattr(module, var):
+                out["%s.%s" % (store_name, var)] = getattr(module, var)
+        out["vn_save_schema"] = getattr(renpy.store, "vn_save_schema", None)
+        return out
 
     def apply_snapshot(state):
-        """dict -> stores + глубокая Revertable-конвертация (json-раундтрип). Фаза 2."""
-        pass
+        """dict -> stores. Значения проходят Revertable-конвертацию (rollback, G5)."""
+        from store import vn_compat
+        for store_name, var in SNAPSHOT_VARS:
+            key = "%s.%s" % (store_name, var)
+            if key in state:
+                module = getattr(renpy.store, store_name, None)
+                if module is not None:
+                    setattr(module, var, vn_compat.revertable(state[key]))
 
     def run_migrations(from_schema):
-        """Прогон цепочки строго по контракту migrate(state)->state.
-        Возвращает номер последней применённой миграции (== from_schema, если нечего применять)."""
-        state = snapshot()
+        """Прогон цепочки строго по контракту migrate(state: dict) -> dict.
+        Снапшот проходит json-раундтрип ДО цепочки: миграции видят только плоские
+        типы (Revertable-обёртки движка не протекают в чистый python-код миграций).
+        Возвращает номер последней применённой миграции."""
+        import json as _json
+        state = _json.loads(_json.dumps(snapshot()))
         applied = from_schema
         for number, migrate in MIGRATIONS:
             if number <= from_schema:

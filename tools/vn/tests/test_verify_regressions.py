@@ -81,7 +81,7 @@ def test_check_mode_writes_nothing_and_detects_stale(repo_root, tmp_path):
     gen = tmp_path / "generated"
     res = compile_content(root, out_dir=gen, check=True)
     assert not gen.exists() or not any(gen.iterdir())   # ничего не записано
-    assert len(res.stale) == 9                          # всё «устарело» (генерата нет)
+    assert len(res.stale) == 11                          # всё «устарело» (генерата нет)
 
     compile_content(root, out_dir=gen)
     res2 = compile_content(root, out_dir=gen, check=True)

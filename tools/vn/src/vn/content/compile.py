@@ -139,6 +139,76 @@ def _emit_menus(menus: dict, strings: dict, languages: list, sources) -> str:
     )
 
 
+def _emit_snapshot(var_docs: list[tuple[str, dict]], sources) -> str:
+    pairs = []
+    for _rel, doc in sorted(var_docs):
+        if doc["store"] == "persistent":
+            continue    # persistent живёт своим механизмом, в снапшот не входит
+        for name in sorted(doc.get("vars") or {}):
+            pairs.append((doc["store"], name))
+    return _header(sources) + (
+        "init -970 python in vn_state:\n"
+        "    # Единый маппинг stores<->dict (G5): миграции в игре и внешний тулинг\n"
+        "    # исполняют одну и ту же цепочку над этим снапшотом.\n"
+        f"    SNAPSHOT_VARS = {tuple(pairs)!r}\n"
+    )
+
+
+def _emit_migrations(migrations: list[tuple[int, str, str]], sources) -> str:
+    out = [_header(sources)]
+    out.append("init -960 python in vn_state:")
+    if not migrations:
+        out.append("    pass    # миграций нет (save_schema == 1)")
+        return "\n".join(out) + "\n"
+    out.append("    def _vn_load_migration(number, source, filename):")
+    out.append("        ns = {}")
+    out.append('        exec(compile(source, filename, "exec"), ns)')
+    out.append('        if "migrate" not in ns:')
+    out.append('            raise Exception("%s: нет функции migrate(state)" % filename)')
+    out.append("        MIGRATIONS.append((number, ns[\"migrate\"]))")
+    out.append("")
+    for number, filename, source in migrations:
+        out.append(f"    _vn_load_migration({number}, {source!r}, {filename!r})")
+    out.append("    MIGRATIONS.sort(key=lambda t: t[0])")
+    return "\n".join(out) + "\n"
+
+
+def _collect_migrations(root: Path, src, project: dict, errors: list[str]):
+    """content/migrations/NNNN_slug.py: номер = целевая schema; цепочка непрерывна
+    от 2 до save_schema; каждый номер зарезервирован в registry.yaml (G5)."""
+    mig_re = re.compile(r"^(\d{4})_([a-z][a-z0-9_]+)\.py$")
+    mig_dir = root / "content" / "migrations"
+    reserved: dict[int, dict] = {}
+    reg_path = mig_dir / "registry.yaml"
+    if reg_path.is_file():
+        rel, _d = src(reg_path)
+        for r in load_yaml(reg_path).get("reserved") or []:
+            reserved[r["number"]] = r
+    migrations: list[tuple[int, str, str]] = []
+    for f in sorted(mig_dir.glob("*.py")) if mig_dir.is_dir() else []:
+        m = mig_re.match(f.name)
+        if not m:
+            errors.append(f"content/migrations/{f.name}: имя вне конвенции NNNN_slug.py")
+            continue
+        number = int(m.group(1))
+        rel, _d = src(f)
+        if number not in reserved:
+            errors.append(
+                f"{rel}: номер {number} не зарезервирован в content/migrations/registry.yaml "
+                f"(параллельные ветки получат конфликт номеров, G5)"
+            )
+        migrations.append((number, f.name, f.read_text(encoding="utf-8")))
+    migrations.sort()
+    numbers = [n for n, _f, _s in migrations]
+    expected = list(range(2, project["save_schema"] + 1))
+    if numbers != expected:
+        errors.append(
+            f"content/migrations: цепочка {numbers} != ожидаемой {expected} "
+            f"(номер миграции = целевая save_schema; дыры и лишние номера запрещены)"
+        )
+    return migrations
+
+
 def _emit_overrides(renames: dict, sources) -> str:
     out = [_header(sources)]
     scene_renames: dict = renames.get("scenes") or {}
@@ -322,6 +392,9 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     if (root / "loc" / "po" / "pseudo").is_dir():
         languages = languages + ["pseudo"]
 
+    # Миграции сейвов (G5)
+    migrations = _collect_migrations(root, src, project, errors)
+
     # Локации
     locations = load_locations(root, src, registry, errors)
 
@@ -396,6 +469,8 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "registry/images.gen.rpy": images_out,
         "version.gen.rpy": _emit_version(project, git_sha(root), [proj_src]),
         "state/defaults.gen.rpy": _emit_defaults(project, var_docs, [proj_src] + var_sources),
+        "state/snapshot.gen.rpy": _emit_snapshot(var_docs, [proj_src] + var_sources),
+        "state/migrations.gen.rpy": _emit_migrations(migrations, [proj_src]),
         "registry/audio.gen.rpy": _emit_audio(audio_docs, audio_sources or [proj_src]),
         "registry/chapters.gen.rpy": sc.emit_chapter_registry(
             sorted(chapters, key=lambda c: c["id"]), _header([proj_src])

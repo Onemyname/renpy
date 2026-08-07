@@ -11,6 +11,8 @@ from vn.content.compile import CompileError, compile_content
 BASE_OUTPUTS = {
     "version.gen.rpy",
     "state/defaults.gen.rpy",
+    "state/snapshot.gen.rpy",
+    "state/migrations.gen.rpy",
     "registry/audio.gen.rpy",
     "registry/chapters.gen.rpy",
     "registry/scenes.gen.rpy",
@@ -52,11 +54,18 @@ def test_compile_empty_project(repo_root, tmp_path):
         text = (gen / rel).read_text(encoding="utf-8")
         assert "AUTO-GENERATED" in text
 
+    from vn.repo import load_project
+    schema_n = load_project(root)["save_schema"]
     defaults = (gen / "state/defaults.gen.rpy").read_text(encoding="utf-8")
-    assert "default vn_save_schema = 1" in defaults
-    assert "define vn_build_save_schema = 1" in defaults
+    assert f"default vn_save_schema = {schema_n}" in defaults
+    assert f"define vn_build_save_schema = {schema_n}" in defaults
     assert "init -980 python in g:" in defaults
-    assert "default g.route = 'common'" in defaults
+    assert "default g.route = " in defaults
+
+    snapshot = (gen / "state/snapshot.gen.rpy").read_text(encoding="utf-8")
+    assert "('g', 'route')" in snapshot
+    migrations = (gen / "state/migrations.gen.rpy").read_text(encoding="utf-8")
+    assert "_vn_load_migration(" in migrations or "миграций нет" in migrations
 
     chars = (gen / "registry/characters.gen.rpy").read_text(encoding="utf-8")
     assert "define mira = Character(_('Мира')" in chars
