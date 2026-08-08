@@ -221,6 +221,26 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _civitai_key() -> str | None:
+    """Ключ Civitai из окружения процесса."""
+    return os.environ.get("CIVITAI_API_KEY") or None
+
+
+def _civitai_key_in_registry() -> bool:
+    """Есть ли ключ в User-окружении Windows (реестр), даже если процесс его не
+    унаследовал — типичный случай после свежего setx в уже открытом терминале."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+            value, _ = winreg.QueryValueEx(k, "CIVITAI_API_KEY")
+            return bool(value)
+    except OSError:
+        return False
+
+
 def _download(url: str, dest: Path, headers: list[str] | None = None) -> None:
     """curl с докачкой (-C -), фоллбек на urllib. Пишем в .part: обрезанный файл
     никогда не выглядит готовой моделью. headers — например Authorization
@@ -275,13 +295,20 @@ def pull_models(root: Path, comfy: Path | None, only: set[str] | None = None,
             continue
         headers = None
         if entry["auth"] == "civitai_key":
-            key = os.environ.get("CIVITAI_API_KEY")
+            key = _civitai_key()
             if not key:
                 click.secho(f"  нужен ключ: {entry['id']} — Civitai отдаёт файл только "
                             f"с API-ключом вашего аккаунта", fg="yellow")
-                click.echo("    1) войдите на civitai.com -> Account Settings -> API Keys -> Add API key")
-                click.echo("    2) setx CIVITAI_API_KEY <ключ>   (и перезапустите терминал)")
-                click.echo("    3) повторите: vn pipeline models --pull")
+                if _civitai_key_in_registry():
+                    # Частая грабля Windows: setx записал ключ в реестр, но текущий
+                    # процесс (и родительская оболочка) унаследовали старое окружение.
+                    click.secho("    ключ ЕСТЬ в User-окружении, но не виден этому "
+                                "процессу — откройте НОВЫЙ терминал и повторите "
+                                "vn pipeline models --pull", fg="yellow")
+                else:
+                    click.echo("    1) civitai.com -> Account Settings -> API Keys -> Add API key")
+                    click.echo("    2) setx CIVITAI_API_KEY <ключ>")
+                    click.echo("    3) в НОВОМ терминале: vn pipeline models --pull")
                 needs_key.append(entry)
                 continue
             headers = [f"Authorization: Bearer {key}"]
