@@ -161,6 +161,65 @@ def test_stamp_id_registry_unions_released_ids(repo_root, tmp_path):
     assert stamp_id_registry(root) == 0
 
 
+def _mk_chapter(root, ch_id="ch03", status="playtest", scenes=None, order=None, entry="s010"):
+    """Глава со сценами: scenes = {sid: exits-dict}."""
+    ch = root / "content" / "chapters" / f"{ch_id}_test"
+    (ch / "scenes").mkdir(parents=True, exist_ok=True)
+    order = order or sorted(scenes)
+    (ch / "chapter.yaml").write_text(
+        f"schema: chapter@1\nid: {ch_id}\ntitle_key: meta.chapters.{ch_id}.title\n"
+        f"status: {status}\nentry_scene: {entry}\nscene_order: [{', '.join(order)}]\n",
+        encoding="utf-8")
+    import yaml as _yaml
+    for sid, exits in scenes.items():
+        doc = {"schema": "scene@1", "id": sid}
+        if exits:
+            doc["exits"] = exits
+        (ch / "scenes" / f"{sid}_test.scene.yaml").write_text(
+            _yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        (ch / "scenes" / f"{sid}_test.scene.rpy").write_text(
+            f"label {ch_id}_{sid}__body:\n    return\n", encoding="utf-8")
+    return ch
+
+
+def test_unreachable_scene_detected(repo_root, tmp_path):
+    """Сцена, на которую не ведёт ни один exit — мёртвый контент."""
+    root = _copy_skeleton(repo_root, tmp_path)
+    _mk_chapter(root, scenes={"s010": {"go": "s020"}, "s020": {}, "s030": {}},
+                order=["s010", "s020", "s030"])
+    rep = lint(root)
+    assert any("сцена s030 недостижима" in e for e in rep.errors)
+    assert not any("сцена s020 недостижима" in e for e in rep.errors)
+
+
+def test_dead_end_scene_warns(repo_root, tmp_path):
+    """Сцена без exits в середине главы — тупик (warning, не ошибка)."""
+    root = _copy_skeleton(repo_root, tmp_path)
+    _mk_chapter(root, scenes={"s010": {"go": "s020"}, "s020": {}, "s030": {}},
+                order=["s010", "s020", "s030"])
+    rep = lint(root)
+    assert any("сцена s020 — тупик" in w for w in rep.warnings)
+
+
+def test_reachability_draft_downgrades(repo_root, tmp_path):
+    root = _copy_skeleton(repo_root, tmp_path)
+    _mk_chapter(root, ch_id="ch04", status="draft",
+                scenes={"s010": {}, "s020": {}}, order=["s010", "s020"])
+    rep = lint(root)
+    assert rep.errors == []
+    assert any("сцена s020 недостижима" in w for w in rep.warnings)
+
+
+def test_full_linear_chapter_is_clean(repo_root, tmp_path):
+    root = _copy_skeleton(repo_root, tmp_path)
+    _mk_chapter(root, ch_id="ch05", scenes={"s010": {"go": "s020"},
+                                            "s020": {"go": "s030"}, "s030": {}},
+                order=["s010", "s020", "s030"])
+    rep = lint(root)
+    assert not any("недостижима" in e or "тупик" in e for e in rep.errors)
+    assert not any("тупик" in w for w in rep.warnings)
+
+
 def test_assets_src_binary_budget_guard(repo_root, tmp_path):
     """ADR-0004: порог бинарей в git — проверяемый, а не устный (история append-only)."""
     from vn.content import lint as lintmod

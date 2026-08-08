@@ -216,6 +216,7 @@ def lint(root: Path, layout: bool = True) -> LintReport:
     # ── 3. Exits: битые цели переходов ──────────────────────────────────────
     # Схемно-невалидные документы пропускаются: их структура непредсказуема,
     # а ошибка по ним уже выдана в секции 1 (не роняем весь lint трейсбеком).
+    scene_exits: dict[str, list[str]] = {}    # ch_id_sNNN -> [полные id целей]
     for rel, data in docs.items():
         if rel in invalid or not rel.endswith(".scene.yaml") or data.get("schema") != "scene@1":
             continue
@@ -245,8 +246,53 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                     t_ch, t_s = t.split("/", 1)
                     if t_s not in chapters.get(t_ch, {}).get("scenes", set()):
                         complain(f"{rel}: exits.{exit_id} -> {t}: цель не существует")
+                    full_target = f"{t_ch}_{t_s}"
                 elif t not in chapters.get(ch_id, {}).get("scenes", set()):
                     complain(f"{rel}: exits.{exit_id} -> {t}: цель не существует в главе {ch_id}")
+                    full_target = f"{ch_id}_{t}"
+                else:
+                    full_target = f"{ch_id}_{t}"
+                scene_exits.setdefault(f"{ch_id}_{data['id']}", []).append(full_target)
+
+    # ── 3a. Достижимость: обход графа сцен от entry_scene каждой главы ───────
+    # Недостижимая сцена = написанный и переведённый контент, которого игрок
+    # никогда не увидит; тупик = игра упирается в «конец контента» посреди главы.
+    # Финальные сцены (exits: {}) — легитимные тупики, их не считаем.
+    for ch_id, info in sorted(chapters.items()):
+        ch_meta = None
+        for rel, data in docs.items():
+            if rel.endswith("/chapter.yaml") and data.get("id") == ch_id:
+                ch_meta = data
+                break
+        entry = (ch_meta or {}).get("entry_scene")
+        if not entry or entry not in info["scenes"]:
+            continue    # об отсутствующем entry уже сообщила секция 2
+        complain = rep.warn if info["status"] == "draft" else rep.error
+        start = f"{ch_id}_{entry}"
+        seen, queue = {start}, [start]
+        while queue:
+            cur = queue.pop()
+            for nxt in scene_exits.get(cur, []):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    queue.append(nxt)
+        for sid in sorted(info["scenes"]):
+            full = f"{ch_id}_{sid}"
+            if full not in seen:
+                complain(
+                    f"{ch_id}: сцена {sid} недостижима из entry_scene {entry} — "
+                    f"на неё не ведёт ни один exit (мёртвый контент)"
+                )
+        # Тупики: сцена без exits, не являющаяся последней в scene_order.
+        order = (ch_meta or {}).get("scene_order") or []
+        last = order[-1] if order else None
+        for sid in sorted(info["scenes"]):
+            full = f"{ch_id}_{sid}"
+            if full in seen and not scene_exits.get(full) and sid != last:
+                rep.warn(
+                    f"{ch_id}: сцена {sid} — тупик (нет exits, но не последняя "
+                    f"в scene_order): игрок упрётся в «конец контента»"
+                )
 
     # ── 4. Персонажи: id == имени папки ──────────────────────────────────────
     chars_dir = root / "content" / "characters"
