@@ -1522,6 +1522,13 @@ def release_build(flavor: str, patron_token: str | None, packages: tuple, timeou
                           validate_release, write_build_info)
 
     root = _root()
+    ctx = click.get_current_context()
+    # Сборка ДО гейта: в свежем чекауте (CI) генерата нет вовсе, и проверка
+    # «генерат свеж» валила бы каждый релиз. Плюс так гейт проверяет ровно то
+    # состояние, которое уедет в дистрибутив, а не предыдущее.
+    click.secho(f"сборка перед гейтом (флейвор {flavor})…", fg="cyan")
+    ctx.invoke(build, check=False, profile="full")
+
     checks, ok = validate_release(root, flavor)
     colors = {"PASS": "green", "WARN": "yellow", "FAIL": "red"}
     for state, msg in checks:
@@ -1541,7 +1548,6 @@ def release_build(flavor: str, patron_token: str | None, packages: tuple, timeou
         _shutil.copy(notices, root / "game" / "THIRD-PARTY-NOTICES.md")
     click.echo(f"build-id: {info['build_id']}"
                + (f" (исключено: {', '.join(info['exclude'])})" if info["exclude"] else ""))
-    ctx = click.get_current_context()
     try:
         ctx.invoke(package, packages=packages, timeout_s=timeout_s,
                    dest_suffix=f"-{flavor}")
