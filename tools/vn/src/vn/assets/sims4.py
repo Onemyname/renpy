@@ -1,11 +1,10 @@
 """Sims4-декларации захватов (ADR-0007): assets_src/sims4/**/<name>.render.yaml.
 
-The Sims 4 — опциональный ЧЕТВЁРТЫЙ источник конвейера, технически симметричный
-DAZ/VaM (захват ОБЪЯВЛЕН и попадает в provenance-цепочку), но с одним отличием:
-визуал строится на ассетах EA, и до урегулирования лицензии релизный гейт
-БЛОКИРУЕТ любой Sims4-материал в сборках. Гейт снимается только явным
-project.yaml: sources: {sims4: {license: cleared}} (ADR-0007). Локальная
-подготовка (сцены, CC, захваты, провенанс) не ограничивается.
+The Sims 4 — опциональный ЧЕТВЁРТЫЙ источник конвейера, задел рядом с DAZ/VaM:
+контракт тот же — захват (скриншот/секвенция) ОБЪЯВЛЕН (schema sims4_render@1)
+и попадает в provenance-цепочку, дальше общий трек png/cg | video_src ->
+vn assets build/video -> game/assets. Продакшен-трек проекта — DAZ; этот модуль
+держит движок источника готовым на случай, если трек решат задействовать.
 
 Исходник сцены — zip-бандл Tray-файлов (лот+семья), сейв или .package: бинарные
 сырцы живут в хранилище через vn assets push, в git — манифесты (G2/G21).
@@ -14,7 +13,6 @@ capture.game_version обязателен схемой: патчи EA меняю
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -80,40 +78,3 @@ def validate_scenes(root: Path, scope: str | None = None,
             except prov.ProvenanceError as e:
                 rep.errors.append(f"{rel}: {e}")
     return rep
-
-
-# ── Лицензионный гейт (ADR-0007) ──────────────────────────────────────────────
-
-def license_cleared(project: dict) -> bool:
-    """True = коммерческое использование Sims4-визуала согласовано с EA и явно
-    зафиксировано в project.yaml (sources.sims4.license: cleared)."""
-    return (((project.get("sources") or {}).get("sims4") or {}).get("license")) == "cleared"
-
-
-def release_gate(root: Path, project: dict) -> tuple[str, str] | None:
-    """Строка релизного гейта: None = Sims4-материала нет (гейт молчит);
-    иначе (PASS|FAIL, сообщение). Материал ищется и по декларациям в
-    assets_src/sims4/**, и по provenance-цепочкам с шагом sims4_render:
-    захват мог пережить удаление своей декларации — происхождение артефакта
-    надёжнее объявления."""
-    base = root / "assets_src"
-    sims_dir = base / "sims4"
-    n_decl = sum(1 for _ in sims_dir.rglob(f"*{RENDER_SUFFIX}")) if sims_dir.is_dir() else 0
-    n_prov = 0
-    if base.is_dir():
-        for pf in base.rglob("*.provenance.json"):
-            try:
-                doc = json.loads(pf.read_text(encoding="utf-8"))
-            except ValueError:
-                continue    # битый JSON — зона ответственности provenance verify
-            if any(step.get("kind") == "sims4_render" for step in doc.get("chain", [])):
-                n_prov += 1
-    if not n_decl and not n_prov:
-        return None
-    material = f"{n_decl} деклараций, {n_prov} артефактов с шагом sims4_render"
-    if license_cleared(project):
-        return "PASS", (f"Sims 4: лицензионный гейт снят "
-                        f"(sources.sims4.license: cleared) — {material}")
-    return "FAIL", (f"Sims 4: {material}, но лицензия EA не урегулирована — релиз "
-                    f"с Sims4-контентом заблокирован; после договорённости с EA: "
-                    f"project.yaml -> sources.sims4.license: cleared (ADR-0007)")

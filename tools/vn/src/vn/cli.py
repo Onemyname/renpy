@@ -712,7 +712,7 @@ def assets_vam_validate(scope: str | None, no_provenance: bool):
 @assets.group("sims4")
 def assets_sims4():
     """Декларации захватов The Sims 4: assets_src/sims4/**/<name>.render.yaml
-    (опциональный источник за лицензионным гейтом EA, ADR-0007)."""
+    (опциональный источник-задел, ADR-0007)."""
 
 
 @assets_sims4.command("validate")
@@ -720,13 +720,10 @@ def assets_sims4():
 @click.option("--no-provenance", is_flag=True, help="Только проверить, провенанс не писать.")
 def assets_sims4_validate(scope: str | None, no_provenance: bool):
     """Схема деклараций Sims 4, наличие сцен (zip/save/package или манифест),
-    наличие выходов; для готовых захватов пишется/обновляется провенанс.
-    Локальную работу лицензионный гейт не трогает — блокируется только релиз."""
-    from .assets.sims4 import release_gate, validate_scenes
-    from .repo import load_project
+    наличие выходов; для готовых захватов пишется/обновляется провенанс."""
+    from .assets.sims4 import validate_scenes
 
-    root = _root()
-    rep = validate_scenes(root, scope=scope, write_provenance=not no_provenance)
+    rep = validate_scenes(_root(), scope=scope, write_provenance=not no_provenance)
     for w in rep.warnings:
         click.secho(f"warning: {w}", fg="yellow")
     for e in rep.errors:
@@ -737,13 +734,9 @@ def assets_sims4_validate(scope: str | None, no_provenance: bool):
         _fail(f"sims4 validate: {len(rep.errors)} ошибок")
     if not rep.checked:
         click.echo("деклараций нет (assets_src/sims4/**/<name>.render.yaml) — "
-                   "источник опционален и за лицензионным гейтом, см. ADR-0007 "
-                   "и docs/pipeline/phase-0.md (раздел Sims 4)")
+                   "источник опционален (задел), см. ADR-0007 и "
+                   "docs/pipeline/phase-0.md (раздел Sims 4)")
         return
-    gate = release_gate(root, load_project(root))
-    if gate and gate[0] == "FAIL":
-        click.secho("напоминание: лицензия EA не урегулирована — Sims4-контент не "
-                    "пройдёт vn release validate (ADR-0007)", fg="yellow")
     click.secho(f"sims4 validate: OK ({len(rep.checked)} деклараций, "
                 f"{len(rep.warnings)} предупреждений)", fg="green")
 

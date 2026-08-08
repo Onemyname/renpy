@@ -503,6 +503,14 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
 
     char_ids = {doc["id"] for _, doc in char_docs}
 
+    # Variable Registry (G5): {store.name} всех объявленных сохраняемых переменных —
+    # сцены сверяют против него фактические чтения/записи (build-bridge).
+    var_registry: set[str] = set()
+    for _vrel, vdoc in var_docs:
+        vstore = vdoc.get("store")
+        for vname in (vdoc.get("vars") or {}):
+            var_registry.add(f"{vstore}.{vname}")
+
     scene_rep = sc.SceneCompileReport()
     scene_outputs: dict[str, str] = {}
     if units:
@@ -525,7 +533,8 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
                         f"(say упадёт NameError в рантайме)"
                     )
             dispatch = sc.validate_scene(
-                u, known_scenes, status_by_ch.get(u.chapter_id, "draft"), scene_rep
+                u, known_scenes, status_by_ch.get(u.chapter_id, "draft"), scene_rep,
+                var_registry=var_registry,
             )
             header = _header([(u.yaml_rel, inputs[u.yaml_rel]), (u.rpy_rel, inputs[u.rpy_rel])])
             scene_outputs[f"scenes/{u.chapter_id}/{u.full_id}.gen.rpy"] = sc.emit_scene(

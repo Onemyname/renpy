@@ -545,13 +545,11 @@ def run_pipeline_doctor(root: Path, comfy_opt: str | None = None) -> int:
            f"Virt-a-Mate: {vam or 'не установлен (опционально)'}",
            "" if vam else "опционально: tools/install-vam.ps1 (третий источник рендеров)")
 
-    # Sims 4 — опциональный четвёртый источник за лицензионным гейтом (ADR-0007):
-    # doctor проверяет только окружение; право попасть в релиз — vn release validate.
+    # Sims 4 — опциональный четвёртый источник-задел (ADR-0007): отсутствие не проблема.
     sims4 = sims4_path()
     _check(checks, "PASS" if sims4 else "WARN",
            f"The Sims 4: {sims4 or 'не установлен (опционально)'}",
-           "" if sims4 else "опционально: tools/install-sims4.ps1 "
-                            "(источник за лицензионным гейтом EA — ADR-0007)")
+           "" if sims4 else "опционально: tools/install-sims4.ps1 (четвёртый источник рендеров)")
 
     seen_drives = set()
     for label, p in (("репозиторий", root), ("модели", comfy)):

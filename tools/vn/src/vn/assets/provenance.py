@@ -257,8 +257,7 @@ def record_vam(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
 
 
 def record_sims4(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
-    """Провенанс Sims4-захвата из декларации <name>.render.yaml (vn assets sims4 validate;
-    источник за лицензионным гейтом — ADR-0007)."""
+    """Провенанс Sims4-захвата из декларации <name>.render.yaml (vn assets sims4 validate)."""
     return _record_render(root, decl_rel, output, "sims4_render", decl["scene"], decl["capture"])
 
 

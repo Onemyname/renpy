@@ -67,7 +67,7 @@ def _literal_exit(expr: str | None) -> tuple[bool, str | None]:
 
 
 def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
-                   rep: SceneCompileReport) -> dict:
+                   rep: SceneCompileReport, var_registry: set[str] | None = None) -> dict:
     """Проверка контракта. Возвращает контекст эмиссии:
     {exit_id -> [{to_label, when?}]}; недостижимые цели draft-глав заменены на fallback."""
     a = unit.analysis
@@ -141,6 +141,38 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
             rep.warnings.append(
                 f"{unit.yaml_rel}: exits.{exit_id} не достигается ни одним return в {src}"
             )
+
+    # ── Переменные (G5/C-save-integrity): фактические чтения/записи store-атрибутов
+    # из build-bridge сверяются с Variable Registry. Незадекларированный атрибут =
+    # молчаливый фантом-стор вне сейва/миграций (write) или NameError-риск (read).
+    if var_registry is not None:
+        actual_writes = set(a.get("var_writes") or [])
+        actual_reads = set(a.get("var_reads") or [])
+        var_complain = rep.warnings.append if status == "draft" else rep.errors.append
+        for ref in sorted(actual_writes | actual_reads):
+            if ref not in var_registry:
+                kind = "пишется" if ref in actual_writes else "читается"
+                var_complain(
+                    f"{src}: {ref} {kind}, но не объявлена в Variable Registry "
+                    f"(content/variables/*.vars.yaml или chapters/*/vars.yaml) — "
+                    f"молчаливый фантом-стор вне сейва/миграций (G5)"
+                )
+        # Направленная сверка с манифестом: ругаемся, только если автор ОБЪЯВИЛ
+        # vars.reads/writes и они разошлись с фактом — иначе не навязываем декларацию.
+        declared = unit.meta.get("vars") or {}
+        if "writes" in declared:
+            for ref in sorted(actual_writes - set(declared["writes"])):
+                if ref in var_registry:
+                    rep.warnings.append(f"{unit.yaml_rel}: {ref} пишется в {src}, "
+                                        f"но не указан в vars.writes")
+            for ref in sorted(set(declared["writes"]) - actual_writes):
+                rep.warnings.append(f"{unit.yaml_rel}: vars.writes.{ref} объявлен, "
+                                    f"но не пишется в {src}")
+        if "reads" in declared:
+            for ref in sorted(actual_reads - set(declared["reads"])):
+                if ref in var_registry:
+                    rep.warnings.append(f"{unit.yaml_rel}: {ref} читается в {src}, "
+                                        f"но не указан в vars.reads")
 
     complain = rep.warnings.append if status == "draft" else rep.errors.append
     dispatch: dict[str, list[dict]] = {}

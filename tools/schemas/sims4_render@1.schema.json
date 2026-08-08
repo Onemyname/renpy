@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "vn:schemas/sims4_render@1",
   "title": "sims4_render@1 — декларация захвата из The Sims 4 (assets_src/sims4/**/<name>.render.yaml, ADR-0007)",
-  "description": "Sims 4 — опциональный четвёртый источник за лицензионным гейтом EA (ADR-0007): захват объявлен как у DAZ/VaM (сцена + параметры -> выход -> провенанс), но релизный гейт блокирует Sims4-контент, пока project.yaml: sources.sims4.license != cleared.",
+  "description": "Sims 4 — опциональный четвёртый источник конвейера рядом с DAZ/VaM, задел (ADR-0007). Захват (скриншот/секвенция) объявлен так же, как DAZ-рендер/VaM-захват: сцена + параметры -> выход -> провенанс. capture.game_version обязателен: патчи EA меняют картинку и ломают моды.",
   "type": "object",
   "properties": {
     "schema": {"const": "sims4_render@1"},

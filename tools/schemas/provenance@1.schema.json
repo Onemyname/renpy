@@ -61,7 +61,7 @@
             "properties": {
               "kind": {"const": "sims4_render"},
               "source": {"$ref": "#/$defs/source_ref"},
-              "declaration": {"type": "string", "description": "Путь <name>.render.yaml относительно assets_src/ (сцена Sims 4; источник за лицензионным гейтом — ADR-0007)"},
+              "declaration": {"type": "string", "description": "Путь <name>.render.yaml относительно assets_src/ (сцена Sims 4; ADR-0007)"},
               "settings": {"type": "object", "description": "Снапшот блока capture из декларации (game_version, mods, …)"}
             },
             "required": ["kind", "source", "settings"],

@@ -5,6 +5,37 @@
 
 init python:
 
+    import ast as _vn_ast
+    import re as _vn_re
+
+    # Управляемые named stores (зеркало vars@1.store): только их атрибуты едут в
+    # сейв и миграции. Обращение к атрибуту вне реестра — молчаливый фантом (G5).
+    _VN_STORE_RE = _vn_re.compile(r"^(g|ch\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+|persistent)$")
+
+    def _vn_collect_vars(source, mode, entry):
+        """Извлечь чтения/записи атрибутов управляемых stores из python-фрагмента
+        или выражения-условия. Классификация по ast-контексту: Store=запись,
+        Load=чтение. Непарсящийся фрагмент молча пропускается (не валим анализ)."""
+        if not source:
+            return
+        try:
+            tree = _vn_ast.parse(source, mode=mode)
+        except (SyntaxError, ValueError):
+            return
+        for node in _vn_ast.walk(tree):
+            if not isinstance(node, _vn_ast.Attribute):
+                continue
+            base = node.value
+            if not isinstance(base, _vn_ast.Name) or not _VN_STORE_RE.match(base.id):
+                continue
+            ref = "%s.%s" % (base.id, node.attr)
+            if isinstance(node.ctx, _vn_ast.Store):
+                if ref not in entry["var_writes"]:
+                    entry["var_writes"].append(ref)
+            elif isinstance(node.ctx, _vn_ast.Load):
+                if ref not in entry["var_reads"]:
+                    entry["var_reads"].append(ref)
+
     def _vn_walk_ast(nodes, entry):
         for node in nodes:
             cls = type(node).__name__
@@ -39,6 +70,7 @@ init python:
                 src = getattr(getattr(node, "code", None), "source", "") or ""
                 if src.strip().startswith("vn_menu"):
                     entry["menu_markers"].append({"line": line, "source": src.strip()})
+                _vn_collect_vars(src, "exec", entry)   # $ ch01.x = True / python:-блоки
             elif cls == "Menu":
                 captions = []
                 conditions = []
@@ -46,14 +78,17 @@ init python:
                     caption, condition, block = item[0], item[1], item[2]
                     captions.append(caption)
                     conditions.append(str(condition))
+                    _vn_collect_vars(str(condition), "eval", entry)
                     if block:
                         _vn_walk_ast(block, entry)
                 entry["menus"].append({"line": line, "items": captions,
                                        "conditions": conditions})
             elif cls == "If":
                 for _condition, block in node.entries:
+                    _vn_collect_vars(str(_condition), "eval", entry)
                     _vn_walk_ast(block, entry)
             elif cls == "While":
+                _vn_collect_vars(str(getattr(node, "condition", "")), "eval", entry)
                 _vn_walk_ast(node.block, entry)
             else:
                 block = getattr(node, "block", None)
@@ -74,7 +109,7 @@ init python:
             entry = {
                 "labels": [], "jumps": [], "calls": [], "returns": [],
                 "menus": [], "says": 0, "say_list": [], "menu_markers": [],
-                "errors": [],
+                "var_reads": [], "var_writes": [], "errors": [],
             }
             try:
                 with io.open(fn, "r", encoding="utf-8") as f:

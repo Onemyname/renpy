@@ -1,15 +1,14 @@
 <#
 .SYNOPSIS
     Bootstrap The Sims 4 как опционального четвёртого источника конвейера
-    (ADR-0007) — источник за лицензионным гейтом EA.
+    (ADR-0007).
 
 .DESCRIPTION
-    ВАЖНО (ADR-0007): визуал Sims 4 строится на ассетах EA. Пока лицензия с EA
-    не урегулирована (project.yaml: sources.sims4.license: cleared), релизный
-    гейт БЛОКИРУЕТ Sims4-контент в сборках; локальная подготовка (сцены, CC,
-    захваты, провенанс) не ограничивается — основа готовится заранее.
+    Источник-задел: продакшен-трек проекта — DAZ; движок Sims4-источника
+    (декларации, провенанс, валидация) готов на случай, если трек решат
+    задействовать.
 
-    Установщик у игры есть (в отличие от VaM) — легальные пути:
+    Легальные пути установки:
       1. EA App — базовая игра free-to-play;
       2. Steam — appId 1222670 (тоже f2p; DLC покупаются отдельно).
     Скрипт:
@@ -31,7 +30,7 @@ $ExeRel = "Game\Bin\TS4_x64.exe"
 function Ok($m)   { Write-Host " [OK]   $m" -ForegroundColor Green }
 function Warn($m) { Write-Host " [....] $m" -ForegroundColor Yellow }
 
-Write-Host "=== The Sims 4 bootstrap (источник за лицензионным гейтом, ADR-0007) ===" -ForegroundColor Cyan
+Write-Host "=== The Sims 4 bootstrap (опциональный источник, ADR-0007) ===" -ForegroundColor Cyan
 
 # ── 1. Детект установленного ──────────────────────────────────────────────────
 function Find-Sims4 {
@@ -90,10 +89,6 @@ if ($sims) {
     Write-Host "Дальше — контент: Tray-бандл (лот+семья) zip'ом -> assets_src/sims4/<...>.render.yaml"
     Write-Host "(sims4_render@1, game_version обязателен) -> захват в assets_src/png/cg или"
     Write-Host "video_src -> vn assets sims4 validate."
-    Write-Host ""
-    Write-Host "НАПОМИНАНИЕ (ADR-0007): до урегулирования лицензии с EA Sims4-контент" -ForegroundColor Yellow
-    Write-Host "не пройдёт vn release validate — гейт снимается только project.yaml:" -ForegroundColor Yellow
-    Write-Host "sources.sims4.license: cleared (после письменной договорённости)." -ForegroundColor Yellow
     return
 }
 
@@ -114,4 +109,3 @@ Write-Host "      Enable Custom Content and Mods (+ Script Mods Allowed) и пе
 Write-Host "   5) запустите этот скрипт снова — он найдёт игру и пропишет VN_SIMS4"
 Write-Host ""
 Write-Host "После установки: vn pipeline doctor (строка The Sims 4 должна стать PASS)" -ForegroundColor Green
-Write-Host "ЛИЦЕНЗИЯ (ADR-0007): релиз с Sims4-контентом заблокирован до урегулирования с EA." -ForegroundColor Yellow

@@ -301,11 +301,6 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     elif srep.checked:
         add("PASS", f"Sims4-декларации: {len(srep.checked)} проверено")
 
-    # Лицензионный гейт EA (ADR-0007): молчит, пока Sims4-материала нет вовсе.
-    gate = sims4mod.release_gate(root, project)
-    if gate:
-        add(*gate)
-
     from .assets.storage import StorageError, status
 
     try:

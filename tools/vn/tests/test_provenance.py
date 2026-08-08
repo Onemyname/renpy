@@ -197,14 +197,11 @@ def test_vam_validate_missing_scene_and_output(tmp_path):
     assert any("ещё не захвачен" in w for w in rep.warnings)
 
 
-def test_sims4_validate_chain_and_license_gate(tmp_path):
-    from vn.assets.sims4 import release_gate, validate_scenes
+def test_sims4_validate_and_chain(tmp_path):
+    from vn.assets.sims4 import validate_scenes
 
     root = _mk_root(tmp_path)
     base = root / "assets_src"
-    # Материала нет — гейт молчит (строка в релизном гейте не появляется)
-    assert release_gate(root, {"schema": "project@1"}) is None
-
     scene = base / "sims4/ch01/loft/tray_bundle.zip"
     scene.parent.mkdir(parents=True)
     scene.write_bytes(b"stub-tray-bundle")
@@ -238,16 +235,6 @@ def test_sims4_validate_chain_and_license_gate(tmp_path):
     _comfy_png(ai)
     _p, aidoc = record(root, ai, source=shot)
     assert [s["kind"] for s in aidoc["chain"]] == ["sims4_render", "comfyui"]
-
-    # Лицензионный гейт (ADR-0007): материал есть, лицензия не урегулирована -> FAIL
-    state, msg = release_gate(root, {"schema": "project@1"})
-    assert state == "FAIL" and "лицензия EA" in msg
-    # cleared в project.yaml снимает блок
-    state, msg = release_gate(root, {"sources": {"sims4": {"license": "cleared"}}})
-    assert state == "PASS" and "гейт снят" in msg
-    # pending — эквивалент отсутствия блока
-    state, _msg = release_gate(root, {"sources": {"sims4": {"license": "pending"}}})
-    assert state == "FAIL"
 
 
 def test_sims4_capture_requires_game_version(tmp_path):

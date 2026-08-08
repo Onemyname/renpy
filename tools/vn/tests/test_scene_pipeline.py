@@ -70,6 +70,47 @@ def test_draft_missing_target_becomes_fallback():
     assert any("не существует" in w for w in rep.warnings)
 
 
+def test_var_write_not_in_registry_is_error():
+    """Запись атрибута управляемого стора вне реестра — молчаливый фантом (G5)."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(var_writes=["ch01.met_mirs"], var_reads=[])   # опечатка в имени
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      var_registry={"ch01.met_mira", "g.route"})
+    assert any("ch01.met_mirs" in e and "Variable Registry" in e for e in rep.errors)
+
+
+def test_var_read_ok_when_declared():
+    rep = sc.SceneCompileReport()
+    a = _analysis(var_reads=["ch01.met_mira"], var_writes=[])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      var_registry={"ch01.met_mira"})
+    assert rep.errors == []
+
+
+def test_var_draft_downgrades_to_warning():
+    rep = sc.SceneCompileReport()
+    a = _analysis(var_writes=["g.phantom"])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "draft", rep, var_registry=set())
+    assert rep.errors == []
+    assert any("g.phantom" in w for w in rep.warnings)
+
+
+def test_var_manifest_mismatch_warns_only_when_declared():
+    # автор объявил writes, но фактически пишет другое -> предупреждение
+    rep = sc.SceneCompileReport()
+    a = _analysis(var_writes=["ch01.met_mira"])
+    sc.validate_scene(_unit(meta={"vars": {"writes": ["ch01.other"]}}, analysis=a),
+                      {"ch01_s010"}, "release", rep,
+                      var_registry={"ch01.met_mira", "ch01.other"})
+    assert any("не указан в vars.writes" in w for w in rep.warnings)
+    assert any("vars.writes.ch01.other объявлен" in w for w in rep.warnings)
+    # без var_registry (старый вызов) — проверок переменных нет вовсе
+    rep2 = sc.SceneCompileReport()
+    sc.validate_scene(_unit(analysis=_analysis(var_writes=["x.y"])), {"ch01_s010"},
+                      "release", rep2)
+    assert rep2.errors == []
+
+
 def test_emit_scene_wrapper():
     rep = sc.SceneCompileReport()
     unit = _unit(meta={"exits": {"done": "s020"}})
