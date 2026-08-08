@@ -197,6 +197,95 @@ def test_vam_validate_missing_scene_and_output(tmp_path):
     assert any("ещё не захвачен" in w for w in rep.warnings)
 
 
+def test_sims4_validate_chain_and_license_gate(tmp_path):
+    from vn.assets.sims4 import release_gate, validate_scenes
+
+    root = _mk_root(tmp_path)
+    base = root / "assets_src"
+    # Материала нет — гейт молчит (строка в релизном гейте не появляется)
+    assert release_gate(root, {"schema": "project@1"}) is None
+
+    scene = base / "sims4/ch01/loft/tray_bundle.zip"
+    scene.parent.mkdir(parents=True)
+    scene.write_bytes(b"stub-tray-bundle")
+    shot = base / "png/cg/ch01/loft.png"
+    _comfy_png(shot, graph={})
+    decl = base / "sims4/ch01/loft/loft.render.yaml"
+    decl.write_text(
+        "schema: sims4_render@1\n"
+        "id: cg/ch01/loft\n"
+        "scene: sims4/ch01/loft/tray_bundle.zip\n"
+        "output: png/cg/ch01/loft.png\n"
+        "capture:\n"
+        "  resolution: [1920, 1080]\n"
+        "  mode: screenshot\n"
+        "  game_version: '1.115.216.1020'\n"
+        "  camera: tab_free\n"
+        "  mods: [wickedwhims, reshade_photoreal]\n",
+        encoding="utf-8")
+
+    rep = validate_scenes(root)
+    assert rep.errors == []
+    assert rep.provenance_written == ["assets_src/png/cg/ch01/loft.png.provenance.json"]
+
+    doc = json.loads(shot.with_name("loft.png.provenance.json").read_text(encoding="utf-8"))
+    assert doc["chain"][0]["kind"] == "sims4_render"
+    assert doc["chain"][0]["settings"]["game_version"] == "1.115.216.1020"
+    assert verify(root).errors == []
+
+    # AI-полировка поверх захвата: цепочка sims4_render + comfyui
+    ai = base / "png/cg/ch01/loft_polished.png"
+    _comfy_png(ai)
+    _p, aidoc = record(root, ai, source=shot)
+    assert [s["kind"] for s in aidoc["chain"]] == ["sims4_render", "comfyui"]
+
+    # Лицензионный гейт (ADR-0007): материал есть, лицензия не урегулирована -> FAIL
+    state, msg = release_gate(root, {"schema": "project@1"})
+    assert state == "FAIL" and "лицензия EA" in msg
+    # cleared в project.yaml снимает блок
+    state, msg = release_gate(root, {"sources": {"sims4": {"license": "cleared"}}})
+    assert state == "PASS" and "гейт снят" in msg
+    # pending — эквивалент отсутствия блока
+    state, _msg = release_gate(root, {"sources": {"sims4": {"license": "pending"}}})
+    assert state == "FAIL"
+
+
+def test_sims4_capture_requires_game_version(tmp_path):
+    from vn.assets.sims4 import validate_scenes
+
+    root = _mk_root(tmp_path)
+    decl = root / "assets_src/sims4/ch02/bar/bar.render.yaml"
+    decl.parent.mkdir(parents=True)
+    decl.write_text(
+        "schema: sims4_render@1\n"
+        "id: cg/ch02/bar\n"
+        "scene: sims4/ch02/bar/save.zip\n"            # нет ни файла, ни манифеста
+        "output: png/cg/ch02/bar.png\n"               # ещё не захвачен
+        "capture: {resolution: [1920, 1080], mode: screenshot}\n",  # нет game_version
+        encoding="utf-8")
+    rep = validate_scenes(root)
+    # без game_version кадр невоспроизводим (патчи EA) — это ошибка схемы
+    assert any("game_version" in e for e in rep.errors)
+
+
+def test_sims4_validate_missing_scene_and_output(tmp_path):
+    from vn.assets.sims4 import validate_scenes
+
+    root = _mk_root(tmp_path)
+    decl = root / "assets_src/sims4/ch02/bar/bar.render.yaml"
+    decl.parent.mkdir(parents=True)
+    decl.write_text(
+        "schema: sims4_render@1\n"
+        "id: cg/ch02/bar\n"
+        "scene: sims4/ch02/bar/save.zip\n"            # нет ни файла, ни манифеста
+        "output: png/cg/ch02/bar.png\n"               # ещё не захвачен
+        "capture: {resolution: [1920, 1080], mode: screenshot, game_version: '1.115'}\n",
+        encoding="utf-8")
+    rep = validate_scenes(root)
+    assert any("ни локально, ни в манифестах" in e for e in rep.errors)
+    assert any("ещё не захвачен" in w for w in rep.warnings)
+
+
 def test_manual_step_requires_note(tmp_path):
     root = _mk_root(tmp_path)
     art = root / "assets_src/png/cg/plain.png"

@@ -129,6 +129,39 @@ vn assets vam validate
 
 VR не требуется — VaM работает в desktop-режиме.
 
+### 3.4b The Sims 4 — опциональный четвёртый источник (лицензионный гейт EA)
+
+**Гейт (ADR-0007):** визуал Sims 4 — ассеты EA. Пока лицензия с EA не
+урегулирована (`project.yaml: sources.sims4.license: cleared`), релизный гейт
+**блокирует** Sims4-контент в сборках: `vn release validate` даст FAIL при
+любом Sims4-материале в конвейере. Локальная подготовка (сцены, CC, захваты,
+провенанс) не ограничена — основа готовится заранее, переключатель один.
+
+```bash
+pwsh -File tools/install-sims4.ps1
+```
+
+Скрипт детектит установку (VN_SIMS4, реестр Maxis, EA App/Origin, Steam
+appId 1222670), прописывает `VN_SIMS4` и печатает чеклист. Игра ставится только
+через EA App или Steam (база — f2p, DLC покупаются; крэки не используются).
+
+Интеграция — симметрично DAZ/VaM: сцена (zip-бандл Tray-файлов лота+семьи, сейв
+или `.package` — бинарь через `vn assets push`) объявляется в
+`assets_src/sims4/**/<name>.render.yaml` (schema `sims4_render@1`), захват — в
+`assets_src/png/cg/**` (скриншот) или `assets_src/video_src/**` (секвенция).
+**`capture.game_version` обязателен**: патчи EA меняют картинку и ломают моды —
+кадр без версии игры невоспроизводим; задействованные моды/CC перечисляются в
+`capture.mods`. Проверка и провенанс:
+
+```bash
+vn assets sims4 validate
+```
+
+Полезные пути: моды/CC — `Documents\Electronic Arts\The Sims 4\Mods` (в игре
+включите Options → Other → Enable Custom Content and Mods + Script Mods
+Allowed), Tray-файлы для бандла сцены — `…\The Sims 4\Tray`, скриншоты —
+`…\The Sims 4\Screenshots`.
+
 ### 3.5 ffmpeg
 
 Ставится winget'ом: `winget install Gyan.FFmpeg` (полная сборка, с libvpx-vp9).

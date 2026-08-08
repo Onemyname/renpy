@@ -45,6 +45,25 @@
         }
       },
       "additionalProperties": false
+    },
+    "sources": {
+      "type": "object",
+      "description": "Гейты внешних источников визуала (ADR-0007): право источника попадать в релиз",
+      "properties": {
+        "sims4": {
+          "type": "object",
+          "properties": {
+            "license": {
+              "enum": ["pending", "cleared"],
+              "description": "cleared = коммерческое использование согласовано с EA (только после письменной договорённости); до этого vn release validate блокирует Sims4-контент"
+            },
+            "note": {"type": "string", "description": "Реквизиты договорённости с EA (дата, документ) — заполняется при cleared"}
+          },
+          "required": ["license"],
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": ["schema", "version", "save_schema", "min_tools"],

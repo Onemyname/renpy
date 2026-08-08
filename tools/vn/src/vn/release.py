@@ -290,6 +290,22 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     elif vrep.checked:
         add("PASS", f"VaM-декларации: {len(vrep.checked)} проверено")
 
+    from .assets import sims4 as sims4mod
+
+    srep = sims4mod.validate_scenes(root, write_provenance=False)
+    if srep.errors:
+        add("FAIL", f"Sims4-декларации: {len(srep.errors)} ошибок — {srep.errors[0]}")
+    elif srep.warnings:
+        add("WARN", f"Sims4-декларации: {len(srep.warnings)} предупреждений "
+                    f"(незахваченные выходы)")
+    elif srep.checked:
+        add("PASS", f"Sims4-декларации: {len(srep.checked)} проверено")
+
+    # Лицензионный гейт EA (ADR-0007): молчит, пока Sims4-материала нет вовсе.
+    gate = sims4mod.release_gate(root, project)
+    if gate:
+        add(*gate)
+
     from .assets.storage import StorageError, status
 
     try:

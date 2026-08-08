@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/sims4_render@1",
+  "title": "sims4_render@1 — декларация захвата из The Sims 4 (assets_src/sims4/**/<name>.render.yaml, ADR-0007)",
+  "description": "Sims 4 — опциональный четвёртый источник за лицензионным гейтом EA (ADR-0007): захват объявлен как у DAZ/VaM (сцена + параметры -> выход -> провенанс), но релизный гейт блокирует Sims4-контент, пока project.yaml: sources.sims4.license != cleared.",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "sims4_render@1"},
+    "id": {"type": "string", "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$", "description": "Логический id результата (naming.md)"},
+    "scene": {"type": "string", "pattern": "^sims4/.+\\.(zip|save|package|trayitem)$", "description": "Исходник сцены относительно assets_src/: zip-бандл Tray-файлов (лот+семья), сейв или .package (в git — манифест, бинарь через vn assets push)"},
+    "output": {"type": "string", "pattern": "^(png|video_src)/.+", "description": "Ожидаемый захват относительно assets_src/: png/** (скриншот) или video_src/** (секвенция/клип)"},
+    "version": {"type": "integer", "minimum": 1},
+    "capture": {
+      "type": "object",
+      "properties": {
+        "resolution": {
+          "type": "array", "items": {"type": "integer", "minimum": 16},
+          "minItems": 2, "maxItems": 2
+        },
+        "mode": {"enum": ["screenshot", "sequence"], "description": "screenshot -> png, sequence -> кадры для video_src"},
+        "game_version": {"type": "string", "description": "Версия игры на момент захвата — патчи EA меняют картинку и ломают моды; без неё кадр невоспроизводим"},
+        "camera": {"type": "string", "description": "Режим/позиция камеры (Tab-камера, мод камеры) — свободный текст для воспроизводимости"},
+        "mods": {"type": "array", "items": {"type": "string"}, "description": "Задействованные моды/CC/ReShade-пресеты — для воспроизводимости"},
+        "notes": {"type": "string"}
+      },
+      "required": ["resolution", "mode", "game_version"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema", "id", "scene", "output", "capture"],
+  "additionalProperties": false
+}

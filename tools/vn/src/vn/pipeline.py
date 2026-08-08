@@ -188,6 +188,44 @@ def vam_path() -> Path | None:
     return None
 
 
+SIMS4_STEAM_APPID = "1222670"
+_SIMS4_EXE_REL = Path("Game") / "Bin" / "TS4_x64.exe"
+
+
+def sims4_path() -> Path | None:
+    """TS4_x64.exe: VN_SIMS4 -> реестр Maxis (пишут EA App и Origin) ->
+    стандартные корни EA/Origin -> Steam-библиотеки (appid 1222670)."""
+    candidates: list[Path] = []
+    env = os.environ.get("VN_SIMS4")
+    if env:
+        p = Path(env)
+        candidates += [p, p / _SIMS4_EXE_REL]
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            for key in (r"SOFTWARE\Maxis\The Sims 4",
+                        r"SOFTWARE\WOW6432Node\Maxis\The Sims 4"):
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as k:
+                        install, _ = winreg.QueryValueEx(k, "Install Dir")
+                        candidates.append(Path(install) / _SIMS4_EXE_REL)
+                except OSError:
+                    continue
+        except ImportError:
+            pass
+    candidates += [Path(r"C:\Program Files\EA Games\The Sims 4") / _SIMS4_EXE_REL,
+                   Path(r"C:\Program Files (x86)\Origin Games\The Sims 4") / _SIMS4_EXE_REL]
+    for lib in _steam_libraries():
+        candidates.append(lib / "steamapps" / "common" / "The Sims 4" / _SIMS4_EXE_REL)
+    for c in candidates:
+        if c.is_file():
+            return c
+        if c.is_dir() and (c / _SIMS4_EXE_REL).is_file():
+            return c / _SIMS4_EXE_REL
+    return None
+
+
 def _run_out(cmd: list[str], timeout: int = 30) -> str | None:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -506,6 +544,14 @@ def run_pipeline_doctor(root: Path, comfy_opt: str | None = None) -> int:
     _check(checks, "PASS" if vam else "WARN",
            f"Virt-a-Mate: {vam or 'не установлен (опционально)'}",
            "" if vam else "опционально: tools/install-vam.ps1 (третий источник рендеров)")
+
+    # Sims 4 — опциональный четвёртый источник за лицензионным гейтом (ADR-0007):
+    # doctor проверяет только окружение; право попасть в релиз — vn release validate.
+    sims4 = sims4_path()
+    _check(checks, "PASS" if sims4 else "WARN",
+           f"The Sims 4: {sims4 or 'не установлен (опционально)'}",
+           "" if sims4 else "опционально: tools/install-sims4.ps1 "
+                            "(источник за лицензионным гейтом EA — ADR-0007)")
 
     seen_drives = set()
     for label, p in (("репозиторий", root), ("модели", comfy)):
