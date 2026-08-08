@@ -41,6 +41,11 @@ REQUIRED_FILES = [
     "content/anchors.yaml",
     "content/migrations/registry.yaml",
 ]
+# Порог суммарного веса бинарных сырцов в git (ADR-0004): при превышении
+# assets_src обязан переехать в хранилище (vn assets push), иначе история
+# репозитория раздувается необратимо.
+ADR0004_BINARY_LIMIT_MB = 50
+
 # Каталоги/файлы, которых существовать НЕ должно
 FORBIDDEN_PATHS = [
     "game/content",          # content/ строго вне game/ (G2)
@@ -315,6 +320,37 @@ def lint(root: Path, layout: bool = True) -> LintReport:
             rep.error(
                 f"{reg_rel}: выпущенная переменная {released} исчезла без записи в "
                 f"renames.vars (id неизменяемы, G7)"
+            )
+
+    # ── 6a. Порог бинарей в assets_src (ADR-0004) ───────────────────────────
+    # git append-only: раздутая история необратима. ADR-0004 разрешает демо-PNG
+    # в git временно и с материальным порогом — здесь он становится проверяемым,
+    # а не устной договорённостью.
+    src_dir = root / "assets_src"
+    if src_dir.is_dir():
+        text_ext = {".json", ".yaml", ".yml", ".md", ".txt", ".gitkeep"}
+        total = 0
+        biggest: tuple[int, str] | None = None
+        for f in src_dir.rglob("*"):
+            if not f.is_file() or f.suffix.lower() in text_ext or f.name == ".gitkeep":
+                continue
+            size = f.stat().st_size
+            total += size
+            if biggest is None or size > biggest[0]:
+                biggest = (size, _rel(root, f))
+        limit_mb = float(ADR0004_BINARY_LIMIT_MB)
+        actual_mb = total / (1024 * 1024)
+        if actual_mb > limit_mb:
+            rep.error(
+                f"assets_src: бинарей на {actual_mb:.1f} МБ > порога ADR-0004 "
+                f"({limit_mb:.0f} МБ); крупнейший — {biggest[1]} "
+                f"({biggest[0] / 1024 / 1024:.1f} МБ). Заливайте сырцы в хранилище "
+                f"(vn assets lock + push) и удаляйте из git — история append-only"
+            )
+        elif actual_mb > limit_mb * 0.6:
+            rep.warn(
+                f"assets_src: бинарей на {actual_mb:.1f} МБ (порог ADR-0004 "
+                f"{limit_mb:.0f} МБ) — пора переводить сырцы в хранилище"
             )
 
     # ── 7. Layout (1.2) ──────────────────────────────────────────────────────

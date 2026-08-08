@@ -161,6 +161,24 @@ def test_stamp_id_registry_unions_released_ids(repo_root, tmp_path):
     assert stamp_id_registry(root) == 0
 
 
+def test_assets_src_binary_budget_guard(repo_root, tmp_path):
+    """ADR-0004: порог бинарей в git — проверяемый, а не устный (история append-only)."""
+    from vn.content import lint as lintmod
+
+    root = _copy_skeleton(repo_root, tmp_path)
+    src = root / "assets_src" / "png"
+    src.mkdir(parents=True)
+    limit = lintmod.ADR0004_BINARY_LIMIT_MB
+    (src / "huge.png").write_bytes(b"\0" * int((limit + 1) * 1024 * 1024))
+    rep = lint(root)
+    assert any("порога ADR-0004" in e and "huge.png" in e for e in rep.errors)
+
+    # Манифесты/декларации не считаются бинарями — они и должны жить в git
+    (src / "huge.png").unlink()
+    (src / "big.png.manifest.json").write_bytes(b"x" * 1024)
+    assert not any("ADR-0004" in e for e in lint(root).errors)
+
+
 def test_stamp_skips_draft_only(repo_root, tmp_path):
     """Черновики не иммортализуются: нет released-глав -> штамп ничего не заносит."""
     from vn.release import stamp_id_registry
