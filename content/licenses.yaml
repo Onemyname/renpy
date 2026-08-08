@@ -32,3 +32,31 @@ assets:
       Базовые фигуры/материалы Genesis 9, идут с DAZ Studio.
       Для каждого ДОПОЛНИТЕЛЬНОГО продукта (одежда, волосы, окружения,
       анатомия) заводите свою запись: условия у Published Artists разные.
+
+  # ── Шрифты UI (game/fonts/, ADR — патч «Новый UI») ──────────────────────────
+  font_literata:
+    title: "Literata (Regular)"
+    vendor: other
+    url: https://github.com/googlefonts/literata
+    license_type: ofl
+    game_use: true          # OFL допускает встраивание в ПО, включая коммерческое
+    nsfw_allowed: true      # OFL не ограничивает тематику продукта
+    purchased_at: "2026-08-08"
+    invoice: "free-ofl"
+    notes: >
+      Шрифт диалогов (gui.text_font). Полное покрытие кириллицы и латиницы —
+      проверено по cmap. Текст лицензии: game/fonts/OFL-Literata.txt.
+      Требование OFL: не продавать сам шрифт отдельно и сохранять уведомление.
+
+  font_inter:
+    title: "Inter (Regular, SemiBold)"
+    vendor: other
+    url: https://github.com/rsms/inter
+    license_type: ofl
+    game_use: true
+    nsfw_allowed: true
+    purchased_at: "2026-08-08"
+    invoice: "free-ofl"
+    notes: >
+      Шрифт интерфейса и имён (gui.interface_text_font / name_text_font).
+      Текст лицензии: game/fonts/OFL-Inter.txt.
