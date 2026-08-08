@@ -1,4 +1,8 @@
-# Релизы (раздел 7): тег v<semver> -> дистрибутивы win/linux/mac + dmg -> GitHub Release.
+# Релизы (раздел 7): тег v<semver> -> предрелизный ГЕЙТ + дистрибутивы по флейворам.
+# Сборка идёт ТОЛЬКО через vn release build --flavor: он прогоняет validate_release
+# (lint, бюджеты G19, провенанс, DAZ/VaM/Sims4-декларации, лицензионный гейт EA,
+# свежесть ассетов/генерата, сейв-корпус) и падает на FAIL — тег на красном коммите
+# не даст дистрибутив. Флейвор применяет NSFW-исключение (public = SFW).
 # .rpyc переносится между релизами через actions/cache (G6: statement-имена — основа
 # save-совместимости; vn package восстанавливает кэш с перезаписью и сохраняет новый).
 
@@ -20,12 +24,19 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Флейворы из project.yaml. public — SFW (в GitHub Release), patron —
+        # полный контент (остаётся артефактом workflow, в публичный релиз НЕ уходит).
+        flavor: [public, patron]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install --quiet -e "tools/vn[dev]"
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 > /dev/null
+      # ffmpeg — видео-трек (ADR-0006): при наличии видео-сырцов без него сборка красная
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 ffmpeg > /dev/null
 
       - name: Тег обязан совпадать с версией project.yaml
         run: |
@@ -51,29 +62,37 @@ jobs:
           fi
           chmod +x "$RENPY_SDK/renpy.sh" || true
 
-      - name: Кэш .rpyc прошлых релизов (G6)
+      - name: Кэш .rpyc прошлых релизов (G6, отдельно на флейвор)
         uses: actions/cache@v4
         with:
           path: build/rpyc-cache
-          key: rpyc-${{ github.ref_name }}
-          restore-keys: rpyc-
+          key: rpyc-${{ matrix.flavor }}-${{ github.ref_name }}
+          restore-keys: rpyc-${{ matrix.flavor }}-
 
-      - name: Дистрибутивы (vn package)
-        run: xvfb-run -a vn package --package win --package linux --package mac --timeout 1800
+      - name: Релизный гейт + сборка флейвора (vn release build)
+        env:
+          # Трассировка утечек patron-сборок; для public игнорируется (watermark: false).
+          PATRON_TOKEN: ${{ secrets.PATRON_TOKEN }}
+        run: |
+          ARGS="--flavor ${{ matrix.flavor }} --package win --package linux --package mac --timeout 1800"
+          if [ "${{ matrix.flavor }}" = "patron" ] && [ -n "$PATRON_TOKEN" ]; then
+            ARGS="$ARGS --patron-token $PATRON_TOKEN"
+          fi
+          xvfb-run -a vn release build $ARGS
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist
-          path: build/dist/*/*
+          name: dist-${{ matrix.flavor }}
+          path: build/dist/*-${{ matrix.flavor }}/*
           retention-days: 7
 
   dmg:
-    # DMG создаётся штатным hdiutil на macOS-раннере из mac-zip (движок не нужен)
+    # DMG создаётся штатным hdiutil на macOS-раннере из PUBLIC mac-zip (движок не нужен).
     runs-on: macos-latest
     needs: build
     steps:
       - uses: actions/download-artifact@v4
-        with: {name: dist, path: dist}
+        with: {name: dist-public, path: dist}
       - name: mac-zip -> dmg
         run: |
           ZIP=$(find dist -name "*-mac.zip" | head -1)
@@ -90,15 +109,17 @@ jobs:
           retention-days: 7
 
   publish:
+    # В публичный GitHub Release уходит ТОЛЬКО public-флейвор (SFW) + dmg.
+    # patron-артефакт (NSFW) остаётся в workflow artifacts для ручной раздачи по каналам.
     runs-on: ubuntu-latest
     needs: [build, dmg]
     steps:
       - uses: actions/checkout@v4   # gh release нужен git-контекст репозитория
       - uses: actions/download-artifact@v4
-        with: {name: dist, path: out}
+        with: {name: dist-public, path: out}
       - uses: actions/download-artifact@v4
         with: {name: dmg, path: out}
-      - name: GitHub Release
+      - name: GitHub Release (только public)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
