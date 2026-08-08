@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/ui_panels@1",
+  "title": "ui_panels@1 — декларации генерируемых UI-панелей (content/ui/panels.yaml, ADR-0009)",
+  "description": "Ren'Py не рисует скругления/тени на Solid. Панели объявляются здесь и генерируются конвейером в game/assets/ui/<id>.webp + Frame-образы vn_frame_<id>; бинарей в git нет.",
+  "type": "object",
+  "$defs": {
+    "color": {"type": "string", "pattern": "^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"}
+  },
+  "properties": {
+    "schema": {"const": "ui_panels@1"},
+    "panels": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "radius": {"type": "integer", "minimum": 0, "maximum": 64, "description": "Радиус скругления в пикселях виртуальной сетки"},
+          "fill": {
+            "oneOf": [
+              {"$ref": "#/$defs/color"},
+              {
+                "type": "object",
+                "properties": {
+                  "from": {"$ref": "#/$defs/color"},
+                  "to": {"$ref": "#/$defs/color"}
+                },
+                "required": ["from", "to"],
+                "additionalProperties": false,
+                "description": "Вертикальный градиент сверху вниз"
+              }
+            ]
+          },
+          "border": {
+            "type": "object",
+            "properties": {
+              "color": {"$ref": "#/$defs/color"},
+              "width": {"type": "integer", "minimum": 0, "maximum": 8}
+            },
+            "additionalProperties": false
+          },
+          "shadow": {
+            "type": "object",
+            "properties": {
+              "color": {"$ref": "#/$defs/color"},
+              "blur": {"type": "integer", "minimum": 0, "maximum": 64},
+              "dy": {"type": "integer", "minimum": -32, "maximum": 32, "description": "Смещение тени по вертикали"}
+            },
+            "additionalProperties": false
+          },
+          "tile": {"type": "boolean", "description": "Тайлить края Frame вместо растягивания"},
+          "doc": {"type": "string"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "panels"],
+  "additionalProperties": false
+}

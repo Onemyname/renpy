@@ -136,6 +136,14 @@ def _emit_achievements(ach_docs: list[tuple[str, dict]], sources) -> str:
     )
 
 
+def _emit_ui_frames(panels: dict, sources) -> str:
+    """Frame-образы генерируемых UI-панелей (ADR-0009): вёрстка ссылается на
+    vn_frame_<id>, пиксели и пути остаются в конвейере."""
+    from ..assets.ui import emit_frames
+
+    return emit_frames(panels, _header(sources))
+
+
 def _emit_audio(audio_docs: list[tuple[str, dict]], sources) -> str:
     out = [_header(sources), "init offset = 500\n"]
     n = 0
@@ -518,6 +526,17 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     if strings_path.is_file():
         rel, _d = src(strings_path)
         ui_strings = dict(load_yaml(strings_path).get("strings") or {})
+
+    # UI-панели (ADR-0009): Frame-образы генерируемых скруглённых фонов
+    ui_panels: dict = {}
+    panels_path = root / "content" / "ui" / "panels.yaml"
+    panels_src = proj_src
+    if panels_path.is_file():
+        rel, digest = src(panels_path)
+        panels_doc = load_yaml(panels_path)
+        errors.extend(registry.validate(panels_doc, rel))
+        ui_panels = dict(panels_doc.get("panels") or {})
+        panels_src = (rel, digest)
     source_lang = {"code": "source", "name": "Source"}
     loc_cfg_path = root / "loc" / "loc.yaml"
     if loc_cfg_path.is_file():
@@ -657,6 +676,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "state/snapshot.gen.rpy": _emit_snapshot(var_docs, [proj_src] + var_sources),
         "state/migrations.gen.rpy": _emit_migrations(migrations, [proj_src]),
         "registry/audio.gen.rpy": _emit_audio(audio_docs, audio_sources or [proj_src]),
+        "registry/ui_frames.gen.rpy": _emit_ui_frames(ui_panels, [panels_src]),
         "registry/achievements.gen.rpy": _emit_achievements(
             ach_docs, ach_sources or [proj_src]),
         "registry/chapters.gen.rpy": sc.emit_chapter_registry(

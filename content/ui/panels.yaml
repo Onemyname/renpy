@@ -1,0 +1,58 @@
+schema: ui_panels@1
+# Генерируемые UI-панели (ADR-0009). Ren'Py не рисует скругления, мягкие тени и
+# обводки на Solid — им нужна картинка. Здесь они ОБЪЯВЛЯЮТСЯ, а конвейер рисует
+# 9-patch в game/assets/ui/<id>.webp и эмитит Frame-образы vn_frame_<id>.
+#
+#   правка радиуса/цвета -> vn build -> новый вид, бинарей в git нет
+#   в стилях: background vn_frame_<id>   (никаких путей и пикселей в вёрстке)
+#
+# Значения цветов держите согласованными с палитрой gui.rpy.
+#
+# ВАЖНО (геометрия 9-patch): Borders = radius + max(blur + |dy|, border.width),
+# а элемент не может быть меньше 2*Borders — иначе движок сожмёт фон и вёрстка
+# «сплющится». Минимальный размер каждой панели печатает эмиттер в
+# generated/registry/ui_frames.gen.rpy. Для кнопок держите тень скромной
+# (blur <= 12), для больших панелей можно щедрее.
+
+panels:
+  # ── Выборы: покой / наведение / уже выбранный ранее вариант ───────────────
+  choice:
+    radius: 14
+    fill: {from: "#1c1c20f2", to: "#141417f2"}
+    border: {color: "#ffffff14", width: 1}
+    shadow: {color: "#00000073", blur: 10, dy: 3}
+    doc: "Кнопка выбора в покое"
+
+  choice_hover:
+    radius: 14
+    fill: {from: "#2b2b33f7", to: "#1e1e24f7"}
+    border: {color: "#c94f7c8c", width: 1}
+    shadow: {color: "#00000091", blur: 12, dy: 4}
+    doc: "Кнопка выбора под курсором/фокусом"
+
+  choice_chosen:
+    radius: 14
+    fill: "#141417d9"
+    border: {color: "#ffffff0f", width: 1}
+    doc: "Вариант, уже выбранный в прошлом прохождении (i.chosen)"
+
+  # ── Общие поверхности интерфейса ──────────────────────────────────────────
+  panel:
+    radius: 18
+    fill: "#111114f2"
+    border: {color: "#ffffff12", width: 1}
+    shadow: {color: "#00000099", blur: 28, dy: 10}
+    doc: "Панель меню/настроек/сохранений"
+
+  slot:
+    radius: 10
+    fill: "#17171bf2"
+    border: {color: "#ffffff0f", width: 1}
+    doc: "Слот сохранения"
+
+  toast:
+    radius: 12
+    fill: "#1c1c20f7"
+    border: {color: "#ffffff1a", width: 1}
+    shadow: {color: "#000000a6", blur: 20, dy: 6}
+    doc: "Всплывающее уведомление"

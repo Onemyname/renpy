@@ -40,6 +40,7 @@ TRANSFORMS = {
     "png2webp_bg": "1",
     "png2webp_cg": "1",
     "png2webp_cg_thumb": "1",
+    "ui_panel": "1",
     "copy_audio": "1",
     "video2webm": "1",
 }
@@ -199,6 +200,19 @@ def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str, d
             extra = {"opts": opts, "sidecar": sidecar if sidecar.is_file() else None}
             jobs.append((f, "video2webm", out, extra))
 
+    # UI-панели (ADR-0009): источник — не файл, а декларация; рисует конвейер.
+    panels_decl = root / "content" / "ui" / "panels.yaml"
+    if panels_decl.is_file():
+        from ..repo import load_yaml
+
+        doc = load_yaml(panels_decl)
+        for pid, spec in sorted((doc.get("panels") or {}).items()):
+            if not SLUG_RE.match(pid):
+                rep.errors.append(f"content/ui/panels.yaml: панель {pid!r} вне "
+                                  f"конвенции ^[a-z][a-z0-9_]*$")
+                continue
+            jobs.append((panels_decl, "ui_panel", f"ui/{pid}.webp", {"spec": spec}))
+
     return jobs
 
 
@@ -216,6 +230,20 @@ def _transform(src: Path, transform: str, profile: str) -> bytes:
     if transform == "copy_audio":
         return src.read_bytes()
     raise AssetError(f"неизвестная трансформация {transform!r}")
+
+
+def _transform_ui_panel(spec: dict, profile: str) -> bytes:
+    """UI-панель: рисуется из декларации (источник — не файл, а параметры)."""
+    from . import ui as uimod
+    from PIL import Image
+
+    png = uimod.render_panel(spec)
+    with Image.open(io.BytesIO(png)) as im:
+        buf = io.BytesIO()
+        # lossless: 9-patch тянется движком, артефакты сжатия поехали бы по краям
+        im.convert("RGBA").save(buf, format="WEBP", lossless=True,
+                                quality=100, method=4 if profile == "full" else 0)
+        return buf.getvalue()
 
 
 def build_assets(root: Path, profile: str = "full", check: bool = False,
@@ -271,6 +299,11 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
             sidecar = extra.get("sidecar")
             sidecar_bytes = sidecar.read_bytes() if sidecar else b""
             src_hash = _b3_bytes(src_bytes + b"\x00" + sidecar_bytes)
+        elif transform == "ui_panel" and extra:
+            # Источник панели — её параметры, а не весь файл деклараций: правка
+            # одной панели не должна перерисовывать все остальные.
+            from . import ui as uimod
+            src_hash = _b3_bytes(uimod.panel_hash_source(extra["spec"]))
         key = _b3_bytes(
             f"{src_hash}:{transform}:{TRANSFORMS[transform]}:{profile}".encode()
         )
@@ -303,6 +336,8 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
             try:
                 if transform == "video2webm":
                     data = videomod.encode_video(src, extra["opts"], profile, video_tmp)
+                elif transform == "ui_panel":
+                    data = _transform_ui_panel(extra["spec"], profile)
                 else:
                     data = _transform(src, transform, profile)
             except (OSError, videomod.VideoError) as e:

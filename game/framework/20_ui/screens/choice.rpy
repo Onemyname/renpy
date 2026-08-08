@@ -24,9 +24,12 @@ style choice_vbox is vbox:
 style choice_button:
     xsize 820
     padding (gui.sp_l + 2, gui.sp_m + 2)
-    background Solid("#18181be0")
-    hover_background Solid("#27272af2")
-    insensitive_background Solid("#18181b8c")
+    # Скруглённые фоны с тенью — генерируемые панели (ADR-0009), а не Solid:
+    # прямые углы были главным «допотопным» признаком. Правка вида — в
+    # content/ui/panels.yaml, вёрстка знает только имя.
+    background vn_frame_choice
+    hover_background vn_frame_choice_hover
+    insensitive_background vn_frame_choice_chosen
 
 style choice_button_text:
     xalign 0.5
