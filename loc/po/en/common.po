@@ -272,19 +272,19 @@ msgstr "Something went wrong"
 #. UI/мета-строка
 msgctxt "string:ach.met_mira.desc"
 msgid "Подойти к воротам и встретить Миру"
-msgstr ""
+msgstr "Walk up to the gate and meet Mira"
 
 #. UI/мета-строка
 msgctxt "string:ach.met_mira.name"
 msgid "Знакомство"
-msgstr ""
+msgstr "First Encounter"
 
 #. UI/мета-строка
 msgctxt "string:ach.reached_rooftop.desc"
 msgid "Добраться до крыши"
-msgstr ""
+msgstr "Make it to the rooftop"
 
 #. UI/мета-строка
 msgctxt "string:ach.reached_rooftop.name"
 msgid "Выше крыш"
-msgstr ""
+msgstr "Above the Rooftops"

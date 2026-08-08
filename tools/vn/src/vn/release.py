@@ -362,6 +362,34 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     elif srep.checked:
         add("PASS", f"Sims4-декларации: {len(srep.checked)} проверено")
 
+    # Покрытие переводов (loc.yaml: release_coverage_min): недопереведённый язык
+    # молча откатывается на исходник — на витрине это «English»-билд наполовину
+    # на русском. Порог был объявлен, но нигде не форсировался.
+    from .loc.po import LocError, report as loc_report
+
+    try:
+        cov = loc_report(root).coverage
+        threshold = float((load_yaml(root / "loc" / "loc.yaml") or {})
+                          .get("release_coverage_min", 0) or 0)
+    except (LocError, OSError):
+        cov, threshold = {}, 0.0
+    if cov and threshold:
+        weak = []
+        for lang, c in sorted(cov.items()):
+            if (root / "game" / "tl" / lang / "language.json").is_file():
+                import json as _json
+                meta = _json.loads((root / "game" / "tl" / lang / "language.json")
+                                   .read_text(encoding="utf-8"))
+                if meta.get("synthetic"):
+                    continue        # pseudo — QA-инструмент, в поставку не идёт
+            pct = (c["translated"] / c["total"]) if c["total"] else 1.0
+            if pct < threshold:
+                weak.append(f"{lang} {pct:.0%}")
+        add("FAIL" if weak else "PASS",
+            "покрытие переводов: " + (
+                f"ниже порога {threshold:.0%} — {', '.join(weak)}" if weak
+                else f"все языки ≥ {threshold:.0%}"))
+
     from .assets.licenses import validate_licenses
 
     lrep = validate_licenses(root)

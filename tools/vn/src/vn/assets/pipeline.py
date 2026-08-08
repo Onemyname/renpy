@@ -39,6 +39,7 @@ TRANSFORMS = {
     "png2webp_sprite": "1",
     "png2webp_bg": "1",
     "png2webp_cg": "1",
+    "png2webp_cg_thumb": "1",
     "copy_audio": "1",
     "video2webm": "1",
 }
@@ -77,11 +78,13 @@ def _write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
-def _webp_encode(src: Path, quality: int) -> bytes:
+def _webp_encode(src: Path, quality: int, max_side: int | None = None) -> bytes:
     from PIL import Image
 
     with Image.open(src) as im:
         im = im.convert("RGBA")
+        if max_side:
+            im.thumbnail((max_side, max_side), Image.LANCZOS)
         buf = io.BytesIO()
         im.save(buf, format="WEBP", quality=quality, method=4)
         return buf.getvalue()
@@ -148,8 +151,9 @@ def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str, d
             rel = f"assets_src/png/cg/{f.relative_to(cg).as_posix()}"
             if not _check_slug(rep, rel, *rel_parts[:-1], f.stem):
                 continue
-            out = "cg/" + "/".join([*rel_parts[:-1], f.stem]) + ".webp"
-            jobs.append((f, "png2webp_cg", out, None))
+            base = "cg/" + "/".join([*rel_parts[:-1], f.stem])
+            jobs.append((f, "png2webp_cg", base + ".webp", None))
+            jobs.append((f, "png2webp_cg_thumb", base + ".thumb.webp", None))
 
     audio = root / "assets_src" / "audio"
     if audio.is_dir():
@@ -205,6 +209,10 @@ def _transform(src: Path, transform: str, profile: str) -> bytes:
         return _webp_encode(src, quality=50 if profile == "draft" else 90)
     if transform == "png2webp_cg":
         return _webp_encode(src, quality=50 if profile == "draft" else 90)
+    if transform == "png2webp_cg_thumb":
+        # Превью галереи: длинная сторона 512 — галерея не должна декодировать
+        # полноразмерные CG ради сетки миниатюр.
+        return _webp_encode(src, quality=80, max_side=512)
     if transform == "copy_audio":
         return src.read_bytes()
     raise AssetError(f"неизвестная трансформация {transform!r}")
@@ -397,6 +405,42 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
         {"schema": "assets_manifest@1", "outputs": final_outputs},
         ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8"))
     return rep
+
+
+def cache_gc(root: Path, dry_run: bool = False) -> tuple[int, int]:
+    """Убрать блобы кэша трансформаций, не упомянутые в текущем манифесте сборки
+    (mark & sweep от манифеста). Кэш иначе растёт неограниченно: каждая правка
+    сырца оставляет прошлый блоб навсегда. Возвращает (удалено, освобождено байт)."""
+    cache_dir = root / ".vncache" / "assets"
+    if not cache_dir.is_dir():
+        return 0, 0
+    manifest_path = root / ".vncache" / MANIFEST
+    live: set[str] = set()
+    if manifest_path.is_file():
+        try:
+            outputs = json.loads(manifest_path.read_text(encoding="utf-8"))["outputs"]
+        except Exception:
+            outputs = {}
+        for info in outputs.values():
+            src_hash = info.get("src_hash")
+            transform = (info.get("transform") or "@").split("@")[0]
+            version = (info.get("transform") or "@").split("@")[-1]
+            profile = info.get("profile", "full")
+            if src_hash and transform in TRANSFORMS:
+                live.add(_b3_bytes(
+                    f"{src_hash}:{transform}:{version}:{profile}".encode()))
+    removed = freed = 0
+    for blob in cache_dir.rglob("*"):
+        if not blob.is_file() or blob.name in {MANIFEST}:
+            continue
+        if blob.name in live:
+            continue
+        size = blob.stat().st_size
+        if not dry_run:
+            blob.unlink()
+        removed += 1
+        freed += size
+    return removed, freed
 
 
 def sprite_tree(root: Path) -> dict[str, dict[str, dict[str, list[str]]]]:

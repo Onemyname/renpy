@@ -741,6 +741,29 @@ def assets_sims4_validate(scope: str | None, no_provenance: bool):
                 f"{len(rep.warnings)} предупреждений)", fg="green")
 
 
+@assets.command("cache")
+@click.option("--gc", "do_gc", is_flag=True, help="Удалить блобы, которых нет в текущем манифесте.")
+@click.option("--dry-run", is_flag=True, help="Показать, что будет удалено.")
+def assets_cache(do_gc: bool, dry_run: bool):
+    """Кэш трансформаций (.vncache/assets): размер и сборка мусора.
+
+    Кэш контентно-адресуемый и растёт неограниченно: каждая правка сырца
+    оставляет прошлый блоб. GC — mark & sweep от манифеста сборки."""
+    from .assets.pipeline import cache_gc
+
+    root = _root()
+    cache_dir = root / ".vncache" / "assets"
+    total = sum(f.stat().st_size for f in cache_dir.rglob("*") if f.is_file()) \
+        if cache_dir.is_dir() else 0
+    click.echo(f"кэш: {total / 1024 / 1024:.1f} МБ ({cache_dir})")
+    if not (do_gc or dry_run):
+        click.echo("сборка мусора: vn assets cache --gc (или --dry-run)")
+        return
+    removed, freed = cache_gc(root, dry_run=dry_run)
+    verb = "будет удалено" if dry_run else "удалено"
+    click.secho(f"{verb}: {removed} блобов, {freed / 1024 / 1024:.1f} МБ", fg="green")
+
+
 @assets.command("licenses")
 def assets_licenses():
     """Сверка деклараций рендеров с реестром лицензий (content/licenses.yaml).
@@ -1511,6 +1534,11 @@ def release_build(flavor: str, patron_token: str | None, packages: tuple, timeou
         write_build_info(root, info)
     except ReleaseError as e:
         _fail(str(e))
+    # Уведомления о сторонних лицензиях обязаны ехать с игрой (BSD/Apache/OFL).
+    notices = root / "docs" / "licenses" / "THIRD-PARTY-NOTICES.md"
+    if notices.is_file():
+        import shutil as _shutil
+        _shutil.copy(notices, root / "game" / "THIRD-PARTY-NOTICES.md")
     click.echo(f"build-id: {info['build_id']}"
                + (f" (исключено: {', '.join(info['exclude'])})" if info["exclude"] else ""))
     ctx = click.get_current_context()
@@ -1523,6 +1551,7 @@ def release_build(flavor: str, patron_token: str | None, packages: tuple, timeou
             encoding="utf-8")
     finally:
         clear_build_info(root)   # dev-чекаут не должен носить чужой флейвор
+        (root / "game" / "THIRD-PARTY-NOTICES.md").unlink(missing_ok=True)
     click.secho(f"release build: OK — {info['build_id']} -> "
                 f"build/dist/{info['version']}-{flavor}/", fg="green")
 

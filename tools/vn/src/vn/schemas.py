@@ -17,6 +17,9 @@ class SchemaRegistry:
     def __init__(self, schemas_dir: Path):
         self.dir = Path(schemas_dir)
         self.schemas: dict[str, dict] = {}
+        # Валидатор на schema-id строится один раз: пересборка на каждый документ
+        # заметна на больших сборках и в релизном гейте.
+        self._validators: dict[str, jsonschema.Draft202012Validator] = {}
         for f in sorted(self.dir.glob("*.schema.json")):
             m = _FILENAME_RE.match(f.name)
             if not m:
@@ -37,7 +40,10 @@ class SchemaRegistry:
         if schema is None:
             known = ", ".join(sorted(self.schemas))
             return [f"{path}: неизвестная схема {sid!r}; зарегистрированы: {known}"]
-        validator = jsonschema.Draft202012Validator(schema)
+        validator = self._validators.get(sid)
+        if validator is None:
+            validator = jsonschema.Draft202012Validator(schema)
+            self._validators[sid] = validator
         errors = []
         for err in sorted(validator.iter_errors(data), key=lambda e: list(e.absolute_path)):
             loc = "/".join(str(x) for x in err.absolute_path) or "<root>"

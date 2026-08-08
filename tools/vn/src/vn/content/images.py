@@ -77,6 +77,8 @@ def emit_images(root: Path, locations: dict[str, dict],
     n_cg = 0
     if cg_root.is_dir():
         for f in sorted(cg_root.rglob("*.webp")):
+            if f.name.endswith(".thumb.webp"):
+                continue    # миниатюры галереи — не самостоятельные образы
             rel = "cg/" + f.relative_to(cg_root).as_posix()
             tokens = " ".join(rel[:-len(".webp")].split("/"))
             out.append(f'image {tokens} = "assets/{rel}"')
