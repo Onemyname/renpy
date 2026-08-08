@@ -320,21 +320,17 @@ def emit_characters(char_docs: list[tuple[str, dict]], header: str) -> str:
 
 def emit_chapter_select(header: str) -> str:
     return header + '''
-# Экран выбора глав (C14): собран из данных Chapter Registry.
+# Экран выбора глав (C14): собран из данных Chapter Registry
+# и компонентов framework/20_ui (vn_game_menu / vn_chapter_card).
 screen chapter_select():
     tag menu
-    add Solid(gui.interface_bg)
-    use navigation
-    vbox:
-        xpos 420
-        ypos 80
-        spacing 24
-        label vn_loc.t("ui.nav.chapters")
-        vbox:
-            spacing 12
+    use vn_game_menu(vn_loc.t("ui.nav.chapters")):
+        hbox:
+            spacing gui.sp_l
+            box_wrap True
+            box_wrap_spacing gui.sp_l
             for ch in VN_CHAPTERS:
                 # Владение паком — логический гейт (G9): непокупные главы не видны
                 if vn.pack_registry.owned(ch["pack"]):
-                    textbutton vn_loc.t(ch["title_key"]) action Start(ch["entry_label"])
-        textbutton vn_loc.t("ui.common.back") action Return()
+                    use vn_chapter_card(ch)
 '''

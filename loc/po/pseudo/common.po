@@ -55,9 +55,19 @@ msgid "Контент 18+"
 msgstr "[[Кǫнтęнт 18+~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.chapters.dlc"
+msgid "DLC"
+msgstr "[[DLC~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.common.back"
 msgid "Назад"
 msgstr "[[Нąзąд~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.confirm.delete"
+msgid "Удалить сохранение? Действие необратимо."
+msgstr "[[Ųдąлįть сǫхрąнęнįę? Дęйствįę нęǫбрąтįмǫ.~~~~~~~~~~~~~~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.confirm.load"
@@ -128,9 +138,19 @@ msgid "Авто"
 msgstr "[[Ąвтǫ~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.file.delete_mark"
+msgid "×"
+msgstr "[[×~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.file.empty_slot"
 msgid "пустой слот"
 msgstr "[[пųстǫй слǫт~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.file.latest"
+msgid "новейший"
+msgstr "[[нǫвęйшįй~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.file.load_title"
@@ -186,6 +206,21 @@ msgid "Эта сцена недоступна в текущей версии и�
 msgstr "[[Этą сцęнą нęдǫстųпнą в тęкųщęй вęрсįį įгры.~~~~~~~~~~~~~~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.history.empty"
+msgid "История пуста"
+msgstr "[[Įстǫрįя пųстą~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.empty_hint"
+msgid "Реплики появятся по мере игры."
+msgstr "[[Рęплįкį пǫявятся пǫ мęрę įгры.~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.hint"
+msgid "Esc — закрыть"
+msgstr "[[Êsc — зąкрыть~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.main.version"
 msgid "версия [config.version]"
 msgstr "[[вęрсįя [config.version]~~~~~~~~~]"
@@ -194,6 +229,16 @@ msgstr "[[вęрсįя [config.version]~~~~~~~~~]"
 msgctxt "string:ui.nav.chapters"
 msgid "Главы"
 msgstr "[[Глąвы~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.continue"
+msgid "Продолжить"
+msgstr "[[Прǫдǫлжįть~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.history"
+msgid "История"
+msgstr "[[Įстǫрįя~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.nav.load"
@@ -231,6 +276,11 @@ msgid "Начать игру"
 msgstr "[[Нąчąть įгрų~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.prefs.auto_forward"
+msgid "Авто-чтение"
+msgstr "[[Ąвтǫ-чтęнįę~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.prefs.display"
 msgid "Режим экрана"
 msgstr "[[Рęжįм экрąнą~~~~]"
@@ -261,6 +311,16 @@ msgid "Всего текста"
 msgstr "[[Всęгǫ тęкстą~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.prefs.text"
+msgid "Текст"
+msgstr "[[Тęкст~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.text_speed"
+msgid "Скорость текста"
+msgstr "[[Скǫрǫсть тęкстą~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.prefs.title"
 msgid "Настройки"
 msgstr "[[Нąстрǫйкį~~~]"
@@ -289,6 +349,46 @@ msgstr "[[Гǫлǫс~~]"
 msgctxt "string:ui.prefs.windowed"
 msgid "Оконный"
 msgstr "[[Ǫкǫнный~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.auto"
+msgid "Авто"
+msgstr "[[Ąвтǫ~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.back"
+msgid "Назад"
+msgstr "[[Нąзąд~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.history"
+msgid "История"
+msgstr "[[Įстǫрįя~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.load"
+msgid "Загр."
+msgstr "[[Зąгр.~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.prefs"
+msgid "Настр."
+msgstr "[[Нąстр.~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.qsave"
+msgid "Б.сохр."
+msgstr "[[Б.сǫхр.~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.save"
+msgid "Сохр."
+msgstr "[[Сǫхр.~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.skip"
+msgid "Пропуск"
+msgstr "[[Прǫпųск~~]"
 
 #. имя персонажа
 msgctxt "char:mira"

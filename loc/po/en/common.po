@@ -288,3 +288,103 @@ msgstr "Make it to the rooftop"
 msgctxt "string:ach.reached_rooftop.name"
 msgid "Выше крыш"
 msgstr "Above the Rooftops"
+
+#. UI/мета-строка
+msgctxt "string:ui.chapters.dlc"
+msgid "DLC"
+msgstr "DLC"
+
+#. UI/мета-строка
+msgctxt "string:ui.confirm.delete"
+msgid "Удалить сохранение? Действие необратимо."
+msgstr "Delete this save? This cannot be undone."
+
+#. UI/мета-строка
+msgctxt "string:ui.file.delete_mark"
+msgid "×"
+msgstr "×"
+
+#. UI/мета-строка
+msgctxt "string:ui.file.latest"
+msgid "новейший"
+msgstr "latest"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.empty"
+msgid "История пуста"
+msgstr "History is empty"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.empty_hint"
+msgid "Реплики появятся по мере игры."
+msgstr "Lines will appear as you play."
+
+#. UI/мета-строка
+msgctxt "string:ui.history.hint"
+msgid "Esc — закрыть"
+msgstr "Esc — close"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.continue"
+msgid "Продолжить"
+msgstr "Continue"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.history"
+msgid "История"
+msgstr "History"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.auto_forward"
+msgid "Авто-чтение"
+msgstr "Auto-forward"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.text"
+msgid "Текст"
+msgstr "Text"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.text_speed"
+msgid "Скорость текста"
+msgstr "Text speed"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.auto"
+msgid "Авто"
+msgstr "Auto"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.back"
+msgid "Назад"
+msgstr "Back"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.history"
+msgid "История"
+msgstr "History"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.load"
+msgid "Загр."
+msgstr "Load"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.prefs"
+msgid "Настр."
+msgstr "Prefs"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.qsave"
+msgid "Б.сохр."
+msgstr "Q.Save"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.save"
+msgid "Сохр."
+msgstr "Save"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.skip"
+msgid "Пропуск"
+msgstr "Skip"

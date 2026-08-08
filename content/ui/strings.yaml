@@ -27,21 +27,40 @@ strings:
 
   # ── Навигация ───────────────────────────────────────────────────────────────
   ui.nav.start: "Начать игру"
+  ui.nav.continue: "Продолжить"
   ui.nav.chapters: "Главы"
   ui.nav.return: "Вернуться"
   ui.nav.save: "Сохранить"
   ui.nav.load: "Загрузить"
   ui.nav.prefs: "Настройки"
+  ui.nav.history: "История"
   ui.nav.main_menu: "Главное меню"
   ui.nav.quit: "Выход"
   ui.main.version: "версия [config.version]"
   ui.common.back: "Назад"
+
+  # ── Quick menu (короткие ярлыки; рисуются капсом) ───────────────────────────
+  ui.quick.back: "Назад"
+  ui.quick.history: "История"
+  ui.quick.skip: "Пропуск"
+  ui.quick.auto: "Авто"
+  ui.quick.save: "Сохр."
+  ui.quick.qsave: "Б.сохр."
+  ui.quick.load: "Загр."
+  ui.quick.prefs: "Настр."
+
+  # ── История ─────────────────────────────────────────────────────────────────
+  ui.history.hint: "Esc — закрыть"
+  ui.history.empty: "История пуста"
+  ui.history.empty_hint: "Реплики появятся по мере игры."
 
   # ── Сохранение / загрузка ───────────────────────────────────────────────────
   ui.file.save_title: "Сохранение"
   ui.file.load_title: "Загрузка"
   ui.file.autopage: "Авто"
   ui.file.empty_slot: "пустой слот"
+  ui.file.latest: "новейший"
+  ui.file.delete_mark: "×"
   ui.file.time_format: "{#file_time}%d.%m.%Y %H:%M"
 
   # ── Настройки ───────────────────────────────────────────────────────────────
@@ -49,6 +68,9 @@ strings:
   ui.prefs.display: "Режим экрана"
   ui.prefs.windowed: "Оконный"
   ui.prefs.fullscreen: "Полный экран"
+  ui.prefs.text: "Текст"
+  ui.prefs.text_speed: "Скорость текста"
+  ui.prefs.auto_forward: "Авто-чтение"
   ui.prefs.skip: "Пропуск"
   ui.prefs.skip_all: "Всего текста"
   ui.prefs.skip_after_choices: "После выборов"
@@ -58,12 +80,16 @@ strings:
   ui.prefs.volume_sound: "Звук"
   ui.prefs.volume_voice: "Голос"
 
+  # ── Главы ───────────────────────────────────────────────────────────────────
+  ui.chapters.dlc: "DLC"
+
   # ── Подтверждения (свой текст: движковые layout.* остались бы английскими) ──
   ui.confirm.yes: "Да"
   ui.confirm.no: "Нет"
   ui.confirm.quit: "Выйти из игры? Несохранённый прогресс будет потерян."
   ui.confirm.main_menu: "Выйти в главное меню? Несохранённый прогресс будет потерян."
   ui.confirm.load: "Загрузить сохранение? Текущий прогресс будет потерян."
+  ui.confirm.delete: "Удалить сохранение? Действие необратимо."
 
   # ── Служебные сообщения потока (framework/00_core/030_flow.rpy) ─────────────
   ui.flow.save_from_newer: "Сохранение сделано в более новой версии игры. Обновите игру, чтобы продолжить."

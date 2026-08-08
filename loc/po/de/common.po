@@ -289,3 +289,103 @@ msgstr "Erreiche das Dach"
 msgctxt "string:ach.reached_rooftop.name"
 msgid "Выше крыш"
 msgstr "Über den Dächern"
+
+#. UI/мета-строка
+msgctxt "string:ui.chapters.dlc"
+msgid "DLC"
+msgstr "DLC"
+
+#. UI/мета-строка
+msgctxt "string:ui.confirm.delete"
+msgid "Удалить сохранение? Действие необратимо."
+msgstr "Speicherstand löschen? Das kann nicht rückgängig gemacht werden."
+
+#. UI/мета-строка
+msgctxt "string:ui.file.delete_mark"
+msgid "×"
+msgstr "×"
+
+#. UI/мета-строка
+msgctxt "string:ui.file.latest"
+msgid "новейший"
+msgstr "neuestes"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.empty"
+msgid "История пуста"
+msgstr "Verlauf ist leer"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.empty_hint"
+msgid "Реплики появятся по мере игры."
+msgstr "Dialogzeilen erscheinen im Spielverlauf."
+
+#. UI/мета-строка
+msgctxt "string:ui.history.hint"
+msgid "Esc — закрыть"
+msgstr "Esc — schließen"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.continue"
+msgid "Продолжить"
+msgstr "Fortsetzen"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.history"
+msgid "История"
+msgstr "Verlauf"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.auto_forward"
+msgid "Авто-чтение"
+msgstr "Auto-Weiter"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.text"
+msgid "Текст"
+msgstr "Text"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.text_speed"
+msgid "Скорость текста"
+msgstr "Textgeschwindigkeit"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.auto"
+msgid "Авто"
+msgstr "Auto"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.back"
+msgid "Назад"
+msgstr "Zurück"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.history"
+msgid "История"
+msgstr "Verlauf"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.load"
+msgid "Загр."
+msgstr "Laden"
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.prefs"
+msgid "Настр."
+msgstr "Einst."
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.qsave"
+msgid "Б.сохр."
+msgstr "S.Speich."
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.save"
+msgid "Сохр."
+msgstr "Speich."
+
+#. UI/мета-строка
+msgctxt "string:ui.quick.skip"
+msgid "Пропуск"
+msgstr "Überspr."
