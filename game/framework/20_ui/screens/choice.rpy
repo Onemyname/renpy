@@ -1,34 +1,38 @@
-# Кастомный screen choice (G8/C1): перевод пунктов меню идёт НЕ через translate strings
-# (коллизии «Да»/«Нет» между сценами неизбежны), а по choice-id из реестра меню
-# (lookup vn_loc.choice_text — framework/00_core/040_localization.rpy).
-# Идентичность меню держит переменная vn_menu (default — во framework/00_core/020_state.rpy),
-# которую vn loc keys вставляет в авторский scene.rpy перед каждым menu-стейтментом.
+# Кастомный screen choice (G8/C1): контракт фазы 0 сохранён без изменений —
+# сигнатура, vn_loc.choice_text(vn_menu, idx, i.caption), таймер QA-автопилота.
+# Новое — только оформление на токенах gui.*.
+
+init offset = 0
 
 screen choice(items):
     style_prefix "choice"
+    # Мягкое затемнение сцены на время выбора (поверх яркого видео)
+    add Solid("#00000061")
     vbox:
         for idx, i in enumerate(items):
             textbutton vn_loc.choice_text(vn_menu, idx, i.caption) action i.action
     # QA-автопилот (vn test smoke): авто-выбор пункта; вне автопилота — no-op.
-    # Побочных эффектов в screen-выражениях нет: выбор делает Function в момент тика.
     if vn_qa.autopilot_active():
         timer 1.0 action Function(vn_qa.autopilot_choose, items) repeat True
 
 
 style choice_vbox is vbox:
     xalign 0.5
-    ypos 405
-    spacing 33
+    ypos 296
+    spacing gui.sp_m
 
 style choice_button:
-    xsize 1180
-    background Solid("#00000099")
-    hover_background Solid("#000000cc")
-    padding (30, 15)
+    xsize 820
+    padding (gui.sp_l + 2, gui.sp_m + 2)
+    background Solid("#18181be0")
+    hover_background Solid("#27272af2")
+    insensitive_background Solid("#18181b8c")
 
 style choice_button_text:
     xalign 0.5
     text_align 0.5
-    color "#cccccc"
-    hover_color "#ffffff"
-    insensitive_color "#8888887f"
+    font gui.interface_text_font
+    size gui.choice_text_size
+    color "#e4e4e7"
+    hover_color gui.selected_color
+    insensitive_color gui.insensitive_color
