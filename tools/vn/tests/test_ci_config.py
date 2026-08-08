@@ -111,3 +111,41 @@ def test_video_sources_present():
     """Инвариант выше держится на факте: сырцы есть, значит видео-ветка не пропускается."""
     srcs = list((REPO_ROOT / "assets_src" / "video_src").rglob("*.mp4"))
     assert srcs, "видео-сырцы исчезли — пересмотрите требование ffmpeg в CI"
+
+
+def test_ci_runs_on_every_branch_not_only_main():
+    """Ветка без прогона CI — это проверки уже после слияния, а не до него.
+
+    Ровно так и вышло с fix/critical-gaps-and-handbook: пуш ветки не поднял ни одного
+    прогона, потому что триггер был branches: [main].
+    """
+    doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    # YAML 1.1: голое `on:` парсится как True — ключ ищем в обоих написаниях.
+    triggers = doc.get("on", doc.get(True))
+    branches = triggers["push"]["branches"]
+    assert branches == ["**"], f"ci должен ловить любую ветку, а не {branches}"
+
+
+def test_ci_push_trigger_does_not_catch_tags():
+    """На теге v* работает release.yml; ci на том же теге — второй прогон того же самого.
+
+    branches: ['**'] матчит ветки и не матчит теги. Ключ tags не должен появиться.
+    """
+    doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    push = (doc.get("on", doc.get(True)))["push"]
+    assert "tags" not in push, "ci не должен триггериться на тегах — это работа release.yml"
+
+
+def test_ci_has_no_pull_request_trigger_while_push_is_unfiltered():
+    """push по всем веткам + pull_request = два прогона на каждый PR из этого же репозитория.
+
+    Если pull_request когда-нибудь вернут (ради форков), он обязан прийти с гардом
+    head.repo.full_name != github.repository — тогда этот тест нужно осознанно обновить.
+    """
+    doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    triggers = doc.get("on", doc.get(True))
+    if "pull_request" in triggers:
+        guards = [str(job.get("if", "")) for job in (doc.get("jobs") or {}).values()]
+        assert all("head.repo.full_name" in g for g in guards), (
+            "pull_request вернули без форк-гарда — каждый PR будет прогоняться дважды"
+        )

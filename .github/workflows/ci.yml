@@ -4,10 +4,23 @@
 
 name: ci
 
+# Триггер — ЛЮБАЯ ветка, не только main: иначе работа в feature-ветке едет без
+# проверок, а первый прогон случается уже после слияния (ровно так и вышло с
+# fix/critical-gaps-and-handbook). `branches: ['**']` матчит ветки и НЕ матчит
+# теги — иначе на теге v* ci дублировал бы release.yml.
+# pull_request не нужен: голова PR — это тоже push в ветку этого репозитория,
+# и она уже покрыта. Форки (единственный непокрытый случай) для приватного
+# репозитория одного владельца неактуальны; появятся — вернуть pull_request
+# с гардом head.repo.full_name != github.repository, иначе прогон удвоится.
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: ['**']
+  workflow_dispatch:
+
+# Пуш «поверх» предыдущего отменяет его прогон: очередь не копится на активной ветке.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   RENPY_VERSION: "8.5.3"          # обязан совпадать с пином renpy_sdk в project.yaml
