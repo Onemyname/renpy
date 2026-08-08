@@ -1612,20 +1612,31 @@ def pack_build(pack_id: str):
     chapters = [d.name[:4] for d in sorted((root / "packs" / pack_id / "chapters").glob("ch*"))
                 if d.is_dir()]
     gen = root / "game" / "generated"
+    # Список сцен собираем ДО открытия архива: иначе «нет генерата» обнаруживается,
+    # когда неполный zip уже лежит в build/packs/ и может уехать в депот.
+    scenes = [(f, f"game/generated/scenes/{ch}/{f.name}")
+              for ch in chapters
+              for f in sorted((gen / "scenes" / ch).glob("*")) if f.is_file()]
+    # Счёт сцен отдельно от манифеста: манифест есть всегда, и общий счётчик делал
+    # охранник недостижимым. Ноль сцен сам по себе не ошибка — пак-контейнер (nsfw)
+    # везёт только ассеты и глав не объявляет. Ошибка — когда главы объявлены, а
+    # генерата для них нет: типовая причина — забыли vn build.
+    if chapters and not scenes:
+        _fail(f"pack build: у пака {pack_id!r} объявлены главы ({', '.join(chapters)}), но в "
+              f"game/generated/scenes/ нет ни одной их скомпилированной сцены — сначала vn build")
     out = root / "build" / "packs" / f"{pack_id}.zip"
     out.parent.mkdir(parents=True, exist_ok=True)
-    n = 0
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.write(manifest, f"packs/{pack_id}/manifest.yaml")
-        n += 1
-        for ch in chapters:
-            for f in sorted((gen / "scenes" / ch).glob("*")) if (gen / "scenes" / ch).is_dir() else []:
-                z.write(f, f"game/generated/scenes/{ch}/{f.name}")
-                n += 1
-    if not n:
-        _fail(f"pack build: у пака {pack_id!r} нет скомпилированных сцен — сначала vn build")
-    click.secho(f"pack build: OK — {out.relative_to(root).as_posix()} ({n} файлов, "
-                f"главы: {', '.join(chapters)})", fg="green")
+        for f, arcname in scenes:
+            z.write(f, arcname)
+    # Без этой строки архив из одного манифеста выглядит поломкой сборки, а не
+    # нормой пака-контейнера — пусть решает человек, а не молчание команды.
+    if not chapters:
+        click.secho(f"warning: пак {pack_id!r} не объявляет глав (packs/{pack_id}/chapters/ пуст) "
+                    f"— в архиве только манифест", fg="yellow")
+    click.secho(f"pack build: OK — {out.relative_to(root).as_posix()} ({1 + len(scenes)} файлов, "
+                f"главы: {', '.join(chapters) or '—'})", fg="green")
 
 
 if __name__ == "__main__":
