@@ -18,6 +18,9 @@ stages: [lint, build, test]
     paths: [.sdk/]
   before_script:
     - apt-get update -qq && apt-get install -y -qq curl unzip xvfb libgl1 libglu1-mesa > /dev/null
+    # Лок ставится ПЕРВЫМ (G17): точные версии тулчейна, откат = git revert одного файла.
+    # Editable следом ничего не поднимет — его >=-диапазоны уже удовлетворены локом.
+    - pip install --quiet -r tools/vn.lock
     - pip install --quiet -e tools/vn[dev]
     - |
       if [ ! -f "$RENPY_SDK/renpy.py" ]; then
@@ -29,6 +32,9 @@ stages: [lint, build, test]
 lint:
   stage: lint
   before_script:
+    # Лок ставится ПЕРВЫМ (G17): точные версии тулчейна, откат = git revert одного файла.
+    # Editable следом ничего не поднимет — его >=-диапазоны уже удовлетворены локом.
+    - pip install --quiet -r tools/vn.lock
     - pip install --quiet -e tools/vn[dev]
   script:
     - vn content lint

@@ -23,8 +23,14 @@ jobs:
         with: {lfs: true}
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
+      # Лок ставится ПЕРВЫМ (G17): точные версии тулчейна, откат = git revert одного файла.
+      # Editable следом ничего не поднимет — его >=-диапазоны уже удовлетворены локом.
+      # Здесь пин критичен вдвойне: canary варьирует ТОЛЬКО версию Ren'Py SDK, и плывущий
+      # питоновский тулчейн размыл бы вывод — красноту нельзя было бы приписать движку.
+      - run: pip install --quiet -r tools/vn.lock
       - run: pip install --quiet -e "tools/vn[dev]"
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 > /dev/null
+      # ffmpeg — видео-трек ассет-конвейера (ADR-0006): с сырцами в video_src без него сборка красная
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 ffmpeg > /dev/null
 
       - name: Свежайший Ren'Py вместо пина
         run: |
