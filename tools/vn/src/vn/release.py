@@ -5,6 +5,7 @@ ADR-0006): версии контента считаются по фактиче�
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -202,17 +203,44 @@ def nsfw_exclude_globs(root: Path) -> list[str]:
     return globs
 
 
+def patron_tag(token: str | None) -> str | None:
+    """Короткая НЕвосстановимая метка patron-сборки: blake2s(токен), 8 hex.
+
+    Сам токен в дистрибутив класть нельзя: game/build_id.json уезжает игроку
+    целиком (build.classify его не исключает — он нужен игре в рантайме), а в CI
+    в него подставляется секрет secrets.PATRON_TOKEN. До build_info@2 туда писался
+    токен как есть — то есть секрет раздавался всем получателям сборки.
+
+    Вотермарке нужна не подлинность токена, а различимость сборок. Метка
+    детерминирована, поэтому владелец сопоставляет утёкшую сборку с получателем,
+    пересчитав тег из своего токена:
+
+        python -c "import hashlib,sys; print(hashlib.blake2s(sys.argv[1].encode(),
+                   digest_size=4, person=b'vnpatron').hexdigest())" <токен>
+
+    Ограничение: короткий низкоэнтропийный токен подбирается перебором по тегу.
+    Токен-метку получателя генерируйте случайной (например secrets.token_hex(16)).
+    """
+    if not token:
+        return None
+    return hashlib.blake2s(token.encode("utf-8"), digest_size=4,
+                           person=b"vnpatron").hexdigest()
+
+
 def compute_build_info(root: Path, flavor: str, patron_token: str | None = None,
                        now: datetime | None = None) -> dict:
-    """Документ build_info@1: идентичность сборки + список исключений distribute.
+    """Документ build_info@2: идентичность сборки + список исключений distribute.
     Скрипты паков грузятся всегда (G9) — файлы сцен не исключаются, гейт
-    логический (vn_build/pack_registry); исключаются только NSFW-ассеты."""
+    логический (vn_build/pack_registry); исключаются только NSFW-ассеты.
+
+    На вход берётся сам токен, наружу уходит только производная метка (patron_tag):
+    документ целиком уезжает игроку внутри дистрибутива."""
     project = load_project(root)
     cfg = flavor_config(project, flavor)
     sha = git_sha(root)
     now = now or datetime.now(timezone.utc)
     return {
-        "schema": "build_info@1",
+        "schema": "build_info@2",
         "flavor": flavor,
         "version": project["version"],
         "build_id": f"{project['version']}+{sha}.{flavor}.{now.strftime('%Y%m%d%H%M')}",
@@ -222,7 +250,7 @@ def compute_build_info(root: Path, flavor: str, patron_token: str | None = None,
         "nsfw": bool(cfg.get("nsfw")),
         "early_content": bool(cfg.get("early_content", False)),
         "watermark": bool(cfg.get("watermark", False)),
-        "patron_token": patron_token,
+        "patron_tag": patron_tag(patron_token),
         "exclude": [] if cfg.get("nsfw") else nsfw_exclude_globs(root),
     }
 

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/build_info@2",
+  "title": "build_info@2 — метаданные релизной сборки (game/build_id.json, ADR-0006)",
+  "description": "Пишется vn release build на время distribute и удаляется после; в dev-чекауте файла нет (framework подставляет flavor=dev). Не коммитится. ВАЖНО: документ целиком уезжает игроку внутри дистрибутива (game/build_id.json нужен игре в рантайме и не исключается build.classify) — секретов здесь быть не может. Отличие от build_info@1: поле patron_token (сам секрет) заменено на patron_tag (невосстановимая производная).",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "build_info@2"},
+    "flavor": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "build_id": {"type": "string", "minLength": 1},
+    "sha": {"type": "string", "minLength": 1},
+    "built_at": {"type": "string", "format": "date-time"},
+    "packs": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"}},
+    "nsfw": {"type": "boolean"},
+    "early_content": {"type": "boolean"},
+    "watermark": {"type": "boolean"},
+    "patron_tag": {
+      "type": ["string", "null"], "pattern": "^[0-9a-f]{8}$",
+      "description": "Метка сборки получателя для трассировки утечек: blake2s(токен, digest_size=4, person=b'vnpatron'), 8 hex. Не секрет и не обратим в токен; никакого рантайм-трекинга. null — сборка без метки."
+    },
+    "exclude": {
+      "type": "array", "items": {"type": "string"},
+      "description": "Глобы build.classify(…, None): что НЕ уходит в дистрибутив этого флейвора (options.rpy применяет при distribute)"
+    }
+  },
+  "required": ["schema", "flavor", "version", "build_id", "sha", "built_at", "packs", "nsfw", "early_content", "watermark", "patron_tag", "exclude"],
+  "additionalProperties": false
+}

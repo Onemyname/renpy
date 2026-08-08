@@ -18,7 +18,9 @@ init -985 python in vn_build:
     nsfw = True             # dev видит весь контент; релизные значения — из файла
     early_content = True
     watermark = False
-    patron_token = None
+    # Метка получателя для трассировки утечек — производная от токена, а не он сам:
+    # этот файл целиком уезжает игроку (build_info@2, см. release.patron_tag).
+    patron_tag = None
 
     _info = {}
     try:
@@ -35,9 +37,9 @@ init -985 python in vn_build:
         nsfw = bool(_info.get("nsfw", False))
         early_content = bool(_info.get("early_content", False))
         watermark = bool(_info.get("watermark", False))
-        patron_token = _info.get("patron_token")
+        patron_tag = _info.get("patron_tag")
 
     def label():
-        """Подпись вотермарки: build-id + хвост patron-токена (если задан)."""
-        tail = (u" · " + str(patron_token)[-8:]) if patron_token else u""
+        """Подпись вотермарки: build-id + метка получателя (если задана)."""
+        tail = (u" · " + str(patron_tag)) if patron_tag else u""
         return build_id + tail

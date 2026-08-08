@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "vn:schemas/build_info@1",
-  "title": "build_info@1 — метаданные релизной сборки (game/build_id.json, ADR-0006)",
-  "description": "Пишется vn release build на время distribute и удаляется после; в dev-чекауте файла нет (framework подставляет flavor=dev). Не коммитится.",
+  "title": "build_info@1 — УСТАРЕЛА, см. build_info@2 (game/build_id.json, ADR-0006)",
+  "description": "НЕ ИСПОЛЬЗОВАТЬ для новых сборок: поле patron_token несло сам секрет, а документ целиком уезжает игроку внутри дистрибутива — то есть токен раздавался всем получателям patron-сборки. Заменена на build_info@2, где вместо токена лежит невосстановимая метка patron_tag. Схема оставлена в реестре, чтобы читались артефакты сборок до 0.1.5 (build/dist/*/build-info.json).",
   "type": "object",
   "properties": {
     "schema": {"const": "build_info@1"},
