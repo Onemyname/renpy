@@ -70,6 +70,39 @@ msgid "Да"
 msgstr "[[Дą~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.crash.body"
+msgid ""
+"Игра столкнулась с ошибкой. Прогресс до последнего сохранения не пострадал."
+msgstr ""
+"[[Įгрą стǫлкнųлąсь с ǫшįбкǫй. Прǫгрęсс дǫ пǫслęднęгǫ сǫхрąнęнįя нę "
+"пǫстрąдąл.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.ignore"
+msgid "Попробовать продолжить"
+msgstr "[[Пǫпрǫбǫвąть прǫдǫлжįть~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.quit"
+msgid "Закрыть игру"
+msgstr "[[Зąкрыть įгрų~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.report"
+msgid "Отчёт сохранён:"
+msgstr "[[Ǫтчёт сǫхрąнён:~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.rollback"
+msgid "Откатиться назад"
+msgstr "[[Ǫткąтįться нąзąд~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.title"
+msgid "Что-то пошло не так"
+msgstr "[[Чтǫ-тǫ пǫшлǫ нę тąк~~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.file.autopage"
 msgid "Авто"
 msgstr "[[Ąвтǫ~~]"

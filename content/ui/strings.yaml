@@ -11,6 +11,14 @@ strings:
   meta.packs.ep_beach.title: "Пляжный эпизод"
   meta.packs.nsfw.title: "Контент 18+"
 
+  # ── Экран краха (последний эшелон, 20_ui/screens/crash_screen.rpy) ─────────
+  ui.crash.title: "Что-то пошло не так"
+  ui.crash.body: "Игра столкнулась с ошибкой. Прогресс до последнего сохранения не пострадал."
+  ui.crash.report: "Отчёт сохранён:"
+  ui.crash.rollback: "Откатиться назад"
+  ui.crash.ignore: "Попробовать продолжить"
+  ui.crash.quit: "Закрыть игру"
+
   # ── Навигация ───────────────────────────────────────────────────────────────
   ui.nav.start: "Начать игру"
   ui.nav.chapters: "Главы"

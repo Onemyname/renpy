@@ -236,3 +236,36 @@ msgstr ""
 msgctxt "string:meta.packs.nsfw.title"
 msgid "Контент 18+"
 msgstr "Inhalte ab 18 (NSFW)"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.body"
+msgid ""
+"Игра столкнулась с ошибкой. Прогресс до последнего сохранения не пострадал."
+msgstr ""
+"Im Spiel ist ein Fehler aufgetreten. Dein Fortschritt bis zum letzten "
+"Speicherstand ist sicher."
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.ignore"
+msgid "Попробовать продолжить"
+msgstr "Versuchen fortzufahren"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.quit"
+msgid "Закрыть игру"
+msgstr "Spiel beenden"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.report"
+msgid "Отчёт сохранён:"
+msgstr "Ein Bericht wurde gespeichert unter:"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.rollback"
+msgid "Откатиться назад"
+msgstr "Zurückrollen"
+
+#. UI/мета-строка
+msgctxt "string:ui.crash.title"
+msgid "Что-то пошло не так"
+msgstr "Etwas ist schiefgelaufen"
