@@ -58,6 +58,7 @@ define gui.group_text_size     = 13    # caps-заголовки групп на
 define gui.small_text_size     = 15
 define gui.tiny_text_size      = 13    # quick menu
 define gui.choice_text_size    = 25
+define gui.choice_width        = 880   # components.choice.width (стек в диалоговой зоне)
 define gui.title_text_size     = 110   # wordmark главного меню
 
 ## Шкала отступов (spacing.*) ───────────────────────────────────────────────────
