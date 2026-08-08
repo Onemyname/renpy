@@ -159,10 +159,13 @@ style vn_gal_progress:
     color gui.accent_color
 
 style vn_gal_tab:
+    # Вкладка — 6+19+6 = 31 px. Панели choice* требуют 54-60 px, то есть
+    # больше самой вкладки: фон сжался бы в пилюлю (ADR-0009, 2*Borders).
+    # Чипы объявлены под этот размер — минимум 22x22.
     padding (gui.sp_m, gui.sp_xs + 2)
     background None
-    hover_background vn_frame_slot
-    selected_background vn_frame_choice_hover
+    hover_background vn_frame_chip
+    selected_background vn_frame_chip_active
 
 style vn_gal_tab_text:
     font gui.interface_semibold_font
@@ -216,9 +219,10 @@ style vn_gal_view_desc:
     outlines [(2, "#000000cc", 0, 1)]
 
 style vn_gal_ctl_button:
+    # Кнопка просмотрщика — 6+17+6 = 29 px, та же причина, что и у вкладки.
     padding (gui.sp_m, gui.sp_xs + 2)
-    background vn_frame_choice
-    hover_background vn_frame_choice_hover
+    background vn_frame_chip
+    hover_background vn_frame_chip_active
 
 style vn_gal_ctl_button_text:
     font gui.interface_semibold_font
