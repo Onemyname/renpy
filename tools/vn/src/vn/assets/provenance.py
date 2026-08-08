@@ -125,10 +125,47 @@ def _trace_text(graph: dict, node: dict | None) -> str | None:
     return None
 
 
+WORKFLOW_KEY_PREFIX = "workflows/"
+
+
+def store_workflow(root: Path, api_graph: dict, workflow: dict | None = None) -> tuple[dict, bool]:
+    """Положить граф(ы) ComfyUI в контент-адресуемое хранилище сырцов по
+    workflow_hash (дедупликация: одинаковые графы = один объект). Возвращает
+    (hash-док, stored): stored=False — хранилище недоступно, зовущий решает,
+    инлайнить ли граф в сайдкар (git-вес против потери провенанса)."""
+    from .storage import StorageError, backend_for
+
+    blob = json.dumps({"prompt": api_graph, "workflow": workflow},
+                      ensure_ascii=False, sort_keys=True).encode("utf-8")
+    digest = _b3(json.dumps(api_graph, sort_keys=True).encode())
+    try:
+        backend = backend_for(root, "default")
+        backend.put(WORKFLOW_KEY_PREFIX + digest, blob)
+        return {"algo": "blake3", "hex": digest}, True
+    except (StorageError, OSError):
+        return {"algo": "blake3", "hex": digest}, False
+
+
+def load_workflow(root: Path, workflow_hash: dict) -> dict | None:
+    """Достать граф из хранилища по хэшу (обратная операция store_workflow)."""
+    from .storage import StorageError, backend_for
+
+    try:
+        backend = backend_for(root, "default")
+        return json.loads(backend.get(WORKFLOW_KEY_PREFIX + workflow_hash["hex"]))
+    except (StorageError, OSError, ValueError):
+        return None
+
+
 def comfyui_step_from_graph(api_graph: dict, workflow: dict | None = None) -> dict:
     """Шаг chain[kind=comfyui] из API-графа ComfyUI (лучшее усилие: чего нет в
-    графе — остаётся null и добивается флагами CLI)."""
-    step = {"kind": "comfyui", "workflow": workflow or api_graph,
+    графе — остаётся null и добивается флагами CLI).
+
+    Граф НЕ инлайнится в шаг: при десятках тысяч AI-артефактов инлайн-JSON
+    раздувает git на гигабайты. record() кладёт граф в хранилище по
+    workflow_hash (store_workflow) и оставляет workflow=None; инлайн — только
+    аварийный fallback без хранилища."""
+    step = {"kind": "comfyui", "workflow": None,
             "workflow_hash": {"algo": "blake3",
                               "hex": _b3(json.dumps(api_graph, sort_keys=True).encode())},
             "model": None, "seed": None, "prompt": None, "negative_prompt": None,
@@ -190,13 +227,21 @@ def record(root: Path, artifact: Path, source: Path | None = None,
             chain.extend(parent["chain"])
 
     step = None
+    api_graph = ui_graph = None
     if workflow_file is not None:
         api_graph = json.loads(Path(workflow_file).read_text(encoding="utf-8"))
         step = comfyui_step_from_graph(api_graph)
     elif artifact.suffix.lower() == ".png":
         extracted = extract_comfyui_png(artifact)
         if extracted and "prompt" in extracted:
-            step = comfyui_step_from_graph(extracted["prompt"], extracted.get("workflow"))
+            api_graph, ui_graph = extracted["prompt"], extracted.get("workflow")
+            step = comfyui_step_from_graph(api_graph, ui_graph)
+    if step is not None and api_graph is not None:
+        # Граф — в хранилище по хэшу (дедуп); сайдкар несёт только хэш+скаляры.
+        # Без хранилища инлайним: потерять воспроизводимость хуже, чем раздуть git.
+        _hash_doc, stored = store_workflow(root, api_graph, ui_graph)
+        if not stored:
+            step["workflow"] = api_graph
     if step is None:
         if note is None:
             raise ProvenanceError(
@@ -304,6 +349,15 @@ def verify(root: Path, scope: str | None = None) -> ProvReport:
                 f"провенанса — перезапишите (vn assets provenance record …)")
 
         for i, step in enumerate(doc["chain"]):
+            # comfyui-шаг без инлайн-графа обязан находить граф в хранилище
+            # (иначе «воспроизводимость» — только скаляры).
+            if step.get("kind") == "comfyui" and not step.get("workflow"):
+                wh = step.get("workflow_hash")
+                if wh and load_workflow(root, wh) is None:
+                    rep.warnings.append(
+                        f"{rel}: chain[{i}]: workflow-граф {wh['hex'][:16]}… отсутствует "
+                        f"в хранилище — перезапишите провенанс из исходного PNG "
+                        f"(vn assets provenance record)")
             src_ref = step.get("source")
             if not src_ref:
                 continue

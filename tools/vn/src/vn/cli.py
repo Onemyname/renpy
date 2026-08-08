@@ -774,6 +774,40 @@ def assets_provenance_record(artifact: Path, source: Path | None, workflow_file:
     click.secho(f"провенанс записан: {path.relative_to(_root()).as_posix()}", fg="green")
 
 
+@assets_provenance.command("workflow")
+@click.argument("artifact", type=click.Path(exists=True, path_type=Path))
+@click.option("--out", type=click.Path(path_type=Path), default=None,
+              help="Куда сохранить граф (по умолчанию — stdout).")
+def assets_provenance_workflow(artifact: Path, out: Path | None):
+    """Восстановить workflow-граф ComfyUI артефакта: из хранилища по
+    workflow_hash (или из инлайн-fallback'а сайдкара). Выход пригоден для
+    загрузки в ComfyUI (регенерация с теми же параметрами)."""
+    from .assets.provenance import load, load_workflow
+
+    doc = load(Path(artifact))
+    if doc is None:
+        _fail(f"{artifact}: провенанс-сайдкара нет")
+    steps = [s for s in doc["chain"] if s.get("kind") == "comfyui"]
+    if not steps:
+        _fail(f"{artifact}: в цепочке нет comfyui-шагов")
+    step = steps[-1]
+    graph = step.get("workflow")
+    if graph is None and step.get("workflow_hash"):
+        blob = load_workflow(_root(), step["workflow_hash"])
+        if blob is not None:
+            graph = blob.get("prompt")
+    if graph is None:
+        _fail("workflow-граф не найден ни в сайдкаре, ни в хранилище — "
+              "перезапишите провенанс из исходного PNG")
+    payload = json.dumps(graph, ensure_ascii=False, indent=1, sort_keys=True)
+    if out:
+        Path(out).write_text(payload + "\n", encoding="utf-8")
+        click.secho(f"граф сохранён: {out} (seed {step.get('seed')}, "
+                    f"модель {step.get('model')})", fg="green")
+    else:
+        click.echo(payload)
+
+
 @assets_provenance.command("verify")
 @click.option("--scope", default=None, help="Подпуть в assets_src.")
 def assets_provenance_verify(scope: str | None):

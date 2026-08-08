@@ -38,6 +38,11 @@ def _mk_root(tmp_path):
     (root / "tools").mkdir()
     # Реестр схем — общий с боевым (schemas читаются verify/validate_renders)
     shutil.copytree(REPO_ROOT / "tools" / "schemas", root / "tools" / "schemas")
+    # Хранилище сырцов: workflow-графы провенанса едут сюда, не в git-сайдкары
+    store = (root.parent / "vn-store").resolve()
+    (root / ".vnstorage.yaml").write_text(
+        f'schema: storage@1\nstorages:\n  default: {{type: file, path: "{store.as_posix()}"}}\n',
+        encoding="utf-8")
     return root
 
 
@@ -71,16 +76,40 @@ def test_record_and_verify_roundtrip(tmp_path):
 
     path, doc = record(root, art)
     assert path.name == "kiss_ai.png.provenance.json"
-    assert doc["chain"][-1]["kind"] == "comfyui"
-    assert doc["chain"][-1]["seed"] == 123456
+    step = doc["chain"][-1]
+    assert step["kind"] == "comfyui"
+    assert step["seed"] == 123456
+    # Граф НЕ инлайнится: в сайдкаре только хэш, блоб — в хранилище (дедуп)
+    assert step["workflow"] is None
+    blob = tmp_path / "vn-store" / "objects" / "workflows" / step["workflow_hash"]["hex"]
+    assert blob.is_file()
+    from vn.assets.provenance import load_workflow
+    restored = load_workflow(root, step["workflow_hash"])
+    assert restored and restored["prompt"]["3"]["inputs"]["seed"] == 123456
 
     rep = verify(root)
-    assert rep.errors == [] and len(rep.checked) == 1
+    assert rep.errors == [] and rep.warnings == [] and len(rep.checked) == 1
+
+    # Пропажа графа из хранилища — предупреждение verify (восстановимость)
+    blob.unlink()
+    repw = verify(root)
+    assert any("workflow-граф" in w for w in repw.warnings)
+    _comfy_png(art)   # вернуть артефакт в исходное состояние хэша не нужно — ниже подмена
 
     # Подмена артефакта после записи провенанса — ошибка verify
     Image.new("RGBA", (64, 48), (1, 2, 3, 255)).save(art, "PNG")
     rep2 = verify(root)
     assert any("изменён после записи" in e for e in rep2.errors)
+
+
+def test_record_inlines_workflow_without_store(tmp_path):
+    """Без хранилища граф инлайнится (потеря воспроизводимости хуже веса git)."""
+    root = _mk_root(tmp_path)
+    (root / ".vnstorage.yaml").unlink()
+    art = root / "assets_src/png/cg/solo.png"
+    _comfy_png(art)
+    _path, doc = record(root, art)
+    assert doc["chain"][-1]["workflow"] is not None
 
 
 def test_chain_composition_daz_then_ai(tmp_path):
