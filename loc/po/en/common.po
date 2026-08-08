@@ -388,3 +388,108 @@ msgstr "Save"
 msgctxt "string:ui.quick.skip"
 msgid "Пропуск"
 msgstr "Skip"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_concept.title"
+msgid "Концепт: крыша"
+msgstr "Concept: rooftop"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_finale.desc"
+msgid "Награда за прохождение первой главы"
+msgstr "Reward for completing chapter one"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_finale.title"
+msgid "Закат над крышей"
+msgstr "Sunset over the rooftop"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_rooftop.desc"
+msgid "Город до горизонта — день и закат"
+msgstr "The city to the horizon — day and sunset"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_rooftop.title"
+msgid "Крыша"
+msgstr "Rooftop"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_route_mira.desc"
+msgid "Открывается на роуте Миры"
+msgstr "Unlocks on Mira's route"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_route_mira.title"
+msgid "Роут Миры: закат"
+msgstr "Mira's route: sunset"
+
+#. UI/мета-строка
+msgctxt "string:gal.mov_ch01_ambient.desc"
+msgid "Анимационная вставка из первой главы"
+msgstr "Animated insert from chapter one"
+
+#. UI/мета-строка
+msgctxt "string:gal.mov_ch01_ambient.title"
+msgid "Ветер над городом"
+msgstr "Wind over the city"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.cat.cg"
+msgid "CG"
+msgstr "CG"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.cat.extras"
+msgid "Бонусы"
+msgstr "Extras"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.cat.videos"
+msgid "Видео"
+msgstr "Videos"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.empty"
+msgid "Галерея пока пуста."
+msgstr "The gallery is still empty."
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.locked"
+msgid "Закрыто"
+msgstr "Locked"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.next"
+msgid "Следующее"
+msgstr "Next"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.prev"
+msgid "Предыдущее"
+msgstr "Previous"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.unlocked_many"
+msgid "Открыто новых материалов: [n]"
+msgstr "New gallery content unlocked: [n]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.unlocked_one"
+msgid "Открыт новый материал в галерее"
+msgstr "New gallery content unlocked"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.variant"
+msgid "Вариант"
+msgstr "Variant"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.zoom"
+msgid "Увеличить"
+msgstr "Zoom"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.gallery"
+msgid "Галерея"
+msgstr "Gallery"

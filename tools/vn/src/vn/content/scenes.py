@@ -258,6 +258,9 @@ def emit_scene(unit: SceneUnit, dispatch: dict, audio_ids: set[str],
                 lines.append(f"        jump {e['to_label']}")
 
     if not dispatch:
+        # Терминальная сцена главы (нет exits) = глава пройдена: якорь для
+        # галереи/достижений «за прохождение». Ручного кода в сценах не требует.
+        lines.append(f'    $ vn.chapter_done("{unit.chapter_id}")')
         lines.append("    if _return is None:")
         lines.append("        jump vn_end_of_content")
     lines.append("    # Неизвестный exit: разматываем стек и уходим на «сцена недоступна» (G7)")

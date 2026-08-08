@@ -22,6 +22,7 @@ BASE_OUTPUTS = {
     "registry/menus.gen.rpy",
     "registry/overrides.gen.rpy",
     "registry/ui_frames.gen.rpy",     # ADR-0009: Frame'ы генерируемых панелей
+    "registry/gallery.gen.rpy",       # ADR-0010: реестр галереи
 }
 
 

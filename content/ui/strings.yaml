@@ -25,6 +25,31 @@ strings:
   ui.crash.ignore: "Попробовать продолжить"
   ui.crash.quit: "Закрыть игру"
 
+  # ── Галерея (ADR-0010) ──────────────────────────────────────────────────────
+  ui.nav.gallery: "Галерея"
+  ui.gallery.locked: "Закрыто"
+  ui.gallery.empty: "Галерея пока пуста."
+  ui.gallery.zoom: "Увеличить"
+  ui.gallery.variant: "Вариант"
+  ui.gallery.prev: "Предыдущее"
+  ui.gallery.next: "Следующее"
+  ui.gallery.cat.cg: "CG"
+  ui.gallery.cat.videos: "Видео"
+  ui.gallery.cat.extras: "Бонусы"
+  ui.gallery.unlocked_one: "Открыт новый материал в галерее"
+  ui.gallery.unlocked_many: "Открыто новых материалов: [n]"
+
+  # ── Названия материалов галереи ─────────────────────────────────────────────
+  gal.cg_ch01_rooftop.title: "Крыша"
+  gal.cg_ch01_rooftop.desc: "Город до горизонта — день и закат"
+  gal.mov_ch01_ambient.title: "Ветер над городом"
+  gal.mov_ch01_ambient.desc: "Анимационная вставка из первой главы"
+  gal.cg_ch01_finale.title: "Закат над крышей"
+  gal.cg_ch01_finale.desc: "Награда за прохождение первой главы"
+  gal.cg_ch01_route_mira.title: "Роут Миры: закат"
+  gal.cg_ch01_route_mira.desc: "Открывается на роуте Миры"
+  gal.cg_ch01_concept.title: "Концепт: крыша"
+
   # ── Навигация ───────────────────────────────────────────────────────────────
   ui.nav.start: "Начать игру"
   ui.nav.continue: "Продолжить"

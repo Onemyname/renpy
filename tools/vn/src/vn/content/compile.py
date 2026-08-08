@@ -136,6 +136,160 @@ def _emit_achievements(ach_docs: list[tuple[str, dict]], sources) -> str:
     )
 
 
+GALLERY_THUMB_SUFFIX = ".thumb.webp"
+
+
+def _gallery_asset_paths(asset_id: str) -> tuple[str, str]:
+    """Логический id ассета -> (путь для движка, имя образа через пробелы)."""
+    ext = ".webm" if asset_id.startswith("mov/") else ".webp"
+    return f"assets/{asset_id}{ext}", asset_id.replace("/", " ")
+
+
+def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: set[str],
+                  chapter_ids: set[str], var_registry: set[str],
+                  ui_strings: dict, rep: CompileResult, errors: list[str],
+                  sources) -> str:
+    """Реестр галереи (gallery@1) + валидация: битые ассеты/превью/категории/якоря
+    ловятся до запуска игры. UI получает только данные — ни списка элементов в
+    коде, ни логики разблокировки."""
+    assets_dir = root / "game" / "assets"
+    # Зона ассетов производная (G4): её может не быть вовсе — например, при
+    # vn content compile без предшествующей сборки. Тогда существование файлов
+    # не проверяем (это не ошибка деклараций), но честно предупреждаем; при
+    # собранной зоне проверка строгая. Тот же приём, что у эмиттера образов.
+    assets_built = assets_dir.is_dir()
+    if gal_docs and not assets_built:
+        rep.warnings.append(
+            "галерея: game/assets не собран — ссылки на ассеты и превью не "
+            "проверены (выполните vn build)")
+
+    categories: dict[str, dict] = {}
+    items: dict[str, dict] = {}
+    used_assets: set[str] = set()
+
+    for rel, doc in sorted(gal_docs):
+        for cid, spec in (doc.get("categories") or {}).items():
+            if cid in categories:
+                errors.append(f"{rel}: категория {cid!r} объявлена дважды")
+                continue
+            categories[cid] = {
+                "title_key": spec["title_key"],
+                "order": int(spec.get("order", 100)),
+                "nsfw": bool(spec.get("nsfw", False)),
+            }
+        for gid, spec in (doc.get("items") or {}).items():
+            if gid in items:
+                errors.append(f"{rel}: элемент галереи {gid!r} объявлен дважды")
+                continue
+            items[gid] = dict(spec, _src=rel)
+
+    for gid, spec in sorted(items.items()):
+        rel = spec.pop("_src")
+        cat = spec["category"]
+        if cat not in categories:
+            errors.append(f"{rel}: {gid}: категория {cat!r} не объявлена "
+                          f"(есть: {', '.join(sorted(categories)) or 'ни одной'})")
+        kind = spec["kind"]
+        assets = [spec["asset"], *(spec.get("variants") or [])]
+        for a in assets:
+            used_assets.add(a)
+            path, _name = _gallery_asset_paths(a)
+            if assets_built and not (assets_dir / path[len("assets/"):]).is_file():
+                errors.append(f"{rel}: {gid}: ассета {a} нет в game/assets "
+                              f"(ожидался {path}) — прогоните vn build")
+            if kind == "movie" and not a.startswith("mov/"):
+                errors.append(f"{rel}: {gid}: kind: movie, но ассет {a} не из mov/")
+            if kind == "image" and a.startswith("mov/"):
+                errors.append(f"{rel}: {gid}: kind: image, но ассет {a} — видео")
+        # Превью: для картинок берём из конвейера, для видео обязателен явный
+        thumb = spec.get("thumb")
+        if thumb:
+            used_assets.add(thumb)
+            tpath, _n = _gallery_asset_paths(thumb)
+            if assets_built and not (assets_dir / tpath[len("assets/"):]).is_file():
+                errors.append(f"{rel}: {gid}: превью {thumb} нет в game/assets")
+            # Даже у явного превью в сетку идёт thumb-вариант, если конвейер его
+            # сделал: полноразмерные кадры в сетке — это лишние мегабайты текстур.
+            small = f"assets/{thumb}{GALLERY_THUMB_SUFFIX}"
+            resolved_thumb = small if (assets_dir / small[len("assets/"):]).is_file() \
+                else tpath
+        elif kind == "image":
+            cand = f"assets/{spec['asset']}{GALLERY_THUMB_SUFFIX}"
+            if assets_built and not (assets_dir / cand[len("assets/"):]).is_file():
+                rep.warnings.append(
+                    f"{rel}: {gid}: нет превью {cand} — сетка будет крутить "
+                    f"полноразмерный кадр (ожидается png2webp_cg_thumb)")
+                cand = _gallery_asset_paths(spec["asset"])[0]
+            resolved_thumb = cand
+        else:
+            rep.warnings.append(f"{rel}: {gid}: kind: movie без thumb — "
+                                f"в сетке будет заглушка вместо постера")
+            resolved_thumb = None
+
+        unlock = dict(spec["unlock"])
+        if "seen_image" in unlock and kind != "image":
+            errors.append(f"{rel}: {gid}: unlock.seen_image работает только "
+                          f"для kind: image (движковый _seen_images)")
+        if "scene" in unlock and known_scenes and unlock["scene"] not in known_scenes:
+            errors.append(f"{rel}: {gid}: unlock.scene {unlock['scene']} — такой сцены нет")
+        if "chapter_done" in unlock and chapter_ids \
+                and unlock["chapter_done"] not in chapter_ids:
+            errors.append(f"{rel}: {gid}: unlock.chapter_done "
+                          f"{unlock['chapter_done']} — такой главы нет")
+        if "var" in unlock:
+            if var_registry and unlock["var"] not in var_registry:
+                errors.append(f"{rel}: {gid}: unlock.var {unlock['var']} нет "
+                              f"в Variable Registry")
+            unlock.setdefault("equals", True)
+        for key in ("title_key", "desc_key"):
+            k = spec.get(key)
+            if k and ui_strings and k not in ui_strings:
+                rep.warnings.append(f"{rel}: {gid}: {key} {k!r} нет в "
+                                    f"content/ui/strings.yaml — покажется сырой ключ")
+
+        full_path, image_name = _gallery_asset_paths(spec["asset"])
+        items[gid] = {
+            "category": cat,
+            "kind": kind,
+            "asset": full_path,
+            "image_name": image_name,
+            "variants": [_gallery_asset_paths(v)[0] for v in (spec.get("variants") or [])],
+            "thumb": resolved_thumb,
+            "title_key": spec["title_key"],
+            "desc_key": spec.get("desc_key"),
+            "chapter": spec.get("chapter"),
+            "characters": list(spec.get("characters") or []),
+            "order": int(spec.get("order", 100)),
+            "nsfw": bool(spec.get("nsfw", False)),
+            "pack": spec.get("pack", "core"),
+            "unlock": unlock,
+        }
+
+    # Осиротевшие CG: ассет собран, но в галерее не объявлен (арт готовится
+    # раньше сцен — это warning, не ошибка; §2.12 про orphan-политику).
+    cg_root = assets_dir / "cg"
+    if cg_root.is_dir():
+        for f in sorted(cg_root.rglob("*.webp")):
+            if f.name.endswith(GALLERY_THUMB_SUFFIX):
+                continue
+            logical = "cg/" + f.relative_to(cg_root).as_posix()[: -len(".webp")]
+            if logical not in used_assets:
+                rep.warnings.append(
+                    f"{logical}: CG собран, но не объявлен в галерее "
+                    f"(content/gallery/*.gallery.yaml) — игрок его не увидит в галерее")
+
+    cats = {cid: categories[cid] for cid in
+            sorted(categories, key=lambda c: (categories[c]["order"], c))}
+    return _header(sources) + (
+        "init offset = -100\n\n"
+        "# Gallery Registry (gallery@1): читается store vn_gal\n"
+        "# (framework/00_core/090_gallery.rpy) и экранами галереи. Категории и\n"
+        "# элементы — данные: UI не содержит ни списка, ни логики разблокировки.\n"
+        f"define VN_GALLERY_CATEGORIES = {cats!r}\n\n"
+        f"define VN_GALLERY = {items!r}\n"
+    )
+
+
 def _emit_ui_frames(panels: dict, sources) -> str:
     """Frame-образы генерируемых UI-панелей (ADR-0009): вёрстка ссылается на
     vn_frame_<id>, пиксели и пути остаются в конвейере."""
@@ -483,6 +637,20 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
             ach_docs.append((rel, doc))
             ach_sources.append((rel, inputs[rel]))
 
+    # Галерея (gallery@1, ADR-0010)
+    gal_docs, gal_sources = [], []
+    gal_dir = root / "content" / "gallery"
+    if gal_dir.is_dir():
+        for f in sorted(gal_dir.glob("*.yaml")):
+            rel, _d = src(f)
+            doc = load_yaml(f)
+            g_errs = registry.validate(doc, rel)
+            if g_errs:
+                errors.extend(g_errs)
+                continue
+            gal_docs.append((rel, doc))
+            gal_sources.append((rel, inputs[rel]))
+
     # Аудио
     audio_docs, audio_sources = [], []
     audio_dir = root / "content" / "audio"
@@ -669,6 +837,16 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
             f"{len(img_rep.errors)} ошибок реестра образов:\n" + "\n".join(img_rep.errors)
         )
 
+    # Галерея (ADR-0010): валидация ассетов/превью/категорий/якорей — до записи
+    # генерата, чтобы битая запись не доехала до игры.
+    gal_errors: list[str] = []
+    gallery_out = _emit_gallery(
+        root, gal_docs, {u.full_id for u in units}, {c["id"] for c in chapters},
+        var_registry, ui_strings, result, gal_errors, gal_sources or [proj_src])
+    if gal_errors:
+        raise CompileError(
+            f"{len(gal_errors)} ошибок галереи:\n" + "\n".join(gal_errors))
+
     outputs: dict[str, str] = {
         "registry/images.gen.rpy": images_out,
         "version.gen.rpy": _emit_version(project, git_sha(root), [proj_src]),
@@ -679,6 +857,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "registry/ui_frames.gen.rpy": _emit_ui_frames(ui_panels, [panels_src]),
         "registry/achievements.gen.rpy": _emit_achievements(
             ach_docs, ach_sources or [proj_src]),
+        "registry/gallery.gen.rpy": gallery_out,
         "registry/chapters.gen.rpy": sc.emit_chapter_registry(
             sorted(chapters, key=lambda c: c["id"]), packs, _header([proj_src])
         ),

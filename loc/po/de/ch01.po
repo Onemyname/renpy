@@ -81,3 +81,8 @@ msgstr "Lügen"
 msgctxt "ch01_s020_m001[1]"
 msgid "Сказать правду"
 msgstr "Die Wahrheit sagen"
+
+#. говорит: рассказчик; сцена ch01_s030
+msgctxt "ch01_s030_0006"
+msgid "Город лежит внизу, будто выдохнул."
+msgstr "Die Stadt liegt unten, als hätte sie ausgeatmet."

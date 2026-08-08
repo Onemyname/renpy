@@ -25,6 +25,51 @@ msgid "Выше крыш"
 msgstr "[[Вышę крыш~~~]"
 
 #. UI/мета-строка
+msgctxt "string:gal.cg_ch01_concept.title"
+msgid "Концепт: крыша"
+msgstr "[[Кǫнцęпт: крышą~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_finale.desc"
+msgid "Награда за прохождение первой главы"
+msgstr "[[Нąгрąдą зą прǫхǫждęнįę пęрвǫй глąвы~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_finale.title"
+msgid "Закат над крышей"
+msgstr "[[Зąкąт нąд крышęй~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_rooftop.desc"
+msgid "Город до горизонта — день и закат"
+msgstr "[[Гǫрǫд дǫ гǫрįзǫнтą — дęнь į зąкąт~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_rooftop.title"
+msgid "Крыша"
+msgstr "[[Крышą~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_route_mira.desc"
+msgid "Открывается на роуте Миры"
+msgstr "[[Ǫткрывąęтся нą рǫųтę Мįры~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.cg_ch01_route_mira.title"
+msgid "Роут Миры: закат"
+msgstr "[[Рǫųт Мįры: зąкąт~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.mov_ch01_ambient.desc"
+msgid "Анимационная вставка из первой главы"
+msgstr "[[Ąнįмąцįǫннąя встąвкą įз пęрвǫй глąвы~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.mov_ch01_ambient.title"
+msgid "Ветер над городом"
+msgstr "[[Вęтęр нąд гǫрǫдǫм~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:meta.chapters.ch01.title"
 msgid "Глава 1. Пробуждение"
 msgstr "[[Глąвą 1. Прǫбųждęнįę~~~~~~~~]"
@@ -206,6 +251,61 @@ msgid "Эта сцена недоступна в текущей версии и�
 msgstr "[[Этą сцęнą нęдǫстųпнą в тęкųщęй вęрсįį įгры.~~~~~~~~~~~~~~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.gallery.cat.cg"
+msgid "CG"
+msgstr "[[CG~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.cat.extras"
+msgid "Бонусы"
+msgstr "[[Бǫнųсы~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.cat.videos"
+msgid "Видео"
+msgstr "[[Вįдęǫ~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.empty"
+msgid "Галерея пока пуста."
+msgstr "[[Гąлęрęя пǫкą пųстą.~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.locked"
+msgid "Закрыто"
+msgstr "[[Зąкрытǫ~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.next"
+msgid "Следующее"
+msgstr "[[Слęдųющęę~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.prev"
+msgid "Предыдущее"
+msgstr "[[Прęдыдųщęę~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.unlocked_many"
+msgid "Открыто новых материалов: [n]"
+msgstr "[[Ǫткрытǫ нǫвых мąтęрįąлǫв: [n]~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.unlocked_one"
+msgid "Открыт новый материал в галерее"
+msgstr "[[Ǫткрыт нǫвый мąтęрįąл в гąлęрęę~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.variant"
+msgid "Вариант"
+msgstr "[[Вąрįąнт~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.gallery.zoom"
+msgid "Увеличить"
+msgstr "[[Ųвęлįчįть~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.history.empty"
 msgid "История пуста"
 msgstr "[[Įстǫрįя пųстą~~~~~]"
@@ -234,6 +334,11 @@ msgstr "[[Глąвы~~]"
 msgctxt "string:ui.nav.continue"
 msgid "Продолжить"
 msgstr "[[Прǫдǫлжįть~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.gallery"
+msgid "Галерея"
+msgstr "[[Гąлęрęя~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.nav.history"

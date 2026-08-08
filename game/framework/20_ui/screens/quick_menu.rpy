@@ -7,7 +7,9 @@ init offset = 0
 
 screen vn_quick_menu():
     zorder 100
-    if not main_menu:
+    # Поверх экранов игрового меню (галерея, настройки, сейвы) quick menu не
+    # нужен: там своя навигация, а наложение двух панелей мешает.
+    if not main_menu and not renpy.get_screen("menu", layer="screens"):
         hbox:
             style_prefix "vn_quick"
             xanchor 1.0

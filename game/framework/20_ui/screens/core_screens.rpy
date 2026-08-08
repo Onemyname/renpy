@@ -91,6 +91,11 @@ screen navigation():
                         textbutton vn_loc.t("ui.nav.save") action ShowMenu("save") style "vn_nav_button"
                     textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_nav_button"
                     textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_nav_button"
+                    # Галерея (ADR-0010): доступна из обоих контекстов; пункт
+                    # исчезает, если галерея пуста или её элементы скрыты
+                    # флейвором/владением — гейт в vn_gal, не здесь.
+                    if vn_gal.categories():
+                        textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_nav_button"
                     if not main_menu:
                         textbutton vn_loc.t("ui.nav.history") action ShowMenu("history") style "vn_nav_button"
             vbox:

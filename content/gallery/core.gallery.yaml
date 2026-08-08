@@ -1,0 +1,82 @@
+schema: gallery@1
+# Галерея (ADR-0010). Данные, а не код: элемент = стабильный id + ссылка на
+# СУЩЕСТВУЮЩИЙ ассет + условие разблокировки на стабильном якоре.
+#
+#   добавили ассет -> добавили запись здесь -> указали unlock -> галерея увидела
+#
+# Никаких копий файлов ради галереи: asset — логический id (naming.md), превью
+# для картинок берётся из конвейера (<asset>.thumb.webp, трансформация
+# png2webp_cg_thumb). Разблокировка картинок по умолчанию опирается на штатный
+# persistent._seen_images движка — ручного кода нет; для видео и «за прохождение»
+# используются якоря scene/beat/var/chapter_done.
+
+categories:
+  cg:
+    title_key: ui.gallery.cat.cg
+    order: 10
+  videos:
+    title_key: ui.gallery.cat.videos
+    order: 20
+  extras:
+    title_key: ui.gallery.cat.extras
+    order: 30
+
+items:
+  # ── CG с вариантами: разблокируется самим фактом показа в сцене ────────────
+  cg_ch01_rooftop:
+    category: cg
+    kind: image
+    asset: cg/ch01/rooftop_day
+    variants: [cg/ch01/rooftop_sunset]
+    title_key: gal.cg_ch01_rooftop.title
+    desc_key: gal.cg_ch01_rooftop.desc
+    chapter: ch01
+    characters: [mira]
+    order: 10
+    unlock: {seen_image: true}
+
+  # ── Видео-луп: _seen_images про видео ничего не знает, поэтому якорь-сцена ──
+  mov_ch01_ambient:
+    category: videos
+    kind: movie
+    asset: mov/demo/ambient
+    thumb: cg/ch01/rooftop_sunset
+    title_key: gal.mov_ch01_ambient.title
+    desc_key: gal.mov_ch01_ambient.desc
+    chapter: ch01
+    order: 10
+    unlock: {scene: ch01_s030}
+
+  # ── Бонус за прохождение главы ─────────────────────────────────────────────
+  cg_ch01_finale:
+    category: extras
+    kind: image
+    asset: cg/ch01/rooftop_sunset
+    title_key: gal.cg_ch01_finale.title
+    desc_key: gal.cg_ch01_finale.desc
+    chapter: ch01
+    order: 10
+    unlock: {chapter_done: ch01}
+
+  # ── Доступно сразу: концепт-арт/обои ───────────────────────────────────────
+  cg_ch01_concept:
+    category: extras
+    kind: image
+    asset: cg/ch01/rooftop_day
+    title_key: gal.cg_ch01_concept.title
+    chapter: ch01
+    order: 20
+    unlock: {always: true}
+
+  # ── Остаётся закрытым в демо: CG роута, который в этой сборке не проходится.
+  #    Наглядно показывает состояние locked (контент игроку не раскрывается).
+  cg_ch01_route_mira:
+    category: cg
+    kind: image
+    asset: cg/ch01/rooftop_sunset
+    title_key: gal.cg_ch01_route_mira.title
+    desc_key: gal.cg_ch01_route_mira.desc
+    chapter: ch01
+    characters: [mira]
+    order: 20
+    unlock: {var: g.route, equals: mira}

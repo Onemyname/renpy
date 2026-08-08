@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/gallery@1",
+  "title": "gallery@1 — декларации галереи (content/gallery/*.gallery.yaml, ADR-0010)",
+  "description": "Галерея объявляется данными: категории и элементы со стабильными id, ссылкой на СУЩЕСТВУЮЩИЙ ассет (логический id, без копий файлов) и условием разблокировки на стабильных якорях. UI и unlock-логика разделены; добавление элемента не требует правки кода.",
+  "type": "object",
+  "$defs": {
+    "asset_ref": {
+      "type": "string",
+      "pattern": "^(cg|bg|mov)/[a-z0-9_/]+$",
+      "description": "Логический id ассета (naming.md): cg/ch01/rooftop_kiss, mov/demo/ambient"
+    },
+    "loc_key": {"type": "string", "pattern": "^[a-z0-9_.]+$"}
+  },
+  "properties": {
+    "schema": {"const": "gallery@1"},
+    "categories": {
+      "type": "object",
+      "description": "Категории — данные, а не код: новая категория не требует правки UI.",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{1,23}$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "title_key": {"$ref": "#/$defs/loc_key"},
+          "order": {"type": "integer", "description": "Порядок вкладок; меньше — левее"},
+          "nsfw": {"type": "boolean", "description": "Категория целиком 18+: в SFW-флейворе скрыта"}
+        },
+        "required": ["title_key"],
+        "additionalProperties": false
+      }
+    },
+    "items": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{2,63}$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "category": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,23}$"},
+          "kind": {
+            "enum": ["image", "movie"],
+            "description": "image — статичный ассет (cg/bg); movie — видео-луп (mov). Новые типы добавляются расширением enum, UI ветвится по kind."
+          },
+          "asset": {"$ref": "#/$defs/asset_ref"},
+          "variants": {
+            "type": "array",
+            "items": {"$ref": "#/$defs/asset_ref"},
+            "description": "Варианты одной CG (одежда/свет/поза): листаются внутри элемента, отдельными записями галереи не считаются"
+          },
+          "thumb": {
+            "anyOf": [{"$ref": "#/$defs/asset_ref"}, {"type": "null"}],
+            "description": "Превью. Для image по умолчанию берётся <asset>.thumb.webp из конвейера; для movie указывается явно (постер-кадр)"
+          },
+          "title_key": {"$ref": "#/$defs/loc_key"},
+          "desc_key": {"$ref": "#/$defs/loc_key"},
+          "chapter": {"type": "string", "pattern": "^ch\\d{2}$", "description": "Глава-владелец: группировка и порядок в сетке"},
+          "characters": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,23}$"},
+            "description": "Персонажи на кадре — для будущей фильтрации по персонажу"
+          },
+          "order": {"type": "integer", "description": "Порядок внутри категории; по умолчанию — по chapter+id"},
+          "nsfw": {"type": "boolean", "description": "18+ элемент: в SFW-флейворе не показывается и не разблокируется"},
+          "pack": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$", "description": "Пак-владелец (по умолчанию core); гейтится владением (G9)"},
+          "unlock": {
+            "type": "object",
+            "description": "Условие разблокировки: ровно один якорь. seen_image опирается на штатный persistent._seen_images движка (ручного кода нет), остальные — на реестр якорей, как достижения.",
+            "properties": {
+              "seen_image": {"const": true, "description": "Ассет показывался в игре (движковый _seen_images); только для kind: image"},
+              "scene": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$", "description": "Вход в сцену (vn.checkpoint)"},
+              "beat": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Именованный бит внутри сцены (vn.beat) — в т.ч. «просмотрел момент»"},
+              "var": {"type": "string", "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$", "description": "Переменная из Variable Registry (в т.ч. следствие выбора)"},
+              "equals": {"description": "Значение переменной (только с var; по умолчанию True)"},
+              "chapter_done": {"type": "string", "pattern": "^ch\\d{2}$", "description": "Глава пройдена до конца"},
+              "always": {"const": true, "description": "Доступно с самого начала (концепт-арт, бонусы)"}
+            },
+            "additionalProperties": false,
+            "oneOf": [
+              {"required": ["seen_image"]},
+              {"required": ["scene"]},
+              {"required": ["beat"]},
+              {"required": ["var"]},
+              {"required": ["chapter_done"]},
+              {"required": ["always"]}
+            ]
+          }
+        },
+        "required": ["category", "kind", "asset", "title_key", "unlock"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "categories", "items"],
+  "additionalProperties": false
+}

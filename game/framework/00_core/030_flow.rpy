@@ -11,15 +11,35 @@ init -999 python in vn:
     # ── Обвязка сцен (C15) ───────────────────────────────────────────────────
     def checkpoint(scene_id):
         """Вход в сцену: якорь восстановления позиции сейва (раздел 6) и
-        триггер достижений, привязанных к сцене."""
+        триггер достижений/галереи, привязанных к сцене."""
         renpy.store.vn_scene = scene_id
         renpy.store.vn_ach.check(scene_id=scene_id)
+        _gallery_notify(renpy.store.vn_gal.check(scene_id=scene_id))
 
     def beat(beat_id=None):
-        """Мелкий якорь внутри сцены: триггер достижений и точка расширения
-        для телеметрии/автотестов (фаза 2)."""
+        """Мелкий якорь внутри сцены: триггер достижений/галереи и точка
+        расширения для телеметрии/автотестов (фаза 2)."""
         if beat_id is not None:
             renpy.store.vn_ach.check(beat_id=beat_id)
+            _gallery_notify(renpy.store.vn_gal.check(beat_id=beat_id))
+
+    def chapter_done(chapter_id):
+        """Глава пройдена: якорь для галереи/достижений «за прохождение».
+        Зовётся обвязкой финальной сцены главы (компилятор) и вручную не нужен."""
+        renpy.store.vn_ach.check(beat_id="chapter_done:%s" % chapter_id)
+        _gallery_notify(renpy.store.vn_gal.check(chapter_done=chapter_id))
+
+    def _gallery_notify(opened):
+        """Уведомление о новом контенте галереи — через штатный notify-экран
+        (тот же канал, что у остальных сообщений; своей системы не вводим)."""
+        if not opened:
+            return
+        n = len(opened)
+        key = "ui.gallery.unlocked_one" if n == 1 else "ui.gallery.unlocked_many"
+        text = renpy.store.vn_loc.t(key)
+        if n > 1:
+            text = text.replace("[n]", str(n))
+        renpy.notify(text)
 
     def check_scene_stack():
         """Инвариант G7: глубина call-стека на границе сцены = 0."""
@@ -143,9 +163,30 @@ init -999 python in vn_qa:
         if slot:
             renpy.load(slot)    # не возвращается: контекст перезапускается, затем after_load
 
+    def autopilot_screens():
+        """VN_AUTOPILOT_SCREENS=gallery,preferences — показать перечисленные экраны
+        и снять по скриншоту. Проверка вёрстки меню/галереи в CI: движковый lint
+        не видит визуальных поломок, а прохождение сцен эти экраны не открывает."""
+        names = [s.strip() for s in
+                 os.environ.get("VN_AUTOPILOT_SCREENS", "").split(",") if s.strip()]
+        shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
+        for name in names:
+            try:
+                renpy.show_screen(name)
+                # show_screen лишь помечает экран к показу: кадр рисуется только
+                # интеракцией, а screenshot() пишет последний нарисованный кадр.
+                # Короткая пауза даёт кадр с уже показанным экраном.
+                renpy.pause(0.3)
+                if shots_dir:
+                    renpy.screenshot(os.path.join(shots_dir, "screen_%s.png" % name))
+                renpy.hide_screen(name)
+            except Exception as e:
+                vn_log("autopilot screen %s failed: %s" % (name, e))
+
     def autopilot_finish(reason):
         """Конец прогона: маркер результата + снапшот состояния + выход из процесса.
-        state.json позволяет корпусу проверить фактическую пост-миграционную схему."""
+        state.json позволяет корпусу проверить фактическую пост-миграционную схему,
+        а gallery.json — что разблокировка доехала до persistent (ADR-0010)."""
         shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
         if shots_dir:
             with open(os.path.join(shots_dir, "RESULT.txt"), "w", encoding="utf-8") as f:
@@ -157,6 +198,16 @@ init -999 python in vn_qa:
                     json.dump(vn_state.snapshot(), f, ensure_ascii=False, indent=1)
             except Exception as e:
                 vn_log("autopilot state dump failed: %s" % e)
+            try:
+                import json
+                from store import vn_gal
+                done, total = vn_gal.progress()
+                with open(os.path.join(shots_dir, "gallery.json"), "w", encoding="utf-8") as f:
+                    json.dump({"unlocked": done, "total": total,
+                               "ids": vn_gal.unlocked_ids()}, f,
+                              ensure_ascii=False, indent=1)
+            except Exception as e:
+                vn_log("autopilot gallery dump failed: %s" % e)
         renpy.quit(save=False)
 
 
@@ -183,6 +234,9 @@ label vn_scene_unavailable:
 
 label vn_end_of_content:
     if vn_qa.autopilot_active():
+        # Экраны меню/галереи снимаются ПЕРЕД выходом: к этому моменту
+        # разблокировки уже произошли, и в кадре видно фактическое состояние.
+        $ vn_qa.autopilot_screens()
         $ vn_qa.autopilot_finish("OK: vn_end_of_content")
     $ renpy.say(None, vn_loc.t("ui.flow.end_of_content"))
     $ renpy.full_restart()
