@@ -129,3 +129,35 @@ def test_gen_manifest_matches_schema(repo_root, tmp_path):
     reg = SchemaRegistry(repo_root / "tools" / "schemas")
     manifest = json.loads((gen / "manifest.json").read_text(encoding="utf-8"))
     assert reg.validate(manifest, "manifest.json") == []
+
+
+def test_doctor_detects_lfs_pointer_fonts(tmp_path):
+    """Чекаут без git-lfs кладёт указатель вместо шрифта — игра упала бы
+    в рантайме невнятной ошибкой; doctor обязан ловить это до запуска."""
+    from vn.doctor import _lfs_pointer_fonts
+
+    fonts = tmp_path / "game" / "fonts"
+    fonts.mkdir(parents=True)
+    # настоящий TTF (сигнатура sfnt 1.0)
+    (fonts / "Real.ttf").write_bytes(b"\x00\x01\x00\x00" + b"\x00" * 60)
+    # указатель LFS
+    (fonts / "Pointer.ttf").write_bytes(
+        b"version https://git-lfs.github.com/spec/v1\noid sha256:dead\nsize 1\n")
+    # мусор (обрезанная загрузка)
+    (fonts / "Broken.ttf").write_bytes(b"<!DOCTYPE html>")
+
+    bad, total = _lfs_pointer_fonts(tmp_path)
+    assert total == 3
+    assert sorted(bad) == ["Broken.ttf", "Pointer.ttf"]
+
+    # Здоровое дерево — пусто
+    (fonts / "Pointer.ttf").unlink()
+    (fonts / "Broken.ttf").unlink()
+    assert _lfs_pointer_fonts(tmp_path) == ([], 1)
+
+
+def test_doctor_font_check_noop_without_fonts_dir(tmp_path):
+    """Нет game/fonts — проверка молчит (не все чекауты её имеют)."""
+    from vn.doctor import _lfs_pointer_fonts
+
+    assert _lfs_pointer_fonts(tmp_path) == ([], 0)

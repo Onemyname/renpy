@@ -42,6 +42,30 @@ def sdk_version(sdk: Path) -> str | None:
     return None
 
 
+LFS_POINTER_MAGIC = b"version https://git-lfs.github.com/spec/v1"
+# Сигнатуры начала TrueType/OpenType: sfnt 1.0, 'true', 'ttcf', 'OTTO'
+FONT_MAGIC = (b"\x00\x01\x00\x00", b"true", b"ttcf", b"OTTO")
+
+
+def _lfs_pointer_fonts(root: Path) -> tuple[list[str], int]:
+    """(имена шрифтов, приехавших указателями LFS; всего шрифтов).
+    Проверка по содержимому — работает и без установленного git-lfs."""
+    fonts_dir = root / "game" / "fonts"
+    if not fonts_dir.is_dir():
+        return [], 0
+    bad, total = [], 0
+    for f in sorted(fonts_dir.glob("*.ttf")) + sorted(fonts_dir.glob("*.otf")):
+        total += 1
+        try:
+            head = f.open("rb").read(64)
+        except OSError:
+            bad.append(f.name)
+            continue
+        if head.startswith(LFS_POINTER_MAGIC) or not head.startswith(FONT_MAGIC):
+            bad.append(f.name)
+    return bad, total
+
+
 def run_doctor() -> int:
     checks: list[tuple[bool | None, str, str]] = []   # (ok | None=warn, заголовок, рецепт починки)
 
@@ -80,6 +104,17 @@ def run_doctor() -> int:
         local_storage = root / ".vnstorage.local.yaml"
         if local_storage.is_file():
             checks.append((None, "локальное переопределение .vnstorage.local.yaml активно", ""))
+
+        # Шрифты UI хранятся в LFS (.gitattributes: *.ttf). Чекаут без git-lfs
+        # кладёт вместо бинаря текстовый указатель — игра падает в рантайме с
+        # невнятной ошибкой шрифта. Ловим здесь: bootstrap не пустит дальше.
+        bad_fonts, n_fonts = _lfs_pointer_fonts(root)
+        if n_fonts:
+            checks.append((not bad_fonts,
+                           f"шрифты UI: {n_fonts - len(bad_fonts)}/{n_fonts} материализованы"
+                           + (f" (указатели LFS: {', '.join(bad_fonts)})" if bad_fonts else ""),
+                           "git lfs install && git lfs pull — файлы приехали "
+                           "указателями, а не шрифтами" if bad_fonts else ""))
 
     # С главами в content/ SDK перестаёт быть опциональным: компиляция сцен идёт
     # через build-bridge (тёплый кэш анализа может маскировать отсутствие SDK).
