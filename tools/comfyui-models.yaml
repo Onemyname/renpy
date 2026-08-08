@@ -20,7 +20,8 @@ models:
     source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_high_noise_14B_fp8_scaled.safetensors
     size_mb: 13633
     sha256: null
-    license: Apache-2.0
+    license: "Apache-2.0"
+    commercial_use: allowed
     auth: none
     required: true
     role: "Wan 2.2 I2V, high-noise эксперт (первая половина шагов)"
@@ -31,7 +32,8 @@ models:
     source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/diffusion_models/wan2.2_i2v_low_noise_14B_fp8_scaled.safetensors
     size_mb: 13633
     sha256: null
-    license: Apache-2.0
+    license: "Apache-2.0"
+    commercial_use: allowed
     auth: none
     required: true
     role: "Wan 2.2 I2V, low-noise эксперт (вторая половина шагов)"
@@ -42,7 +44,8 @@ models:
     source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors
     size_mb: 6424
     sha256: null
-    license: Apache-2.0
+    license: "Apache-2.0"
+    commercial_use: allowed
     auth: none
     required: true
     role: "Текст-энкодер UMT5-XXL для Wan"
@@ -53,7 +56,8 @@ models:
     source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/vae/wan_2.1_vae.safetensors
     size_mb: 242
     sha256: null
-    license: Apache-2.0
+    license: "Apache-2.0"
+    commercial_use: allowed
     auth: none
     required: true
     role: "VAE Wan 2.1 (14B-модели Wan 2.2 используют его же)"
@@ -65,7 +69,8 @@ models:
     source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_high_noise.safetensors
     size_mb: 1170
     sha256: null
-    license: Apache-2.0
+    license: "Apache-2.0"
+    commercial_use: allowed
     auth: none
     required: true
     role: "LightX2V 4-step LoRA (high-noise)"
@@ -76,7 +81,8 @@ models:
     source: https://huggingface.co/Comfy-Org/Wan_2.2_ComfyUI_Repackaged/resolve/main/split_files/loras/wan2.2_i2v_lightx2v_4steps_lora_v1_low_noise.safetensors
     size_mb: 1170
     sha256: null
-    license: Apache-2.0
+    license: "Apache-2.0"
+    commercial_use: allowed
     auth: none
     required: true
     role: "LightX2V 4-step LoRA (low-noise)"
@@ -88,7 +94,8 @@ models:
     source: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
     size_mb: 64
     sha256: null
-    license: BSD-3-Clause
+    license: "BSD-3-Clause"
+    commercial_use: allowed
     auth: none
     required: false
     role: "4x-апскейлер рендеров и кадров видео"
@@ -100,7 +107,9 @@ models:
     source: https://huggingface.co/fancyfeast/big-asp-v2/resolve/main/cuwm1gxo-complete-20241024a.safetensors
     size_mb: 6617
     sha256: null
-    license: null   # SDXL-производная (OpenRAIL++); условия — в карточке модели на HF
+    license: "CreativeML-OpenRAIL-M (SDXL-производная)"
+    commercial_use: restricted
+    nsfw_terms_url: https://huggingface.co/fancyfeast/big-asp-v2
     auth: none
     required: false
     role: "bigASP v2 — NSFW-фотореал SDXL для img2img-полировки DAZ-рендеров"
@@ -114,7 +123,9 @@ models:
     source: https://civitai.com/api/download/models/2073605
     size_mb: 585
     sha256: null
-    license: null   # per-model лицензия на странице Civitai — принять при получении ключа
+    license: "Civitai per-model terms"
+    commercial_use: unknown
+    nsfw_terms_url: https://civitai.com/models/1307155
     auth: civitai_key
     required: false
     role: "Универсальная NSFW-motion LoRA (high-noise), контент 18+"
@@ -125,7 +136,9 @@ models:
     source: https://civitai.com/api/download/models/2083303
     size_mb: 585
     sha256: null
-    license: null
+    license: "Civitai per-model terms"
+    commercial_use: unknown
+    nsfw_terms_url: https://civitai.com/models/1307155
     auth: civitai_key
     required: false
     role: "Универсальная NSFW-motion LoRA (low-noise), контент 18+"
