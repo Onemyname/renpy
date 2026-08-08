@@ -100,3 +100,25 @@ def test_video_budget_failures(tmp_path):
     assert any("big.webm" in f and "на файл" in f for f in failures)
     # 2 МБ < video_total_mb: 10 — суммарный бюджет не нарушен
     assert not any("game/assets/mov:" in f for f in failures)
+
+
+def test_release_gate_fails_on_lfs_pointer_fonts(tmp_path):
+    """Битый LFS-чекаут не должен превращаться в падающий у игрока дистрибутив:
+    гейт обязан валить сборку, даже если конфигурация CI разъехалась."""
+    from vn.doctor import _lfs_pointer_fonts
+
+    root = _mk_root(tmp_path)
+    fonts = root / "game" / "fonts"
+    fonts.mkdir(parents=True)
+    (fonts / "Ok.ttf").write_bytes(b"\x00\x01\x00\x00" + b"\x00" * 60)
+    (fonts / "Ptr.ttf").write_bytes(
+        b"version https://git-lfs.github.com/spec/v1\noid sha256:x\nsize 1\n")
+
+    bad, total = _lfs_pointer_fonts(root)
+    assert total == 2 and bad == ["Ptr.ttf"]
+
+    # Та же функция питает и vn doctor, и релизный гейт — один источник истины
+    # (иначе одна из проверок разойдётся с другой и снова пропустит указатель).
+    from vn import release as rel
+    import inspect
+    assert "_lfs_pointer_fonts" in inspect.getsource(rel.validate_release)

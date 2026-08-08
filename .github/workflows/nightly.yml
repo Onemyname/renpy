@@ -19,6 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        # lfs: шрифты UI лежат в LFS; checkout БЕЗ этого
+        # кладёт указатели -> сборка падает FreetypeError у игрока
+        with: {lfs: true}
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
       - run: pip install --quiet -e "tools/vn[dev]"

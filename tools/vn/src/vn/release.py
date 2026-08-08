@@ -286,6 +286,21 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     add("FAIL" if rep.errors else "PASS",
         f"lint: {len(rep.errors)} ошибок, {len(rep.warnings)} предупреждений")
 
+    # Шрифты — не производная зона: если чекаут пришёл без LFS-объектов, в
+    # дистрибутив уедут указатели и игра упадёт FreetypeError на первом же
+    # экране. Гейт обязан ловить это ЗДЕСЬ: конфигурация CI может разъехаться,
+    # а артефакт обязан оставаться рабочим.
+    from .doctor import _lfs_pointer_fonts
+
+    bad_fonts, n_fonts = _lfs_pointer_fonts(root)
+    if not n_fonts:
+        add("WARN", "шрифты UI: game/fonts пуст — UI будет на системном шрифте")
+    else:
+        add("FAIL" if bad_fonts else "PASS",
+            f"шрифты UI: {n_fonts - len(bad_fonts)}/{n_fonts} материализованы"
+            + (f" — УКАЗАТЕЛИ LFS: {', '.join(bad_fonts)}; "
+               f"checkout без lfs:true даст падающую сборку" if bad_fonts else ""))
+
     from .assets.pipeline import build_assets
 
     ares = build_assets(root, check=True)
