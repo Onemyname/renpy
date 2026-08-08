@@ -79,20 +79,61 @@ def comfyui_python(comfy: Path) -> Path | None:
     return venv if venv.is_file() else None
 
 
+def _dim_settings() -> dict:
+    """Пути из конфигов DAZ Install Manager: DIM может ставить и приложение,
+    и контент куда угодно — хардкод Program Files слеп. Пути установки живут
+    в per-account настройках (UserAccounts/*.ini), не в AppSettings.ini."""
+    im_dir = Path(os.environ.get("APPDATA", "")) / "DAZ 3D" / "InstallManager"
+    result: dict[str, str] = {}
+    if not im_dir.is_dir():
+        return result
+    inis = sorted((im_dir / "UserAccounts").glob("*.ini")) + [
+        im_dir / "Settings" / "AppSettings.ini"]
+    for ini in inis:
+        if not ini.is_file():
+            continue
+        for line in ini.read_text(encoding="utf-8", errors="replace").splitlines():
+            key, _, value = line.partition("=")
+            if value and key.strip() not in result:
+                result[key.strip()] = value.strip()
+    return result
+
+
 def daz_studio_path() -> Path | None:
-    candidates = [Path(r"C:\Program Files\DAZ 3D\DAZStudio4 64-bit\DAZStudio.exe")]
+    candidates: list[Path] = []
+    dim = _dim_settings()
+    for key in ("Software64Path", "Software32Path"):
+        base = dim.get(key)
+        if base:
+            candidates += sorted(Path(base).glob("DAZ 3D/DAZStudio*/DAZStudio.exe"),
+                                 reverse=True)   # свежая версия первой
     if sys.platform == "win32":
         try:
             import winreg
 
-            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\DAZ\Studio4") as k:
-                install, _ = winreg.QueryValueEx(k, "InstallPath")
-                candidates.insert(0, Path(install) / "DAZStudio.exe")
-        except OSError:
+            for studio in ("Studio6", "Studio5", "Studio4"):
+                try:
+                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                        rf"SOFTWARE\DAZ\{studio}") as k:
+                        install, _ = winreg.QueryValueEx(k, "InstallPath")
+                        candidates.append(Path(install) / "DAZStudio.exe")
+                except OSError:
+                    continue
+        except ImportError:
             pass
+    candidates += [Path(rf"C:\Program Files\DAZ 3D\DAZStudio{v} 64-bit\DAZStudio.exe")
+                   for v in ("6", "5", "4")]
     for c in candidates:
         if c.is_file():
             return c
+    return None
+
+
+def daz_content_library() -> Path | None:
+    """Контентная библиотека по конфигу DIM (CurInstallPath)."""
+    cur = _dim_settings().get("CurInstallPath")
+    if cur and Path(cur).is_dir():
+        return Path(cur)
     return None
 
 
@@ -376,6 +417,11 @@ def run_pipeline_doctor(root: Path, comfy_opt: str | None = None) -> int:
     _check(checks, "PASS" if daz else "WARN",
            f"DAZ Studio: {daz or 'не найден'}",
            "" if daz else "tools/install-daz.ps1 + docs/pipeline/phase-0.md (ручные шаги)")
+    if daz:
+        lib = daz_content_library()
+        _check(checks, "PASS" if lib else "WARN",
+               f"библиотека DAZ: {lib or 'не найдена в конфиге DIM'}",
+               "" if lib else "DIM -> Settings -> Installation: путь контента")
 
     seen_drives = set()
     for label, p in (("репозиторий", root), ("модели", comfy)):

@@ -37,14 +37,31 @@ Write-Host "=== DAZ Studio bootstrap ===" -ForegroundColor Cyan
 
 # ── 1. Детекция установленного ────────────────────────────────────────────────
 $studioExe = $null
-$studioCandidates = @(
+$studioCandidates = @()
+# Пути из конфигов DIM: приложение может стоять где угодно (например на D:);
+# Software64Path живёт в per-account настройках, не в AppSettings.ini
+$dimInis = @(Get-ChildItem "$env:APPDATA\DAZ 3D\InstallManager\UserAccounts\*.ini" -ErrorAction SilentlyContinue) +
+           @("$env:APPDATA\DAZ 3D\InstallManager\Settings\AppSettings.ini")
+foreach ($dimIni in $dimInis) {
+    if ($dimIni -and (Test-Path $dimIni)) {
+        $m = Select-String -Path $dimIni -Pattern "^Software64Path=(.+)$" | Select-Object -First 1
+        if ($m) {
+            $sw = $m.Matches.Groups[1].Value
+            $studioCandidates += Get-ChildItem "$sw\DAZ 3D\DAZStudio*\DAZStudio.exe" -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -ExpandProperty FullName
+        }
+    }
+}
+foreach ($v in "Studio6","Studio5","Studio4") {
+    try {
+        $reg = Get-ItemProperty "HKLM:\SOFTWARE\DAZ\$v" -ErrorAction Stop
+        if ($reg.InstallPath) { $studioCandidates += (Join-Path $reg.InstallPath "DAZStudio.exe") }
+    } catch {}
+}
+$studioCandidates += @(
+    "C:\Program Files\DAZ 3D\DAZStudio6 64-bit\DAZStudio.exe",
     "C:\Program Files\DAZ 3D\DAZStudio4 64-bit\DAZStudio.exe"
 )
-try {
-    $reg = Get-ItemProperty "HKLM:\SOFTWARE\DAZ\Studio4" -ErrorAction SilentlyContinue
-    if ($reg -and $reg.InstallPath) { $studioCandidates += (Join-Path $reg.InstallPath "DAZStudio.exe") }
-} catch {}
-foreach ($c in $studioCandidates) { if (Test-Path $c) { $studioExe = $c; break } }
+foreach ($c in $studioCandidates) { if ($c -and (Test-Path $c)) { $studioExe = $c; break } }
 
 $dim = $null
 foreach ($c in @("C:\Program Files (x86)\DAZ 3D\DAZ3DIM1\DAZ3DIM.exe",
