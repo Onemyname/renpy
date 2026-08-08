@@ -12,7 +12,7 @@ id и ВЕРСИЯ конкретной трансформации + профи�
   assets_src/png/characters/<key>/<pose>/overlays/<name>.png
   assets_src/png/backgrounds/<location>/<variant>.png
   assets_src/png/cg/<...>/<name>.png                     # CG-стиллы (DAZ-рендеры, ADR-0006)
-  assets_src/audio/{bgm,amb,sfx}/<id>.ogg
+  assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg
   assets_src/video_src/<group>/<name>.(mp4|mov|mkv|webm|m4v|avi)   # видео (ADR-0006)
 Выходы:
   game/assets/spr/<key>/<pose>/{base@2.webp, outfits/<o>@2.webp, faces/<e>@2.webp, overlays/<n>@2.webp}
@@ -156,14 +156,16 @@ def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str, d
             jobs.append((f, "png2webp_cg", base + ".webp", None))
             jobs.append((f, "png2webp_cg_thumb", base + ".thumb.webp", None))
 
-    audio = root / "assets_src" / "audio"
+    # Зона звука — audio_stems (ARCHITECTURE.md:393, conventions/folder-layout.md:29):
+    # имя нормативное, менять его пришлось бы через ADR, поэтому код идёт к норме.
+    audio = root / "assets_src" / "audio_stems"
     if audio.is_dir():
         for kind in ("bgm", "amb", "sfx"):
             kdir = audio / kind
             if not kdir.is_dir():
                 continue
             for f in sorted(kdir.glob("*.ogg")):
-                if not _check_slug(rep, f"assets_src/audio/{kind}/{f.name}", f.stem):
+                if not _check_slug(rep, f"assets_src/audio_stems/{kind}/{f.name}", f.stem):
                     continue
                 jobs.append((f, "copy_audio", f"audio/{kind}/{f.name}", None))
 
@@ -436,9 +438,20 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
             if _branch(info) not in effective_only and out_rel not in final_outputs:
                 final_outputs[out_rel] = info
 
+    manifest = {"schema": "assets_manifest@1", "outputs": final_outputs}
+    # G16: объявленный id схемы проверяем на живом документе — иначе расхождение
+    # писателя и схемы всплывёт у читателя (cache_gc, --check) уже в виде мусора.
+    # Реестра нет только у синтетических корней (тесты) — там сверять не с чем.
+    schemas_dir = root / "tools" / "schemas"
+    if schemas_dir.is_dir():
+        from ..schemas import SchemaRegistry
+
+        rep.errors.extend(
+            SchemaRegistry(schemas_dir).validate(manifest, f".vncache/{MANIFEST}"))
+    # Пишем даже при ошибке схемы: манифест описывает то, что уже лежит на диске,
+    # и без записи следующая сборка потеряет точечную очистку сирот.
     _write_atomic(manifest_path, (json.dumps(
-        {"schema": "assets_manifest@1", "outputs": final_outputs},
-        ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+        manifest, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8"))
     return rep
 
 

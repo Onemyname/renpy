@@ -49,6 +49,42 @@ def test_build_transforms_and_caches(tmp_path):
     assert res3.built == []
 
 
+def test_audio_stems_branch_copies_ogg(tmp_path):
+    """Зона звука — assets_src/audio_stems/ (ARCHITECTURE.md:393, folder-layout.md:29):
+    конвейер обязан смотреть именно туда, иначе ветка copy_audio мертва и звук
+    не попадает в игру никаким путём."""
+    root = _mk_root(tmp_path)
+    src = root / "assets_src" / "audio_stems" / "bgm" / "market_theme.ogg"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"OggS-not-really-but-copy_audio-is-bytewise")
+
+    res = build_assets(root)
+    assert res.errors == []
+    assert res.built == ["audio/bgm/market_theme.ogg"]
+    out = root / "game/assets/audio/bgm/market_theme.ogg"
+    assert out.is_file()
+    assert out.read_bytes() == src.read_bytes()   # copy_audio копирует байт в байт
+
+
+def test_manifest_matches_registered_schema(tmp_path, repo_root):
+    """G16: манифест объявляет assets_manifest@1 — документ обязан проходить схему
+    из реестра (иначе объявление — пустая строка, а читатели манифеста слепы)."""
+    from vn.schemas import SchemaRegistry
+
+    root = _mk_root(tmp_path)
+    ch = root / "assets_src" / "png" / "characters" / "mira" / "a"
+    _png(ch / "base.png", color=(11, 22, 33, 255))
+    (root / "assets_src" / "audio_stems" / "sfx").mkdir(parents=True)
+    (root / "assets_src" / "audio_stems" / "sfx" / "door.ogg").write_bytes(b"sfx-bytes")
+    assert build_assets(root).errors == []
+
+    doc = json.loads((root / ".vncache" / "assets-manifest.json").read_text(encoding="utf-8"))
+    assert doc["schema"] == "assets_manifest@1"
+    assert "audio/sfx/door.ogg" in doc["outputs"]
+    reg = SchemaRegistry(repo_root / "tools" / "schemas")
+    assert reg.validate(doc, "assets-manifest.json") == []
+
+
 def test_orphan_output_cleanup(tmp_path):
     root = _mk_root(tmp_path)
     ch = root / "assets_src" / "png" / "characters" / "mira" / "a"

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/assets_manifest@1",
+  "title": "assets_manifest@1 — манифест ассет-конвейера (.vncache/assets-manifest.json, генерат)",
+  "description": "Что и чем собрано в game/assets/. Контракт инкрементальности (G13): по диффу с прошлым манифестом конвейер решает, что пересобрать и какие выходы осиротели, а cache_gc восстанавливает из записей ключи живых блобов кэша.",
+  "type": "object",
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{16,64}$", "description": "blake3-хеш в hex"}
+  },
+  "properties": {
+    "schema": {"const": "assets_manifest@1"},
+    "outputs": {
+      "type": "object",
+      "description": "Ключ — путь выхода относительно game/assets/ (спрайты несут суффикс @2, видео — соседний .webm.meta.json)",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_@./]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "src": {"type": "string", "description": "Путь сырца относительно корня репозитория; у ui_panel — файл деклараций"},
+          "src_hash": {"$ref": "#/$defs/hash", "description": "Хеш источника: у видео — сырец+сайдкар, у ui_panel — параметры панели, а не весь файл"},
+          "out_hash": {"$ref": "#/$defs/hash", "description": "Хеш записанного файла в game/assets/"},
+          "transform": {"type": "string", "pattern": "^[a-z][a-z0-9_]*@\\d+$", "description": "<имя>@<версия> трансформации (TRANSFORMS в pipeline.py); версия участвует в ключе кэша"},
+          "profile": {"enum": ["full", "draft"], "description": "Профиль энкода — часть ключа кэша: draft и full не подменяют друг друга"}
+        },
+        "required": ["src", "src_hash", "out_hash", "transform", "profile"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "outputs"],
+  "additionalProperties": false
+}
