@@ -2,8 +2,8 @@
 # меток + crash-репорт в savedir. Первые эшелоны — shim-метки компилятора (G7)
 # и сейв-миграции (G5); этот код работает, когда не спасло ничто.
 #
-# Разделение обязанностей: config.exception_handler здесь только ПИШЕТ отчёт и
-# возвращает False (=не обработано) — показ экрана остаётся движку, который
+# Разделение обязанностей: config.exception_handler здесь только ЛОГИРУЕТ, ПИШЕТ
+# отчёт и возвращает False (=не обработано) — показ экрана остаётся движку, который
 # берёт наш брендированный screen _exception (20_ui/screens/crash_screen.rpy)
 # со штатными безопасными действиями rollback/ignore/reload.
 
@@ -35,8 +35,21 @@ init -950 python:
 
     def vn_crash_write_report(te):
         """config.exception_handler (8.4+: один аргумент TracebackException).
+        Единственный обработчик в проекте (см. 001_boot.rpy: второй там был мёртв).
         Любая ошибка внутри глотается: репортер не имеет права добить игру
         вторым исключением."""
+        # Строка в log.txt пишется первой и отдельным try: разбор начинается с
+        # `grep "\[vn\]" log.txt`, и факт падения не должен пропасть, если savedir
+        # недоступен (нет прав, диск полон) и отчёт записать не удастся.
+        try:
+            # Берём последнюю непустую строку — это «Тип: сообщение», самое
+            # информативное, что влезает в строку лога; первая строка te.simple —
+            # лишь контекст движка («While running game code»).
+            brief = getattr(te, "simple", None) or getattr(te, "full", None) or str(te)
+            lines = [ln.strip() for ln in brief.splitlines() if ln.strip()]
+            vn_log("unhandled exception: %s" % (lines[-1] if lines else "?"))
+        except Exception:
+            pass
         try:
             crash_dir = _vn_crash_dir()
             path = os.path.join(crash_dir,

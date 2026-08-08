@@ -38,9 +38,12 @@ init -999 python:
     # ── Последний эшелон обороны (G7) ────────────────────────────────────────
     # config-хука «перехват jump на несуществующую метку» в Ren'Py не существует;
     # основная защита — shim-метки из generated/registry/overrides.gen.rpy.
-    # Здесь — только перехват необработанного ScriptError: не даём игре упасть.
-    def _vn_exception_handler(short, full, traceback_fn):
-        vn_log("unhandled exception: %s" % (short.splitlines()[0] if short else "?"))
-        return False    # False = показать стандартный экран ошибки (dev); фаза 2: свой экран
-
-    config.exception_handler = _vn_exception_handler
+    #
+    # Обработчика необработанных исключений здесь НЕТ и заводить второй не надо:
+    # config.exception_handler — одно поле, и побеждает последнее присваивание.
+    # Свой обработчик тут (init -999) молча затирался бы крэш-репортером
+    # vn_crash_write_report из 070_crash.rpy (init -950) — ровно так и было,
+    # мёртвый код с устаревшей трёхаргументной сигнатурой. Единственный
+    # обработчик живёт в 070_crash.rpy: пишет строку "[vn] unhandled exception: …"
+    # в log.txt, crash-отчёт в savedir и возвращает False, чтобы движок показал
+    # брендированный screen _exception.
