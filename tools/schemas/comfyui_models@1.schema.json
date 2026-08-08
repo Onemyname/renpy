@@ -17,7 +17,7 @@
           "size_mb": {"type": ["number", "null"], "minimum": 0, "description": "Ориентировочный размер; фактический размер и sha256 фиксируются загрузчиком в <models>/.vn-models.json"},
           "sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
           "license": {"type": ["string", "null"]},
-          "auth": {"enum": ["none", "manual"], "description": "manual = требуется логин/принятие лицензии/выбор версии — загрузчик останавливается на этом шаге и объясняет, что сделать (обходить запрещено)"},
+          "auth": {"enum": ["none", "civitai_key", "manual"], "description": "civitai_key = качается с API-ключом пользователя из env CIVITAI_API_KEY (без ключа — печатается инструкция); manual = требуется логин/принятие лицензии/выбор версии — загрузчик останавливается на этом шаге и объясняет, что сделать (обходить запрещено)"},
           "required": {"type": "boolean", "description": "true = без модели базовый видео-конвейер не работает"},
           "role": {"type": "string"}
         },

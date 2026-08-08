@@ -180,21 +180,29 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _download(url: str, dest: Path) -> None:
+def _download(url: str, dest: Path, headers: list[str] | None = None) -> None:
     """curl с докачкой (-C -), фоллбек на urllib. Пишем в .part: обрезанный файл
-    никогда не выглядит готовой моделью."""
+    никогда не выглядит готовой моделью. headers — например Authorization
+    для Civitai (ключ пользователя, значение в логи не попадает)."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
     curl = shutil.which("curl")
     if curl:
-        proc = subprocess.run([curl, "-L", "--fail", "--retry", "3", "--retry-delay", "5",
-                               "-C", "-", "-o", str(part), url])
+        cmd = [curl, "-L", "--fail", "--retry", "3", "--retry-delay", "5",
+               "-C", "-", "-o", str(part)]
+        for h in headers or []:
+            cmd += ["-H", h]
+        proc = subprocess.run(cmd + [url])
         if proc.returncode != 0:
             raise PipelineError(f"curl вернул код {proc.returncode}: {url}")
     else:
         import urllib.request
         try:
-            with urllib.request.urlopen(url) as r, part.open("wb") as f:
+            req = urllib.request.Request(url)
+            for h in headers or []:
+                name, _, value = h.partition(":")
+                req.add_header(name.strip(), value.strip())
+            with urllib.request.urlopen(req) as r, part.open("wb") as f:
                 shutil.copyfileobj(r, f, length=1 << 20)
         except OSError as e:
             raise PipelineError(f"загрузка не удалась ({e}): {url}") from e
@@ -211,7 +219,7 @@ def pull_models(root: Path, comfy: Path | None, only: set[str] | None = None,
     models_root = _models_root(comfy)
     entries = load_models_manifest(root)
     lock = _load_lock(models_root)
-    failures, manual = 0, []
+    failures, manual, needs_key = 0, [], []
     for entry in entries:
         if only is not None and entry["id"] not in only:
             continue
@@ -224,10 +232,22 @@ def pull_models(root: Path, comfy: Path | None, only: set[str] | None = None,
         if entry["auth"] == "manual":
             manual.append(entry)
             continue
+        headers = None
+        if entry["auth"] == "civitai_key":
+            key = os.environ.get("CIVITAI_API_KEY")
+            if not key:
+                click.secho(f"  нужен ключ: {entry['id']} — Civitai отдаёт файл только "
+                            f"с API-ключом вашего аккаунта", fg="yellow")
+                click.echo("    1) войдите на civitai.com -> Account Settings -> API Keys -> Add API key")
+                click.echo("    2) setx CIVITAI_API_KEY <ключ>   (и перезапустите терминал)")
+                click.echo("    3) повторите: vn pipeline models --pull")
+                needs_key.append(entry)
+                continue
+            headers = [f"Authorization: Bearer {key}"]
         size = f" (~{entry['size_mb']:.0f} МБ)" if entry.get("size_mb") else ""
         click.secho(f"  скачиваю: {entry['id']}{size} -> models/{entry['dest']}", fg="cyan")
         try:
-            _download(entry["source"], models_root / entry["dest"])
+            _download(entry["source"], models_root / entry["dest"], headers=headers)
         except PipelineError as e:
             click.secho(f"  ошибка: {entry['id']}: {e}", fg="red")
             failures += 1
@@ -256,7 +276,8 @@ def pull_models(root: Path, comfy: Path | None, only: set[str] | None = None,
     if failures:
         click.secho(f"models: {failures} загрузок не удалось", fg="red")
         return 1
-    click.secho("models: OK" + (f" ({len(manual)} ручных шагов осталось)" if manual else ""),
+    remaining = len(manual) + len(needs_key)
+    click.secho("models: OK" + (f" ({remaining} ручных шагов осталось)" if remaining else ""),
                 fg="green")
     return 0
 

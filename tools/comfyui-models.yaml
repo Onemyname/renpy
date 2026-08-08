@@ -93,25 +93,39 @@ models:
     required: false
     role: "4x-апскейлер рендеров и кадров видео"
 
-  # ── Ручные шаги: аккаунт/лицензия Civitai — обходить запрещено ──────────────
+  # ── SDXL-фотореал: bigASP v2 — официальная выкладка автора (fancyfeast) ─────
   - id: sdxl_photoreal
     kind: checkpoints
-    dest: checkpoints/sdxl_photoreal.safetensors
-    source: https://civitai.com/  # выбрать фотореал-SDXL (bigASP / RealVisXL и т.п.) под стиль проекта
-    size_mb: 6900
+    dest: checkpoints/bigasp_v2.safetensors
+    source: https://huggingface.co/fancyfeast/big-asp-v2/resolve/main/cuwm1gxo-complete-20241024a.safetensors
+    size_mb: 6617
     sha256: null
-    license: null
-    auth: manual
+    license: null   # SDXL-производная (OpenRAIL++); условия — в карточке модели на HF
+    auth: none
     required: false
-    role: "SDXL-фотореал для img2img-полировки DAZ-рендеров (снятие «пластика»)"
+    role: "bigASP v2 — NSFW-фотореал SDXL для img2img-полировки DAZ-рендеров"
 
-  - id: wan22_nsfw_lora
+  # ── NSFW-motion LoRA для Wan 2.2 I2V (Civitai, нужен API-ключ аккаунта 18+) ──
+  # «WAN General NSFW model» (https://civitai.com/models/1307155): у Wan 2.2 A14B
+  # LoRA всегда ПАРОЙ — high-noise на первый эксперт, low-noise на второй.
+  - id: wan22_nsfw_general_high
     kind: loras
-    dest: loras/wan22_nsfw_i2v.safetensors
-    source: https://civitai.com/  # NSFW-LoRA под Wan 2.2 I2V: требуется аккаунт 18+ и принятие лицензии конкретной модели
-    size_mb: null
+    dest: loras/wan22_nsfw_general_high.safetensors
+    source: https://civitai.com/api/download/models/2073605
+    size_mb: 585
+    sha256: null
+    license: null   # per-model лицензия на странице Civitai — принять при получении ключа
+    auth: civitai_key
+    required: false
+    role: "Универсальная NSFW-motion LoRA (high-noise), контент 18+"
+
+  - id: wan22_nsfw_general_low
+    kind: loras
+    dest: loras/wan22_nsfw_general_low.safetensors
+    source: https://civitai.com/api/download/models/2083303
+    size_mb: 585
     sha256: null
     license: null
-    auth: manual
+    auth: civitai_key
     required: false
-    role: "NSFW-motion LoRA для Wan 2.2 (контент 18+)"
+    role: "Универсальная NSFW-motion LoRA (low-noise), контент 18+"

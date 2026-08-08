@@ -1309,7 +1309,8 @@ def pipeline_models(pull: bool, include_optional: bool, only: str | None, comfy_
         e = st.entry
         size = f"{st.actual_mb:.0f} МБ" if st.actual_mb else (
             f"~{e['size_mb']:.0f} МБ" if e.get("size_mb") else "?")
-        note = "" if e["auth"] == "none" else " [ручная установка]"
+        note = {"none": "", "civitai_key": " [нужен CIVITAI_API_KEY]",
+                "manual": " [ручная установка]"}.get(e["auth"], "")
         req = "" if e["required"] else " (опц.)"
         click.secho(f" {mark} {e['id']:<22} {size:>10}  models/{e['dest']}{req}{note}",
                     fg=color)
