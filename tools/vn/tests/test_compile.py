@@ -13,6 +13,7 @@ BASE_OUTPUTS = {
     "state/defaults.gen.rpy",
     "state/snapshot.gen.rpy",
     "state/migrations.gen.rpy",
+    "registry/achievements.gen.rpy",
     "registry/audio.gen.rpy",
     "registry/chapters.gen.rpy",
     "registry/scenes.gen.rpy",

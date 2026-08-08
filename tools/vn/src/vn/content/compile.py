@@ -111,6 +111,31 @@ def _emit_defaults(project: dict, var_docs: list[tuple[str, dict]], sources) -> 
     return "\n".join(out) + "\n"
 
 
+def _emit_achievements(ach_docs: list[tuple[str, dict]], sources) -> str:
+    """Реестр достижений (achievements@1): данные для рантайма vn_ach.
+    Привязка — к стабильным якорям (scene/beat/var), не к тексту сцен."""
+    rows: dict[str, dict] = {}
+    for _rel, doc in sorted(ach_docs):
+        for aid, spec in sorted((doc.get("achievements") or {}).items()):
+            trigger = dict(spec["trigger"])
+            if "var" in trigger and "equals" not in trigger:
+                trigger["equals"] = True
+            rows[aid] = {
+                "name_key": spec["name_key"],
+                "desc_key": spec.get("desc_key"),
+                "hidden": bool(spec.get("hidden", False)),
+                "nsfw": bool(spec.get("nsfw", False)),
+                "pack": spec.get("pack", "core"),
+                "trigger": trigger,
+            }
+    return _header(sources) + (
+        "init offset = -100\n\n"
+        "# Achievement Registry (achievements@1): читается store vn_ach\n"
+        "# (framework/00_core/080_achievements.rpy). Выдача — по стабильным якорям.\n"
+        f"define VN_ACHIEVEMENTS = {rows!r}\n"
+    )
+
+
 def _emit_audio(audio_docs: list[tuple[str, dict]], sources) -> str:
     out = [_header(sources), "init offset = 500\n"]
     n = 0
@@ -436,6 +461,20 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         var_docs.append((rel, load_yaml(f)))
         var_sources.append((rel, inputs[rel]))
 
+    # Достижения (achievements@1): опциональная зона content/achievements/
+    ach_docs, ach_sources = [], []
+    ach_dir = root / "content" / "achievements"
+    if ach_dir.is_dir():
+        for f in sorted(ach_dir.glob("*.yaml")):
+            rel, _d = src(f)
+            doc = load_yaml(f)
+            a_errs = registry.validate(doc, rel)
+            if a_errs:
+                errors.extend(a_errs)
+                continue
+            ach_docs.append((rel, doc))
+            ach_sources.append((rel, inputs[rel]))
+
     # Аудио
     audio_docs, audio_sources = [], []
     audio_dir = root / "content" / "audio"
@@ -557,6 +596,45 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
                 if s not in ch_scenes:
                     complain.append(f"{c['id']}: scene_order: сцена {s} не существует")
 
+    # Якоря достижений обязаны существовать: ачивка на удалённую сцену или
+    # опечатанную переменную никогда не выдастся — это тихий мёртвый контент.
+    if ach_docs:
+        known_scene_ids = {u.full_id for u in units}
+        known_chapters = {u.chapter_id for u in units}
+        known_packs = set(packs) | {"core"}
+        for arel, adoc in ach_docs:
+            for aid, spec in sorted((adoc.get("achievements") or {}).items()):
+                trigger = spec.get("trigger") or {}
+                # Глава якоря отсутствует в сборке целиком — это частичная/пак-сборка,
+                # а не опечатка: предупреждаем. Глава есть, а сцены/переменной нет —
+                # ошибка (ачивка никогда не выдастся).
+                if "scene" in trigger and trigger["scene"] not in known_scene_ids:
+                    ch_of_scene = trigger["scene"][:4]
+                    msg = (f"{arel}: достижение {aid}: сцены {trigger['scene']} "
+                           f"не существует")
+                    if ch_of_scene in known_chapters:
+                        scene_rep.errors.append(msg)
+                    else:
+                        result.warnings.append(msg + " (главы нет в этой сборке)")
+                if "var" in trigger and trigger["var"] not in var_registry:
+                    store_name = trigger["var"].split(".", 1)[0]
+                    msg = (f"{arel}: достижение {aid}: переменной {trigger['var']} "
+                           f"нет в Variable Registry")
+                    if not store_name.startswith("ch") or store_name in known_chapters:
+                        scene_rep.errors.append(msg)
+                    else:
+                        result.warnings.append(msg + " (главы нет в этой сборке)")
+                pack_id = spec.get("pack", "core")
+                if pack_id not in known_packs:
+                    scene_rep.errors.append(
+                        f"{arel}: достижение {aid}: пак {pack_id!r} не установлен")
+                for key in ("name_key", "desc_key"):
+                    skey = spec.get(key)
+                    if skey and skey not in ui_strings:
+                        result.warnings.append(
+                            f"{arel}: достижение {aid}: {key} {skey!r} нет в "
+                            f"content/ui/strings.yaml — в UI отобразится сырой ключ")
+
     result.warnings.extend(scene_rep.warnings)
     if scene_rep.errors:
         raise CompileError(
@@ -579,6 +657,8 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "state/snapshot.gen.rpy": _emit_snapshot(var_docs, [proj_src] + var_sources),
         "state/migrations.gen.rpy": _emit_migrations(migrations, [proj_src]),
         "registry/audio.gen.rpy": _emit_audio(audio_docs, audio_sources or [proj_src]),
+        "registry/achievements.gen.rpy": _emit_achievements(
+            ach_docs, ach_sources or [proj_src]),
         "registry/chapters.gen.rpy": sc.emit_chapter_registry(
             sorted(chapters, key=lambda c: c["id"]), packs, _header([proj_src])
         ),

@@ -5,6 +5,26 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 
 #. UI/мета-строка
+msgctxt "string:ach.met_mira.desc"
+msgid "Подойти к воротам и встретить Миру"
+msgstr "[[Пǫдǫйтį к вǫрǫтąм į встрęтįть Мįрų~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ach.met_mira.name"
+msgid "Знакомство"
+msgstr "[[Знąкǫмствǫ~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ach.reached_rooftop.desc"
+msgid "Добраться до крыши"
+msgstr "[[Дǫбрąться дǫ крышį~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ach.reached_rooftop.name"
+msgid "Выше крыш"
+msgstr "[[Вышę крыш~~~]"
+
+#. UI/мета-строка
 msgctxt "string:meta.chapters.ch01.title"
 msgid "Глава 1. Пробуждение"
 msgstr "[[Глąвą 1. Прǫбųждęнįę~~~~~~~~]"

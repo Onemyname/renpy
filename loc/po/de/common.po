@@ -269,3 +269,23 @@ msgstr "Zurückrollen"
 msgctxt "string:ui.crash.title"
 msgid "Что-то пошло не так"
 msgstr "Etwas ist schiefgelaufen"
+
+#. UI/мета-строка
+msgctxt "string:ach.met_mira.desc"
+msgid "Подойти к воротам и встретить Миру"
+msgstr ""
+
+#. UI/мета-строка
+msgctxt "string:ach.met_mira.name"
+msgid "Знакомство"
+msgstr ""
+
+#. UI/мета-строка
+msgctxt "string:ach.reached_rooftop.desc"
+msgid "Добраться до крыши"
+msgstr ""
+
+#. UI/мета-строка
+msgctxt "string:ach.reached_rooftop.name"
+msgid "Выше крыш"
+msgstr ""

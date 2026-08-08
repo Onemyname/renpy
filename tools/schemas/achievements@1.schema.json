@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/achievements@1",
+  "title": "achievements@1 — декларации достижений (content/achievements/*.yaml)",
+  "description": "Достижения объявляются данными и привязываются к СТАБИЛЬНЫМ якорям (сцена, beat, переменная), а не к тексту сцен: поэтому их можно добавлять, не трогая уже написанные и переведённые сцены. Синхронизация со Steam подключается позже отдельным провайдером — сами декларации от неё не зависят.",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "achievements@1"},
+    "achievements": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]{2,47}$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "name_key": {"type": "string", "pattern": "^[a-z0-9_.]+$", "description": "Ключ строки названия (content/ui/strings.yaml)"},
+          "desc_key": {"type": "string", "pattern": "^[a-z0-9_.]+$"},
+          "hidden": {"type": "boolean", "description": "Скрытое до получения (спойлерные ветки)"},
+          "nsfw": {"type": "boolean", "description": "Достижение за 18+ контент: в SFW-флейворе не показывается и не выдаётся"},
+          "pack": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$", "description": "Пак-владелец (по умолчанию core); гейтится владением"},
+          "trigger": {
+            "type": "object",
+            "description": "Стабильный якорь получения: ровно один из scene | beat | var",
+            "properties": {
+              "scene": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$", "description": "Вход в сцену (vn.checkpoint)"},
+              "beat": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Именованный бит внутри сцены (vn.beat)"},
+              "var": {"type": "string", "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$", "description": "Переменная из Variable Registry"},
+              "equals": {"description": "Значение переменной для выдачи (только с var; по умолчанию True)"}
+            },
+            "additionalProperties": false,
+            "oneOf": [
+              {"required": ["scene"]},
+              {"required": ["beat"]},
+              {"required": ["var"]}
+            ]
+          }
+        },
+        "required": ["name_key", "trigger"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "achievements"],
+  "additionalProperties": false
+}

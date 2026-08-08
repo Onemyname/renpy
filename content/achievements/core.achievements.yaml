@@ -1,0 +1,21 @@
+schema: achievements@1
+# Достижения объявляются здесь и привязываются к СТАБИЛЬНЫМ якорям:
+#   scene: <full_id>  — вход в сцену (vn.checkpoint)
+#   beat:  <name>     — именованный бит внутри сцены ($ vn.beat("name"))
+#   var:   <store.имя> [equals: значение] — состояние из Variable Registry
+#
+# Почему так: якоря переживают правку и перевод текста, поэтому ачивки можно
+# добавлять позже, не трогая уже написанные сцены (ретрофит в текст был бы дорог).
+# Выдача в игре — vn_ach.grant/check; синхронизация со Steam подключается
+# отдельным провайдером (vn_ach.set_provider) и деклараций не касается.
+
+achievements:
+  met_mira:
+    name_key: ach.met_mira.name
+    desc_key: ach.met_mira.desc
+    trigger: {var: ch01.met_mira, equals: true}
+
+  reached_rooftop:
+    name_key: ach.reached_rooftop.name
+    desc_key: ach.reached_rooftop.desc
+    trigger: {scene: ch01_s030}

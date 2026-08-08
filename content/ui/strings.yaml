@@ -11,6 +11,12 @@ strings:
   meta.packs.ep_beach.title: "Пляжный эпизод"
   meta.packs.nsfw.title: "Контент 18+"
 
+  # ── Достижения (achievements@1) ─────────────────────────────────────────────
+  ach.met_mira.name: "Знакомство"
+  ach.met_mira.desc: "Подойти к воротам и встретить Миру"
+  ach.reached_rooftop.name: "Выше крыш"
+  ach.reached_rooftop.desc: "Добраться до крыши"
+
   # ── Экран краха (последний эшелон, 20_ui/screens/crash_screen.rpy) ─────────
   ui.crash.title: "Что-то пошло не так"
   ui.crash.body: "Игра столкнулась с ошибкой. Прогресс до последнего сохранения не пострадал."
