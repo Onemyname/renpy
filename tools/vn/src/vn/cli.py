@@ -1394,6 +1394,8 @@ def release_changelog():
     from .release import update_changelog
 
     rep = update_changelog(_root())
+    if rep.stamped:
+        click.echo(f"id_registry: занесено {rep.stamped} выпущенных id (G7)")
     if not rep.changed:
         click.echo("контент не менялся с прошлого манифеста")
         return

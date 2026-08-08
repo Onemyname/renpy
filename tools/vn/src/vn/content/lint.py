@@ -266,18 +266,55 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                 rep.error(f"{rel}: store ({data['store']}) != id главы ({ch_id})")
 
     # ── 6. id_registry: выпущенные id не должны молча исчезать (G7) ─────────
+    # Проверяются все четыре класса id. renames покрывает сцены и переменные;
+    # главы и персонажи механизма переименования не имеют (не переименовываются).
     reg_rel = "content/registry/id_registry.json"
     id_reg = docs.get(reg_rel, {})
     renames = docs.get("content/renames.yaml", {})
-    known_scene_moves = set(renames.get("scenes") or {}) | set(renames.get("deleted_scenes") or {})
+    scene_moves = set(renames.get("scenes") or {}) | set(renames.get("deleted_scenes") or {})
+    var_moves = set(renames.get("vars") or {})
     existing_full_ids = {
         f"{ch}_{s}" for ch, info in chapters.items() for s in info["scenes"]
     }
+    existing_chapters = set(chapters)
+    existing_chars: set[str] = set()
+    char_zones = [root / "content" / "characters"]
+    if (root / "packs").is_dir():
+        char_zones += sorted((root / "packs").glob("*/characters"))
+    for cz in char_zones:
+        if cz.is_dir():
+            existing_chars |= {d.name for d in cz.iterdir()
+                               if d.is_dir() and CHAR_DIR_RE.match(d.name)}
+    existing_vars: set[str] = set()
+    for drel, data in docs.items():
+        if not isinstance(data, dict) or data.get("schema") != "vars@1":
+            continue
+        store = data.get("store")
+        if store and store != "persistent":
+            for name in (data.get("vars") or {}):
+                existing_vars.add(f"{store}.{name}")
+
     for released in id_reg.get("scenes", []):
-        if released not in existing_full_ids and released not in known_scene_moves:
+        if released not in existing_full_ids and released not in scene_moves:
             rep.error(
                 f"{reg_rel}: выпущенная сцена {released} исчезла без записи в renames.yaml "
                 f"(id неизменяемы навсегда, G7)"
+            )
+    for released in id_reg.get("chapters", []):
+        if released not in existing_chapters:
+            rep.error(
+                f"{reg_rel}: выпущенная глава {released} исчезла (главы не переименовываются, G7)"
+            )
+    for released in id_reg.get("characters", []):
+        if released not in existing_chars:
+            rep.error(
+                f"{reg_rel}: выпущенный персонаж {released} исчез (id неизменяемы, G7)"
+            )
+    for released in id_reg.get("vars", []):
+        if released not in existing_vars and released not in var_moves:
+            rep.error(
+                f"{reg_rel}: выпущенная переменная {released} исчезла без записи в "
+                f"renames.vars (id неизменяемы, G7)"
             )
 
     # ── 7. Layout (1.2) ──────────────────────────────────────────────────────

@@ -59,6 +59,65 @@ class ReleaseReport:
     added_scenes: list[str] = field(default_factory=list)
     removed_scenes: list[str] = field(default_factory=list)
     changed: bool = False
+    stamped: int = 0            # сколько новых id занесено в id_registry (G7)
+
+
+ID_REGISTRY_REL = "content/registry/id_registry.json"
+
+
+def _released_ids(root: Path) -> dict:
+    """Текущие id по классам для штампа реестра (G7). Персонажи/переменные штампуются
+    только если есть хотя бы одна released-глава (иначе черновик не иммортализуем)."""
+    chapters, scenes = [], []
+    for ch_id, info in snapshot_content(root).items():
+        if info.get("status") == "release":
+            chapters.append(ch_id)
+            scenes.extend(info["scenes"])
+    if not scenes:
+        return {"chapters": [], "scenes": [], "characters": [], "vars": []}
+    chars = []
+    cdir = root / "content" / "characters"
+    if cdir.is_dir():
+        chars = [d.name for d in sorted(cdir.iterdir())
+                 if d.is_dir() and (d / "character.yaml").is_file()]
+    variables = []
+    var_files = []
+    if (root / "content" / "variables").is_dir():
+        var_files += sorted((root / "content" / "variables").glob("*.vars.yaml"))
+    var_files += sorted((root / "content" / "chapters").glob("*/vars.yaml"))
+    for vf in var_files:
+        doc = load_yaml(vf)
+        store = doc.get("store")
+        if store and store != "persistent":
+            for name in (doc.get("vars") or {}):
+                variables.append(f"{store}.{name}")
+    return {"chapters": chapters, "scenes": scenes,
+            "characters": chars, "vars": variables}
+
+
+def stamp_id_registry(root: Path) -> int:
+    """Занести текущие выпущенные id в id_registry.json (append-only union, G7).
+    Возвращает число впервые добавленных id. Так сеть безопасности «id не исчезают
+    молча» наполняется автоматически при релизе, а не ведётся руками."""
+    reg_path = root / ID_REGISTRY_REL
+    if reg_path.is_file():
+        reg = json.loads(reg_path.read_text(encoding="utf-8"))
+    else:
+        reg = {"schema": "id_registry@1", "chapters": [], "scenes": [],
+               "characters": [], "vars": []}
+    added = 0
+    current = _released_ids(root)
+    for key, ids in current.items():
+        have = set(reg.get(key) or [])
+        merged = sorted(have | set(ids))
+        added += len(merged) - len(have)
+        reg[key] = merged
+    reg.setdefault("schema", "id_registry@1")
+    if added:
+        reg_path.parent.mkdir(parents=True, exist_ok=True)
+        reg_path.write_text(json.dumps(reg, ensure_ascii=False, indent=1,
+                                       sort_keys=True) + "\n", encoding="utf-8")
+    return added
 
 
 def snapshot_content(root: Path) -> dict:
@@ -114,6 +173,8 @@ def update_changelog(root: Path) -> ReleaseReport:
     manifest_path.write_text(json.dumps(
         {"schema": "release_manifest@1", "version": project["version"], "chapters": cur},
         ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    # Автоштамп реестра выпущенных id (G7): сеть безопасности наполняется сама.
+    rep.stamped = stamp_id_registry(root)
     return rep
 
 
