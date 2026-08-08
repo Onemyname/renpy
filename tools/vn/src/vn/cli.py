@@ -679,6 +679,36 @@ def assets_daz_validate(scope: str | None, no_provenance: bool):
                 f"{len(rep.warnings)} предупреждений)", fg="green")
 
 
+@assets.group("vam")
+def assets_vam():
+    """Декларации захватов Virt-a-Mate: assets_src/vam/**/<name>.render.yaml (опц. источник)."""
+
+
+@assets_vam.command("validate")
+@click.option("--scope", default=None, help="Подпуть в assets_src/vam (например ch01).")
+@click.option("--no-provenance", is_flag=True, help="Только проверить, провенанс не писать.")
+def assets_vam_validate(scope: str | None, no_provenance: bool):
+    """Схема деклараций VaM, наличие сцен (.json/.vac/.vap или манифест), наличие
+    выходов; для готовых захватов пишется/обновляется провенанс."""
+    from .assets.vam import validate_scenes
+
+    rep = validate_scenes(_root(), scope=scope, write_provenance=not no_provenance)
+    for w in rep.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    for p in rep.provenance_written:
+        click.echo(f"провенанс: {p}")
+    if rep.errors:
+        _fail(f"vam validate: {len(rep.errors)} ошибок")
+    if not rep.checked:
+        click.echo("деклараций нет (assets_src/vam/**/<name>.render.yaml) — "
+                   "VaM опционален, см. docs/pipeline/phase-0.md (раздел VaM)")
+        return
+    click.secho(f"vam validate: OK ({len(rep.checked)} деклараций, "
+                f"{len(rep.warnings)} предупреждений)", fg="green")
+
+
 @assets.group("provenance")
 def assets_provenance():
     """Провенанс сырцов: хэш исходника -> параметры обработки -> хэш артефакта."""

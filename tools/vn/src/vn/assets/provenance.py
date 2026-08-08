@@ -218,22 +218,25 @@ def record(root: Path, artifact: Path, source: Path | None = None,
     return _write(root, artifact, doc), doc
 
 
-def record_daz(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
-    """Провенанс DAZ-рендера из декларации <name>.render.yaml (vn assets daz validate).
-    Существующие последующие шаги (AI-обработка) сохраняются, если артефакт не менялся."""
-    src = _src_root(root) / decl["source"]
-    source_ref = {"path": decl["source"],
-                  "hash": _hash_of(src) if src.is_file() else _manifest_hash(root, decl["source"])}
+def _record_render(root: Path, decl_rel: str, output: Path, kind: str,
+                   source_path: str, settings: dict) -> Path:
+    """Провенанс объявленного рендера/захвата (DAZ или VaM): шаг-происхождение
+    становится началом цепочки. Существующие последующие шаги (AI-обработка,
+    ручная правка) сохраняются, если артефакт не менялся. Прошлый шаг-происхождение
+    любого движка (*_render) заменяется — у артефакта один источник."""
+    src = _src_root(root) / source_path
+    source_ref = {"path": source_path,
+                  "hash": _hash_of(src) if src.is_file() else _manifest_hash(root, source_path)}
     if source_ref["hash"] is None:
         raise ProvenanceError(
-            f"{decl['source']}: нет ни файла, ни манифеста — сначала vn assets push")
-    step = {"kind": "daz_render", "source": source_ref,
-            "declaration": decl_rel, "settings": decl["render"]}
+            f"{source_path}: нет ни файла, ни манифеста — сначала vn assets push")
+    step = {"kind": kind, "source": source_ref,
+            "declaration": decl_rel, "settings": settings}
     existing = load(output)
     chain = [step]
     if existing:
-        # Хвост цепочки (comfyui/manual поверх рендера) переносим как есть.
-        tail = [s for s in existing["chain"] if s.get("kind") != "daz_render"]
+        tail = [s for s in existing["chain"]
+                if not str(s.get("kind", "")).endswith("_render")]
         chain.extend(tail)
     doc = {
         "schema": "provenance@1",
@@ -241,6 +244,16 @@ def record_daz(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
         "chain": chain,
     }
     return _write(root, output, doc)
+
+
+def record_daz(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
+    """Провенанс DAZ-рендера из декларации <name>.render.yaml (vn assets daz validate)."""
+    return _record_render(root, decl_rel, output, "daz_render", decl["source"], decl["render"])
+
+
+def record_vam(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
+    """Провенанс VaM-захвата из декларации <name>.render.yaml (vn assets vam validate)."""
+    return _record_render(root, decl_rel, output, "vam_render", decl["scene"], decl["capture"])
 
 
 def _manifest_hash(root: Path, rel: str) -> dict | None:

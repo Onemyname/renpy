@@ -279,6 +279,17 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     else:
         add("PASS", f"DAZ-декларации: {len(drep.checked)} проверено")
 
+    from .assets.vam import validate_scenes
+
+    vrep = validate_scenes(root, write_provenance=False)
+    if vrep.errors:
+        add("FAIL", f"VaM-декларации: {len(vrep.errors)} ошибок — {vrep.errors[0]}")
+    elif vrep.warnings:
+        add("WARN", f"VaM-декларации: {len(vrep.warnings)} предупреждений "
+                    f"(незахваченные выходы)")
+    elif vrep.checked:
+        add("PASS", f"VaM-декларации: {len(vrep.checked)} проверено")
+
     from .assets.storage import StorageError, status
 
     try:

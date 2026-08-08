@@ -25,7 +25,7 @@ vn/
 │   │                       #   variables/, migrations/, registry/, renames.yaml, anchors.yaml, flags.yaml
 ├── packs/                  # DLC: <pack_id>/manifest.yaml + chapters/ characters/ loc/
 │                           #   (nsfw — контент 18+, база его не требует; ADR-0006)
-├── assets_src/             # сырцы: psd/, png/ (+cg/), daz/, live2d/, spine_export/,
+├── assets_src/             # сырцы: psd/, png/ (+cg/), daz/, vam/, live2d/, spine_export/,
 │                           #   audio_stems/, video_src/ (в git — манифесты, декларации
 │                           #   *.render.yaml, сайдкары *.video.yaml и *.provenance.json)
 ├── loc/                    # loc.yaml, po/<lang>/, ledger/chNN.json

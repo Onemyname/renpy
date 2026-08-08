@@ -137,6 +137,57 @@ def daz_content_library() -> Path | None:
     return None
 
 
+VAM_STEAM_APPID = "2149830"
+
+
+def _steam_libraries() -> list[Path]:
+    """Корни библиотек Steam: дефолт + записи libraryfolders.vdf (несколько дисков)."""
+    libs: list[Path] = []
+    steam_root = None
+    if sys.platform == "win32":
+        try:
+            import winreg
+
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as k:
+                steam_root = Path(winreg.QueryValueEx(k, "SteamPath")[0])
+        except OSError:
+            pass
+    for cand in (steam_root, Path(r"C:\Program Files (x86)\Steam")):
+        if cand and cand.is_dir():
+            libs.append(cand)
+            vdf = cand / "steamapps" / "libraryfolders.vdf"
+            if vdf.is_file():
+                import re as _re
+                for m in _re.finditer(r'"path"\s*"([^"]+)"',
+                                      vdf.read_text(encoding="utf-8", errors="replace")):
+                    libs.append(Path(m.group(1).replace("\\\\", "\\")))
+    # dedup, порядок сохраняем
+    seen, out = set(), []
+    for p in libs:
+        if str(p) not in seen:
+            seen.add(str(p))
+            out.append(p)
+    return out
+
+
+def vam_path() -> Path | None:
+    """VaM.exe: VN_VAM -> стандартные корни -> Steam-библиотеки (appid 2149830)."""
+    candidates: list[Path] = []
+    env = os.environ.get("VN_VAM")
+    if env:
+        p = Path(env)
+        candidates += [p, p / "VaM.exe"]
+    candidates += [Path(r"D:\VaM\VaM.exe"), Path(r"C:\VaM\VaM.exe")]
+    for lib in _steam_libraries():
+        candidates.append(lib / "steamapps" / "common" / "Virt-A-Mate" / "VaM.exe")
+    for c in candidates:
+        if c.is_file():
+            return c
+        if c.is_dir() and (c / "VaM.exe").is_file():
+            return c / "VaM.exe"
+    return None
+
+
 def _run_out(cmd: list[str], timeout: int = 30) -> str | None:
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -449,6 +500,12 @@ def run_pipeline_doctor(root: Path, comfy_opt: str | None = None) -> int:
         _check(checks, "PASS" if lib else "WARN",
                f"библиотека DAZ: {lib or 'не найдена в конфиге DIM'}",
                "" if lib else "DIM -> Settings -> Installation: путь контента")
+
+    # VaM — опциональный третий источник (ADR-0006): отсутствие не проблема.
+    vam = vam_path()
+    _check(checks, "PASS" if vam else "WARN",
+           f"Virt-a-Mate: {vam or 'не установлен (опционально)'}",
+           "" if vam else "опционально: tools/install-vam.ps1 (третий источник рендеров)")
 
     seen_drives = set()
     for label, p in (("репозиторий", root), ("модели", comfy)):

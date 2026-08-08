@@ -139,6 +139,64 @@ def test_daz_validate_missing_source_and_output(tmp_path):
     assert any("ещё не отрендерен" in w for w in rep.warnings)
 
 
+def test_vam_validate_and_chain(tmp_path):
+    from vn.assets.vam import validate_scenes
+
+    root = _mk_root(tmp_path)
+    base = root / "assets_src"
+    scene = base / "vam/ch01/beach/scene.json"
+    scene.parent.mkdir(parents=True)
+    scene.write_text('{"atoms": []}', encoding="utf-8")
+    shot = base / "png/cg/ch01/beach.png"
+    _comfy_png(shot, graph={})
+    decl = base / "vam/ch01/beach/beach.render.yaml"
+    decl.write_text(
+        "schema: vam_render@1\n"
+        "id: cg/ch01/beach\n"
+        "scene: vam/ch01/beach/scene.json\n"
+        "output: png/cg/ch01/beach.png\n"
+        "capture:\n"
+        "  resolution: [1920, 1080]\n"
+        "  mode: screenshot\n"
+        "  camera: WindowCamera\n"
+        "  plugins: [ScreenshotHelper]\n"
+        "  vamx: true\n",
+        encoding="utf-8")
+
+    rep = validate_scenes(root)
+    assert rep.errors == []
+    assert rep.provenance_written == ["assets_src/png/cg/ch01/beach.png.provenance.json"]
+
+    doc = json.loads((shot.with_name("beach.png.provenance.json")).read_text(encoding="utf-8"))
+    assert doc["chain"][0]["kind"] == "vam_render"
+    assert doc["chain"][0]["settings"]["camera"] == "WindowCamera"
+    assert verify(root).errors == []
+
+    # AI-полировка поверх VaM-захвата: цепочка vam_render + comfyui
+    ai = base / "png/cg/ch01/beach_polished.png"
+    _comfy_png(ai)
+    _p, aidoc = record(root, ai, source=shot)
+    assert [s["kind"] for s in aidoc["chain"]] == ["vam_render", "comfyui"]
+
+
+def test_vam_validate_missing_scene_and_output(tmp_path):
+    from vn.assets.vam import validate_scenes
+
+    root = _mk_root(tmp_path)
+    decl = root / "assets_src/vam/ch02/room/room.render.yaml"
+    decl.parent.mkdir(parents=True)
+    decl.write_text(
+        "schema: vam_render@1\n"
+        "id: cg/room/night\n"
+        "scene: vam/ch02/room/scene.json\n"          # нет ни файла, ни манифеста
+        "output: png/cg/room/night.png\n"            # ещё не захвачен
+        "capture: {resolution: [1280, 720], mode: screenshot}\n",
+        encoding="utf-8")
+    rep = validate_scenes(root)
+    assert any("ни локально, ни в манифестах" in e for e in rep.errors)
+    assert any("ещё не захвачен" in w for w in rep.warnings)
+
+
 def test_manual_step_requires_note(tmp_path):
     root = _mk_root(tmp_path)
     art = root / "assets_src/png/cg/plain.png"

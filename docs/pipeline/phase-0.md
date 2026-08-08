@@ -104,6 +104,31 @@ Render Settings → Advanced:
 4. 16 ГБ VRAM: держите сцену < ~12 ГБ текстур — **Scene Optimizer** (даунскейл
    текстур 4K→2K для второстепенного) обязателен в библиотеке.
 
+### 3.4a Virt-a-Mate — опциональный третий источник
+
+VaM не обязателен: основной путь анимации — DAZ-кадр → Wan 2.2 I2V. VaM берут
+точечно, когда нужна физика тел, которую AI-видео пока не вытягивает (ADR-0006).
+
+```bash
+pwsh -File tools/install-vam.ps1
+```
+
+Скрипт детектит VaM (VN_VAM, `D:\VaM`, Steam-библиотеки appId 2149830), готовит
+папку и распаковывает архив из `~/Downloads`, если он там есть. Установщика-мастера
+у VaM нет — легальные пути: **Steam** (Creator + vamX, проще всего), **Free**-сборка
+или **Patreon** (+ файл-ключ рядом с `VaM.exe`). Пиратские сборки/крэки не используются.
+
+Интеграция в конвейер — симметрично DAZ: сцену объявляют в
+`assets_src/vam/**/<name>.render.yaml` (schema `vam_render@1`: сцена, разрешение,
+режим screenshot/sequence, камера, плагины), захват кладут в `assets_src/png/cg/**`
+(скриншот) или `assets_src/video_src/**` (секвенция). Проверка и провенанс:
+
+```bash
+vn assets vam validate
+```
+
+VR не требуется — VaM работает в desktop-режиме.
+
 ### 3.5 ffmpeg
 
 Ставится winget'ом: `winget install Gyan.FFmpeg` (полная сборка, с libvpx-vp9).

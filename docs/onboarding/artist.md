@@ -24,6 +24,10 @@
 - CG-стиллы кладутся в `assets_src/png/cg/**`, видео-лупы — в
   `assets_src/video_src/<группа>/` (опции энкода — `<имя>.video.yaml`);
   сборка/проверка: `vn assets video build` / `vn assets video validate`.
+- **Virt-a-Mate** — опциональный третий источник (когда нужна физика тел):
+  сцену объявляют в `assets_src/vam/**/<имя>.render.yaml` (schema `vam_render@1`),
+  захват — в те же `png/cg/**` / `video_src/**`; `vn assets vam validate`.
+  Установка — `tools/install-vam.ps1`. Основной путь анимации остаётся DAZ→Wan.
 - **Контент 18+ — только в подпапке `nsfw/` своей категории** (`png/cg/nsfw/…`,
   `video_src/nsfw/…`): по этой конвенции public-сборки вырезают его автоматически.
   Ошиблись папкой = 18+ уехал в публичный билд.

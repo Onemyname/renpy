@@ -48,6 +48,17 @@
           {
             "type": "object",
             "properties": {
+              "kind": {"const": "vam_render"},
+              "source": {"$ref": "#/$defs/source_ref"},
+              "declaration": {"type": "string", "description": "Путь <name>.render.yaml относительно assets_src/ (сцена VaM)"},
+              "settings": {"type": "object", "description": "Снапшот блока capture из декларации"}
+            },
+            "required": ["kind", "source", "settings"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
               "kind": {"const": "comfyui"},
               "source": {"anyOf": [{"$ref": "#/$defs/source_ref"}, {"type": "null"}]},
               "workflow": {"type": ["object", "null"], "description": "Полный граф ComfyUI (extract из PNG или --workflow)"},
