@@ -127,3 +127,35 @@ def test_chapters_require_sdk(repo_root, tmp_path, monkeypatch):
     monkeypatch.delenv("RENPY_SDK", raising=False)
     with pytest.raises(CompileError, match="RENPY_SDK"):
         compile_content(root, out_dir=tmp_path / "gen")
+
+
+# ── Свежесть генерата против волатильного git sha ────────────────────────────
+
+def test_stale_key_ignores_git_sha_in_version():
+    """Коммит меняет sha в config.version, но не меняет контент.
+
+    Без этого --check краснел после ЛЮБОГО коммита и переставал отличать
+    «забыли пересобрать после правки content/» от «просто закоммитили».
+    """
+    from vn.content.compile import _stale_key
+
+    a = b'define config.version = "0.1.4+dd1cb3e"\n'
+    b = b'define config.version = "0.1.4+a396f8b"\n'
+    assert _stale_key("version.gen.rpy", a) == _stale_key("version.gen.rpy", b)
+
+
+def test_stale_key_still_catches_version_bump():
+    """Бамп project.yaml:version без пересборки обязан оставаться красным."""
+    from vn.content.compile import _stale_key
+
+    a = b'define config.version = "0.1.4+dd1cb3e"\n'
+    b = b'define config.version = "0.1.5+dd1cb3e"\n'
+    assert _stale_key("version.gen.rpy", a) != _stale_key("version.gen.rpy", b)
+
+
+def test_stale_key_touches_only_version_file():
+    """Нормализация точечная: любой другой выход сравнивается байт в байт."""
+    from vn.content.compile import _stale_key
+
+    data = b'define config.version = "0.1.4+dd1cb3e"\n'
+    assert _stale_key("registry/scenes.gen.rpy", data) == data

@@ -79,6 +79,21 @@ def _py_literal(value) -> str:
 
 # ── Эмиттеры фазы 0 ───────────────────────────────────────────────────────────
 
+# Git sha внутри config.version — метаданные СБОРКИ, а не контента: он меняется на
+# каждом коммите, даже если content/ не тронут. Сравнивая его буквально, --check
+# краснел после любого коммита и переставал отвечать на свой единственный вопрос —
+# «генерат отстал от источников?». Semver при этом сравнивается как есть: забытая
+# пересборка после бампа project.yaml:version обязана ловиться.
+_VERSION_SHA_RE = re.compile(rb'(define config\.version = "\d+\.\d+\.\d+)\+[0-9a-f]{4,40}"')
+
+
+def _stale_key(rel: str, data: bytes) -> bytes:
+    """Форма выхода для сравнения свежести: без волатильных метаданных сборки."""
+    if rel == "version.gen.rpy":
+        return _VERSION_SHA_RE.sub(rb'\1+<sha>"', data)
+    return data
+
+
 def _emit_version(project: dict, sha: str, sources) -> str:
     version = f"{project['version']}+{sha}"
     return _header(sources) + (
@@ -882,7 +897,9 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     if check:
         for rel, text in sorted(outputs.items()):
             path = gen / rel
-            if not path.is_file() or path.read_bytes() != text.encode("utf-8"):
+            if not path.is_file() or _stale_key(rel, path.read_bytes()) != _stale_key(
+                rel, text.encode("utf-8")
+            ):
                 result.stale.append(rel)
         for orphan in sorted(old_outputs - set(outputs)):
             if (gen / orphan).is_file():

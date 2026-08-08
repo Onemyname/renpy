@@ -335,7 +335,7 @@ build.classify("game/generated/manifest.json", None)
 ## Чего НЕ делать
 
 - **Не редактировать `game/generated/**`, `game/assets/**`, `game/tl/**`.** Первое перезапишет `vn build` (и удалит осиротевшие файлы вместе с `.rpyc`), второе — `vn assets build`, третье — `vn loc import`.
-- **Не задавать `config.version` в `game/options.rpy`** — его эмитит `generated/version.gen.rpy` из `project.yaml` + git sha. Побочный эффект, о котором надо знать: **каждый коммит делает генерат устаревшим**, и `vn build --check` на свежем коммите падает на одном лишь `version.gen.rpy`.
+- **Не задавать `config.version` в `game/options.rpy`** — его эмитит `generated/version.gen.rpy` из `project.yaml` + git sha. Сам sha на свежесть генерата больше не влияет: `--check` сравнивает `version.gen.rpy` с нормализованным sha (`_stale_key`, `compile.py`), поэтому коммит без правок `content/` генерат устаревшим не делает. Бамп semver в `project.yaml` при этом ловится по-прежнему.
 - **Не писать `jump` из сцены в сцену.** Компилятор это ловит; переход — `return "<exit_id>"` + `exits:` в `scene.yaml`.
 - **Не делать условные пункты `menu:`** (`menu: "Вариант" if cond:`) — запрещено компилятором, ломает перевод по индексу.
 - **Не писать `config.console = config.developer`** в init-фазе — `developer` там строка `"auto"`.

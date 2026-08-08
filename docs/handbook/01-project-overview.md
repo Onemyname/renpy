@@ -260,9 +260,11 @@ vn loc report                          # de/en/pseudo — 115/115, fuzzy 0
 vn content graph                       # mermaid: ch01 (3 сцены); ch90 из пака НЕ попадёт
 ```
 
-Ожидаемая «ложная тревога»: `config.version` содержит короткий git-sha
-(`tools/vn/src/vn/content/compile.py:82-87`), поэтому **любой новый коммит делает `version.gen.rpy` несвежим** и
-`vn build --check` красным до следующего `vn build`. Это конструктивная особенность, а не поломка.
+`config.version` содержит короткий git-sha (`tools/vn/src/vn/content/compile.py`), но на свежесть
+генерата это больше не влияет: `--check` сравнивает `version.gen.rpy` с нормализованным sha
+(`_stale_key`), потому что sha — метаданные сборки, а не контент. Раньше красным становился
+любой коммит, и гейт свежести перестал отвечать на свой вопрос. Бамп semver в `project.yaml`
+без пересборки ловится по-прежнему.
 
 ## Для AI-агента
 
@@ -272,4 +274,4 @@ vn content graph                       # mermaid: ch01 (3 сцены); ch90 из
 | **Не трогать** | `game/generated/`, `game/assets/`, `game/tl/`, `build/`, `.vncache/` — производные зоны; `docs/ARCHITECTURE.md` — правится только через ADR |
 | **Зависимости** | Правка `project.yaml` меняет `version.gen.rpy`, бюджеты в `vn build` и релизном гейте, флейворы в `vn release build`; правка `CODEOWNERS` меняет требования к approve |
 | **Валидация** | `vn build && python -m pytest tools/vn/tests -q && vn release validate --flavor public` |
-| **Частые ошибки** | 1) выдать текст `ARCHITECTURE.md` за реализованное поведение; 2) сослаться на «фазу 0» из README; 3) предположить, что `flavors.*.packs` или `early_content` что-то гейтят; 4) объяснять красный `vn build --check` после коммита поломкой, а не git-sha в `config.version`; 5) писать в `game/build_id.json` что-либо секретное — файл целиком уезжает игроку (ADR-0011), там допустима только производная `patron_tag`; 6) считать аудио-тракт мёртвым — ветка `copy_audio` работает, мёртв только контент (ноль `.ogg`) |
+| **Частые ошибки** | 1) выдать текст `ARCHITECTURE.md` за реализованное поведение; 2) сослаться на «фазу 0» из README; 3) предположить, что `flavors.*.packs` или `early_content` что-то гейтят; 4) считать, что коммит сам по себе делает генерат несвежим — sha нормализуется при сравнении (`_stale_key`); 5) писать в `game/build_id.json` что-либо секретное — файл целиком уезжает игроку (ADR-0011), там допустима только производная `patron_tag`; 6) считать аудио-тракт мёртвым — ветка `copy_audio` работает, мёртв только контент (ноль `.ogg`) |
