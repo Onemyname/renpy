@@ -362,6 +362,17 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     elif srep.checked:
         add("PASS", f"Sims4-декларации: {len(srep.checked)} проверено")
 
+    from .assets.licenses import validate_licenses
+
+    lrep = validate_licenses(root)
+    if lrep.errors:
+        add("FAIL", f"лицензии ассетов: {len(lrep.errors)} нарушений — {lrep.errors[0]}")
+    elif lrep.warnings:
+        add("WARN", f"лицензии ассетов: {lrep.warnings[0]}")
+    elif lrep.declarations:
+        add("PASS", f"лицензии ассетов: {lrep.declarations} деклараций покрыты "
+                    f"реестром ({lrep.entries} записей)")
+
     from .assets.storage import StorageError, status
 
     try:

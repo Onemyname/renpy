@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/license_registry@1",
+  "title": "license_registry@1 — реестр лицензий сторонних ассетов (content/licenses.yaml)",
+  "description": "Единственное место, где фиксируется правовой статус каждого закупленного/использованного ассета (DAZ-продукты, VaM-луки, шрифты, музыка, SFX). Декларации рендеров ссылаются сюда полем license; релизный гейт проверяет, что каждый использованный ассет учтён и разрешён для коммерческого и (при NSFW) взрослого использования. Восстановить это задним числом дорого — вести с первой покупки.",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "license_registry@1"},
+    "assets": {
+      "type": "object",
+      "description": "Ключ — внутренний id лицензии (на него ссылается поле license деклараций)",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string", "minLength": 1, "description": "Человекочитаемое имя продукта"},
+          "vendor": {"enum": ["daz", "renderotica", "renderhub", "vam_hub", "gumroad", "fontsource", "audio_stock", "other"]},
+          "sku": {"type": ["string", "null"], "description": "SKU/id продукта у вендора (DAZ: числовой id страницы)"},
+          "url": {"type": ["string", "null"]},
+          "license_type": {
+            "enum": ["daz_standard", "daz_interactive", "cc0", "cc_by", "ofl", "royalty_free", "custom", "unknown"],
+            "description": "daz_standard — 2D-рендеры (пиксели); daz_interactive — поставка самого меша/real-time-ассета"
+          },
+          "game_use": {"type": "boolean", "description": "Разрешено использование результата в коммерческой игре"},
+          "nsfw_allowed": {"type": "boolean", "description": "Разрешено взрослое/эротическое использование ЭТОГО ассета"},
+          "purchased_at": {"type": ["string", "null"], "format": "date"},
+          "invoice": {"type": ["string", "null"], "description": "Номер заказа/ссылка на инвойс — доказательство покупки"},
+          "notes": {"type": "string"}
+        },
+        "required": ["title", "vendor", "license_type", "game_use", "nsfw_allowed"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "assets"],
+  "additionalProperties": false
+}

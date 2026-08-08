@@ -10,6 +10,11 @@
     "scene": {"type": "string", "pattern": "^vam/.+\\.(json|vac|vap)$", "description": "Сцена VaM относительно assets_src/ (в git — манифест, бинарь через vn assets push)"},
     "output": {"type": "string", "pattern": "^(png|video_src)/.+", "description": "Ожидаемый захват относительно assets_src/: png/** (скриншот) или video_src/** (секвенция/клип)"},
     "version": {"type": "integer", "minimum": 1},
+    "license": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+      "description": "id записей из content/licenses.yaml (license_registry@1) для ассетов, использованных в этом рендере/захвате. Релизный гейт проверяет game_use и (для nsfw-выходов) nsfw_allowed."
+    },
     "capture": {
       "type": "object",
       "properties": {

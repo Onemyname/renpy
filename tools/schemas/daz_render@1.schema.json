@@ -9,6 +9,11 @@
     "source": {"type": "string", "pattern": "^daz/.+\\.duf$", "description": "Сцена DAZ относительно assets_src/ (бинарь — через vn assets push, в git манифест)"},
     "output": {"type": "string", "pattern": "^(png|video_src)/.+", "description": "Ожидаемый рендер относительно assets_src/: png/** (стилл) или video_src/** (секвенция/клип)"},
     "version": {"type": "integer", "minimum": 1, "description": "Версия декларации: бампается при пере-рендере с новыми настройками"},
+    "license": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+      "description": "id записей из content/licenses.yaml (license_registry@1) для ассетов, использованных в этом рендере/захвате. Релизный гейт проверяет game_use и (для nsfw-выходов) nsfw_allowed."
+    },
     "render": {
       "type": "object",
       "properties": {

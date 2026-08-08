@@ -1,0 +1,34 @@
+schema: license_registry@1
+# Реестр лицензий сторонних ассетов. Ключ записи = id, на который ссылаются
+# декларации рендеров полем license: (daz_render@1 / vam_render@1 / sims4_render@1).
+#
+# Дисциплина (дешёвая сейчас, дорогая задним числом):
+#   покупка ассета -> запись здесь -> только потом первый рендер с ним.
+#
+# Что проверяет релизный гейт (vn release validate):
+#   - каждый license: в декларациях существует в этом реестре;
+#   - game_use: false — ассет нельзя использовать в коммерческой игре -> FAIL;
+#   - nsfw_allowed: false + рендер идёт в nsfw-подпапку -> FAIL.
+#
+# Про DAZ: 2D-рендеры (мы поставляем пиксели, а не меш) покрываются Standard
+# License; Interactive License нужна, когда сам ассет уезжает в игру как 3D.
+# Часть продуктов Published Artists ОТДЕЛЬНО запрещает adult-использование —
+# это фиксируется здесь полем nsfw_allowed, читать при покупке.
+
+assets:
+  # Пример-образец (входит в бесплатный стартовый набор DAZ Studio).
+  # Копируйте структуру для каждого купленного продукта.
+  g9_starter_essentials:
+    title: "Genesis 9 Starter Essentials"
+    vendor: daz
+    sku: "77000"
+    url: https://www.daz3d.com/genesis-9-starter-essentials
+    license_type: daz_standard
+    game_use: true          # 2D-рендеры в коммерческой игре разрешены
+    nsfw_allowed: true      # базовая фигура DAZ не несёт adult-запрета
+    purchased_at: "2026-08-08"   # в кавычках: YAML иначе отдаёт date-объект, а не строку
+    invoice: "free-with-studio"
+    notes: >
+      Базовые фигуры/материалы Genesis 9, идут с DAZ Studio.
+      Для каждого ДОПОЛНИТЕЛЬНОГО продукта (одежда, волосы, окружения,
+      анатомия) заводите свою запись: условия у Published Artists разные.

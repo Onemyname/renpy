@@ -741,6 +741,29 @@ def assets_sims4_validate(scope: str | None, no_provenance: bool):
                 f"{len(rep.warnings)} предупреждений)", fg="green")
 
 
+@assets.command("licenses")
+def assets_licenses():
+    """Сверка деклараций рендеров с реестром лицензий (content/licenses.yaml).
+
+    Проверяет: ссылки существуют, ассет разрешён в коммерческой игре (game_use),
+    а для выходов в nsfw/** — разрешён во взрослом контенте (nsfw_allowed)."""
+    from .assets.licenses import REGISTRY_REL, validate_licenses
+
+    rep = validate_licenses(_root())
+    for w in rep.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    if rep.errors:
+        _fail(f"licenses: {len(rep.errors)} нарушений")
+    if not rep.declarations:
+        click.echo(f"деклараций рендеров нет; в реестре {rep.entries} записей "
+                   f"({REGISTRY_REL})")
+        return
+    click.secho(f"licenses: OK ({rep.declarations} деклараций, {rep.entries} записей "
+                f"в реестре, {len(rep.unlicensed)} без license)", fg="green")
+
+
 @assets.group("provenance")
 def assets_provenance():
     """Провенанс сырцов: хэш исходника -> параметры обработки -> хэш артефакта."""
