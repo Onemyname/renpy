@@ -73,6 +73,36 @@ def _rel(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def _lfs_tracked(root: Path, files: list[Path]) -> tuple[set[Path], bool]:
+    """Какие из файлов реально покрыты LFS. Ответ даёт САМ git (check-attr): свои
+    правила .gitattributes (`**`, порядок, отрицания) он трактует иначе, чем fnmatch,
+    и расхождение здесь означало бы ложные ошибки в CI.
+
+    Возвращает (множество, доступен_ли_git). Без git (синтетические корни, тесты)
+    вторым элементом False — вызывающий не делает выводов о покрытии."""
+    import subprocess
+
+    if not files or not (root / ".git").exists():
+        return set(), False
+    try:
+        payload = "\0".join(_rel(root, f) for f in files)
+        out = subprocess.run(
+            ["git", "check-attr", "--stdin", "-z", "filter"],
+            cwd=root, input=payload, capture_output=True, text=True, timeout=60,
+        )
+        if out.returncode != 0:
+            return set(), False
+    except (OSError, subprocess.SubprocessError):
+        return set(), False
+    # Формат -z: path\0attr\0value\0 ...
+    fields = out.stdout.split("\0")
+    tracked: set[Path] = set()
+    for i in range(0, len(fields) - 2, 3):
+        if fields[i + 1] == "filter" and fields[i + 2] == "lfs":
+            tracked.add(root / fields[i])
+    return tracked, True
+
+
 def _iter_declarations(root: Path):
     """Все декларативные документы, обязанные нести schema: (G16).
     REQUIRED_FILES идут первыми — их отсутствие само по себе ошибка."""
@@ -368,35 +398,36 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                 f"renames.vars (id неизменяемы, G7)"
             )
 
-    # ── 6a. Порог бинарей в assets_src (ADR-0004) ───────────────────────────
-    # git append-only: раздутая история необратима. ADR-0004 разрешает демо-PNG
-    # в git временно и с материальным порогом — здесь он становится проверяемым,
-    # а не устной договорённостью.
+    # ── 6a. Бинари в assets_src мимо LFS (ADR-0004 в редакции ADR-0012) ─────
+    # Историю раздувают не бинари как таковые, а бинари, попавшие в git ОБЪЕКТАМИ:
+    # git append-only и не дельта-сжимает уже сжатые форматы. LFS кладёт в историю
+    # указатель на ~130 байт, поэтому мастер в LFS истории не вредит и под порог
+    # не попадает. Считаем и ругаемся только на то, что идёт мимо LFS.
     src_dir = root / "assets_src"
     if src_dir.is_dir():
         text_ext = {".json", ".yaml", ".yml", ".md", ".txt", ".gitkeep"}
-        total = 0
-        biggest: tuple[int, str] | None = None
-        for f in src_dir.rglob("*"):
-            if not f.is_file() or f.suffix.lower() in text_ext or f.name == ".gitkeep":
-                continue
-            size = f.stat().st_size
-            total += size
-            if biggest is None or size > biggest[0]:
-                biggest = (size, _rel(root, f))
+        binaries = [f for f in sorted(src_dir.rglob("*"))
+                    if f.is_file() and f.suffix.lower() not in text_ext
+                    and f.name != ".gitkeep"]
+        lfs, known = _lfs_tracked(root, binaries)
+        loose = [f for f in binaries if f not in lfs] if known else binaries
+        if known:
+            for f in loose:
+                rep.error(
+                    f"{_rel(root, f)}: бинарь в assets_src не покрыт Git LFS — "
+                    f"он уедет в историю целиком и навсегда. Добавьте расширение в "
+                    f".gitattributes (filter=lfs) или уберите файл из зоны мастеров"
+                )
+        total = sum(f.stat().st_size for f in loose)
         limit_mb = float(ADR0004_BINARY_LIMIT_MB)
         actual_mb = total / (1024 * 1024)
         if actual_mb > limit_mb:
+            biggest = max(loose, key=lambda f: f.stat().st_size)
             rep.error(
-                f"assets_src: бинарей на {actual_mb:.1f} МБ > порога ADR-0004 "
-                f"({limit_mb:.0f} МБ); крупнейший — {biggest[1]} "
-                f"({biggest[0] / 1024 / 1024:.1f} МБ). Заливайте сырцы в хранилище "
-                f"(vn assets lock + push) и удаляйте из git — история append-only"
-            )
-        elif actual_mb > limit_mb * 0.6:
-            rep.warn(
-                f"assets_src: бинарей на {actual_mb:.1f} МБ (порог ADR-0004 "
-                f"{limit_mb:.0f} МБ) — пора переводить сырцы в хранилище"
+                f"assets_src: бинарей мимо LFS на {actual_mb:.1f} МБ > порога "
+                f"ADR-0004 ({limit_mb:.0f} МБ); крупнейший — {_rel(root, biggest)} "
+                f"({biggest.stat().st_size / 1024 / 1024:.1f} МБ). Заведите их в LFS "
+                f"(.gitattributes) либо в хранилище (vn assets lock + push)"
             )
 
     # ── 7. Layout (1.2) ──────────────────────────────────────────────────────

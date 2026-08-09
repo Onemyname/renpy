@@ -7,6 +7,7 @@
 - `game/generated/` — единственная зона генерата; в .gitignore;
 - `game/assets/`, `game/tl/` — производные, не в git (`vn bootstrap`);
 - художник никогда не пишет в `game/`: путь ассета — `assets_src/` → пайплайн → `game/assets/`;
+- разрешения, форматы и отгружаемые масштабы задаются данными — `project.yaml: render` (ADR-0012);
 - DLC-контент — `packs/<pack_id>/`, принадлежность паку по расположению;
 - `game/images/` не существует (автоопределение образов отключено — явные image из Asset Registry).
 
@@ -25,9 +26,11 @@ vn/
 │   │                       #   variables/, migrations/, registry/, renames.yaml, anchors.yaml, flags.yaml
 ├── packs/                  # DLC: <pack_id>/manifest.yaml + chapters/ characters/ loc/
 │                           #   (nsfw — контент 18+, база его не требует; ADR-0006)
-├── assets_src/             # сырцы: psd/, png/ (+cg/), daz/, vam/, sims4/, live2d/, spine_export/,
-│                           #   audio_stems/, video_src/ (в git — манифесты, декларации
-│                           #   *.render.yaml, сайдкары *.video.yaml и *.provenance.json)
+├── assets_src/             # мастера: art/ (characters/, backgrounds/, cg/), psd/, daz/, vam/,
+│                           #   sims4/, live2d/, spine_export/, audio_stems/, video_src/.
+│                           #   Растр/аудио/видео — в Git LFS (.gitattributes, ADR-0012);
+│                           #   не-растровые гиганты (PSD, Tray-бандлы) — через vn assets push.
+│                           #   assets_src/png/ — исторический алиас art/, поддерживается
 ├── loc/                    # loc.yaml, po/<lang>/, ledger/chNN.json
 ├── tools/
 │   ├── vn/                 # единственный CLI (src/vn/…)

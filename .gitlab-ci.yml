@@ -45,6 +45,7 @@ build:
   script:
     - xvfb-run -a vn build
     - xvfb-run -a "$RENPY_SDK/renpy.sh" . lint
+    - xvfb-run -a vn test oversample --scale 2
   artifacts:
     # Аварийный режим (G4): generated каждого зелёного main доступен как артефакт
     paths: [game/generated/]

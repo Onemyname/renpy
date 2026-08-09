@@ -1,10 +1,41 @@
-# LFS — ТОЛЬКО немногие коммитящиеся бинари (раздел 1.1 ARCHITECTURE.md).
-# Game-ready ассеты не коммитятся вовсе (vn bootstrap), сырцы живут в S3 через манифесты.
+# LFS — все коммитящиеся бинари (раздел 1.1 ARCHITECTURE.md, ADR-0012).
+# Game-ready ассеты не коммитятся вовсе (vn bootstrap).
+#
+# Почему мастера идут в LFS, а не в объектное хранилище (ADR-0012 §Решение):
+# git append-only и не дельта-сжимает уже сжатые форматы — каждая перезапись 4K-PNG
+# оседает в истории целиком и навсегда. LFS кладёт в историю указатель на 130 байт,
+# а сам блоб — в LFS-хранилище, откуда clone тянет только версии рабочего дерева.
+# Локи (норма G14) у LFS штатные: git lfs lock / unlock. Отдельной инфраструктуры
+# (S3 + vn assets push) это не требует — она остаётся для НЕ-растровых гигантов:
+# PSD, Tray-бандлы Sims 4, .duf-сцены DAZ, исходники видео.
 *.ttf  filter=lfs diff=lfs merge=lfs -text
 *.otf  filter=lfs diff=lfs merge=lfs -text
 *.woff2 filter=lfs diff=lfs merge=lfs -text
 docs/**/*.png  filter=lfs diff=lfs merge=lfs -text
 docs/**/*.jpg  filter=lfs diff=lfs merge=lfs -text
+
+# Зона мастеров: растр, аудио и видео — в LFS независимо от расширения.
+assets_src/**/*.png   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.jpg   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.jpeg  filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.webp  filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.tif   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.tiff  filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.bmp   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.psd   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.ogg   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.wav   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.flac  filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.mp4   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.mov   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.mkv   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.m4v   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.avi   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.webm  filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.zip   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.package filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.duf   filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.var   filter=lfs diff=lfs merge=lfs -text
 
 # Нормализация переводов строк
 * text=auto eol=lf

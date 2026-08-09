@@ -102,6 +102,30 @@ def _emit_version(project: dict, sha: str, sources) -> str:
     )
 
 
+def _emit_render(root: Path, sources) -> str:
+    """Render-профиль -> config движка (ADR-0012).
+
+    Раньше `config.image_cache_size_mb` не задавался нигде и жил на дефолте SDK
+    (400), то есть потолок памяти сцены был случайным числом, а не решением
+    проекта. Теперь он выводится из project.yaml: render и проверяется моделью
+    памяти (vn assets memory) на тех же данных.
+
+    init offset = -950: раньше версии и любых контентных define — config должен
+    быть установлен до того, как движок начнёт создавать кэш образов."""
+    from ..assets.render_config import load_render_config
+
+    cfg = load_render_config(root)
+    return _header(sources) + (
+        "init offset = -950\n\n"
+        "# Пиксельный лимит кэша образов: cache_limit = value * 1024 * 1024 // 4\n"
+        "# (renpy/display/im.py: Cache.init). Источник — project.yaml: render.\n"
+        f"define config.image_cache_size_mb = {cfg.image_cache_mb}\n\n"
+        "# Автоподбор оверсэмпл-вариантов (<name>@2/@4) под физический экран.\n"
+        "# Фиксируем явно: от него зависит, увидит ли игрок 4K-ассеты вообще.\n"
+        "define config.automatic_oversampling = 4\n"
+    )
+
+
 def _emit_defaults(project: dict, var_docs: list[tuple[str, dict]], sources) -> str:
     stores = sorted({doc["store"] for _, doc in var_docs if doc["store"] != "persistent"})
     out = [_header(sources)]
@@ -282,10 +306,12 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
 
     # Осиротевшие CG: ассет собран, но в галерее не объявлен (арт готовится
     # раньше сцен — это warning, не ошибка; §2.12 про orphan-политику).
+    from ..assets.pipeline import variant_scale
+
     cg_root = assets_dir / "cg"
     if cg_root.is_dir():
         for f in sorted(cg_root.rglob("*.webp")):
-            if f.name.endswith(GALLERY_THUMB_SUFFIX):
+            if f.name.endswith(GALLERY_THUMB_SUFFIX) or variant_scale(f.stem) != 1:
                 continue
             logical = "cg/" + f.relative_to(cg_root).as_posix()[: -len(".webp")]
             if logical not in used_assets:
@@ -865,6 +891,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     outputs: dict[str, str] = {
         "registry/images.gen.rpy": images_out,
         "version.gen.rpy": _emit_version(project, git_sha(root), [proj_src]),
+        "render.gen.rpy": _emit_render(root, [proj_src]),
         "state/defaults.gen.rpy": _emit_defaults(project, var_docs, [proj_src] + var_sources),
         "state/snapshot.gen.rpy": _emit_snapshot(var_docs, [proj_src] + var_sources),
         "state/migrations.gen.rpy": _emit_migrations(migrations, [proj_src]),

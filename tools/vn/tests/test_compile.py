@@ -10,6 +10,7 @@ from vn.content.compile import CompileError, compile_content
 
 BASE_OUTPUTS = {
     "version.gen.rpy",
+    "render.gen.rpy",       # ADR-0012: config.image_cache_size_mb из project.yaml
     "state/defaults.gen.rpy",
     "state/snapshot.gen.rpy",
     "state/migrations.gen.rpy",

@@ -16,11 +16,12 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
-          "src": {"type": "string", "description": "Путь сырца относительно корня репозитория; у ui_panel — файл деклараций"},
-          "src_hash": {"$ref": "#/$defs/hash", "description": "Хеш источника: у видео — сырец+сайдкар, у ui_panel — параметры панели, а не весь файл"},
+          "src": {"type": "string", "description": "Путь мастера относительно корня репозитория; у ui_panel — файл деклараций"},
+          "src_hash": {"$ref": "#/$defs/hash", "description": "Хеш ИСТОЧНИКА ВМЕСТЕ С ПАРАМЕТРАМИ трансформации: мастер + слепок render-профиля (целевой размер, качество, формат), у видео дополнительно сайдкар, у ui_panel — параметры панели. Отдельного поля под параметры нет сознательно: так cache_gc восстанавливает ключи кэша из одного значения"},
           "out_hash": {"$ref": "#/$defs/hash", "description": "Хеш записанного файла в game/assets/"},
           "transform": {"type": "string", "pattern": "^[a-z][a-z0-9_]*@\\d+$", "description": "<имя>@<версия> трансформации (TRANSFORMS в pipeline.py); версия участвует в ключе кэша"},
-          "profile": {"enum": ["full", "draft"], "description": "Профиль энкода — часть ключа кэша: draft и full не подменяют друг друга"}
+          "profile": {"enum": ["full", "draft"], "description": "Профиль энкода — часть ключа кэша: draft и full не подменяют друг друга"},
+          "cost_px": {"type": "integer", "minimum": 0, "description": "Во сколько пикселей кэша образов Ren'Py обойдётся этот файл: bbox непрозрачного (+expand_texture_bounds) * 1.34. Считается один раз на сборке — модель памяти (assets/memory.py) не декодирует тысячи файлов заново"}
         },
         "required": ["src", "src_hash", "out_hash", "transform", "profile"],
         "additionalProperties": false

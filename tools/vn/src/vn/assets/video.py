@@ -308,12 +308,20 @@ def validate_all(root: Path, file_budget_mb: float | None = None) -> tuple[list[
 
 def movie_tree(root: Path) -> dict[str, dict]:
     """Скан собранных лупов: {"mov/<group>/<name>.webm": meta}. Источник meta —
-    сгенерированный .meta.json; без него — консервативные дефолты."""
+    сгенерированный .meta.json; без него — консервативные дефолты.
+
+    Возвращает только РЕФЕРЕНСНЫЕ варианты (без `@N`): крупные варианты движок
+    подбирает сам (renpy/display/video.py: find_oversampled_filename), отдельными
+    образами они не являются."""
+    from .pipeline import variant_scale
+
     tree: dict[str, dict] = {}
     mov = root / "game" / "assets" / "mov"
     if not mov.is_dir():
         return tree
     for f in sorted(mov.rglob("*.webm")):
+        if variant_scale(f.stem) != 1:
+            continue
         rel = "mov/" + f.relative_to(mov).as_posix()
         meta_path = f.with_name(f.name + META_SUFFIX)
         meta = {"loop": True}

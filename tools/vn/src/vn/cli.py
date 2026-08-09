@@ -70,6 +70,10 @@ def _assets_build(root, profile: str, only_transforms: set[str] | None = None):
     res = build_assets(root, profile=profile, only_transforms=only_transforms)
     for w in res.warnings:
         click.secho(f"warning: {w}", fg="yellow")
+    # Пропущенный вариант — не ошибка (мастер мал), но и не мелочь: игрок на 4K
+    # останется на растянутом 1080p. Молчать об этом нельзя.
+    for s in res.skipped_variants:
+        click.secho(f"вариант пропущен: {s}", fg="yellow")
     if res.errors:
         for e in res.errors:
             click.secho(f"error: {e}", fg="red")
@@ -170,7 +174,12 @@ def _loc_import(root: Path):
 
 
 def _check_budgets(root: Path):
-    """Размер-бюджеты (G19): превышение = красная сборка, а не сюрприз в релизе."""
+    """Размер-бюджеты (G19) + бюджет памяти сцены (ADR-0012).
+
+    Размерные бюджеты — предохранители от сломавшейся сборки. Реальный потолок
+    производства — кэш образов: его переполнение не роняет игру, а превращает её
+    в фризы, поэтому проверяется здесь же и так же жёстко."""
+    from .assets.memory import analyze
     from .release import budget_failures
 
     failures = budget_failures(root)
@@ -178,6 +187,19 @@ def _check_budgets(root: Path):
         for f in failures:
             click.secho(f"бюджет: {f}", fg="red")
         _fail("бюджеты G19 превышены (project.yaml: budgets)")
+
+    mem = analyze(root)
+    for w in mem.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    if mem.errors:
+        for e in mem.errors:
+            click.secho(f"память: {e}", fg="red")
+        _fail("бюджет памяти сцены превышен (project.yaml: render.image_cache_mb)")
+    if mem.worst:
+        click.echo(
+            f"память: худшая сцена {mem.worst.scene_id} — "
+            f"{mem.worst.px / 1e6:.1f} Мпикс из {mem.budget_px / 1e6:.1f} "
+            f"(масштаб @{mem.scale})")
 
 
 @main.command()
@@ -545,6 +567,40 @@ def assets_validate():
         click.secho(f"warning: {w}", fg="yellow")
     n_warn = len(ares.warnings) + len(ares.stale) + len(res.warnings)
     click.secho(f"assets validate: OK ({n_warn} предупреждений)", fg="green")
+
+
+@assets.command("memory")
+@click.option("--scale", type=int, default=None,
+              help="Масштаб оверсэмпла (по умолчанию — крупнейший отгружаемый).")
+@click.option("--top", default=10, help="Сколько самых тяжёлых сцен показать.")
+def assets_memory(scale: int | None, top: int):
+    """Модель памяти образов: во что обходится худшая сцена и влезает ли она в кэш."""
+    from .assets.memory import analyze, recommended_cache_mb
+    from .assets.render_config import load_render_config
+
+    root = _root()
+    cfg = load_render_config(root)
+    rep = analyze(root, cfg, scale=scale)
+    for w in rep.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    click.echo(
+        f"кэш образов: {cfg.image_cache_mb} МБ -> {rep.limit_px / 1e6:.0f} Мпикс; "
+        f"бюджет сцены {rep.budget_px / 1e6:.1f} Мпикс "
+        f"({cfg.cache_generations} поколения), масштаб @{rep.scale}")
+    for sc in sorted(rep.scenes, key=lambda s: -s.px)[:top]:
+        share = sc.px / rep.budget_px if rep.budget_px else 0
+        colour = "red" if share > 1 else ("yellow" if share > 0.8 else "green")
+        click.secho(f"  {sc.scene_id:16s} {sc.px / 1e6:7.1f} Мпикс  {share:5.0%}", fg=colour)
+        for label, px in sc.parts:
+            click.echo(f"      {label:28s} {px / 1e6:7.2f}")
+    if rep.scenes:
+        click.echo(f"рекомендуемый render.image_cache_mb: "
+                   f"{recommended_cache_mb(rep, cfg.cache_generations)}")
+    if rep.errors:
+        for e in rep.errors:
+            click.secho(f"error: {e}", fg="red")
+        _fail("бюджет памяти сцены превышен")
+    click.secho("память: OK", fg="green")
 
 
 @assets.command("watch")
@@ -1399,6 +1455,36 @@ def test_smoke(picks: str, lang: str, timeout_s: int):
     if returncode != 0 or not verdict.startswith("OK"):
         _fail(f"smoke: {verdict} (exit {returncode})")
     click.secho(f"smoke: {verdict} ({n_shots} скриншотов)", fg="green")
+
+
+@test.command("oversample")
+@click.option("--scale", default=2.0, help="Во сколько раз физический экран крупнее виртуального.")
+@click.option("--timeout", "timeout_s", default=180)
+def test_oversample(scale: float, timeout_s: int):
+    """Проверить движком, что 4K-варианты реально подхватываются (ADR-0012).
+
+    Единственный способ убедиться в этом честно: решение принимает Ren'Py, а не
+    наш конвейер. Команда vn_oversample (framework/90_debug) зовёт настоящий
+    Image.get_oversampled_image() на настоящем дереве game/assets."""
+    from .doctor import sdk_path
+
+    root = _root()
+    sdk = sdk_path()
+    if sdk is None:
+        _fail("Ren'Py SDK не найден (RENPY_SDK)")
+    if not (root / "game" / "generated" / "manifest.json").is_file():
+        _fail("game/generated/ пуст — сначала vn build")
+    exe = sdk / ("renpy.exe" if sys.platform == "win32" else "renpy.sh")
+    proc = subprocess.run([str(exe), str(root), "vn_oversample", "--scale", str(scale)],
+                          capture_output=True, text=True, timeout=timeout_s)
+    out = (proc.stdout or "") + (proc.stderr or "")
+    for line in out.splitlines():
+        if line.startswith("FAIL"):
+            click.secho(line, fg="red")
+        elif line.startswith("oversample"):
+            click.secho(line, fg="green" if "OK" in line else None)
+    if "oversample: OK" not in out:
+        _fail("оверсэмпл не подтверждён движком:\n" + out.strip()[-1200:])
 
 
 for _cmd, _phase in {"replay": 2, "screens": 3, "paths": 2}.items():

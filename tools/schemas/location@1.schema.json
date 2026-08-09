@@ -11,8 +11,8 @@
       "type": "object",
       "minProperties": 1,
       "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
-      "additionalProperties": {"type": "string", "pattern": "^assets/bg/[a-z0-9_/]+\\.webp$"},
-      "description": "Вариант (day/evening/night/…) → файл"
+      "additionalProperties": {"type": "string", "pattern": "^assets/bg/[a-z0-9_/]+\\.(webp|png|jpg)$"},
+      "description": "Вариант (day/evening/night/…) → РЕФЕРЕНСНЫЙ файл фона. Путь может быть вложенным (bg/apartment/living_room/day.webp): вложенность каталогов организационная и не связана с id локации. Оверсэмпл-варианты (@2/@4) здесь НЕ указываются — Ren'Py подбирает их сам по имени (ADR-0012)"
     },
     "lighting": {
       "type": "object",

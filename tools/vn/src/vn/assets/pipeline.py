@@ -1,52 +1,74 @@
-"""vn assets build — ассет-конвейер (раздел 2, G13).
+"""vn assets build — ассет-конвейер (раздел 2, G13, ADR-0012).
 
-Зоны: assets_src/ (сырцы) -> трансформации -> game/assets/ (game-ready). Художник
-никогда не пишет в game/ (G2). Кэш — контентно-адресуемый: ключ = blake3(сырец) +
-id и ВЕРСИЯ конкретной трансформации + профиль (G13: бамп версии png2webp не
-инвалидирует аудио-ветку). Очистка game/assets — точечная, по диффу манифестов.
+Зоны: assets_src/ (мастера) -> трансформации -> game/assets/ (game-ready). Художник
+никогда не пишет в game/ (G2). Кэш — контентно-адресуемый: ключ = blake3(мастер +
+параметры трансформации) + id и ВЕРСИЯ трансформации + профиль (G13: бамп версии
+png2webp не инвалидирует аудио-ветку). Очистка game/assets — точечная, по диффу
+манифестов.
 
-Конвенция источников (открытый промежуточный формат; PSD нарезается в неё же — psd.py):
-  assets_src/png/characters/<key>/<pose>/base.png
-  assets_src/png/characters/<key>/<pose>/outfits/<outfit>.png
-  assets_src/png/characters/<key>/<pose>/faces/<emotion>.png
-  assets_src/png/characters/<key>/<pose>/overlays/<name>.png
-  assets_src/png/backgrounds/<location>/<variant>.png
-  assets_src/png/cg/<...>/<name>.png                     # CG-стиллы (DAZ-рендеры, ADR-0006)
+Что решает конвейер, а что конфиг. Разрешения, форматы мастеров, политика
+прозрачности, качество энкода и набор отгружаемых масштабов заданы данными —
+project.yaml: render (render_config.py). Здесь только исполнение.
+
+Мастера (открытый промежуточный формат; PSD нарезается в него же — psd.py).
+Зона `assets_src/art/` — основная; `assets_src/png/` поддерживается как
+исторический алиас, чтобы работа художника не ломалась на переходе:
+  <art>/characters/<key>/<pose>/base.<ext>
+  <art>/characters/<key>/<pose>/{outfits,faces,overlays}/<name>.<ext>
+  <art>/backgrounds/<...>/<name>.<ext>      # вложенность разрешена
+  <art>/cg/<...>/<name>.<ext>
   assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg
-  assets_src/video_src/<group>/<name>.(mp4|mov|mkv|webm|m4v|avi)   # видео (ADR-0006)
-Выходы:
-  game/assets/spr/<key>/<pose>/{base@2.webp, outfits/<o>@2.webp, faces/<e>@2.webp, overlays/<n>@2.webp}
-  game/assets/bg/<location>/<variant>.webp
-  game/assets/cg/<...>/<name>.webp
+  assets_src/video_src/<group>/<name>.(mp4|mov|mkv|webm|m4v|avi)
+Допустимые расширения мастера — per-class (render.classes.<c>.formats).
+
+Выходы. Референсный вариант каждого ассета — БЕЗ суффикса, крупные варианты
+рядом как `@2`/`@4`: Ren'Py включает автоподбор оверсэмпла только для
+безсуффиксного имени (renpy/display/im.py: get_oversampled_image). Игрок на 1080p
+грузит маленький вариант, игрок на 4K — крупный.
+  game/assets/spr/<key>/<pose>/{base,outfits/<o>,faces/<e>,overlays/<n>}[@N].webp
+  game/assets/bg/<...>/<name>[@N].webp   (+ <name>.thumb.webp)
+  game/assets/cg/<...>/<name>[@N].webp   (+ <name>.thumb.webp)
   game/assets/audio/{bgm,amb,sfx}/<id>.ogg
-  game/assets/mov/<group>/<name>.webm (+ .webm.meta.json — mov_meta@1)
+  game/assets/mov/<group>/<name>[@N].webm (+ .webm.meta.json — mov_meta@1)
 """
 
 from __future__ import annotations
 
-import io
 import json
 import re
-import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import blake3
 
+from . import imaging
+from .render_config import RenderConfig, load_render_config
+
 # Версии трансформаций (G13): бамп инвалидирует только свою ветку кэша.
+# @2 у растровых веток — переход на data-driven варианты и bbox-модель (ADR-0012).
 # video2webm: версия = пресет ffmpeg (video.encode_args) — меняете пресет, бампайте.
 TRANSFORMS = {
-    "png2webp_sprite": "1",
-    "png2webp_bg": "1",
-    "png2webp_cg": "1",
-    "png2webp_cg_thumb": "1",
+    "img_sprite": "2",
+    "img_bg": "2",
+    "img_cg": "2",
+    "img_thumb": "2",
     "ui_panel": "1",
     "copy_audio": "1",
-    "video2webm": "1",
+    "video2webm": "2",
 }
+
+# Растровый класс -> трансформация. Ключи совпадают с render.classes.
+CLASS_TRANSFORM = {"spr": "img_sprite", "bg": "img_bg", "cg": "img_cg"}
 
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 MANIFEST = "assets-manifest.json"
+
+# Зоны растровых мастеров: art/ — основная, png/ — исторический алиас.
+ART_ROOTS = ("art", "png")
+# Спутники мастеров, которые конвейер не собирает, но и не считает мусором.
+SIDECAR_SUFFIXES = (".meta.yaml", ".provenance.json", ".manifest.json",
+                    ".video.yaml", ".render.yaml", ".md", ".txt")
+SIDECAR_NAMES = (".gitkeep", ".gitignore")
 
 
 class AssetError(RuntimeError):
@@ -60,8 +82,18 @@ class AssetBuildResult:
     fresh: list[str] = field(default_factory=list)       # на диске уже актуальные
     deleted: list[str] = field(default_factory=list)
     stale: list[str] = field(default_factory=list)       # только в режиме check
+    skipped_variants: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class Job:
+    src: Path
+    transform: str
+    out_rel: str
+    params: dict                       # входит в хеш источника (G13)
+    extra: dict | None = None          # видео/панели: нефайловые входы
 
 
 def _b3_bytes(data: bytes) -> str:
@@ -79,18 +111,6 @@ def _write_atomic(path: Path, data: bytes) -> None:
     os.replace(tmp, path)
 
 
-def _webp_encode(src: Path, quality: int, max_side: int | None = None) -> bytes:
-    from PIL import Image
-
-    with Image.open(src) as im:
-        im = im.convert("RGBA")
-        if max_side:
-            im.thumbnail((max_side, max_side), Image.LANCZOS)
-        buf = io.BytesIO()
-        im.save(buf, format="WEBP", quality=quality, method=4)
-        return buf.getvalue()
-
-
 def _check_slug(rep: AssetBuildResult, rel: str, *parts: str) -> bool:
     for p in parts:
         if not SLUG_RE.match(p):
@@ -99,110 +119,230 @@ def _check_slug(rep: AssetBuildResult, rel: str, *parts: str) -> bool:
     return True
 
 
-def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str, dict | None]]:
-    """[(источник, транформация, выход относительно game/assets/, extra)].
-    Слои персонажей собираются из двух деревьев одной конвенции: ручной экспорт
-    (assets_src/png) и staging PSD-нарезки (.vncache/psd_png); конфликт на один
-    выход ловится в build_assets. extra — только у видео (опции sidecar)."""
-    jobs: list[tuple[Path, str, str, dict | None]] = []
-    png = root / "assets_src" / "png"
+def _art_roots(root: Path) -> list[Path]:
+    return [root / "assets_src" / name for name in ART_ROOTS
+            if (root / "assets_src" / name).is_dir()]
 
-    char_bases = [png / "characters", root / ".vncache" / "psd_png" / "characters"]
+
+def _is_sidecar(path: Path) -> bool:
+    name = path.name
+    return name in SIDECAR_NAMES or any(name.endswith(s) for s in SIDECAR_SUFFIXES)
+
+
+# ── Проба и валидация мастера ────────────────────────────────────────────────
+
+def _validate_master(rep: AssetBuildResult, rel: str, src: Path, cls) -> dict | None:
+    """Формат, прозрачность, минимальный размер, пропорции. None = мастер отбракован.
+
+    Ни одна из проверок не «молча пропускает»: неподходящий файл обязан назвать
+    себя ошибкой, иначе он исчезает из сборки и всплывает чёрным экраном в игре."""
+    ext = src.suffix.lower().lstrip(".")
+    if ext not in cls.formats:
+        rep.errors.append(
+            f"{rel}: формат .{ext} не разрешён для класса {cls.name} "
+            f"(разрешены: {', '.join('.' + f for f in cls.formats)}; "
+            f"project.yaml: render.classes.{cls.name}.formats)")
+        return None
+    try:
+        info = imaging.probe(src)
+    except imaging.ImagingError as e:
+        rep.errors.append(f"{rel}: {e}")
+        return None
+
+    if cls.alpha == "require" and not info["has_alpha"]:
+        rep.errors.append(
+            f"{rel}: класс {cls.name} требует прозрачности, а мастер непрозрачен "
+            f"(альфа-минимум {info['alpha_min']}) — фон не вырезан; "
+            f"такой слой ляжет в игре прямоугольником поверх фона")
+        return None
+    if cls.alpha == "forbid" and info["has_alpha"]:
+        rep.warnings.append(
+            f"{rel}: у класса {cls.name} прозрачность не используется — "
+            f"альфа-канал будет отброшен при сборке")
+
+    smallest = cls.scales[0]
+    if cls.layout == "screen":
+        need = (cls.screen[0] * smallest, cls.screen[1] * smallest)
+        if info["width"] < need[0] or info["height"] < need[1]:
+            rep.errors.append(
+                f"{rel}: мастер {info['width']}x{info['height']} меньше отгружаемого "
+                f"{need[0]}x{need[1]} — апскейл запрещён, отдайте мастер крупнее")
+            return None
+        if cls.aspect_tolerance:
+            miss = imaging.aspect_mismatch(info["size"], cls.screen)
+            if miss > cls.aspect_tolerance:
+                rep.errors.append(
+                    f"{rel}: пропорции {info['width']}x{info['height']} расходятся с "
+                    f"экраном {cls.screen[0]}x{cls.screen[1]} на {miss:.1%} — "
+                    f"кадр в игре обрежется или оставит поля")
+                return None
+    sm = cls.source_min
+    if sm and (info["width"] < sm[0] or info["height"] < sm[1]):
+        rep.errors.append(
+            f"{rel}: мастер {info['width']}x{info['height']} меньше требуемого "
+            f"минимума {sm[0]}x{sm[1]} (project.yaml: render.classes.{cls.name}.source_min)")
+        return None
+    return info
+
+
+def _image_jobs(rep: AssetBuildResult, cfg: RenderConfig, rel: str, src: Path,
+                cls_name: str, out_base: str,
+                expect_size: tuple[int, int] | None = None) -> list[Job]:
+    """Мастер -> задания на все отгружаемые варианты (+ миниатюра).
+
+    expect_size — обязательный холст (спрайты одной позы): слои layeredimage
+    складываются по координате (0,0), поэтому разный холст = поехавшая композиция."""
+    cls = cfg.cls(cls_name)
+    info = _validate_master(rep, rel, src, cls)
+    if info is None:
+        return []
+    if expect_size and info["size"] != tuple(expect_size):
+        rep.errors.append(
+            f"{rel}: холст {info['width']}x{info['height']} != {expect_size[0]}x"
+            f"{expect_size[1]} — слои одной позы обязаны лежать на ОДНОМ холсте, "
+            f"иначе layeredimage смещает наряд/эмоцию относительно тела")
+        return []
+    variants, skipped = cls.variants_for(info["size"])
+    for scale in skipped:
+        rep.skipped_variants.append(
+            f"{rel}: вариант @{scale} не собран — мастер {info['width']}x{info['height']} "
+            f"мал для него (нужен вдвое крупнее); игра останется на меньшем варианте")
+    jobs: list[Job] = []
+    keep_alpha = cls.alpha != "forbid"
+    for v in variants:
+        jobs.append(Job(
+            src=src,
+            transform=CLASS_TRANSFORM[cls_name],
+            out_rel=f"{out_base}{v.suffix}{cls.out_ext}",
+            # quality едет в params целиком: правка качества в project.yaml обязана
+            # инвалидировать кэш, а профиль (full/draft) известен только при сборке.
+            params={"target": [v.width, v.height],
+                    "quality": dict(cls.spec.get("quality") or {}),
+                    "out_format": cls.spec.get("out_format", "webp"),
+                    "keep_alpha": keep_alpha, "scale": v.scale},
+        ))
+    if cls.wants_thumb:
+        jobs.append(Job(
+            src=src,
+            transform="img_thumb",
+            out_rel=f"{out_base}.thumb{_thumb_ext(cfg)}",
+            params={"max_side": int(cfg.thumb["max_side"]),
+                    "quality": int(cfg.thumb["quality"]),
+                    "out_format": cfg.thumb.get("out_format", "webp"),
+                    "keep_alpha": keep_alpha},
+        ))
+    return jobs
+
+
+def _thumb_ext(cfg: RenderConfig) -> str:
+    from .render_config import OUT_FORMATS
+
+    return OUT_FORMATS[cfg.thumb.get("out_format", "webp")]
+
+
+# ── Discovery ────────────────────────────────────────────────────────────────
+
+def _discover(root: Path, rep: AssetBuildResult,
+              cfg: RenderConfig | None = None) -> tuple[list[Job], set[Path]]:
+    """Задания сборки + множество ФАКТИЧЕСКИ ПОТРЕБЛЁННЫХ файлов-мастеров.
+    Второе нужно, чтобы поймать мастер, который никуда не поехал: раньше файл
+    неподдерживаемого формата или в неожиданной папке исчезал молча."""
+    cfg = cfg or load_render_config(root)
+    jobs: list[Job] = []
+    consumed: set[Path] = set()
+
+    # ── Персонажи: ручной экспорт + staging PSD-нарезки, одна конвенция ──────
+    canvases = _declared_canvases(root)
+    char_bases = [p / "characters" for p in _art_roots(root)]
+    char_bases.append(root / ".vncache" / "psd_png" / "characters")
     for chars in char_bases:
         if not chars.is_dir():
             continue
         for key_dir in sorted(p for p in chars.iterdir() if p.is_dir()):
             for pose_dir in sorted(p for p in key_dir.iterdir() if p.is_dir()):
-                rel = pose_dir.relative_to(root).as_posix()
-                if not _check_slug(rep, rel, key_dir.name, pose_dir.name):
+                prel = _rel(root, pose_dir)
+                if not _check_slug(rep, prel, key_dir.name, pose_dir.name):
                     continue
-                base = pose_dir / "base.png"
-                if base.is_file():
-                    jobs.append((base, "png2webp_sprite",
-                                 f"spr/{key_dir.name}/{pose_dir.name}/base@2.webp", None))
+                # Все файлы base.* потребляем сразу: иначе base.jpg дал бы и
+                # «нет base», и «файл не подобран» — две ошибки об одном.
+                for f in pose_dir.iterdir():
+                    if f.is_file() and f.stem == "base":
+                        consumed.add(f)
+                base = _pick_master(pose_dir, "base", cfg.cls("spr").formats)
+                # Холст позы: объявленный в character.yaml (canvas) либо, если не
+                # объявлен, — холст base. Остальные слои обязаны ему соответствовать.
+                canvas = canvases.get(key_dir.name)
+                if base is None:
+                    rep.errors.append(
+                        f"{prel}: нет обязательного base.* "
+                        f"({', '.join('.' + f for f in cfg.cls('spr').formats)})")
                 else:
-                    rep.errors.append(f"{rel}: нет обязательного base.png")
+                    if canvas is None:
+                        try:
+                            canvas = imaging.probe(base)["size"]
+                        except imaging.ImagingError:
+                            canvas = None
+                    jobs += _image_jobs(rep, cfg, _rel(root, base), base, "spr",
+                                        f"spr/{key_dir.name}/{pose_dir.name}/base",
+                                        expect_size=canvases.get(key_dir.name))
+                # Слои обрабатываются даже без base: художник должен получить ВСЕ
+                # претензии за один прогон, а не по одной за сборку.
                 for group in ("outfits", "faces", "overlays"):
                     gdir = pose_dir / group
                     if not gdir.is_dir():
                         continue
-                    for f in sorted(gdir.glob("*.png")):
-                        name = f.stem
-                        if not _check_slug(rep, f"{rel}/{group}/{f.name}", name):
+                    for f in sorted(gdir.iterdir()):
+                        if not f.is_file() or _is_sidecar(f):
                             continue
-                        jobs.append((f, "png2webp_sprite",
-                                     f"spr/{key_dir.name}/{pose_dir.name}/{group}/{name}@2.webp",
-                                     None))
+                        consumed.add(f)
+                        if not _check_slug(rep, _rel(root, f), f.stem):
+                            continue
+                        jobs += _image_jobs(
+                            rep, cfg, _rel(root, f), f, "spr",
+                            f"spr/{key_dir.name}/{pose_dir.name}/{group}/{f.stem}",
+                            expect_size=canvas)
 
-    bgs = png / "backgrounds"
-    if bgs.is_dir():
-        for loc_dir in sorted(p for p in bgs.iterdir() if p.is_dir()):
-            for f in sorted(loc_dir.glob("*.png")):
-                rel = f"assets_src/png/backgrounds/{loc_dir.name}/{f.name}"
-                if not _check_slug(rep, rel, loc_dir.name, f.stem):
-                    continue
-                jobs.append((f, "png2webp_bg", f"bg/{loc_dir.name}/{f.stem}.webp", None))
-
-    # CG-стиллы (DAZ-рендеры и AI-обработка, ADR-0006): вложенность произвольная,
-    # каждый сегмент — slug; nsfw-контент живёт в cg/nsfw/** (гейт флейворов).
-    cg = png / "cg"
-    if cg.is_dir():
-        for f in sorted(cg.rglob("*.png")):
-            rel_parts = f.relative_to(cg).parts
-            rel = f"assets_src/png/cg/{f.relative_to(cg).as_posix()}"
-            if not _check_slug(rep, rel, *rel_parts[:-1], f.stem):
+    # ── Фоны и CG: произвольная вложенность каталогов ───────────────────────
+    # Вложенность — организационная (apartment/living_room/), id локации при этом
+    # остаётся плоским: location.yaml ссылается на путь файла, а не на дерево.
+    for cls_name, zone in (("bg", "backgrounds"), ("cg", "cg")):
+        for art in _art_roots(root):
+            base_dir = art / zone
+            if not base_dir.is_dir():
                 continue
-            base = "cg/" + "/".join([*rel_parts[:-1], f.stem])
-            jobs.append((f, "png2webp_cg", base + ".webp", None))
-            jobs.append((f, "png2webp_cg_thumb", base + ".thumb.webp", None))
+            for f in sorted(base_dir.rglob("*")):
+                if not f.is_file() or _is_sidecar(f):
+                    continue
+                consumed.add(f)
+                parts = f.relative_to(base_dir).parts
+                rel = _rel(root, f)
+                if not _check_slug(rep, rel, *parts[:-1], f.stem):
+                    continue
+                out_base = f"{cls_name}/" + "/".join([*parts[:-1], f.stem])
+                jobs += _image_jobs(rep, cfg, rel, f, cls_name, out_base)
 
-    # Зона звука — audio_stems (ARCHITECTURE.md:393, conventions/folder-layout.md:29):
-    # имя нормативное, менять его пришлось бы через ADR, поэтому код идёт к норме.
+    # ── Звук: побайтовое копирование ────────────────────────────────────────
     audio = root / "assets_src" / "audio_stems"
     if audio.is_dir():
         for kind in ("bgm", "amb", "sfx"):
             kdir = audio / kind
             if not kdir.is_dir():
                 continue
-            for f in sorted(kdir.glob("*.ogg")):
-                if not _check_slug(rep, f"assets_src/audio_stems/{kind}/{f.name}", f.stem):
+            for f in sorted(kdir.iterdir()):
+                if not f.is_file() or _is_sidecar(f):
                     continue
-                jobs.append((f, "copy_audio", f"audio/{kind}/{f.name}", None))
+                consumed.add(f)
+                if f.suffix.lower() != ".ogg":
+                    rep.errors.append(f"{_rel(root, f)}: в audio_stems только .ogg")
+                    continue
+                if not _check_slug(rep, _rel(root, f), f.stem):
+                    continue
+                jobs.append(Job(f, "copy_audio", f"audio/{kind}/{f.name}", {}))
 
-    # Видео-лупы (ADR-0006): assets_src/video_src/<group>/<name>.<ext> [+ <name>.video.yaml]
-    from . import video as videomod
+    # ── Видео (ADR-0006) + оверсэмпл-варианты ───────────────────────────────
+    jobs += _video_jobs(root, rep, cfg, consumed)
 
-    vsrc = root / "assets_src" / "video_src"
-    if vsrc.is_dir():
-        vfiles = [f for f in sorted(vsrc.rglob("*"))
-                  if f.is_file() and f.suffix.lower() in videomod.VIDEO_EXTS]
-        if vfiles:
-            from ..pipeline import find_ffmpeg, find_ffprobe
-
-            if find_ffmpeg() is None or find_ffprobe() is None:
-                rep.errors.append(
-                    "assets_src/video_src: есть видео-сырцы, но ffmpeg/ffprobe не найдены "
-                    "(vn pipeline doctor) — видео-трек не собирается")
-                return jobs
-        for f in vfiles:
-            rel_parts = f.relative_to(vsrc).parts
-            rel = f"assets_src/video_src/{f.relative_to(vsrc).as_posix()}"
-            if len(rel_parts) < 2:
-                rep.errors.append(f"{rel}: видео кладутся в группу — "
-                                  f"video_src/<group>/<name>.<ext> (naming.md)")
-                continue
-            if not _check_slug(rep, rel, *rel_parts[:-1], f.stem):
-                continue
-            sidecar = f.with_name(f.stem + videomod.SIDECAR_SUFFIX)
-            opts, opt_errors = videomod.load_opts(sidecar)
-            if opt_errors:
-                rep.errors.extend(opt_errors)
-                continue
-            out = "mov/" + "/".join([*rel_parts[:-1], f.stem]) + ".webm"
-            extra = {"opts": opts, "sidecar": sidecar if sidecar.is_file() else None}
-            jobs.append((f, "video2webm", out, extra))
-
-    # UI-панели (ADR-0009): источник — не файл, а декларация; рисует конвейер.
+    # ── UI-панели (ADR-0009): источник — декларация, а не файл ──────────────
     panels_decl = root / "content" / "ui" / "panels.yaml"
     if panels_decl.is_file():
         from ..repo import load_yaml
@@ -213,31 +353,172 @@ def _discover(root: Path, rep: AssetBuildResult) -> list[tuple[Path, str, str, d
                 rep.errors.append(f"content/ui/panels.yaml: панель {pid!r} вне "
                                   f"конвенции ^[a-z][a-z0-9_]*$")
                 continue
-            jobs.append((panels_decl, "ui_panel", f"ui/{pid}.webp", {"spec": spec}))
+            jobs.append(Job(panels_decl, "ui_panel", f"ui/{pid}.webp", {},
+                            extra={"spec": spec}))
 
+    return jobs, consumed
+
+
+def _rel(root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def _declared_canvases(root: Path) -> dict[str, tuple[int, int]]:
+    """character.yaml: canvas -> обязательный холст мастеров этого персонажа.
+
+    Поле долго было мёртвой поверхностью схемы. Теперь это контракт: холст —
+    единственное, что связывает слои позы между собой (layeredimage кладёт их
+    в (0,0)), и единственное, из чего выводится экранный рост персонажа."""
+    out: dict[str, tuple[int, int]] = {}
+    zones = [root / "content" / "characters"]
+    if (root / "packs").is_dir():
+        zones += sorted((root / "packs").glob("*/characters"))
+    for zone in zones:
+        if not zone.is_dir():
+            continue
+        for d in sorted(p for p in zone.iterdir() if p.is_dir()):
+            f = d / "character.yaml"
+            if not f.is_file():
+                continue
+            try:
+                from ..repo import load_yaml
+
+                doc = load_yaml(f) or {}
+            except Exception:
+                continue
+            canvas = doc.get("canvas")
+            if isinstance(canvas, list) and len(canvas) == 2:
+                out[d.name] = (int(canvas[0]), int(canvas[1]))
+    return out
+
+
+def _pick_master(directory: Path, stem: str, formats: tuple[str, ...]) -> Path | None:
+    """Мастер с заданным stem в любом из допустимых форматов (порядок = приоритет)."""
+    for ext in formats:
+        cand = directory / f"{stem}.{ext}"
+        if cand.is_file():
+            return cand
+    return None
+
+
+def _video_jobs(root: Path, rep: AssetBuildResult, cfg: RenderConfig,
+                consumed: set[Path]) -> list[Job]:
+    from . import video as videomod
+
+    vsrc = root / "assets_src" / "video_src"
+    if not vsrc.is_dir():
+        return []
+    vfiles = [f for f in sorted(vsrc.rglob("*"))
+              if f.is_file() and not _is_sidecar(f)]
+    for f in vfiles:
+        consumed.add(f)
+    media = [f for f in vfiles if f.suffix.lower() in videomod.VIDEO_EXTS]
+    for f in vfiles:
+        if f not in media:
+            rep.errors.append(
+                f"{_rel(root, f)}: формат не поддержан видео-треком "
+                f"({', '.join(videomod.VIDEO_EXTS)})")
+    if not media:
+        return []
+
+    from ..pipeline import find_ffmpeg, find_ffprobe
+
+    if find_ffmpeg() is None or find_ffprobe() is None:
+        rep.errors.append(
+            "assets_src/video_src: есть видео-мастера, но ffmpeg/ffprobe не найдены "
+            "(vn pipeline doctor) — видео-трек не собирается")
+        return []
+
+    mov = cfg.cls("mov")
+    heights = {int(k): int(v) for k, v in (mov.spec.get("heights") or {}).items()}
+    jobs: list[Job] = []
+    for f in media:
+        parts = f.relative_to(vsrc).parts
+        rel = _rel(root, f)
+        if len(parts) < 2:
+            rep.errors.append(f"{rel}: видео кладутся в группу — "
+                              f"video_src/<group>/<name>.<ext> (naming.md)")
+            continue
+        if not _check_slug(rep, rel, *parts[:-1], f.stem):
+            continue
+        sidecar = f.with_name(f.stem + videomod.SIDECAR_SUFFIX)
+        opts, opt_errors = videomod.load_opts(sidecar)
+        if opt_errors:
+            rep.errors.extend(opt_errors)
+            continue
+        try:
+            src_h = videomod.summarize(f)["height"]
+        except videomod.VideoError as e:
+            rep.errors.append(f"{rel}: {e}")
+            continue
+        out_base = "mov/" + "/".join([*parts[:-1], f.stem])
+        for scale in mov.scales:
+            target_h = heights.get(scale, cfg.screen[1] * scale)
+            if opts.get("max_height"):
+                target_h = min(target_h, int(opts["max_height"]))
+            if target_h > src_h and scale != mov.scales[0]:
+                rep.skipped_variants.append(
+                    f"{rel}: вариант @{scale} не собран — мастер {src_h}p ниже "
+                    f"целевых {target_h}p")
+                continue
+            vopts = dict(opts, max_height=target_h)
+            jobs.append(Job(f, "video2webm", f"{out_base}{mov.suffix_for(scale)}.webm",
+                            {"max_height": target_h, "scale": scale},
+                            extra={"opts": vopts,
+                                   "sidecar": sidecar if sidecar.is_file() else None}))
     return jobs
 
 
-def _transform(src: Path, transform: str, profile: str) -> bytes:
-    if transform == "png2webp_sprite":
-        return _webp_encode(src, quality=50 if profile == "draft" else 95)
-    if transform == "png2webp_bg":
-        return _webp_encode(src, quality=50 if profile == "draft" else 90)
-    if transform == "png2webp_cg":
-        return _webp_encode(src, quality=50 if profile == "draft" else 90)
-    if transform == "png2webp_cg_thumb":
-        # Превью галереи: длинная сторона 512 — галерея не должна декодировать
-        # полноразмерные CG ради сетки миниатюр.
-        return _webp_encode(src, quality=80, max_side=512)
-    if transform == "copy_audio":
-        return src.read_bytes()
-    raise AssetError(f"неизвестная трансформация {transform!r}")
+def _orphan_masters(root: Path, consumed: set[Path], rep: AssetBuildResult) -> None:
+    """Файл в зоне мастеров, который не взяла ни одна ветка конвейера.
+
+    Это главный источник «тихой потери»: JPG в спрайтах, лишний уровень
+    вложенности, опечатка в имени папки — раньше всё это просто исчезало."""
+    zones = [*_art_roots(root)]
+    for extra in ("audio_stems", "video_src"):
+        d = root / "assets_src" / extra
+        if d.is_dir():
+            zones.append(d)
+    for zone in zones:
+        for f in sorted(zone.rglob("*")):
+            if not f.is_file() or _is_sidecar(f) or f in consumed:
+                continue
+            rep.errors.append(
+                f"{_rel(root, f)}: файл лежит в зоне мастеров, но не подобран ни одной "
+                f"веткой конвейера — проверьте путь и конвенцию каталогов "
+                f"(docs/conventions/folder-layout.md)")
+
+
+# ── Трансформации ────────────────────────────────────────────────────────────
+
+def _transform(job: Job, profile: str, cfg: RenderConfig) -> bytes:
+    t = job.transform
+    if t in ("img_sprite", "img_bg", "img_cg"):
+        q = job.params["quality"]
+        quality = int(q.get(profile, q.get("full", 90)))
+        return imaging.encode(
+            job.src, tuple(job.params["target"]), quality=quality,
+            out_format=job.params["out_format"], keep_alpha=job.params["keep_alpha"])
+    if t == "img_thumb":
+        return imaging.encode(
+            job.src, None, quality=job.params["quality"],
+            out_format=job.params["out_format"], keep_alpha=job.params["keep_alpha"],
+            max_side=job.params["max_side"])
+    if t == "copy_audio":
+        return job.src.read_bytes()
+    raise AssetError(f"неизвестная трансформация {t!r}")
 
 
 def _transform_ui_panel(spec: dict, profile: str) -> bytes:
     """UI-панель: рисуется из декларации (источник — не файл, а параметры)."""
-    from . import ui as uimod
+    import io
+
     from PIL import Image
+
+    from . import ui as uimod
 
     png = uimod.render_panel(spec)
     with Image.open(io.BytesIO(png)) as im:
@@ -248,6 +529,8 @@ def _transform_ui_panel(spec: dict, profile: str) -> bytes:
         return buf.getvalue()
 
 
+# ── Сборка ───────────────────────────────────────────────────────────────────
+
 def build_assets(root: Path, profile: str = "full", check: bool = False,
                  only_transforms: set[str] | None = None) -> AssetBuildResult:
     """Инкрементальная сборка game/assets из assets_src (+ нарезка PSD, psd.py).
@@ -257,6 +540,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
     from . import video as videomod
 
     rep = AssetBuildResult()
+    cfg = load_render_config(root)
     out_root = root / "game" / "assets"
     cache_dir = root / ".vncache" / "assets"
     video_tmp = root / ".vncache" / "video-tmp"
@@ -267,7 +551,8 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
         from .psd import slice_all_psd
         slice_all_psd(root, rep)
 
-    jobs = _discover(root, rep)
+    jobs, consumed = _discover(root, rep, cfg)
+    _orphan_masters(root, consumed, rep)
     if rep.errors:
         return rep
 
@@ -276,7 +561,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
     if effective_only and "video2webm" in effective_only:
         effective_only.add("mov_meta")
     if effective_only and not check:
-        jobs = [j for j in jobs if j[1] in effective_only]
+        jobs = [j for j in jobs if j.transform in effective_only]
 
     from ..repo import load_project
     try:
@@ -285,38 +570,41 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
         file_budget = None
 
     seen_outputs: dict[str, dict] = {}
-    for src, transform, out_rel, extra in jobs:
+    for job in jobs:
+        out_rel = job.out_rel
         if out_rel in seen_outputs:
             rep.errors.append(f"{out_rel}: два источника претендуют на один выход")
             continue
         try:
-            src_bytes = src.read_bytes()
+            src_bytes = job.src.read_bytes()
         except OSError as e:
             # Залоченный/дописываемый файл (Photoshop, антивирус) — ошибка, не трейсбек.
-            rep.errors.append(f"{src.relative_to(root).as_posix()}: не читается: {e}")
+            rep.errors.append(f"{_rel(root, job.src)}: не читается: {e}")
             continue
-        src_hash = _b3_bytes(src_bytes)
-        if transform == "video2webm" and extra:
-            # Sidecar-опции — часть источника: правка <name>.video.yaml инвалидирует выход.
-            sidecar = extra.get("sidecar")
-            sidecar_bytes = sidecar.read_bytes() if sidecar else b""
-            src_hash = _b3_bytes(src_bytes + b"\x00" + sidecar_bytes)
-        elif transform == "ui_panel" and extra:
-            # Источник панели — её параметры, а не весь файл деклараций: правка
-            # одной панели не должна перерисовывать все остальные.
+
+        # Параметры трансформации — ЧАСТЬ источника: правка render-профиля или
+        # сайдкара инвалидирует ровно свои выходы, не трогая чужие ветки (G13).
+        extra_params = dict(job.params)
+        if job.transform == "video2webm" and job.extra:
+            sidecar = job.extra.get("sidecar")
+            src_bytes = src_bytes + b"\x00" + (sidecar.read_bytes() if sidecar else b"")
+        elif job.transform == "ui_panel" and job.extra:
             from . import ui as uimod
-            src_hash = _b3_bytes(uimod.panel_hash_source(extra["spec"]))
+            src_bytes = uimod.panel_hash_source(job.extra["spec"])
+        src_hash = _b3_bytes(
+            src_bytes + b"\x00" + cfg.params_digest(job.transform, extra_params))
+
         key = _b3_bytes(
-            f"{src_hash}:{transform}:{TRANSFORMS[transform]}:{profile}".encode()
+            f"{src_hash}:{job.transform}:{TRANSFORMS[job.transform]}:{profile}".encode()
         )
         blob = cache_dir / key[:2] / key
         dest = out_root / out_rel
-        meta_rel = out_rel + videomod.META_SUFFIX if transform == "video2webm" else None
+        meta_rel = out_rel + videomod.META_SUFFIX if job.transform == "video2webm" else None
 
         if check:
             seen_outputs[out_rel] = {
                 "src_hash": src_hash,
-                "transform": f"{transform}@{TRANSFORMS[transform]}",
+                "transform": f"{job.transform}@{TRANSFORMS[job.transform]}",
                 "profile": profile,
             }
             if not dest.is_file():
@@ -324,7 +612,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
             if meta_rel:
                 seen_outputs[meta_rel] = {
                     "src_hash": src_hash,
-                    "transform": f"mov_meta@{TRANSFORMS[transform]}",
+                    "transform": f"mov_meta@{TRANSFORMS[job.transform]}",
                     "profile": profile,
                 }
                 if dest.is_file() and not (out_root / meta_rel).is_file():
@@ -336,14 +624,14 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
             origin = "cache"
         else:
             try:
-                if transform == "video2webm":
-                    data = videomod.encode_video(src, extra["opts"], profile, video_tmp)
-                elif transform == "ui_panel":
-                    data = _transform_ui_panel(extra["spec"], profile)
+                if job.transform == "video2webm":
+                    data = videomod.encode_video(job.src, job.extra["opts"], profile, video_tmp)
+                elif job.transform == "ui_panel":
+                    data = _transform_ui_panel(job.extra["spec"], profile)
                 else:
-                    data = _transform(src, transform, profile)
-            except (OSError, videomod.VideoError) as e:
-                rep.errors.append(f"{src.relative_to(root).as_posix()}: трансформация упала: {e}")
+                    data = _transform(job, profile, cfg)
+            except (OSError, imaging.ImagingError, videomod.VideoError) as e:
+                rep.errors.append(f"{_rel(root, job.src)}: трансформация упала: {e}")
                 continue
             _write_atomic(blob, data)
             origin = "built"
@@ -356,13 +644,22 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
             (rep.from_cache if origin == "cache" else rep.built).append(out_rel)
             wrote_now = True
 
-        seen_outputs[out_rel] = {
-            "src": src.relative_to(root).as_posix(),
+        entry = {
+            "src": _rel(root, job.src),
             "src_hash": src_hash,
             "out_hash": _b3_bytes(data),
-            "transform": f"{transform}@{TRANSFORMS[transform]}",
+            "transform": f"{job.transform}@{TRANSFORMS[job.transform]}",
             "profile": profile,
         }
+        # Стоимость в пикселях кэша Ren'Py — считаем один раз при сборке и храним
+        # в манифесте: модель памяти (memory.py) не должна декодировать тысячи
+        # файлов на каждый прогон QA.
+        if job.transform in ("img_sprite", "img_bg", "img_cg"):
+            try:
+                entry["cost_px"] = imaging.decoded_cost_px(data)
+            except Exception:
+                pass
+        seen_outputs[out_rel] = entry
 
         if meta_rel:
             # Валидация лупа/совместимости + метаданные (mov_meta@1) — контракт
@@ -370,23 +667,22 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
             meta_dest = out_root / meta_rel
             if wrote_now or not meta_dest.is_file():
                 v_errors, v_warnings, summary = videomod.validate_output(
-                    dest, extra["opts"], video_tmp, file_budget_mb=file_budget)
+                    dest, job.extra["opts"], video_tmp, file_budget_mb=file_budget)
                 rep.warnings.extend(v_warnings)
                 if v_errors:
                     rep.errors.extend(v_errors)
                     continue
                 meta = videomod.build_meta(
-                    out_rel, extra["opts"], summary,
-                    src.relative_to(root).as_posix(), src_hash,
-                    seen_outputs[out_rel]["out_hash"],
-                    f"{transform}@{TRANSFORMS[transform]}", profile)
+                    out_rel, job.extra["opts"], summary,
+                    _rel(root, job.src), src_hash, entry["out_hash"],
+                    f"{job.transform}@{TRANSFORMS[job.transform]}", profile)
                 _write_atomic(meta_dest, (json.dumps(
                     meta, ensure_ascii=False, indent=1, sort_keys=True) + "\n").encode("utf-8"))
             seen_outputs[meta_rel] = {
-                "src": src.relative_to(root).as_posix(),
+                "src": _rel(root, job.src),
                 "src_hash": src_hash,
                 "out_hash": _b3_bytes(meta_dest.read_bytes()),
-                "transform": f"mov_meta@{TRANSFORMS[transform]}",
+                "transform": f"mov_meta@{TRANSFORMS[job.transform]}",
                 "profile": profile,
             }
 
@@ -458,7 +754,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
 def cache_gc(root: Path, dry_run: bool = False) -> tuple[int, int]:
     """Убрать блобы кэша трансформаций, не упомянутые в текущем манифесте сборки
     (mark & sweep от манифеста). Кэш иначе растёт неограниченно: каждая правка
-    сырца оставляет прошлый блоб навсегда. Возвращает (удалено, освобождено байт)."""
+    мастера оставляет прошлый блоб навсегда. Возвращает (удалено, освобождено байт)."""
     cache_dir = root / ".vncache" / "assets"
     if not cache_dir.is_dir():
         return 0, 0
@@ -491,8 +787,27 @@ def cache_gc(root: Path, dry_run: bool = False) -> tuple[int, int]:
     return removed, freed
 
 
+# ── Скан собранной зоны ──────────────────────────────────────────────────────
+
+_VARIANT_RE = re.compile(r"^(?P<stem>.+?)(?:@(?P<scale>\d+))?$")
+
+
+def variant_scale(name: str) -> int:
+    """Масштаб варианта из имени файла (без расширения): base -> 1, base@2 -> 2."""
+    m = _VARIANT_RE.match(name)
+    return int(m.group("scale")) if m and m.group("scale") else 1
+
+
+def reference_name(name: str) -> str:
+    """Имя без оверсэмпл-суффикса: base@2 -> base."""
+    return _VARIANT_RE.match(name).group("stem")
+
+
 def sprite_tree(root: Path) -> dict[str, dict[str, dict[str, list[str]]]]:
-    """Скан собранных спрайтов: {char: {pose: {'base': [...], 'outfits': [...], 'faces': [...], 'overlays': [...]}}}."""
+    """Скан собранных спрайтов: {char: {pose: {'base': [...], 'outfits': [...],
+    'faces': [...], 'overlays': [...]}}}. Возвращает РЕФЕРЕНСНЫЕ имена (без @N):
+    эмиттер образов обязан ссылаться именно на них, иначе Ren'Py не включит
+    автоподбор варианта под физический экран."""
     tree: dict = {}
     spr = root / "game" / "assets" / "spr"
     if not spr.is_dir():
@@ -500,13 +815,29 @@ def sprite_tree(root: Path) -> dict[str, dict[str, dict[str, list[str]]]]:
     for char_dir in sorted(p for p in spr.iterdir() if p.is_dir()):
         poses: dict = {}
         for pose_dir in sorted(p for p in char_dir.iterdir() if p.is_dir()):
-            entry = {"base": [], "outfits": [], "faces": [], "overlays": []}
-            if (pose_dir / "base@2.webp").is_file():
-                entry["base"].append("base")
+            entry: dict[str, list[str]] = {"base": [], "outfits": [], "faces": [],
+                                           "overlays": []}
+            for f in pose_dir.iterdir():
+                if f.is_file() and reference_name(f.stem) == "base" \
+                        and variant_scale(f.stem) == 1:
+                    entry["base"].append("base")
             for group in ("outfits", "faces", "overlays"):
                 gdir = pose_dir / group
                 if gdir.is_dir():
-                    entry[group] = sorted(f.name[: -len("@2.webp")] for f in gdir.glob("*@2.webp"))
+                    entry[group] = sorted(
+                        f.stem for f in gdir.iterdir()
+                        if f.is_file() and variant_scale(f.stem) == 1)
             poses[pose_dir.name] = entry
         tree[char_dir.name] = poses
     return tree
+
+
+def asset_ext(root: Path, rel_base: str) -> str:
+    """Расширение собранного референсного варианта (bg/cg могут быть не webp)."""
+    from .render_config import OUT_FORMATS
+
+    assets = root / "game" / "assets"
+    for ext in OUT_FORMATS.values():
+        if (assets / (rel_base + ext)).is_file():
+            return ext
+    return ".webp"

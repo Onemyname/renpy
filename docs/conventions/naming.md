@@ -15,9 +15,12 @@ Id неизменяемы навсегда: переименование = но�
 | id меню (`vn_menu`) | `^ch\d{2}_s\d{3}_m\d{3}$` | `ch07_s030_m001` |
 | id персонажа | `^[a-z][a-z0-9_]{1,23}$` | `mira` |
 | Логический id ассета | `^(bg\|cg\|spr\|mov\|ui\|vfx\|bgm\|amb\|sfx)/[a-z0-9_/]+$` | `bg/school_gate/day`, `mov/demo/ambient` |
-| Файл спрайт-слоя | `^assets/spr/<char>/(<pose>/(base\|outfits/*\|faces/*\|overlays/*)\|side/*)@2\.webp$` | `assets/spr/mira/a/faces/smile@2.webp` |
+| Файл спрайт-слоя (референс) | `^assets/spr/<char>/<pose>/(base\|outfits/*\|faces/*\|overlays/*)\.webp$` | `assets/spr/mira/a/faces/smile.webp` |
+| Оверсэмпл-вариант (ADR-0012) | `<имя>@<N>.<ext>` рядом с референсом; в ссылках НЕ употребляется | `assets/bg/rooftop/day@2.webp` |
+| Мастер растра (ADR-0012) | `assets_src/art/{characters,backgrounds,cg}/…` — расширение по классу (`render.classes.<c>.formats`) | `assets_src/art/backgrounds/rooftop/day.jpg` |
 | Видео-сырец (ADR-0006) | `video_src/<group>/…/<name>.(mp4\|mov\|mkv\|webm\|m4v\|avi)`, сегменты — слуги | `video_src/demo/ambient.mp4` |
 | Декларация DAZ-рендера | `assets_src/daz/**/<name>.render.yaml` (schema daz_render@1) | `daz/ch01/kiss/kiss.render.yaml` |
+| Декларация VaM/Sims4-захвата | `assets_src/{vam,sims4}/**/<name>.render.yaml` (schema `vam_render@1` / `sims4_render@1`) | `sims4/ch01/loft.render.yaml` |
 | NSFW-контент (ADR-0006) | подпапка `nsfw/` внутри категории: `cg/nsfw/…`, `mov/nsfw/…` | `assets_src/video_src/nsfw/scene01.mp4` |
 | Переменная состояния | `^(g\|ch\d{2}\|mech_[a-z0-9_]+\|dlc_[a-z0-9_]+)\.[a-z][a-z0-9_]*$` | `ch07.roof_visited` |
 | Файл миграции | `^\d{4}_[a-z][a-z0-9_]+\.py$` | `0007_route_points_clamp.py` |
@@ -28,3 +31,5 @@ Id неизменяемы навсегда: переименование = но�
 - Номера сцен — с шагом 10 (`s010`, `s020`, …); порядок задаёт `chapter.yaml`, номер — человекочитаемый якорь.
 - Сохраняемые переменные никогда не начинаются с `_` (Ren'Py не кладёт их в сейв).
 - Каждый YAML начинается с `schema: <name>@<int>` (G16).
+- **Ссылка на ассет — всегда референсное имя, без `@N`.** Крупный вариант подставляет
+  движок сам по физическому размеру экрана; имя с `@N` этот механизм отключает (ADR-0012).

@@ -85,6 +85,11 @@ jobs:
       - name: renpy lint по framework и генерату
         run: xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint
 
+      # Решение о подстановке 4K-варианта принимает движок, а не наш конвейер:
+      # без этой джобы мы могли бы годами отгружать @2-ассеты, которых никто не видит.
+      - name: Оверсэмпл подтверждён движком (ADR-0012)
+        run: xvfb-run -a vn test oversample --scale 2
+
       - name: Свежесть генерата (режим без записи, G1)
         run: xvfb-run -a vn content compile --check
 

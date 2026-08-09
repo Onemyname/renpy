@@ -14,13 +14,97 @@
     },
     "budgets": {
       "type": "object",
-      "description": "Перф/размер-бюджеты (G19): превышение = ошибка vn build",
+      "description": "Перф/размер-бюджеты (G19): превышение = ошибка vn build. Это ПРЕДОХРАНИТЕЛИ от сломавшейся сборки, а не потолок качества игры — задавайте их с большим запасом над реальным объёмом (ADR-0012).",
       "properties": {
-        "assets_total_mb": {"type": "number", "minimum": 0},
+        "assets_total_mb": {"type": "number", "minimum": 0, "description": "Весь game/assets. Игра поставляется автономным билдом без докачки, поэтому лимит ограничивает только аварии (зацикленный экспорт, забытый вариант), а не размер игры"},
         "generated_total_kb": {"type": "number", "minimum": 0},
         "cold_start_s": {"type": "number", "minimum": 0},
         "video_total_mb": {"type": "number", "minimum": 0, "description": "Суммарный бюджет game/assets/mov (ADR-0006)"},
         "video_file_mb": {"type": "number", "minimum": 0, "description": "Бюджет одного видео-файла (ADR-0006)"}
+      },
+      "additionalProperties": false
+    },
+    "render": {
+      "type": "object",
+      "description": "Render-профиль (ADR-0012): разрешения, форматы мастеров, прозрачность, отгружаемые масштабы. Единственное место, где принимаются эти решения; конвейер их исполняет.",
+      "$defs": {},
+      "properties": {
+        "screen": {
+          "type": "array", "minItems": 2, "maxItems": 2,
+          "items": {"type": "integer", "minimum": 16},
+          "description": "Виртуальная координатная сетка Ren'Py (gui.init). НЕ потолок качества: за него отвечают variants. Смена требует пересчёта всего UI"
+        },
+        "image_cache_mb": {
+          "type": "integer", "minimum": 16,
+          "description": "-> config.image_cache_size_mb. Ren'Py трактует его как ПИКСЕЛЬНЫЙ лимит: cache_limit = value * 1024 * 1024 // 4"
+        },
+        "cache_generations": {
+          "type": "integer", "minimum": 2,
+          "description": "Сколько сцен должно одновременно помещаться в кэш (текущая + предзагрузка следующей + запас). Делитель бюджета сцены"
+        },
+        "thumb": {
+          "type": "object",
+          "properties": {
+            "max_side": {"type": "integer", "minimum": 16},
+            "quality": {"type": "integer", "minimum": 1, "maximum": 100},
+            "out_format": {"enum": ["webp", "png", "jpg"]}
+          },
+          "additionalProperties": false
+        },
+        "classes": {
+          "type": "object",
+          "description": "Классы ассетов: spr (спрайты), bg (фоны), cg (стиллы), mov (видео)",
+          "propertyNames": {"pattern": "^(spr|bg|cg|mov)$"},
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "formats": {
+                "type": "array", "minItems": 1,
+                "items": {"enum": ["png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp"]},
+                "description": "Допустимые расширения МАСТЕРА. JPEG уместен там, где прозрачность запрещена, и физически непригоден там, где нужна"
+              },
+              "alpha": {
+                "enum": ["require", "forbid", "any"],
+                "description": "require — непрозрачный мастер это ошибка (фон не вырезан); forbid — альфа отбрасывается при энкоде (экономия ~20 % веса)"
+              },
+              "layout": {
+                "enum": ["screen", "oversample"],
+                "description": "screen — ассет занимает весь виртуальный экран (вариант s = screen*s); oversample — вёрстка = мастер / master_scale"
+              },
+              "master_scale": {"type": "integer", "minimum": 1, "description": "Во сколько раз мастер крупнее вёрстки (layout: oversample)"},
+              "variants": {
+                "type": "array", "minItems": 1, "uniqueItems": true,
+                "items": {"type": "integer", "minimum": 1},
+                "description": "Отгружаемые масштабы. Наименьший — референсный (файл БЕЗ суффикса), остальные получают @N: только у безсуффиксного имени Ren'Py включает автоподбор под физический экран"
+              },
+              "heights": {
+                "type": "object",
+                "description": "Только mov: масштаб -> высота энкода",
+                "propertyNames": {"pattern": "^[1-9][0-9]*$"},
+                "additionalProperties": {"type": "integer", "minimum": 16}
+              },
+              "aspect_tolerance": {"type": "number", "minimum": 0, "maximum": 1},
+              "quality": {
+                "type": "object",
+                "properties": {
+                  "full": {"type": "integer", "minimum": 1, "maximum": 100},
+                  "draft": {"type": "integer", "minimum": 1, "maximum": 100}
+                },
+                "additionalProperties": false
+              },
+              "out_format": {"enum": ["webp", "png", "jpg"]},
+              "thumb": {"type": "boolean", "description": "Генерировать <name>.thumb.<ext> (сетка галереи)"},
+              "source_min": {
+                "anyOf": [
+                  {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 16}},
+                  {"type": "null"}
+                ],
+                "description": "Минимальный размер мастера. Ставится по САМОМУ КРУПНОМУ будущему варианту, а не по сегодняшнему: уменьшить можно всегда, увеличить — никогда"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
       },
       "additionalProperties": false
     },

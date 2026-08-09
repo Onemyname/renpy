@@ -7,6 +7,8 @@ import subprocess
 
 import pytest
 
+from helpers import write_project
+
 from vn.assets.pipeline import build_assets
 from vn.pipeline import find_ffmpeg, find_ffprobe
 
@@ -19,6 +21,7 @@ pytestmark = pytest.mark.skipif(
 def _mk_root(tmp_path):
     root = tmp_path / "repo"
     (root / "assets_src" / "video_src").mkdir(parents=True)
+    write_project(root)          # маленький render-профиль (helpers.TINY_SCREEN)
     return root
 
 
@@ -102,10 +105,10 @@ def test_video_naming_and_group_required(tmp_path):
 
 def test_orphan_video_cleanup_and_only_transforms(tmp_path):
     root = _mk_root(tmp_path)
-    png = root / "assets_src/png/backgrounds/gate/day.png"
+    png = root / "assets_src/art/backgrounds/gate/day.png"
     from PIL import Image
     png.parent.mkdir(parents=True)
-    Image.new("RGBA", (32, 32), (10, 20, 30, 255)).save(png, "PNG")
+    Image.new("RGB", (128, 96), (10, 20, 30)).save(png, "PNG")
     _make_video(root / "assets_src/video_src/demo/loop01.mp4")
     res = build_assets(root)
     assert res.errors == []
@@ -124,9 +127,9 @@ def test_cg_track_and_image_emission(tmp_path):
 
     root = _mk_root(tmp_path)
     from PIL import Image
-    cg = root / "assets_src/png/cg/ch01/rooftop_kiss.png"
+    cg = root / "assets_src/art/cg/ch01/rooftop_kiss.png"
     cg.parent.mkdir(parents=True)
-    Image.new("RGBA", (64, 48), (200, 30, 30, 255)).save(cg, "PNG")
+    Image.new("RGB", (128, 96), (200, 30, 30)).save(cg, "PNG")
     _make_video(root / "assets_src/video_src/nsfw/scene01.mp4")
 
     res = build_assets(root)

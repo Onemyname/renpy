@@ -2,8 +2,14 @@
 layeredimage — автоопределение по game/images/ не используется (тихие коллизии имён).
 
 Канон эмиттера layeredimage (G11): селекторные группы `attribute X default Null()`,
-гейтинг слоёв только if_any, каждый attribute с явным displayable, oversampling @2,
-пути с префиксом "assets/". Тонировка — сгенерированный config.tag_layer + camera sprites.
+гейтинг слоёв только if_any, каждый attribute с явным displayable, пути с префиксом
+"assets/". Тонировка — сгенерированный config.tag_layer + camera sprites.
+
+Оверсэмпл (ADR-0012). Ссылаемся ВСЕГДА на референсный (безсуффиксный) вариант.
+Ren'Py сам подберёт `<base>@2`/`@4`, если физический экран крупнее виртуального
+(renpy/display/im.py: get_oversampled_image), и делает это только для имени без
+собственного `@N`. Захардкоженный `@2` в ссылке отключал бы автоподбор и заставлял
+игрока на 1080p грузить вчетверо более тяжёлую текстуру, чем он способен увидеть.
 """
 
 from __future__ import annotations
@@ -45,6 +51,14 @@ def load_locations(root: Path, src, registry, errors: list[str]) -> dict[str, di
     return locations
 
 
+def _spr_ext(root: Path, char_id: str, poses_files: dict) -> str:
+    from ..assets.pipeline import asset_ext
+
+    for pose in poses_files:
+        return asset_ext(root, f"spr/{char_id}/{pose}/base")
+    return ".webp"
+
+
 def emit_images(root: Path, locations: dict[str, dict],
                 char_docs: list[tuple[str, dict]], rep: ImagesReport, header: str) -> str:
     from ..assets.pipeline import sprite_tree
@@ -72,15 +86,21 @@ def emit_images(root: Path, locations: dict[str, dict],
 
     # ── CG-стиллы (ADR-0006): скан собранной зоны, image cg <...> ────────────
     # Реестр — от фактических выходов конвейера (как sprite_tree): CG не имеют
-    # своей декларации, их источник истины — assets_src/png/cg + провенанс.
+    # своей декларации, их источник истины — зона мастеров + провенанс.
+    from ..assets.pipeline import variant_scale
+
     cg_root = assets / "cg"
     n_cg = 0
     if cg_root.is_dir():
-        for f in sorted(cg_root.rglob("*.webp")):
-            if f.name.endswith(".thumb.webp"):
+        for f in sorted(cg_root.rglob("*")):
+            if not f.is_file() or f.suffix not in (".webp", ".png", ".jpg"):
+                continue
+            if f.stem.endswith(".thumb"):
                 continue    # миниатюры галереи — не самостоятельные образы
+            if variant_scale(f.stem) != 1:
+                continue    # @2/@4 — варианты одного образа, движок берёт их сам
             rel = "cg/" + f.relative_to(cg_root).as_posix()
-            tokens = " ".join(rel[:-len(".webp")].split("/"))
+            tokens = " ".join(rel[: -len(f.suffix)].split("/"))
             out.append(f'image {tokens} = "assets/{rel}"')
             n_cg += 1
     if n_cg:
@@ -194,6 +214,9 @@ def emit_images(root: Path, locations: dict[str, dict],
             rep.errors.append(f"{rel}: ни одна поза из matrix не собрана в assets")
             continue
 
+        # Расширение референсного варианта: класс spr может отгружаться не в webp
+        # (render.classes.spr.out_format) — путь обязан соответствовать факту.
+        spr_ext = _spr_ext(root, char_id, poses_files)
         lines = [f"layeredimage {char_id}:"]
         lines.append("    group pose:")
         for i, pose in enumerate(poses):
@@ -202,7 +225,7 @@ def emit_images(root: Path, locations: dict[str, dict],
         lines.append("")
         for pose in poses:
             lines.append(
-                f'    always "assets/spr/{char_id}/{pose}/base@2.webp" if_any ["{pose}"]'
+                f'    always "assets/spr/{char_id}/{pose}/base{spr_ext}" if_any ["{pose}"]'
             )
         for group, mkey in (("outfit", "outfits"), ("face", "emotions")):
             gdir = "outfits" if group == "outfit" else "faces"
@@ -218,7 +241,7 @@ def emit_images(root: Path, locations: dict[str, dict],
                         default_pending = False
                         lines.append(
                             f'        attribute {name}{default} '
-                            f'"assets/spr/{char_id}/{pose}/{gdir}/{name}@2.webp" '
+                            f'"assets/spr/{char_id}/{pose}/{gdir}/{name}{spr_ext}" '
                             f'if_any ["{pose}"]'
                         )
                         emitted_any = True
