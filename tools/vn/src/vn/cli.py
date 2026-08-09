@@ -667,6 +667,18 @@ def assets_video_seq(frames_dir: Path, dest: Path, fps: float, crf: int):
         f"секвенция: {info['frames']} кадров -> {dest.relative_to(root).as_posix()} "
         f"({info['width']}x{info['height']}, {info['duration_s']:.2f} c, "
         f"{info['size_bytes'] / 1048576:.1f} МБ)", fg="green")
+    # Склейка — нетривиальный шаг обработки: без записи в провенанс мастер выглядел
+    # бы «взявшимся ниоткуда», а декларация источника при следующем прогоне встала
+    # бы в начало цепочки поверх пустоты.
+    from .assets.provenance import ProvenanceError, record
+
+    try:
+        record(root, dest, note=(
+            f"PNG-секвенция: {info['frames']} кадров @ {fps} fps, "
+            f"{info['width']}x{info['height']}, libx264 crf {crf} "
+            f"(vn assets video seq)"))
+    except ProvenanceError as e:
+        click.secho(f"warning: провенанс не записан: {e}", fg="yellow")
     click.echo("дальше: vn assets video build (энкод в отгружаемый VP9)")
 
 

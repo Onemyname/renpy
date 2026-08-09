@@ -155,3 +155,96 @@ def test_all_sources_share_one_contract(tmp_path, repo_root):
         rep = sources.validate(root, kind)
         assert rep.errors == [], f"{kind.label}: {rep.errors}"
         assert len(rep.checked) == 1 and rep.provenance_written
+
+
+# ── Virt-a-Mate: анимация как основной режим источника ───────────────────────
+
+def test_vam_scene_accepts_var_package(tmp_path, repo_root):
+    """.var — современный формат распространения VaM: художник хранит сцену
+    именно в нём, и без допуска в паттерне декларация не могла на неё сослаться."""
+    root = _mk(tmp_path, repo_root)
+    (root / "assets_src" / "vam").mkdir(parents=True)
+    (root / "assets_src" / "vam" / "pack.var").write_bytes(b"var-package")
+    img(root / "assets_src" / "art" / "cg" / "ch01" / "hug.png", (128, 96), "RGB", "PNG")
+    (root / "assets_src" / "vam" / "hug.render.yaml").write_text(
+        "schema: vam_render@1\nid: cg/ch01/hug\nscene: vam/pack.var\n"
+        "output: art/cg/ch01/hug.png\n"
+        "capture: {resolution: [128, 96], mode: screenshot, camera: WindowCamera}\n",
+        encoding="utf-8")
+    rep = sources.validate(root, sources.VAM)
+    assert rep.errors == [] and rep.provenance_written
+
+
+def test_sequence_mode_must_produce_video_master(tmp_path, repo_root):
+    """mode: sequence с выходом-картинкой — самая частая ошибка VaM-ветки:
+    VRRenderer отдаёт кадры, а в декларации остаётся путь на png."""
+    root = _mk(tmp_path, repo_root)
+    (root / "assets_src" / "vam").mkdir(parents=True)
+    (root / "assets_src" / "vam" / "s.json").write_bytes(b"{}")
+    img(root / "assets_src" / "art" / "cg" / "ch01" / "hug.png", (128, 96), "RGB", "PNG")
+    (root / "assets_src" / "vam" / "hug.render.yaml").write_text(
+        "schema: vam_render@1\nid: cg/ch01/hug\nscene: vam/s.json\n"
+        "output: art/cg/ch01/hug.png\n"
+        "capture: {resolution: [128, 96], mode: sequence, fps: 30}\n", encoding="utf-8")
+    rep = sources.validate(root, sources.VAM)
+    assert any("mode: sequence, но выход" in e for e in rep.errors)
+
+
+@pytest.mark.skipif(
+    __import__("vn.pipeline", fromlist=["find_ffmpeg"]).find_ffmpeg() is None,
+    reason="нужен ffmpeg")
+def test_vam_cinematic_sequence_reaches_scene_and_gallery(tmp_path, repo_root):
+    """Сквозной путь киношной ветки VaM:
+
+        .var -> PNG-секвенция (VRRenderer) -> видео-мастер -> webm + постер
+             -> image mov в игре -> элемент галереи
+
+    Проверяется и объявленный fps: тот же набор кадров при 24 и 30 fps даёт
+    разные по длительности лупы, поэтому расхождение — ошибка."""
+    from PIL import Image
+
+    from vn.assets.provenance import load
+    from vn.assets.video import assemble_sequence
+    from vn.content.images import ImagesReport, emit_images
+
+    root = _mk(tmp_path, repo_root)
+    (root / "assets_src" / "vam").mkdir(parents=True)
+    (root / "assets_src" / "vam" / "hug.var").write_bytes(b"var")
+
+    frames = tmp_path / "vrrenderer_out"
+    frames.mkdir()
+    for i in range(1, 31):
+        Image.new("RGB", (128, 96), (20, i * 6, 90)).save(frames / f"shot_{i:06d}.png")
+    master = root / "assets_src" / "video_src" / "ch01" / "hug.mp4"
+    info = assemble_sequence(frames, master, fps=30.0)
+    assert info["frames"] == 30
+
+    (root / "assets_src" / "vam" / "hug.render.yaml").write_text(
+        "schema: vam_render@1\nid: mov/ch01/hug\nscene: vam/hug.var\n"
+        "output: video_src/ch01/hug.mp4\n"
+        "capture: {resolution: [128, 96], mode: sequence, fps: 30, "
+        "camera: WindowCamera, plugins: [Eosin.VRRenderer.5]}\n", encoding="utf-8")
+    rep = sources.validate(root, sources.VAM)
+    assert rep.errors == [], rep.errors
+    assert [s["kind"] for s in load(master)["chain"]] == ["vam_render"]
+
+    # Объявленный fps сверяется с фактическим мастером
+    (root / "assets_src" / "vam" / "hug.render.yaml").write_text(
+        "schema: vam_render@1\nid: mov/ch01/hug\nscene: vam/hug.var\n"
+        "output: video_src/ch01/hug.mp4\n"
+        "capture: {resolution: [128, 96], mode: sequence, fps: 24}\n", encoding="utf-8")
+    assert any("fps" in e and "длительность лупа" in e
+               for e in sources.validate(root, sources.VAM).errors)
+
+    # Общий видео-трек: мастер -> webm + постер-кадр
+    res = build_assets(root)
+    assert res.errors == []
+    assert (root / "game/assets/mov/ch01/hug.webm").is_file()
+    assert (root / "game/assets/mov/ch01/hug.poster.webp").is_file()
+
+    irep = ImagesReport()
+    text = emit_images(root, {}, [], irep, "# h\n")
+    assert 'image mov ch01 hug = Movie(play="assets/mov/ch01/hug.webm"' in text
+    assert 'image="assets/mov/ch01/hug.poster.webp"' in text
+    for forbidden in ("vam", "virt", "var", "vrrenderer"):
+        assert forbidden not in text.lower()

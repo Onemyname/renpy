@@ -193,6 +193,7 @@ def validate(root: Path, kind: SourceKind, scope: str | None = None,
             continue
 
         _check_resolution(rep, rel, decl, kind, out_path)
+        _check_sequence(rep, rel, decl, kind, out_path)
 
         if write_provenance:
             try:
@@ -203,6 +204,49 @@ def validate(root: Path, kind: SourceKind, scope: str | None = None,
             except prov.ProvenanceError as e:
                 rep.errors.append(f"{rel}: {e}")
     return rep
+
+
+def _check_sequence(rep: SourceReport, rel: str, decl: dict, kind: SourceKind,
+                    out_path: Path) -> None:
+    """Согласованность `capture.mode` с фактическим выходом и fps склейки.
+
+    Для VaM это главный рабочий режим: VRRenderer отдаёт нумерованные PNG, и весь
+    смысл объявленного fps в том, что тот же набор кадров при 24 и 30 fps даёт
+    разные по длительности лупы. Расхождение здесь означает, что мастер собран
+    не по декларации, а значит невоспроизводим."""
+    settings = decl.get(kind.settings_key) or {}
+    mode = settings.get("mode")
+    if mode is None:
+        return
+    is_video = out_path.suffix.lower() in (".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi")
+    if mode == "sequence" and not is_video:
+        rep.errors.append(
+            f"{rel}: {kind.settings_key}.mode: sequence, но выход {decl['output']} — "
+            f"не видео-мастер. Соберите кадры: vn assets video seq <кадры> "
+            f"assets_src/video_src/<group>/<name>.mp4")
+        return
+    if mode == "screenshot" and is_video:
+        rep.errors.append(
+            f"{rel}: {kind.settings_key}.mode: screenshot, но выход {decl['output']} — "
+            f"видео; для секвенции объявляйте mode: sequence")
+        return
+    declared_fps = settings.get("fps")
+    if not (mode == "sequence" and declared_fps):
+        return
+    from ..pipeline import find_ffprobe
+    from . import video as videomod
+
+    if find_ffprobe() is None:
+        return
+    try:
+        actual = videomod.summarize(out_path)["fps"]
+    except videomod.VideoError:
+        return
+    if abs(actual - float(declared_fps)) > 0.06:
+        rep.errors.append(
+            f"{rel}: объявлен {kind.settings_key}.fps {declared_fps}, а мастер собран "
+            f"на {actual} fps — длительность лупа не та, что задумана "
+            f"(vn assets video seq --fps {declared_fps})")
 
 
 def _check_resolution(rep: SourceReport, rel: str, decl: dict, kind: SourceKind,

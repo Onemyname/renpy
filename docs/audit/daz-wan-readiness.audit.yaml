@@ -161,3 +161,92 @@ items:
       секвенцию) и фиксирует параметры в провенансе, автоизвлекая их из
       tEXt-чанков ComfyUI-PNG. Интеграция по API добавила бы зависимость
       сборки от живого сервиса без выигрыша.
+
+  # ── Virt-a-Mate (задача от 2026-08-09) ────────────────────────────────────
+  # Ветка VaM отличается от DAZ/Sims4 ровно одним: её основной продукт —
+  # АНИМАЦИЯ, а не стилл. Поэтому здесь только то, что мешало пути
+  # «VRRenderer -> секвенция -> луп в сцене», и формат хранения сцены.
+
+  VAM-001:
+    title: "Пакет .var — основной формат хранения сцены VaM — не проходил схему"
+    category: correctness
+    evidence:
+      - 'vam_render@1: scene pattern ^vam/.+\.(json|vac|vap)$'
+      - "docs/handbook/18-vam.md:153 фиксирует это как NOT IMPLEMENTED с обходом через распакованную сцену"
+      - "обход хуже проблемы: воспроизводимым артефактом является именно .var"
+    implementation:
+      - tools/schemas/vam_render@1.schema.json
+    tests:
+      - tools/vn/tests/test_sources.py::test_vam_scene_accepts_var_package
+    status: CLOSED
+    note: >
+      Расширение паттерна, а не vam_render@2: документ, валидный по старой версии,
+      валиден и по новой — миграции не требуется (политика версионирования схем,
+      ADR-0012 §9).
+
+  VAM-002:
+    title: "capture.mode не сверялся с фактическим выходом"
+    category: quality-gate
+    evidence:
+      - "mode: sequence с выходом-картинкой проходил молча"
+      - "для VaM это самая частая ошибка: VRRenderer отдаёт кадры, а в декларации остаётся путь на png"
+    implementation:
+      - tools/vn/src/vn/assets/sources.py
+    tests:
+      - tools/vn/tests/test_sources.py::test_sequence_mode_must_produce_video_master
+    status: CLOSED
+
+  VAM-003:
+    title: "fps захвата нигде не объявлялся — склейка секвенции невоспроизводима"
+    category: content-pipeline
+    evidence:
+      - "тот же набор PNG при 24 и 30 fps даёт разные по длительности лупы"
+      - "vn assets video seq принимал --fps, но нигде его не фиксировал"
+    implementation:
+      - tools/schemas/vam_render@1.schema.json
+      - tools/schemas/sims4_render@1.schema.json
+      - tools/vn/src/vn/assets/sources.py
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_sources.py::test_vam_cinematic_sequence_reaches_scene_and_gallery
+    status: CLOSED
+    note: >
+      capture.fps — параметр СЪЁМКИ, а не энкода (video_src@1.fps остаётся про энкод).
+      Сверяется с фактическим мастером; сама склейка теперь пишет шаг провенанса.
+
+  VAM-004:
+    title: "Склейка секвенции не попадала в провенанс — мастер «взялся ниоткуда»"
+    category: correctness
+    evidence:
+      - "vn assets video seq писал файл, не записывая шаг обработки"
+      - "декларация источника при следующем прогоне встала бы в начало цепочки поверх пустоты"
+    implementation:
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_sources.py::test_vam_cinematic_sequence_reaches_scene_and_gallery
+    status: CLOSED
+
+  VAM-005:
+    title: "Автоматизация захвата в VaM (headless/batch-рендер из тулинга)"
+    category: dx
+    evidence:
+      - "docs/handbook/18-vam.md §8: официального CLI/headless у VaM нет, только плагины/Scripter изнутри"
+    status: WONT_FIX
+    rationale: >
+      У VaM нет официального headless-режима: автоматизация означала бы свой
+      C#-плагин или Scripter внутри приложения, то есть зависимость сборки от
+      живой инсталляции с библиотекой .var на сотни гигабайт. Конвейер этого не
+      требует — он принимает ВЫХОД захвата. То же решение принято для DAZ и
+      Sims 4 (DAZ-011), и различать источники здесь нечем.
+
+  VAM-006:
+    title: "Персонаж с большим числом визуальных вариантов из VaM"
+    category: content-pipeline
+    evidence:
+      - "matrix poses x outfits x emotions + overlays + side/ + отдельные id персонажей"
+    status: WONT_FIX
+    rationale: >
+      Отдельного механизма не требуется: вариативность уже выражается позами,
+      нарядами, эмоциями и накладками, а радикально иной облик — отдельным id
+      персонажа. VaM ничем не отличается здесь от DAZ, и заводить под него свою
+      ось вариантов значило бы ломать единство конвейера.
