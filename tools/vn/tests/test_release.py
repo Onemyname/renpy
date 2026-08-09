@@ -212,3 +212,36 @@ def test_release_gate_fails_on_lfs_pointer_fonts(tmp_path):
     from vn import release as rel
     import inspect
     assert "_lfs_pointer_fonts" in inspect.getsource(rel.validate_release)
+
+
+def test_gate_reports_all_sources_even_when_empty():
+    """Молчание гейта при нуле деклараций читалось как «источника нет».
+    Провайдеров теперь три (DAZ / VaM / Sims 4), и отчитываться обязаны все:
+    иначе выпавшая ветка валидатора незаметна (AUDIT-020)."""
+    import inspect
+
+    import vn.release as rel
+
+    src = inspect.getsource(rel.validate_release)
+    for label in ("DAZ-декларации", "VaM-декларации", "Sims4-декларации"):
+        assert label in src
+    # Ни один источник не должен печатать PASS «только если что-то проверено»
+    assert "elif vrep.checked" not in src
+    assert "elif srep.checked" not in src
+
+
+def test_built_asset_ids_ignores_derivatives(tmp_path):
+    """Выпущенные id ассетов — только референсные варианты: миниатюры, постеры и
+    @2 адресуются движком, а не сценарием (AUDIT-013)."""
+    import vn.release as rel
+
+    assets = tmp_path / "game" / "assets"
+    for rel_path in ("cg/ch01/a.webp", "cg/ch01/a@2.webp", "cg/ch01/a.thumb.webp",
+                     "bg/roof/day.webp", "mov/demo/x.webm", "mov/demo/x.poster.webp",
+                     "spr/mira/a/base.webp", "spr/mira/a/base@2.webp"):
+        p = assets / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"x")
+    assert rel.built_asset_ids(tmp_path) == [
+        "bg/roof/day", "cg/ch01/a", "mov/demo/x", "spr/mira/a/base",
+    ]

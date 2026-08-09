@@ -53,9 +53,12 @@ init -980 python in vn_gal:
         if unlock.get("always"):
             return True
         if unlock.get("seen_image"):
-            # image_name — имя образа через пробелы (cg ch01 rooftop_day)
-            if renpy.seen_image(spec["image_name"]):
-                return True
+            # image_name — имя образа через пробелы (cg ch01 rooftop_day).
+            # Исторические имена (renames.assets) засчитываются наравне: игрок,
+            # увидевший кадр до переименования, не должен терять его в галерее.
+            for name in [spec["image_name"]] + list(spec.get("image_name_history") or []):
+                if renpy.seen_image(name):
+                    return True
         return bool(_store().get(item_id))
 
     def unlock(item_id, silent=False):

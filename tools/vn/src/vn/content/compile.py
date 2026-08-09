@@ -184,10 +184,27 @@ def _gallery_asset_paths(asset_id: str) -> tuple[str, str]:
     return f"assets/{asset_id}{ext}", asset_id.replace("/", " ")
 
 
+def _asset_history(renames: dict) -> dict[str, list[str]]:
+    """Текущий логический id ассета -> его исторические имена.
+
+    renames.assets ведётся как «старый -> новый» и может быть цепочкой
+    (a -> b -> c). Разворачиваем в «конечный -> все предки», чтобы рантайм
+    галереи мог засчитать кадр, показанный игроку под старым именем."""
+    forward = dict(renames.get("assets") or {})
+    history: dict[str, list[str]] = {}
+    for old in forward:
+        current, seen = old, {old}
+        while current in forward and forward[current] not in seen:
+            current = forward[current]
+            seen.add(current)
+        history.setdefault(current, []).append(old)
+    return {k: sorted(v) for k, v in history.items()}
+
+
 def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: set[str],
                   chapter_ids: set[str], var_registry: set[str],
                   ui_strings: dict, rep: CompileResult, errors: list[str],
-                  sources) -> str:
+                  sources, renames: dict | None = None) -> str:
     """Реестр галереи (gallery@1) + валидация: битые ассеты/превью/категории/якоря
     ловятся до запуска игры. UI получает только данные — ни списка элементов в
     коде, ни логики разблокировки."""
@@ -205,6 +222,7 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
     categories: dict[str, dict] = {}
     items: dict[str, dict] = {}
     used_assets: set[str] = set()
+    history = _asset_history(renames or {})
 
     for rel, doc in sorted(gal_docs):
         for cid, spec in (doc.get("categories") or {}).items():
@@ -261,9 +279,17 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
                 cand = _gallery_asset_paths(spec["asset"])[0]
             resolved_thumb = cand
         else:
-            rep.warnings.append(f"{rel}: {gid}: kind: movie без thumb — "
-                                f"в сетке будет заглушка вместо постера")
-            resolved_thumb = None
+            # Постер-кадр конвейер делает сам (ADR-0012): ручной thumb у видео
+            # больше не обязателен, а заглушка в сетке — редкое исключение.
+            from ..assets.pipeline import POSTER_SUFFIX
+
+            cand = f"assets/{spec['asset']}{POSTER_SUFFIX}"
+            if not assets_built or (assets_dir / cand[len("assets/"):]).is_file():
+                resolved_thumb = cand
+            else:
+                rep.warnings.append(f"{rel}: {gid}: нет постер-кадра {cand} — "
+                                    f"в сетке будет заглушка")
+                resolved_thumb = None
 
         unlock = dict(spec["unlock"])
         if "seen_image" in unlock and kind != "image":
@@ -287,11 +313,16 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
                                     f"content/ui/strings.yaml — покажется сырой ключ")
 
         full_path, image_name = _gallery_asset_paths(spec["asset"])
+        # Исторические имена образа: игрок мог увидеть кадр под прошлым id, и
+        # переименование файла не должно стирать ему открытую CG (ADR-0012).
+        past = [_gallery_asset_paths(old)[1]
+                for old in history.get(spec["asset"], [])]
         items[gid] = {
             "category": cat,
             "kind": kind,
             "asset": full_path,
             "image_name": image_name,
+            "image_name_history": past,
             "variants": [_gallery_asset_paths(v)[0] for v in (spec.get("variants") or [])],
             "thumb": resolved_thumb,
             "title_key": spec["title_key"],
@@ -883,7 +914,8 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     gal_errors: list[str] = []
     gallery_out = _emit_gallery(
         root, gal_docs, {u.full_id for u in units}, {c["id"] for c in chapters},
-        var_registry, ui_strings, result, gal_errors, gal_sources or [proj_src])
+        var_registry, ui_strings, result, gal_errors, gal_sources or [proj_src],
+        renames=renames)
     if gal_errors:
         raise CompileError(
             f"{len(gal_errors)} ошибок галереи:\n" + "\n".join(gal_errors))

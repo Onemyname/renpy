@@ -51,6 +51,9 @@ def load_locations(root: Path, src, registry, errors: list[str]) -> dict[str, di
     return locations
 
 
+SIDE_DIR_TOKEN = "side"
+
+
 def _spr_ext(root: Path, char_id: str, poses_files: dict) -> str:
     from ..assets.pipeline import asset_ext
 
@@ -109,11 +112,23 @@ def emit_images(root: Path, locations: dict[str, dict],
     # ── Видео-лупы (ADR-0006): image mov <...> = Movie(...) из meta.json ─────
     from ..assets.video import movie_tree
 
+    from ..assets.pipeline import POSTER_SUFFIX
+
     n_mov = 0
     for rel, meta in sorted(movie_tree(root).items()):
         tokens = " ".join(rel[:-len(".webm")].split("/"))
         loop = bool(meta.get("loop", True))
-        out.append(f'image {tokens} = Movie(play="assets/{rel}", loop={loop})')
+        # image= — кадр, который движок показывает, пока видео не заиграло, и на
+        # платформах, где оно не играет вовсе. Без него там чёрная дыра в кадре.
+        poster = rel[: -len(".webm")] + POSTER_SUFFIX
+        args = f'play="assets/{rel}", loop={loop}'
+        if (assets / poster).is_file():
+            args += f', image="assets/{poster}"'
+        else:
+            rep.warnings.append(
+                f"{rel}: нет постер-кадра {poster} — пока видео не заиграло, "
+                f"в кадре будет пусто (пересоберите vn assets video build)")
+        out.append(f"image {tokens} = Movie({args})")
         n_mov += 1
     if n_mov:
         out.append("")
@@ -195,11 +210,9 @@ def emit_images(root: Path, locations: dict[str, dict],
             for e in have["faces"]:
                 if e not in matrix["emotions"]:
                     rep.warnings.append(f"{rel}: faces/{e} ({pose}) вне matrix")
-            if have["overlays"]:
-                rep.warnings.append(
-                    f"{rel}: overlays ({pose}) собраны, но эмиссия overlay-группы "
-                    f"появится позже — сейчас мёртвый груз в дистрибутиве"
-                )
+            for o in have["overlays"]:
+                if o not in (matrix.get("overlays") or []):
+                    rep.warnings.append(f"{rel}: overlays/{o} ({pose}) вне matrix")
 
         # Поза без base не эмитится: always-слой ссылался бы в пустоту (рантайм-краш).
         poses = []
@@ -255,9 +268,41 @@ def emit_images(root: Path, locations: dict[str, dict],
             if not emitted_any:
                 lines.pop()               # пустая группа не эмитится
                 lines.pop()
+
+        # Overlays — НЕЗАВИСИМЫЕ атрибуты, а не группа: слёзы, румянец и пот
+        # сочетаются друг с другом, а группа допускает ровно один атрибут.
+        # Раньше слой собирался, но не эмитился — мёртвый груз в дистрибутиве.
+        overlay_lines = []
+        for name in (matrix.get("overlays") or []):
+            for pose in poses:
+                if name in poses_files[pose]["overlays"]:
+                    overlay_lines.append(
+                        f'    attribute {name} '
+                        f'"assets/spr/{char_id}/{pose}/overlays/{name}{spr_ext}" '
+                        f'if_any ["{pose}"]'
+                    )
+        if overlay_lines:
+            lines.append("")
+            lines += overlay_lines
         out.append("\n".join(lines))
         out.append("")
         tagged.append(char_id)
+
+    # ── Портреты say-окна (side images) ──────────────────────────────────────
+    # Ren'Py ищет их как `side <tag> <атрибуты>`; base -> безатрибутный образ.
+    # Ветка была объявлена в naming.md и не реализована — портрет собирался бы
+    # в spr/<char>/side/, но игра его не видела.
+    from ..assets.pipeline import side_tree
+
+    n_side = 0
+    for char_id, names in sorted(side_tree(root).items()):
+        ext = _spr_ext(root, char_id, {SIDE_DIR_TOKEN: None})
+        for name in names:
+            tokens = f"side {char_id}" if name == "base" else f"side {char_id} {name}"
+            out.append(f'image {tokens} = "assets/spr/{char_id}/side/{name}{ext}"')
+            n_side += 1
+    if n_side:
+        out.append("")
 
     # ── Привязка тегов к слою sprites: camera sprites тонирует всех (G11) ────
     if tagged:

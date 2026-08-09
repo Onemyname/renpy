@@ -1,0 +1,318 @@
+schema: audit@1
+source: build/audit-sims4-readiness.pdf — «Аудит готовности проекта к приёму production-графики из The Sims 4» (2026-08-09)
+reviewed_at: "2026-08-09"
+
+# Статус пункта = проверяемый факт, а не запись в отчёте: CLOSED обязан назвать
+# файл реализации и тест (проверяет схема audit@1), WONT_FIX — обоснование.
+# Нумерация сквозная; B-коды в скобках — маркировка исходного отчёта.
+
+items:
+  AUDIT-001:
+    title: "(B1) Вложенные каталоги фонов молча игнорировались конвейером"
+    category: content-pipeline
+    evidence:
+      - "pipeline.py:137 — bgs.iterdir() + loc_dir.glob('*.png'): ровно два уровня"
+      - "эмпирика: backgrounds/apartment/living_room/day.png -> 0 джобов, 0 ошибок"
+      - "location@1 при этом РАЗРЕШАЛ вложенный путь — схема и конвейер расходились"
+    implementation:
+      - tools/vn/src/vn/assets/pipeline.py
+      - tools/schemas/location@1.schema.json
+    tests:
+      - tools/vn/tests/test_assets.py::test_nested_backgrounds_are_built
+    status: CLOSED
+    note: >
+      Вложенность разрешена и признана организационной: id локации остаётся плоским,
+      location.yaml ссылается на путь файла. Схемы location@1/scene@1 менять не пришлось.
+
+  AUDIT-002:
+    title: "(B2) Мастера не-PNG форматов молча исчезали из сборки"
+    category: content-pipeline
+    evidence:
+      - "pipeline.py:129,140,150 — glob('*.png') во всех трёх ветках"
+      - "эмпирика: .jpg в backgrounds -> 0 джобов, 0 ошибок"
+      - "на Windows glob регистронезависим — Screenshot.PNG собирался локально и падал в CI"
+    implementation:
+      - tools/vn/src/vn/assets/render_config.py
+      - tools/vn/src/vn/assets/pipeline.py
+    tests:
+      - tools/vn/tests/test_assets.py::test_opaque_classes_accept_jpeg_and_webp
+      - tools/vn/tests/test_assets.py::test_sprite_rejects_jpeg_master
+      - tools/vn/tests/test_assets.py::test_unsupported_format_in_known_zone_is_error
+    status: CLOSED
+
+  AUDIT-003:
+    title: "(B3) Разрешение мастеров не проверялось вообще"
+    category: quality-gate
+    evidence:
+      - "grep width|height|resolution по pipeline.py/images.py/compile.py — 0 совпадений"
+      - "scenes.py:229 и images.py:84 показывают образы 1:1 в виртуальных пикселях"
+    implementation:
+      - tools/vn/src/vn/assets/imaging.py
+      - tools/vn/src/vn/assets/pipeline.py
+      - project.yaml
+    tests:
+      - tools/vn/tests/test_assets.py::test_master_below_shipping_size_is_error
+      - tools/vn/tests/test_assets.py::test_source_min_enforced
+      - tools/vn/tests/test_assets.py::test_variant_sizes_and_reference_name
+    status: CLOSED
+
+  AUDIT-004:
+    title: "(B4) Прозрачность спрайтов не проверялась"
+    category: quality-gate
+    evidence:
+      - "_webp_encode делал convert('RGBA') — непрозрачный скриншот проходил молча"
+      - "единственная проверка альфы была в psd.py:41 и только для PSD"
+    implementation:
+      - tools/vn/src/vn/assets/imaging.py
+      - tools/vn/src/vn/assets/pipeline.py
+    tests:
+      - tools/vn/tests/test_assets.py::test_sprite_without_alpha_is_error
+      - tools/vn/tests/test_assets.py::test_bg_output_is_rgb_without_alpha
+    status: CLOSED
+
+  AUDIT-005:
+    title: "(B5) PNG-секвенция не превращается в видео-мастер ничем"
+    category: content-pipeline
+    evidence:
+      - "video.py умеет только «готовый видеофайл -> webm»"
+      - "sims4_render@1 при этом разрешает capture.mode: sequence с выходом в video_src/**"
+    implementation:
+      - tools/vn/src/vn/assets/video.py
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_video.py::test_sequence_assembles_into_video_master
+    status: CLOSED
+
+  AUDIT-006:
+    title: "(B6) У видео не было кадра-заглушки (Movie image=)"
+    category: runtime
+    evidence:
+      - "images.py:96 — Movie(play=…, loop=…) без image=; до старта воспроизведения кадр пуст"
+    implementation:
+      - tools/vn/src/vn/assets/video.py
+      - tools/vn/src/vn/assets/pipeline.py
+      - tools/vn/src/vn/content/images.py
+    tests:
+      - tools/vn/tests/test_video.py::test_cg_track_and_image_emission
+    status: CLOSED
+    note: >
+      Постер-кадр генерируется конвейером и закрывает сразу две дыры: fallback у Movie
+      и обязательный ручной thumb у видео в галерее (см. AUDIT-007).
+
+  AUDIT-007:
+    title: "(B7) Варианты видео в галерее: переключатель показывался, но не работал"
+    category: correctness
+    evidence:
+      - "gallery.rpy:104-107 — add Movie(play=_spec['asset']) игнорировал _idx"
+      - "при этом счётчик «1/2» и кнопка «вариант» отображались (строки :119, :133)"
+    implementation:
+      - game/framework/20_ui/screens/gallery.rpy
+      - tools/vn/src/vn/content/compile.py
+    tests:
+      - tools/vn/tests/test_gallery.py::test_movie_thumb_falls_back_to_poster
+    status: CLOSED
+
+  AUDIT-008:
+    title: "Бюджеты откалиброваны под 20 плейсхолдеров и читались как потолок игры"
+    category: scalability
+    evidence:
+      - "project.yaml: assets_total_mb 500 при билде без докачки и интернета"
+      - "release.py:34-38 — превышение = FAIL сборки"
+      - "20 персонажей x 260 слоёв ~ 780 МБ только спрайтов"
+    implementation:
+      - project.yaml
+      - tools/schemas/project@1.schema.json
+    tests:
+      - tools/vn/tests/test_release.py
+    status: CLOSED
+    note: >
+      assets_total_mb 500 -> 20000, video_total_mb 300 -> 8000, video_file_mb 40 -> 512,
+      generated_total_kb 2048 -> 65536. Бюджет переформулирован как предохранитель.
+
+  AUDIT-009:
+    title: "(B9) Конвенция имён мастеров не была описана как контракт художника"
+    category: documentation
+    evidence:
+      - "pipeline.py:48,94 требуют ^[a-z][a-z0-9_]*$ на каждом сегменте"
+      - "docs/onboarding/artist.md не называл ни разрешений, ни форматов, ни альфы"
+    implementation:
+      - docs/onboarding/artist.md
+      - docs/conventions/naming.md
+      - docs/conventions/folder-layout.md
+    tests:
+      - tools/vn/tests/test_assets.py::test_naming_violation_and_missing_base
+    status: CLOSED
+
+  AUDIT-010:
+    title: "(B10) overlays собирались, но не эмитились — мёртвый груз в дистрибутиве"
+    category: content-pipeline
+    evidence:
+      - "images.py:178-182 — предупреждение «эмиссия overlay-группы появится позже»"
+    implementation:
+      - tools/vn/src/vn/content/images.py
+      - tools/schemas/character@1.schema.json
+    tests:
+      - tools/vn/tests/test_assets.py::test_overlays_are_emitted_as_independent_attributes
+      - tools/vn/tests/test_assets.py::test_overlay_outside_matrix_warns
+    status: CLOSED
+    note: >
+      Эмитятся НЕЗАВИСИМЫМИ атрибутами, а не группой: слёзы + румянец + пот сочетаются,
+      а группа layeredimage допускает ровно один атрибут.
+
+  AUDIT-011:
+    title: "(B11) canvas в character.yaml не читала ни одна строка кода"
+    category: quality-gate
+    evidence:
+      - "grep canvas по tools/vn/src и game/framework — только определение схемы"
+      - "docs/handbook/10-characters.md:79 фиксировал это как NOT IMPLEMENTED"
+    implementation:
+      - tools/vn/src/vn/assets/pipeline.py
+      - tools/schemas/character@1.schema.json
+    tests:
+      - tools/vn/tests/test_assets.py::test_declared_canvas_is_enforced
+      - tools/vn/tests/test_assets.py::test_layer_canvas_mismatch_is_error
+    status: CLOSED
+
+  AUDIT-012:
+    title: "(B12) Портреты say-окна (side images) объявлены в naming.md и не реализованы"
+    category: content-pipeline
+    evidence:
+      - "naming.md:21 описывал spr/<char>/side/*, ни одна ветка конвейера его не собирала"
+      - "docs/handbook/10-characters.md:3 — «ветка side/ не реализована»"
+    implementation:
+      - tools/vn/src/vn/assets/pipeline.py
+      - tools/vn/src/vn/content/images.py
+    tests:
+      - tools/vn/tests/test_assets.py::test_side_images_are_built_and_emitted
+    status: CLOSED
+
+  AUDIT-013:
+    title: "(B13) Переименование ассета после релиза стирало игроку открытую CG"
+    category: correctness
+    evidence:
+      - "id_registry@1 знал только chapters/scenes/characters/vars"
+      - "090_gallery.rpy:57 — unlock по renpy.seen_image(<имя образа>)"
+      - "renames.yaml не имел секции для ассетов"
+    implementation:
+      - tools/schemas/id_registry@1.schema.json
+      - tools/schemas/renames@1.schema.json
+      - tools/vn/src/vn/release.py
+      - tools/vn/src/vn/content/lint.py
+      - tools/vn/src/vn/content/compile.py
+      - game/framework/00_core/090_gallery.rpy
+    tests:
+      - tools/vn/tests/test_gallery.py::test_renamed_asset_keeps_unlock_history
+      - tools/vn/tests/test_lint.py::test_released_asset_disappearance_is_error
+    status: CLOSED
+
+  AUDIT-014:
+    title: "(B14) Хранилища мастеров не существовало, а порог ADR-0004 блокировал накопление"
+    category: architecture
+    evidence:
+      - ".vnstorage.yaml указывал на ~/vn-assets-store — каталога нет"
+      - "storage.py:126-133 — s3-бэкенд бросает StorageError (честная заглушка)"
+      - "lint.py:371-400 — error при >50 МБ бинарей; ~10 реальных 4K-рендеров"
+    implementation:
+      - .gitattributes
+      - tools/vn/src/vn/content/lint.py
+    tests:
+      - tools/vn/tests/test_lint.py::test_non_lfs_binary_in_assets_src_is_error
+    status: CLOSED
+    note: >
+      Выбран Git LFS, а не S3: он уже был настроен для шрифтов, даёт штатные локи
+      (G14) и не требует новой инфраструктуры. Порог ADR-0004 теперь считает только
+      бинари МИМО LFS — покрытие определяет сам git (check-attr), а не наш fnmatch.
+      vn assets push остаётся для не-растровых гигантов (PSD, Tray-бандлы, .duf).
+
+  AUDIT-015:
+    title: "Суффикс @2 был вшит в имя спрайта и ОТКЛЮЧАЛ автоподбор Ren'Py"
+    category: architecture
+    evidence:
+      - "pipeline.py:122,134 — жёсткий '@2' в имени выхода"
+      - "renpy/display/im.py:736 — get_oversampled_image возвращает self, если oversample задан"
+      - "следствие: игрок на 1080p грузил текстуру 1200x2200 вместо 600x1100"
+    implementation:
+      - tools/vn/src/vn/assets/render_config.py
+      - tools/vn/src/vn/assets/pipeline.py
+      - tools/vn/src/vn/content/images.py
+      - game/framework/90_debug/030_oversample.rpy
+    tests:
+      - tools/vn/tests/test_assets.py::test_variant_sizes_and_reference_name
+      - "vn test oversample (движковая проверка, джоба в ci.yml и .gitlab-ci.yml)"
+    status: CLOSED
+
+  AUDIT-016:
+    title: "config.image_cache_size_mb не задавался нигде — потолок сцены был дефолтом SDK"
+    category: runtime
+    evidence:
+      - "grep image_cache по game/ — 0 совпадений; дефолт SDK 400"
+      - "переполнение кэша не роняет игру, а превращает её в фризы"
+      - "ARCHITECTURE.md:2409 требовала trim-оптимизатор и валидатор — их не было"
+    implementation:
+      - tools/vn/src/vn/assets/memory.py
+      - tools/vn/src/vn/content/compile.py
+      - tools/vn/src/vn/cli.py
+      - project.yaml
+    tests:
+      - tools/vn/tests/test_memory.py::test_cache_limit_matches_engine_formula
+      - tools/vn/tests/test_memory.py::test_decoded_cost_uses_alpha_bbox_not_canvas
+      - tools/vn/tests/test_memory.py::test_scene_over_budget_is_error
+      - tools/vn/tests/test_memory.py::test_emitted_render_config_matches_project
+    status: CLOSED
+    note: >
+      Trim-оптимизатор из ARCHITECTURE.md оказался НЕ нужен: Ren'Py сам обрезает
+      текстуру по непрозрачному bbox (optimize_texture_bounds, дефолт True). Модель
+      памяти повторяет это, а не дублирует своей обрезкой.
+
+  AUDIT-017:
+    title: "Зона мастеров называлась assets_src/png и описывала несуществующее ограничение"
+    category: dx
+    evidence:
+      - "имя зоны противоречило поддержке нескольких форматов (AUDIT-002)"
+    implementation:
+      - assets_src/art/
+      - tools/vn/src/vn/assets/pipeline.py
+      - docs/conventions/folder-layout.md
+    tests:
+      - tools/vn/tests/test_assets.py::test_legacy_png_zone_still_works
+    status: CLOSED
+    note: "assets_src/png/ оставлен рабочим алиасом: переход не ломает работу художника."
+
+  AUDIT-018:
+    title: "Полный обход assets_src на каждой сборке (нет индекса источников)"
+    category: scalability
+    evidence:
+      - "_discover обходит зону мастеров rglob'ом целиком при каждом vn build"
+      - "docs/handbook/32:185 — прикидка 40 ГБ мастеров -> ~15 c на NVMe"
+    status: WONT_FIX
+    rationale: >
+      Обход каталога — не чтение файлов: содержимое читается только для мастеров,
+      попавших в задание, а их результат берётся из контентно-адресуемого кэша.
+      Индекс источников — вторая система метаданных, которую пришлось бы
+      инвалидировать (mtime ненадёжен, хеш требует того же чтения). Возвращаться
+      к вопросу имеет смысл по замеру на реальном объёме, а не по прикидке.
+
+  AUDIT-019:
+    title: "Провенанс: сайдкар-JSON на каждый артефакт при тысячах ассетов"
+    category: scalability
+    evidence:
+      - "provenance.py:73 — <file>.provenance.json рядом с каждым мастером"
+    status: WONT_FIX
+    rationale: >
+      Сайдкары — текст в LFS-соседстве, но сами в git обычными объектами: сотни
+      байт на артефакт, единицы мегабайт на десять тысяч ассетов. Цена ниже, чем
+      у любой централизованной альтернативы, а привязка «файл рядом с файлом»
+      переживает переименования каталогов. Пересматривать при появлении реального
+      объёма, а не превентивно.
+
+  AUDIT-020:
+    title: "Релизный гейт молчит про VaM/Sims4 при нуле деклараций (elif …checked)"
+    category: dx
+    evidence:
+      - "release.py:388-406 — PASS-ветка написана как elif srep.checked"
+      - "docs/handbook/19-sims4.md §5 фиксирует это как приоритет P2"
+    implementation:
+      - tools/vn/src/vn/release.py
+    tests:
+      - tools/vn/tests/test_release.py::test_gate_reports_all_sources_even_when_empty
+    status: CLOSED

@@ -55,6 +55,7 @@ TRANSFORMS = {
     "ui_panel": "1",
     "copy_audio": "1",
     "video2webm": "2",
+    "mov_poster": "1",
 }
 
 # Растровый класс -> трансформация. Ключи совпадают с render.classes.
@@ -62,9 +63,13 @@ CLASS_TRANSFORM = {"spr": "img_sprite", "bg": "img_bg", "cg": "img_cg"}
 
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 MANIFEST = "assets-manifest.json"
+# Постер-кадр видео: fallback для Movie(image=) и постер в сетке галереи.
+POSTER_SUFFIX = ".poster.webp"
 
 # Зоны растровых мастеров: art/ — основная, png/ — исторический алиас.
 ART_ROOTS = ("art", "png")
+# Зарезервировано под портреты say-окна (Ren'Py side images): не поза.
+SIDE_DIR = "side"
 # Спутники мастеров, которые конвейер не собирает, но и не считает мусором.
 SIDECAR_SUFFIXES = (".meta.yaml", ".provenance.json", ".manifest.json",
                     ".video.yaml", ".render.yaml", ".md", ".txt")
@@ -259,7 +264,27 @@ def _discover(root: Path, rep: AssetBuildResult,
         if not chars.is_dir():
             continue
         for key_dir in sorted(p for p in chars.iterdir() if p.is_dir()):
-            for pose_dir in sorted(p for p in key_dir.iterdir() if p.is_dir()):
+            # side/ — зарезервированный каталог портретов для say-окна (naming.md),
+            # а не поза: у него свой холст и своё имя образа (image side <char> …).
+            side_dir = key_dir / SIDE_DIR
+            if side_dir.is_dir():
+                side_canvas = None
+                for f in sorted(side_dir.iterdir()):
+                    if not f.is_file() or _is_sidecar(f):
+                        continue
+                    consumed.add(f)
+                    if not _check_slug(rep, _rel(root, f), key_dir.name, f.stem):
+                        continue
+                    if side_canvas is None:
+                        try:
+                            side_canvas = imaging.probe(f)["size"]
+                        except imaging.ImagingError:
+                            pass
+                    jobs += _image_jobs(rep, cfg, _rel(root, f), f, "spr",
+                                        f"spr/{key_dir.name}/{SIDE_DIR}/{f.stem}",
+                                        expect_size=side_canvas)
+            for pose_dir in sorted(p for p in key_dir.iterdir()
+                                   if p.is_dir() and p.name != SIDE_DIR):
                 prel = _rel(root, pose_dir)
                 if not _check_slug(rep, prel, key_dir.name, pose_dir.name):
                     continue
@@ -559,7 +584,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
     # Подмножество трансформаций: у видео два выхода (webm + meta), они одна ветка.
     effective_only = set(only_transforms) if only_transforms else None
     if effective_only and "video2webm" in effective_only:
-        effective_only.add("mov_meta")
+        effective_only.update(("mov_meta", "mov_poster"))
     if effective_only and not check:
         jobs = [j for j in jobs if j.transform in effective_only]
 
@@ -600,6 +625,11 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
         blob = cache_dir / key[:2] / key
         dest = out_root / out_rel
         meta_rel = out_rel + videomod.META_SUFFIX if job.transform == "video2webm" else None
+        # Постер — только у референсного варианта: он один попадает в Movie(image=)
+        # и в сетку галереи, крупные варианты своего постера не требуют.
+        poster_rel = (out_rel[: -len(".webm")] + POSTER_SUFFIX
+                      if job.transform == "video2webm" and job.params.get("scale") == 1
+                      else None)
 
         if check:
             seen_outputs[out_rel] = {
@@ -617,6 +647,14 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
                 }
                 if dest.is_file() and not (out_root / meta_rel).is_file():
                     rep.stale.append(f"{meta_rel} (нет файла)")
+            if poster_rel:
+                seen_outputs[poster_rel] = {
+                    "src_hash": src_hash,
+                    "transform": f"mov_poster@{TRANSFORMS['mov_poster']}",
+                    "profile": profile,
+                }
+                if dest.is_file() and not (out_root / poster_rel).is_file():
+                    rep.stale.append(f"{poster_rel} (нет файла)")
             continue
 
         if blob.is_file():
@@ -684,6 +722,26 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
                 "out_hash": _b3_bytes(meta_dest.read_bytes()),
                 "transform": f"mov_meta@{TRANSFORMS[job.transform]}",
                 "profile": profile,
+            }
+
+        if poster_rel:
+            poster_dest = out_root / poster_rel
+            if wrote_now or not poster_dest.is_file():
+                try:
+                    poster = videomod.poster_frame(
+                        dest, video_tmp, max_side=int(cfg.thumb["max_side"]),
+                        quality=int(cfg.thumb["quality"]))
+                except videomod.VideoError as e:
+                    rep.errors.append(str(e))
+                    continue
+                _write_atomic(poster_dest, poster)
+            seen_outputs[poster_rel] = {
+                "src": _rel(root, job.src),
+                "src_hash": src_hash,
+                "out_hash": _b3_bytes(poster_dest.read_bytes()),
+                "transform": f"mov_poster@{TRANSFORMS['mov_poster']}",
+                "profile": profile,
+                "cost_px": imaging.decoded_cost_px(poster_dest.read_bytes()),
             }
 
     manifest_path = root / ".vncache" / MANIFEST
@@ -814,7 +872,8 @@ def sprite_tree(root: Path) -> dict[str, dict[str, dict[str, list[str]]]]:
         return tree
     for char_dir in sorted(p for p in spr.iterdir() if p.is_dir()):
         poses: dict = {}
-        for pose_dir in sorted(p for p in char_dir.iterdir() if p.is_dir()):
+        for pose_dir in sorted(p for p in char_dir.iterdir()
+                               if p.is_dir() and p.name != SIDE_DIR):
             entry: dict[str, list[str]] = {"base": [], "outfits": [], "faces": [],
                                            "overlays": []}
             for f in pose_dir.iterdir():
@@ -829,6 +888,24 @@ def sprite_tree(root: Path) -> dict[str, dict[str, dict[str, list[str]]]]:
                         if f.is_file() and variant_scale(f.stem) == 1)
             poses[pose_dir.name] = entry
         tree[char_dir.name] = poses
+    return tree
+
+
+def side_tree(root: Path) -> dict[str, list[str]]:
+    """Портреты say-окна: {char: [референсные имена]}. Ren'Py ищет их как
+    `side <tag> <атрибуты>` — отдельная ветка образов, не часть layeredimage."""
+    tree: dict[str, list[str]] = {}
+    spr = root / "game" / "assets" / "spr"
+    if not spr.is_dir():
+        return tree
+    for char_dir in sorted(p for p in spr.iterdir() if p.is_dir()):
+        sdir = char_dir / SIDE_DIR
+        if not sdir.is_dir():
+            continue
+        names = sorted(f.stem for f in sdir.iterdir()
+                       if f.is_file() and variant_scale(f.stem) == 1)
+        if names:
+            tree[char_dir.name] = names
     return tree
 
 

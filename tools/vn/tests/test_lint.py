@@ -251,3 +251,47 @@ def test_stamp_skips_draft_only(repo_root, tmp_path):
     (ch / "scenes" / "s010_intro.scene.yaml").write_text(
         "schema: scene@1\nid: s010\n", encoding="utf-8")
     assert stamp_id_registry(root) == 0
+
+
+def test_released_asset_disappearance_is_error(repo_root, tmp_path):
+    """Ассет — такой же выпущенный id, как сцена: галерея открывает картинки по
+    имени образа, и молчаливое исчезновение стирает игроку прогресс (ADR-0012)."""
+    import json
+
+    root = _copy_skeleton(repo_root, tmp_path)
+    (root / "game" / "assets" / "cg" / "ch01").mkdir(parents=True)
+    (root / "game" / "assets" / "cg" / "ch01" / "kept.webp").write_bytes(b"x")
+    reg = root / "content" / "registry" / "id_registry.json"
+    doc = json.loads(reg.read_text(encoding="utf-8"))
+    doc["assets"] = ["cg/ch01/kept", "cg/ch01/gone"]
+    reg.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    rep = lint(root)
+    assert any("cg/ch01/gone" in e and "renames.assets" in e for e in rep.errors)
+    assert not any("cg/ch01/kept" in e for e in rep.errors)
+
+    # Запись в renames.assets снимает ошибку — это и есть штатный путь переименования
+    (root / "content" / "renames.yaml").write_text(
+        "schema: renames@1\nscenes: {}\ndeleted_scenes: {}\nlabels: {}\nvars: {}\n"
+        "assets: {cg/ch01/gone: cg/ch01/kept}\n", encoding="utf-8")
+    rep2 = lint(root)
+    assert not any("cg/ch01/gone" in e for e in rep2.errors)
+
+
+def test_non_lfs_binary_in_assets_src_is_error(repo_root, tmp_path):
+    """История git append-only: бинарь мимо LFS оседает в ней целиком и навсегда.
+    Покрытие определяет сам git (check-attr) — в корне без .git проверка молчит."""
+    import subprocess
+
+    root = _copy_skeleton(repo_root, tmp_path)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    (root / ".gitattributes").write_text(
+        "assets_src/**/*.png filter=lfs diff=lfs merge=lfs -text\n", encoding="utf-8")
+    src = root / "assets_src" / "art" / "cg"
+    src.mkdir(parents=True)
+    (src / "covered.png").write_bytes(b"\x89PNG covered")
+    (src / "loose.tga").write_bytes(b"raw-bytes-outside-lfs")
+
+    rep = lint(root)
+    assert any("loose.tga" in e and "LFS" in e for e in rep.errors)
+    assert not any("covered.png" in e for e in rep.errors)

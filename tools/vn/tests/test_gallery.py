@@ -112,7 +112,7 @@ def test_seen_image_only_for_images(tmp_path):
 
 def test_warnings_for_missing_thumb_and_orphan_cg(tmp_path):
     root = tmp_path
-    # CG без thumb-варианта + осиротевший CG, не объявленный в галерее
+    # CG без thumb-варианта + осиротевший CG + видео без постер-кадра
     _mk_assets(root, "cg/ch01/a.webp", "cg/ch01/orphan.webp", "mov/demo/x.webm")
     rep, errors = _Rep(), []
     _emit_gallery(root, _doc({
@@ -124,8 +124,23 @@ def test_warnings_for_missing_thumb_and_orphan_cg(tmp_path):
     assert errors == []
     text = "\n".join(rep.warnings)
     assert "нет превью" in text                     # картинка без thumb
-    assert "kind: movie без thumb" in text           # видео без постера
+    assert "нет постер-кадра" in text                # видео без постера
     assert "cg/ch01/orphan" in text and "не объявлен в галерее" in text
+
+
+def test_movie_thumb_falls_back_to_poster(tmp_path):
+    """Постер-кадр конвейер делает сам (ADR-0012): ручной thumb у видео больше
+    не обязателен, и предупреждения быть не должно."""
+    root = tmp_path
+    _mk_assets(root, "mov/demo/x.webm", "mov/demo/x.poster.webp")
+    rep, errors = _Rep(), []
+    rows = _emit_gallery(root, _doc({
+        "mov_x": {"category": "cg", "kind": "movie", "asset": "mov/demo/x",
+                  "title_key": "t", "unlock": {"always": True}},
+    }), set(), set(), set(), {}, rep, errors, [("t", "d")])
+    assert errors == []
+    assert not any("постер" in w for w in rep.warnings)
+    assert "assets/mov/demo/x.poster.webp" in rows
 
 
 def test_duplicate_ids_across_files_are_error(tmp_path):
@@ -183,3 +198,32 @@ def test_unbuilt_assets_zone_warns_not_errors(tmp_path):
     }), set(), set(), set(), {}, rep, errors, [("t", "d")])
     assert errors == []
     assert any("game/assets не собран" in w for w in rep.warnings)
+
+
+def test_renamed_asset_keeps_unlock_history(tmp_path):
+    """Переименование CG после релиза не должно стирать игроку открытый кадр:
+    галерея открывает картинки по ИМЕНИ образа (persistent._seen_images), поэтому
+    исторические имена обязаны попадать в реестр (ADR-0012)."""
+    root = tmp_path
+    _mk_assets(root, "cg/ch01/kiss_final.webp", "cg/ch01/kiss_final.thumb.webp")
+    rep, errors = _Rep(), []
+    renames = {"assets": {"cg/ch01/kiss": "cg/ch01/kiss_v2",
+                          "cg/ch01/kiss_v2": "cg/ch01/kiss_final"}}
+    text = _emit_gallery(root, _doc({
+        "cg_kiss": {"category": "cg", "kind": "image", "asset": "cg/ch01/kiss_final",
+                    "title_key": "t", "unlock": {"seen_image": True}},
+    }), set(), set(), set(), {}, rep, errors, [("t", "d")], renames=renames)
+    assert errors == []
+    # Цепочка переименований разворачивается до конечного id
+    assert "'image_name_history': ['cg ch01 kiss', 'cg ch01 kiss_v2']" in text
+
+
+def test_asset_history_is_empty_without_renames(tmp_path):
+    root = tmp_path
+    _mk_assets(root, "cg/ch01/a.webp", "cg/ch01/a.thumb.webp")
+    rep, errors = _Rep(), []
+    text = _emit_gallery(root, _doc({
+        "cg_a": {"category": "cg", "kind": "image", "asset": "cg/ch01/a",
+                 "title_key": "t", "unlock": {"seen_image": True}},
+    }), set(), set(), set(), {}, rep, errors, [("t", "d")])
+    assert "'image_name_history': []" in text

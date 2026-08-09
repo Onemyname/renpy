@@ -4,12 +4,57 @@
   "title": "id_registry@1 — append-only реестр всех когда-либо выпущенных id (content/registry/id_registry.json, G7)",
   "type": "object",
   "properties": {
-    "schema": {"const": "id_registry@1"},
-    "chapters": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^ch\\d{2}$"}},
-    "scenes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"}},
-    "characters": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,23}$"}},
-    "vars": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$"}}
+    "schema": {
+      "const": "id_registry@1"
+    },
+    "chapters": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^ch\\d{2}$"
+      }
+    },
+    "scenes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^ch\\d{2}_s\\d{3}$"
+      }
+    },
+    "characters": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{1,23}$"
+      }
+    },
+    "vars": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$"
+      }
+    },
+    "assets": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$"
+      },
+      "description": "Логические id ассетов, показанных игрокам. Галерея открывает картинки по ИМЕНИ образа (persistent._seen_images), поэтому переименование ассета после релиза стирает игроку прогресс — исчезновение id без записи в renames.assets ловит линтер (ADR-0012)"
+    }
   },
-  "required": ["schema", "chapters", "scenes", "characters", "vars"],
+  "required": [
+    "schema",
+    "chapters",
+    "scenes",
+    "characters",
+    "vars"
+  ],
   "additionalProperties": false
 }

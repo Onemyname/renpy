@@ -349,6 +349,68 @@ def test_images_emitter_forbidden_and_disjoint(tmp_path):
     assert "используется в двух группах matrix" in text
 
 
+def test_overlays_are_emitted_as_independent_attributes(tmp_path):
+    """Накладки сочетаются друг с другом, поэтому это НЕ группа. Раньше слой
+    собирался и не эмитился — мёртвый груз в дистрибутиве."""
+    from vn.content.images import ImagesReport, emit_images
+
+    root = mk_root(tmp_path)
+    ch = _char(root)
+    _png(ch / "base.png", (128, 96), color=(1, 2, 3, 255))
+    _png(ch / "overlays" / "blush.png", (128, 96), color=(4, 5, 6, 255))
+    _png(ch / "overlays" / "tears.png", (128, 96), color=(7, 8, 9, 255))
+    assert build_assets(root).errors == []
+
+    doc = {
+        "schema": "character@1", "id": "mira", "name": "Мира", "color": "#c94f7c",
+        "matrix": {"poses": ["a"], "outfits": ["school"], "emotions": ["neutral"],
+                   "overlays": ["blush", "tears"]},
+    }
+    rep = ImagesReport()
+    text = emit_images(root, {}, [("mira/character.yaml", doc)], rep, "# h\n")
+    assert '    attribute blush "assets/spr/mira/a/overlays/blush.webp" if_any ["a"]' in text
+    assert '    attribute tears "assets/spr/mira/a/overlays/tears.webp" if_any ["a"]' in text
+    assert not any("мёртвый груз" in w for w in rep.warnings)
+
+
+def test_overlay_outside_matrix_warns(tmp_path):
+    from vn.content.images import ImagesReport, emit_images
+
+    root = mk_root(tmp_path)
+    ch = _char(root)
+    _png(ch / "base.png", (128, 96), color=(1, 2, 3, 255))
+    _png(ch / "overlays" / "sweat.png", (128, 96), color=(4, 5, 6, 255))
+    build_assets(root)
+    doc = {"schema": "character@1", "id": "mira", "name": "M", "color": "#ffffff",
+           "matrix": {"poses": ["a"], "outfits": ["school"], "emotions": ["neutral"]}}
+    rep = ImagesReport()
+    emit_images(root, {}, [("mira/character.yaml", doc)], rep, "# h\n")
+    assert any("overlays/sweat" in w and "вне matrix" in w for w in rep.warnings)
+
+
+def test_side_images_are_built_and_emitted(tmp_path):
+    """Портреты say-окна: ветка была объявлена в naming.md и не реализована."""
+    from vn.content.images import ImagesReport, emit_images
+
+    root = mk_root(tmp_path)
+    side = root / "assets_src" / "art" / "characters" / "mira" / "side"
+    _png(side / "base.png", (64, 64), color=(1, 2, 3, 255))
+    _png(side / "smile.png", (64, 64), color=(4, 5, 6, 255))
+    _png(_char(root) / "base.png", (128, 96), color=(9, 9, 9, 255))
+    res = build_assets(root)
+    assert res.errors == []
+    # side/ — не поза: в дерево поз он попасть не должен
+    assert set(sprite_tree(root)["mira"]) == {"a"}
+    assert (root / "game/assets/spr/mira/side/smile.webp").is_file()
+
+    doc = {"schema": "character@1", "id": "mira", "name": "M", "color": "#ffffff",
+           "matrix": {"poses": ["a"], "outfits": ["school"], "emotions": ["neutral"]}}
+    rep = ImagesReport()
+    text = emit_images(root, {}, [("mira/character.yaml", doc)], rep, "# h\n")
+    assert 'image side mira = "assets/spr/mira/side/base.webp"' in text
+    assert 'image side mira smile = "assets/spr/mira/side/smile.webp"' in text
+
+
 def test_graph_export(repo_root):
     from vn.content.graph import build_graph
 

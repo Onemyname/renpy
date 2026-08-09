@@ -123,6 +123,11 @@ def _iter_declarations(root: Path):
     reg = root / "content" / "registry"
     if reg.is_dir():
         yield from sorted(reg.glob("*.json"))
+    # Трассировка аудита (audit@1): статус «закрыто» обязан называть реализацию и
+    # тест — это проверяет схема, поэтому сам трекер валидируется наравне с контентом.
+    audit = root / "docs" / "audit"
+    if audit.is_dir():
+        yield from sorted(audit.glob("*.audit.yaml"))
     src = root / "assets_src"
     if src.is_dir():
         yield from sorted(src.rglob("*.manifest.json"))
@@ -397,6 +402,22 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                 f"{reg_rel}: выпущенная переменная {released} исчезла без записи в "
                 f"renames.vars (id неизменяемы, G7)"
             )
+    # Ассеты: галерея открывает картинки по ИМЕНИ образа (persistent._seen_images),
+    # поэтому переименование ассета после релиза стирает игроку открытый кадр.
+    # Проверяем только при собранной зоне: без неё «исчез» означало бы «не собран».
+    asset_moves = set(renames.get("assets") or {})
+    released_assets = id_reg.get("assets", [])
+    if released_assets and (root / "game" / "assets").is_dir():
+        from ..release import built_asset_ids
+
+        existing_assets = set(built_asset_ids(root))
+        for released in released_assets:
+            if released not in existing_assets and released not in asset_moves:
+                rep.error(
+                    f"{reg_rel}: выпущенный ассет {released} исчез без записи в "
+                    f"renames.assets — у игроков он останется закрытым в галерее "
+                    f"(ADR-0012)"
+                )
 
     # ── 6a. Бинари в assets_src мимо LFS (ADR-0004 в редакции ADR-0012) ─────
     # Историю раздувают не бинари как таковые, а бинари, попавшие в git ОБЪЕКТАМИ:

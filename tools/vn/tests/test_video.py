@@ -116,7 +116,9 @@ def test_orphan_video_cleanup_and_only_transforms(tmp_path):
     # Сборка только видео-ветки не должна снести статику и её манифест
     (root / "assets_src/video_src/demo/loop01.mp4").unlink()
     res2 = build_assets(root, only_transforms={"video2webm"})
-    assert sorted(res2.deleted) == ["mov/demo/loop01.webm", "mov/demo/loop01.webm.meta.json"]
+    assert sorted(res2.deleted) == ["mov/demo/loop01.poster.webp",
+                                   "mov/demo/loop01.webm",
+                                   "mov/demo/loop01.webm.meta.json"]
     assert (root / "game/assets/bg/gate/day.webp").is_file()
     res3 = build_assets(root, check=True)
     assert res3.stale == []     # манифест статики пережил фильтрованную сборку
@@ -139,7 +141,9 @@ def test_cg_track_and_image_emission(tmp_path):
     rep = ImagesReport()
     text = emit_images(root, {}, [], rep, "# h\n")
     assert 'image cg ch01 rooftop_kiss = "assets/cg/ch01/rooftop_kiss.webp"' in text
-    assert 'image mov nsfw scene01 = Movie(play="assets/mov/nsfw/scene01.webm", loop=True)' in text
+    # Movie получает постер-кадр как image= — заглушку до старта воспроизведения
+    assert ('image mov nsfw scene01 = Movie(play="assets/mov/nsfw/scene01.webm", '
+            'loop=True, image="assets/mov/nsfw/scene01.poster.webp")') in text
 
 
 def test_validate_output_budget_and_codec(tmp_path):
@@ -159,3 +163,44 @@ def test_validate_output_budget_and_codec(tmp_path):
     src = root / "assets_src/video_src/demo/loop01.mp4"
     errors2, _w, _s = videomod.validate_output(src, dict(videomod.DEFAULT_OPTS), tmp_path / "wd")
     assert any("vp9" in e for e in errors2)
+
+
+def test_sequence_assembles_into_video_master(tmp_path):
+    """PNG-секвенция -> видео-мастер: захват из DAZ/Wan приходит кадрами, а
+    видео-трек умеет только «готовый файл -> webm» (ADR-0012, AUDIT-005)."""
+    from PIL import Image
+
+    from vn.assets.video import VideoError, assemble_sequence
+
+    frames = tmp_path / "frames"
+    frames.mkdir()
+    for i in range(1, 13):
+        Image.new("RGB", (64, 48), (i * 15, 40, 80)).save(frames / f"frame_{i:04d}.png")
+
+    root = _mk_root(tmp_path)
+    dest = root / "assets_src" / "video_src" / "ch01" / "rain.mp4"
+    info = assemble_sequence(frames, dest, fps=12.0)
+    assert dest.is_file() and info["frames"] == 12
+    assert (info["width"], info["height"]) == (64, 48)
+    assert abs(info["duration_s"] - 1.0) < 0.2
+
+    # Мастер проходит общий видео-трек без особой обработки
+    res = build_assets(root)
+    assert res.errors == []
+    assert (root / "game/assets/mov/ch01/rain.webm").is_file()
+    assert (root / "game/assets/mov/ch01/rain.poster.webp").is_file()
+
+
+def test_sequence_with_gaps_is_error(tmp_path):
+    """Дыра в нумерации: ffmpeg молча остановился бы на первой — видео оказалось
+    бы обрезанным, и никто бы не заметил."""
+    from PIL import Image
+
+    from vn.assets.video import VideoError, assemble_sequence
+
+    frames = tmp_path / "frames"
+    frames.mkdir()
+    for i in (1, 2, 5):
+        Image.new("RGB", (64, 48), (10, 20, 30)).save(frames / f"f_{i:04d}.png")
+    with pytest.raises(VideoError, match="дыр"):
+        assemble_sequence(frames, tmp_path / "out.mp4")

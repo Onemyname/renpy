@@ -639,6 +639,37 @@ def assets_video_build(profile: str):
     _assets_build(_root(), profile, only_transforms={"video2webm"})
 
 
+@assets_video.command("seq")
+@click.argument("frames_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.argument("dest", type=click.Path(path_type=Path))
+@click.option("--fps", default=24.0, help="Частота кадров секвенции.")
+@click.option("--crf", default=12, help="CRF мастера (низкий = ближе к исходнику).")
+def assets_video_seq(frames_dir: Path, dest: Path, fps: float, crf: int):
+    """PNG-секвенция -> видео-мастер в assets_src/video_src/<group>/<name>.mp4.
+
+    Захват из DAZ/Wan/Sims4 приходит кадрами; до этой команды склейку делали
+    руками вне репозитория, и её параметры нигде не фиксировались."""
+    from .assets.video import VideoError, assemble_sequence
+
+    root = _root()
+    dest = dest if dest.is_absolute() else root / dest
+    try:
+        rel = dest.resolve().relative_to((root / "assets_src" / "video_src").resolve())
+    except ValueError:
+        _fail("мастер обязан лечь в assets_src/video_src/<group>/<name>.<ext> (G2)")
+    if len(rel.parts) < 2:
+        _fail("видео кладутся в группу: assets_src/video_src/<group>/<name>.<ext>")
+    try:
+        info = assemble_sequence(frames_dir, dest, fps=fps, crf=crf)
+    except VideoError as e:
+        _fail(str(e))
+    click.secho(
+        f"секвенция: {info['frames']} кадров -> {dest.relative_to(root).as_posix()} "
+        f"({info['width']}x{info['height']}, {info['duration_s']:.2f} c, "
+        f"{info['size_bytes'] / 1048576:.1f} МБ)", fg="green")
+    click.echo("дальше: vn assets video build (энкод в отгружаемый VP9)")
+
+
 @assets_video.command("validate")
 @click.argument("paths", nargs=-1, type=click.Path(exists=True, path_type=Path))
 def assets_video_validate(paths: tuple):

@@ -103,8 +103,10 @@ screen gallery_viewer(item_id):
     add Solid("#000000f2")
 
     if _spec["kind"] == "movie":
-        # Movie существует ровно пока экран показан: Hide освобождает ресурс
-        add Movie(play=_spec["asset"], loop=True) fit "contain" xysize (1920, 1080)
+        # Movie существует ровно пока экран показан: Hide освобождает ресурс.
+        # Листаем ИМЕННО _shots[_idx]: варианты видео объявлялись в gallery.yaml,
+        # счётчик «1/2» и кнопка показывались, а играл всегда основной ассет.
+        add Movie(play=_shots[_idx], loop=True) fit "contain" xysize (1920, 1080)
     else:
         # fit contain — без растягивания при любых пропорциях (portrait/landscape);
         # zoom переключает на cover (заполнение экрана с обрезкой).
@@ -135,6 +137,7 @@ screen gallery_viewer(item_id):
                 "variant", _idx + 1)
         if _spec["kind"] == "image":
             textbutton vn_loc.t("ui.gallery.zoom") action ToggleVariable("vn_gal_zoom")
+        # Movie перезапускается сменой _shots[_idx] — отдельного действия не нужно
         if len(_sibs) > 1:
             textbutton vn_loc.t("ui.gallery.next") action Show(
                 "gallery_viewer", item_id=_sibs[(_pos + 1) % len(_sibs)])

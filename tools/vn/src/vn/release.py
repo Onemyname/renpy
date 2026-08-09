@@ -75,7 +75,8 @@ def _released_ids(root: Path) -> dict:
             chapters.append(ch_id)
             scenes.extend(info["scenes"])
     if not scenes:
-        return {"chapters": [], "scenes": [], "characters": [], "vars": []}
+        return {"chapters": [], "scenes": [], "characters": [], "vars": [],
+                "assets": []}
     chars = []
     cdir = root / "content" / "characters"
     if cdir.is_dir():
@@ -92,8 +93,34 @@ def _released_ids(root: Path) -> dict:
         if store and store != "persistent":
             for name in (doc.get("vars") or {}):
                 variables.append(f"{store}.{name}")
-    return {"chapters": chapters, "scenes": scenes,
-            "characters": chars, "vars": variables}
+    # Логические id собранных ассетов: галерея открывает картинки по ИМЕНИ образа
+    # (persistent._seen_images), поэтому имя ассета — такой же выпущенный id, как
+    # id сцены, и исчезать молча не должен (ADR-0012).
+    return {"chapters": chapters, "scenes": scenes, "characters": chars,
+            "vars": variables, "assets": built_asset_ids(root)}
+
+
+def built_asset_ids(root: Path) -> list[str]:
+    """Логические id ассетов в game/assets: только референсные варианты, без
+    производных (миниатюры, постеры, метаданные) — они не адресуются сценарием."""
+    from .assets.pipeline import POSTER_SUFFIX, variant_scale
+
+    assets = root / "game" / "assets"
+    out: set[str] = set()
+    for kind in ("bg", "cg", "spr", "mov"):
+        base = assets / kind
+        if not base.is_dir():
+            continue
+        for f in base.rglob("*"):
+            if not f.is_file() or f.suffix not in (".webp", ".png", ".jpg", ".webm"):
+                continue
+            rel = f"{kind}/" + f.relative_to(base).as_posix()
+            if rel.endswith(POSTER_SUFFIX) or f.stem.endswith(".thumb"):
+                continue
+            if variant_scale(f.stem) != 1:
+                continue
+            out.add(rel.rsplit(".", 1)[0])
+    return sorted(out)
 
 
 def stamp_id_registry(root: Path) -> int:
@@ -105,7 +132,7 @@ def stamp_id_registry(root: Path) -> int:
         reg = json.loads(reg_path.read_text(encoding="utf-8"))
     else:
         reg = {"schema": "id_registry@1", "chapters": [], "scenes": [],
-               "characters": [], "vars": []}
+               "characters": [], "vars": [], "assets": []}
     added = 0
     current = _released_ids(root)
     for key, ids in current.items():
@@ -391,7 +418,7 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     elif vrep.warnings:
         add("WARN", f"VaM-декларации: {len(vrep.warnings)} предупреждений "
                     f"(незахваченные выходы)")
-    elif vrep.checked:
+    else:
         add("PASS", f"VaM-декларации: {len(vrep.checked)} проверено")
 
     from .assets import sims4 as sims4mod
@@ -402,7 +429,7 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     elif srep.warnings:
         add("WARN", f"Sims4-декларации: {len(srep.warnings)} предупреждений "
                     f"(незахваченные выходы)")
-    elif srep.checked:
+    else:
         add("PASS", f"Sims4-декларации: {len(srep.checked)} проверено")
 
     # Покрытие переводов (loc.yaml: release_coverage_min): недопереведённый язык

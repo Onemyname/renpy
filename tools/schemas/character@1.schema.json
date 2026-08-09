@@ -16,7 +16,8 @@
       "type": "array",
       "minItems": 2,
       "maxItems": 2,
-      "items": {"type": "integer", "minimum": 1}
+      "items": {"type": "integer", "minimum": 1},
+      "description": "Обязательный холст мастеров этого персонажа (ADR-0012). Слои позы складываются layeredimage в (0,0) — разный холст смещает наряд и эмоцию относительно тела, поэтому холст проверяется сборкой. Указывается в пикселях МАСТЕРА (render.classes.spr.master_scale раз крупнее вёрстки)"
     },
     "matrix": {
       "type": "object",
@@ -24,6 +25,10 @@
         "poses": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/token"}},
         "outfits": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/token"}},
         "emotions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/token"}},
+        "overlays": {
+          "type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/token"},
+          "description": "Накладки (слёзы, румянец, пот): НЕЗАВИСИМЫЕ атрибуты layeredimage, а не группа — они сочетаются друг с другом. Слой без записи здесь собирается, но не эмитится (мёртвый груз в дистрибутиве)"
+        },
         "required": {
           "type": "array",
           "items": {

@@ -170,6 +170,97 @@ def summarize(path: Path) -> dict:
     }
 
 
+SEQUENCE_RE = None      # инициализируется лениво в assemble_sequence
+
+
+def assemble_sequence(frames_dir: Path, dest: Path, fps: float = 24.0,
+                      crf: int = 12) -> dict:
+    """PNG-секвенция -> видео-МАСТЕР в assets_src/video_src.
+
+    Захват из DAZ/Wan/Sims4 приходит кадрами (`frame_0001.png`…), а видео-трек
+    умеет только «готовый файл -> webm». Раньше склейку делали руками ffmpeg'ом
+    вне репозитория, и параметры склейки нигде не фиксировались.
+
+    Мастер намеренно кодируется почти без потерь (CRF 12, libx264): это ИСХОДНИК,
+    из которого потом жмётся отгружаемый VP9. Ужимать дважды — терять качество
+    там, где оно ещё пригодится для 4K-варианта."""
+    import re as _re
+
+    ffmpeg = _ffmpeg()
+    frames = sorted(f for f in frames_dir.iterdir()
+                    if f.is_file() and f.suffix.lower() in (".png", ".jpg", ".jpeg"))
+    if not frames:
+        raise VideoError(f"{frames_dir}: кадров не найдено (*.png / *.jpg)")
+
+    pattern = _re.compile(r"^(?P<stem>.*?)(?P<num>\d+)$")
+    m = pattern.match(frames[0].stem)
+    if m is None:
+        raise VideoError(
+            f"{frames[0].name}: имя кадра обязано заканчиваться номером "
+            f"(frame_0001.png) — иначе порядок кадров неопределён")
+    digits = len(m.group("num"))
+    glob_pattern = f"{m.group('stem')}%0{digits}d{frames[0].suffix}"
+    start = int(m.group("num"))
+
+    expected = [f"{m.group('stem')}{str(start + i).zfill(digits)}{frames[0].suffix}"
+                for i in range(len(frames))]
+    actual = [f.name for f in frames]
+    if actual != expected:
+        missing = sorted(set(expected) - set(actual))
+        raise VideoError(
+            f"{frames_dir}: нумерация кадров с дырами — ffmpeg остановится на первой. "
+            f"Не хватает: {', '.join(missing[:5])}"
+            + (" …" if len(missing) > 5 else ""))
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [str(ffmpeg), "-y", "-hide_banner", "-loglevel", "error",
+           "-framerate", str(fps), "-start_number", str(start),
+           "-i", str(frames_dir / glob_pattern),
+           "-c:v", "libx264", "-crf", str(crf), "-preset", "slow",
+           "-pix_fmt", "yuv420p",
+           # Чётные размеры: yuv420p того требует, а секвенция приходит любой
+           "-vf", "scale=2*trunc(iw/2):2*trunc(ih/2)",
+           str(dest)]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0 or not dest.is_file() or dest.stat().st_size == 0:
+        raise VideoError(f"{frames_dir.name}: ffmpeg упал (код {proc.returncode}):\n"
+                         f"{(proc.stderr or '').strip()[-600:]}")
+    return {"frames": len(frames), "fps": fps, "dest": dest, **summarize(dest)}
+
+
+def poster_frame(path: Path, workdir: Path, max_side: int | None = None,
+                 quality: int = 80) -> bytes:
+    """Первый кадр собранного видео как WebP.
+
+    Нужен дважды и оба раза по делу: `Movie(image=...)` показывает его, пока
+    видео не начало играть (без него — чёрная дыра в кадре и на платформах, где
+    видео не воспроизводится), а галерея берёт его постером вместо заглушки.
+    Раньше постер приходилось указывать руками, и `kind: movie` без `thumb`
+    давал предупреждение на каждой сборке."""
+    import io
+
+    from PIL import Image
+
+    ffmpeg = _ffmpeg()
+    workdir.mkdir(parents=True, exist_ok=True)
+    tmp = workdir / (path.stem + ".poster.png")
+    proc = subprocess.run(
+        [str(ffmpeg), "-y", "-hide_banner", "-loglevel", "error",
+         "-i", str(path), "-frames:v", "1", str(tmp)], capture_output=True)
+    if proc.returncode != 0 or not tmp.is_file():
+        raise VideoError(f"{path.name}: не удалось извлечь постер-кадр")
+    try:
+        with Image.open(tmp) as im:
+            im = im.convert("RGB")
+            if max_side:
+                im.thumbnail((max_side, max_side), Image.LANCZOS)
+            buf = io.BytesIO()
+            im.save(buf, format="WEBP", quality=quality, method=4)
+            return buf.getvalue()
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def loop_seam(path: Path, workdir: Path) -> float | None:
     """RMS-разница (0..255) первого и последнего кадров: грубая метрика «стыка»
     лупа. None = кадры извлечь не удалось (не валим сборку из-за метрики)."""
