@@ -1,0 +1,163 @@
+schema: audit@1
+source: Задача «Реализация production pipeline для DAZ + WAN» (2026-08-09) — доведение существующей ветки источника до production-ready без новой архитектуры
+reviewed_at: "2026-08-09"
+
+# Ветка DAZ+WAN не строилась заново: контракт «декларация -> выход -> провенанс»
+# уже существовал (ADR-0006). Здесь только то, что мешало им пользоваться
+# в продакшене. Пункты, где существующий механизм уже решал задачу, помечены
+# WONT_FIX с указанием этого механизма — чтобы не заводить дубль.
+
+items:
+  DAZ-001:
+    title: "Декларации источников не могли указать на новую зону мастеров art/"
+    category: correctness
+    evidence:
+      - "daz_render@1/vam_render@1/sims4_render@1: output pattern ^(png|video_src)/.+"
+      - "переезд зоны в assets_src/art (AUDIT-017) сделал бы любую новую декларацию схемно-невалидной"
+    implementation:
+      - tools/schemas/daz_render@1.schema.json
+      - tools/schemas/vam_render@1.schema.json
+      - tools/schemas/sims4_render@1.schema.json
+    tests:
+      - tools/vn/tests/test_sources.py::test_daz_then_wan_chain_reaches_the_game
+    status: CLOSED
+    note: "Регрессия, внесённая переименованием зоны, — поймана до первого боевого рендера."
+
+  DAZ-002:
+    title: "AI-полировка поверх рендера СТИРАЛА происхождение артефакта"
+    category: correctness
+    evidence:
+      - "provenance.record(): цепочка наследовалась только из --source"
+      - "запись шага in-place (штатный путь ADR-0006 «comfyui-шаг поверх захвата») начинала цепочку заново"
+      - "артефакт переставал прослеживаться до .duf ровно тогда, когда становился финальным"
+    implementation:
+      - tools/vn/src/vn/assets/provenance.py
+    tests:
+      - tools/vn/tests/test_provenance.py::test_in_place_step_keeps_render_origin
+      - tools/vn/tests/test_sources.py::test_daz_then_wan_chain_reaches_the_game
+    status: CLOSED
+    note: >
+      Заодно повторный прогон той же команды перестал растить цепочку дублями:
+      шаг сравнивается по содержимому, а не по факту вызова.
+
+  DAZ-003:
+    title: "id декларации не сверялся с output — провенанс мог висеть не на том кадре"
+    category: quality-gate
+    evidence:
+      - "docs/handbook/19-sims4.md §5: «не проверяет соответствие id и output»"
+      - "id адресует ассет в игре, output даёт файл; расхождение никем не ловилось"
+    implementation:
+      - tools/vn/src/vn/assets/sources.py
+    tests:
+      - tools/vn/tests/test_sources.py::test_id_must_match_output
+    status: CLOSED
+
+  DAZ-004:
+    title: "Объявленное render.resolution не сверялось с фактическим файлом"
+    category: quality-gate
+    evidence:
+      - "docs/handbook/19-sims4.md §5: «не сверяет resolution с реальным PNG»"
+      - "«отрендерил в 4K» в YAML при 1080p на диске проходило молча"
+    implementation:
+      - tools/vn/src/vn/assets/sources.py
+    tests:
+      - tools/vn/tests/test_sources.py::test_declared_resolution_must_match_file
+    status: CLOSED
+
+  DAZ-005:
+    title: "Три структурные копии валидатора: новая проверка = три одинаковые правки"
+    category: architecture
+    evidence:
+      - "daz.py / vam.py / sims4.py отличались только именами ключей и текстами"
+      - "docs/handbook/19-sims4.md §5 прямо называет sims4.py «третьей структурной копией»"
+    implementation:
+      - tools/vn/src/vn/assets/sources.py
+      - tools/vn/src/vn/assets/daz.py
+      - tools/vn/src/vn/assets/vam.py
+      - tools/vn/src/vn/assets/sims4.py
+    tests:
+      - tools/vn/tests/test_sources.py::test_all_sources_share_one_contract
+    status: CLOSED
+    note: >
+      Различия источников стали данными (SourceKind), а не кодом. Публичные
+      функции модулей сохранены — вызывающий код и тесты не трогались.
+
+  DAZ-006:
+    title: "Скаффолда деклараций нет: YAML руками против additionalProperties: false"
+    category: dx
+    evidence:
+      - "docs/handbook/19-sims4.md §9: «скаффолда нет, vn assets sims4 new не существует»"
+    implementation:
+      - tools/vn/src/vn/assets/sources.py
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_sources.py::test_scaffold_matches_validator_expectations
+    status: CLOSED
+    note: >
+      vn assets new <daz|vam|sims4> <logical_id> --scene …: разрешение по
+      умолчанию берётся из render.classes.<class>.source_min, путь выхода
+      считается ТОЙ ЖЕ функцией, что и в валидаторе.
+
+  DAZ-007:
+    title: "Wan/DAZ отдают секвенцию кадров, а видео-трек принимает только готовый файл"
+    category: content-pipeline
+    evidence:
+      - "video.py умел только «файл -> webm»; склейка жила вне репозитория"
+    status: DUPLICATE
+    duplicate_of: AUDIT-005
+    note: "Закрыт вместе с AUDIT-005: vn assets video seq."
+
+  DAZ-008:
+    title: "Runtime не должен знать о DAZ/WAN"
+    category: architecture
+    evidence:
+      - "options.rpy:17 исключает assets_src/**, content/**, tools/** из дистрибутива"
+      - "провенанс живёт сайдкаром рядом с мастером, в game/ не попадает"
+    implementation:
+      - tools/vn/tests/test_sources.py
+    tests:
+      - tools/vn/tests/test_sources.py::test_daz_then_wan_chain_reaches_the_game
+    status: CLOSED
+    note: >
+      Требование уже выполнялось архитектурой; заведён тест-сторож, который
+      падает, если имя источника (daz/duf/wan/comfy/iray) просочится в генерат.
+
+  DAZ-009:
+    title: "Импорт персонажных ассетов из DAZ: portrait / expressions / poses / outfits / variants"
+    category: content-pipeline
+    evidence:
+      - "layeredimage matrix (poses x outfits x emotions) существует и покрыт тестами"
+      - "portrait/side и overlays были дырами — закрыты AUDIT-012 и AUDIT-010"
+    status: WONT_FIX
+    rationale: >
+      Отдельного механизма под DAZ не требуется и заводить его нельзя: модель
+      персонажа уже связывает ассеты с персонажем через id и дерево
+      assets_src/art/characters/<char>/. Варианты персонажа — отдельный id
+      (anna, anna_teen) либо отдельная поза. Всё, чего не хватало, закрыто в
+      общих пунктах аудита, а не в ветке источника.
+
+  DAZ-010:
+    title: "Локации из DAZ: camera angles, day/night, interior/exterior, scene-specific"
+    category: content-pipeline
+    evidence:
+      - "location@1: backgrounds — карта вариант -> файл, minProperties 1, потолка нет"
+    status: WONT_FIX
+    rationale: >
+      Существующая модель уже покрывает все перечисленные измерения: любой из
+      них — вариант локации (day, night_rain, day_angle_b, after_fire) либо
+      отдельная локация. Вложенность каталогов фонов разрешена (AUDIT-001).
+      Добавлять «оси» вариантов в схему значило бы фиксировать в контракте
+      измерения, которые у каждой главы свои.
+
+  DAZ-011:
+    title: "WAN как runtime-зависимость"
+    category: architecture
+    evidence:
+      - "в репозитории нет ни одного вызова ComfyUI/Wan из тулинга или игры"
+    status: WONT_FIX
+    rationale: >
+      Прямо запрещено постановкой задачи и не требуется архитектурой: WAN —
+      внешний инструмент подготовки. Конвейер принимает его ВЫХОД (кадр или
+      секвенцию) и фиксирует параметры в провенансе, автоизвлекая их из
+      tEXt-чанков ComfyUI-PNG. Интеграция по API добавила бы зависимость
+      сборки от живого сервиса без выигрыша.

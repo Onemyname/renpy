@@ -828,6 +828,46 @@ def assets_sims4_validate(scope: str | None, no_provenance: bool):
                 f"{len(rep.warnings)} предупреждений)", fg="green")
 
 
+@assets.command("new")
+@click.argument("source", type=click.Choice(["daz", "vam", "sims4"]))
+@click.argument("logical_id")
+@click.option("--scene", required=True,
+              help="Исходник сцены относительно assets_src/ (daz/…/x.duf, vam/…, sims4/…).")
+@click.option("--resolution", default=None,
+              help="ШxВ мастера; по умолчанию — source_min класса из project.yaml.")
+@click.option("--ext", default="png", help="Расширение мастера (png/jpg/webp/tif).")
+@click.option("--video", is_flag=True, help="Выход — видео-мастер в video_src/.")
+def assets_new(source: str, logical_id: str, scene: str, resolution: str | None,
+               ext: str, video: bool):
+    """Заготовка декларации рендера/захвата: vn assets new daz cg/ch01/kiss --scene …
+
+    Писать YAML руками против схемы с additionalProperties: false — самый частый
+    способ потерять полчаса на опечатке."""
+    from .assets import sources
+    from .assets.render_config import load_render_config
+
+    root = _root()
+    kind = {"daz": sources.DAZ, "vam": sources.VAM, "sims4": sources.SIMS4}[source]
+    cfg = load_render_config(root)
+    if resolution:
+        try:
+            w, h = (int(x) for x in resolution.lower().replace("х", "x").split("x"))
+        except ValueError:
+            _fail("--resolution задаётся как ШxВ, например 3840x2160")
+    else:
+        cls_name = logical_id.split("/", 1)[0]
+        cls = cfg.classes.get(cls_name if cls_name in cfg.classes else "cg")
+        w, h = cls.source_min or (cfg.screen[0] * max(cls.scales), cfg.screen[1] * max(cls.scales))
+    try:
+        dest = sources.scaffold(root, kind, logical_id, scene, (w, h), ext=ext, video=video)
+    except FileExistsError as e:
+        _fail(f"декларация уже существует: {Path(str(e)).relative_to(root).as_posix()}")
+    click.secho(f"создано: {dest.relative_to(root).as_posix()}", fg="green")
+    click.echo(f"выход: assets_src/{sources.output_for_id(logical_id, video, ext)} "
+               f"({w}x{h})")
+    click.echo(f"дальше: отрендерить -> vn assets {source} validate -> vn build")
+
+
 @assets.command("cache")
 @click.option("--gc", "do_gc", is_flag=True, help="Удалить блобы, которых нет в текущем манифесте.")
 @click.option("--dry-run", is_flag=True, help="Показать, что будет удалено.")

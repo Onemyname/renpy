@@ -4,36 +4,90 @@
   "title": "daz_render@1 — декларация DAZ-рендера (assets_src/daz/**/<name>.render.yaml, ADR-0006)",
   "type": "object",
   "properties": {
-    "schema": {"const": "daz_render@1"},
-    "id": {"type": "string", "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$", "description": "Логический id результата (naming.md)"},
-    "source": {"type": "string", "pattern": "^daz/.+\\.duf$", "description": "Сцена DAZ относительно assets_src/ (бинарь — через vn assets push, в git манифест)"},
-    "output": {"type": "string", "pattern": "^(png|video_src)/.+", "description": "Ожидаемый рендер относительно assets_src/: png/** (стилл) или video_src/** (секвенция/клип)"},
-    "version": {"type": "integer", "minimum": 1, "description": "Версия декларации: бампается при пере-рендере с новыми настройками"},
+    "schema": {
+      "const": "daz_render@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$",
+      "description": "Логический id результата (naming.md)"
+    },
+    "source": {
+      "type": "string",
+      "pattern": "^daz/.+\\.duf$",
+      "description": "Сцена DAZ относительно assets_src/ (бинарь — через vn assets push, в git манифест)"
+    },
+    "output": {
+      "type": "string",
+      "pattern": "^(art|png|video_src)/.+",
+      "description": "Ожидаемый рендер относительно assets_src/: art/** (стилл) или video_src/** (секвенция/клип). png/** — исторический алиас art/"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Версия декларации: бампается при пере-рендере с новыми настройками"
+    },
     "license": {
       "type": "array",
-      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
       "description": "id записей из content/licenses.yaml (license_registry@1) для ассетов, использованных в этом рендере/захвате. Релизный гейт проверяет game_use и (для nsfw-выходов) nsfw_allowed."
     },
     "render": {
       "type": "object",
       "properties": {
         "resolution": {
-          "type": "array", "items": {"type": "integer", "minimum": 16},
-          "minItems": 2, "maxItems": 2
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 16
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
-        "renderer": {"enum": ["iray", "filament", "viewport"]},
-        "camera": {"type": "string", "minLength": 1},
-        "lighting": {"type": "string", "description": "HDRI/пресет света — свободный идентификатор"},
+        "renderer": {
+          "enum": [
+            "iray",
+            "filament",
+            "viewport"
+          ]
+        },
+        "camera": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lighting": {
+          "type": "string",
+          "description": "HDRI/пресет света — свободный идентификатор"
+        },
         "character_presets": {
-          "type": "array", "items": {"type": "string"},
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
           "description": "Character/Shaping-пресеты (морфы) — источник консистентности персонажа"
         },
-        "quality": {"type": "object", "description": "Свободная форма: max_samples, denoiser, …"}
+        "quality": {
+          "type": "object",
+          "description": "Свободная форма: max_samples, denoiser, …"
+        }
       },
-      "required": ["resolution", "renderer", "camera"],
+      "required": [
+        "resolution",
+        "renderer",
+        "camera"
+      ],
       "additionalProperties": false
     }
   },
-  "required": ["schema", "id", "source", "output", "render"],
+  "required": [
+    "schema",
+    "id",
+    "source",
+    "output",
+    "render"
+  ],
   "additionalProperties": false
 }

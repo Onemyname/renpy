@@ -128,7 +128,7 @@ def test_chain_composition_daz_then_ai(tmp_path):
         "source: daz/ch01/kiss/scene.duf\n"
         "output: png/cg/ch01/kiss.png\n"
         "render:\n"
-        "  resolution: [1920, 1080]\n"
+        "  resolution: [64, 48]\n"
         "  renderer: iray\n"
         "  camera: cam_main\n"
         "  lighting: hdri_studio_03\n"
@@ -160,12 +160,12 @@ def test_daz_validate_missing_source_and_output(tmp_path):
         "schema: daz_render@1\n"
         "id: bg/alley/night\n"
         "source: daz/ch02/alley/scene.duf\n"       # нет ни файла, ни манифеста
-        "output: png/backgrounds/alley/night.png\n"  # ещё не отрендерен
-        "render: {resolution: [1920, 1080], renderer: iray, camera: cam}\n",
+        "output: png/backgrounds/alley/night.png\n"  # выхода ещё нет
+        "render: {resolution: [64, 48], renderer: iray, camera: cam}\n",
         encoding="utf-8")
     rep = validate_renders(root)
     assert any("ни локально, ни в манифестах" in e for e in rep.errors)
-    assert any("ещё не отрендерен" in w for w in rep.warnings)
+    assert any("ещё не получен" in w for w in rep.warnings)
 
 
 def test_vam_validate_and_chain(tmp_path):
@@ -185,7 +185,7 @@ def test_vam_validate_and_chain(tmp_path):
         "scene: vam/ch01/beach/scene.json\n"
         "output: png/cg/ch01/beach.png\n"
         "capture:\n"
-        "  resolution: [1920, 1080]\n"
+        "  resolution: [64, 48]\n"
         "  mode: screenshot\n"
         "  camera: WindowCamera\n"
         "  plugins: [ScreenshotHelper]\n"
@@ -218,12 +218,12 @@ def test_vam_validate_missing_scene_and_output(tmp_path):
         "schema: vam_render@1\n"
         "id: cg/room/night\n"
         "scene: vam/ch02/room/scene.json\n"          # нет ни файла, ни манифеста
-        "output: png/cg/room/night.png\n"            # ещё не захвачен
-        "capture: {resolution: [1280, 720], mode: screenshot}\n",
+        "output: png/cg/room/night.png\n"            # выхода ещё нет
+        "capture: {resolution: [64, 48], mode: screenshot}\n",
         encoding="utf-8")
     rep = validate_scenes(root)
     assert any("ни локально, ни в манифестах" in e for e in rep.errors)
-    assert any("ещё не захвачен" in w for w in rep.warnings)
+    assert any("ещё не получен" in w for w in rep.warnings)
 
 
 def test_sims4_validate_and_chain(tmp_path):
@@ -243,7 +243,7 @@ def test_sims4_validate_and_chain(tmp_path):
         "scene: sims4/ch01/loft/tray_bundle.zip\n"
         "output: png/cg/ch01/loft.png\n"
         "capture:\n"
-        "  resolution: [1920, 1080]\n"
+        "  resolution: [64, 48]\n"
         "  mode: screenshot\n"
         "  game_version: '1.115.216.1020'\n"
         "  camera: tab_free\n"
@@ -276,8 +276,8 @@ def test_sims4_capture_requires_game_version(tmp_path):
         "schema: sims4_render@1\n"
         "id: cg/ch02/bar\n"
         "scene: sims4/ch02/bar/save.zip\n"            # нет ни файла, ни манифеста
-        "output: png/cg/ch02/bar.png\n"               # ещё не захвачен
-        "capture: {resolution: [1920, 1080], mode: screenshot}\n",  # нет game_version
+        "output: png/cg/ch02/bar.png\n"               # выхода ещё нет
+        "capture: {resolution: [64, 48], mode: screenshot}\n",  # нет game_version
         encoding="utf-8")
     rep = validate_scenes(root)
     # без game_version кадр невоспроизводим (патчи EA) — это ошибка схемы
@@ -294,12 +294,12 @@ def test_sims4_validate_missing_scene_and_output(tmp_path):
         "schema: sims4_render@1\n"
         "id: cg/ch02/bar\n"
         "scene: sims4/ch02/bar/save.zip\n"            # нет ни файла, ни манифеста
-        "output: png/cg/ch02/bar.png\n"               # ещё не захвачен
-        "capture: {resolution: [1920, 1080], mode: screenshot, game_version: '1.115'}\n",
+        "output: png/cg/ch02/bar.png\n"               # выхода ещё нет
+        "capture: {resolution: [64, 48], mode: screenshot, game_version: '1.115'}\n",
         encoding="utf-8")
     rep = validate_scenes(root)
     assert any("ни локально, ни в манифестах" in e for e in rep.errors)
-    assert any("ещё не захвачен" in w for w in rep.warnings)
+    assert any("ещё не получен" in w for w in rep.warnings)
 
 
 def test_manual_step_requires_note(tmp_path):
@@ -313,3 +313,35 @@ def test_manual_step_requires_note(tmp_path):
     _path, doc = record(root, art, note="ручная правка в Krita")
     assert doc["chain"][-1] == {"kind": "manual", "source": None,
                                 "note": "ручная правка в Krita"}
+
+
+def test_in_place_step_keeps_render_origin(tmp_path, repo_root):
+    """AI-полировка «поверх захвата» (ADR-0006) не должна стирать происхождение:
+    иначе артефакт переставал прослеживаться до .duf ровно в тот момент, когда
+    становился финальным."""
+    from vn.assets import sources
+    from vn.assets.provenance import load, record
+
+    root = tmp_path / "repo"
+    (root / "assets_src" / "daz" / "ch01").mkdir(parents=True)
+    shutil.copytree(repo_root / "tools" / "schemas", root / "tools" / "schemas")
+    (root / "assets_src" / "daz" / "ch01" / "scene.duf").write_bytes(b"duf")
+    art = root / "assets_src" / "art" / "cg" / "ch01" / "kiss.png"
+    art.parent.mkdir(parents=True)
+    Image.new("RGB", (64, 48), (9, 9, 9)).save(art, "PNG")
+    (root / "assets_src" / "daz" / "ch01" / "kiss.render.yaml").write_text(
+        "schema: daz_render@1\nid: cg/ch01/kiss\n"
+        "source: daz/ch01/scene.duf\noutput: art/cg/ch01/kiss.png\n"
+        "render: {resolution: [64, 48], renderer: iray, camera: cam}\n", encoding="utf-8")
+    assert sources.validate(root, sources.DAZ).errors == []
+
+    record(root, art, note="Wan I2V polish")
+    assert [s["kind"] for s in load(art)["chain"]] == ["daz_render", "manual"]
+
+    # Повтор той же команды не растит цепочку
+    record(root, art, note="Wan I2V polish")
+    assert [s["kind"] for s in load(art)["chain"]] == ["daz_render", "manual"]
+
+    # Пере-объявление рендера заменяет ШАГ ПРОИСХОЖДЕНИЯ, сохраняя хвост обработки
+    assert sources.validate(root, sources.DAZ).errors == []
+    assert [s["kind"] for s in load(art)["chain"]] == ["daz_render", "manual"]

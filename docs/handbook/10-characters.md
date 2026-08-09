@@ -1,6 +1,6 @@
 # 10. Персонажи
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — декларация → layeredimage работает сквозным конвейером (`character.yaml` → `vn assets build` → `vn build` → `game/generated/registry/{characters,images}.gen.rpy`), **но** всё заведение персонажа делается руками: `vn char new` / `vn char validate` / `vn char sheet` — заглушки (exit 3). Поля `canvas` и `animated` есть в схеме и не читаются ни одной строкой кода; группа `overlays` собирается, но не эмитится; ветка `side/` не реализована.
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED — декларация → layeredimage работает сквозным конвейером (`character.yaml` → `vn assets build` → `vn build` → `game/generated/registry/{characters,images}.gen.rpy`), **но** всё заведение персонажа делается руками: `vn char new` / `vn char validate` / `vn char sheet` — заглушки (exit 3). Поле `animated` есть в схеме и не читается ни одной строкой кода. **Обновлено ADR-0012:** `canvas` стал контрактом (холст мастеров проверяется сборкой), `overlays` эмитятся независимыми атрибутами, ветка `side/` реализована (портреты say-окна).
 > **Отвечает на вопрос:** «Как завести нового персонажа, чтобы он показался в сцене и не сломал сборку».
 
 Персонаж живёт в трёх зонах одновременно: декларация `content/characters/<id>/character.yaml` (git, человек), сырцы слоёв `assets_src/png/characters/<id>/<pose>/**` (git, ADR-0004), собранные слои `game/assets/spr/<id>/<pose>/**` (не в git, пишет `vn assets build`). Кодоген связывает их в `define <id> = Character(...)` и `layeredimage <id>`. Сегодня в репозитории **один** персонаж — `mira`, одна поза `a`, 2 наряда, 3 эмоции, 6 файлов слоёв.
@@ -76,14 +76,14 @@ matrix:
 | `name` | да | непустая строка, исходный язык | `emit_characters` → `Character(_('Мира'), …)` (`scenes.py:315`) | IMPLEMENTED |
 | `color` | да | `^#[0-9a-fA-F]{6}$` | `Character(color=…)` — цвет имени в say-окне | IMPLEMENTED |
 | `voice_tag` | нет | `^[a-z][a-z0-9_]*$` | `Character(voice_tag=…)` (`scenes.py:316-317`) | PARTIAL — тег в движок передаётся, но подсистема озвучки (`vn voice *`) — заглушка фазы 2 (`cli.py:1087`) |
-| `canvas` | нет | `[int,int]`, обе ≥1 | **никто** — grep по `tools/vn/src/vn/` и `game/framework/` даёт 0 совпадений | NOT IMPLEMENTED (мёртвая поверхность схемы) |
+| `canvas` | нет | `[int,int]`, обе ≥1 | `assets/pipeline.py` — холст всех мастеров персонажа | IMPLEMENTED (ADR-0012): расхождение = ошибка сборки |
 | `matrix` | нет | объект, ниже | `emit_images` (`images.py:106`) | IMPLEMENTED |
 | `animated` | нет | `{backend: live2d\|spine, source, map}` | **никто** — 0 совпадений `animated`/`live2d`/`spine` в коде тулинга | NOT IMPLEMENTED (G12, ARCHITECTURE.md:75) |
 
 Практические следствия:
 
 - `matrix` **необязателен**. Персонаж без `matrix` компилируется в `Character(...)` и годится как «голос за кадром»/озвучка без спрайта. Если при этом в `game/assets/spr/<id>/` что-то есть — будет warning «спрайты собраны, но в character.yaml нет блока matrix» (`images.py:110-113`).
-- `canvas` заполняйте по факту (высота холста сырца) — это документация для художника, не контракт. Ни один валидатор его не сверяет с реальным PNG.
+- `canvas` — контракт (ADR-0012): все мастера персонажа обязаны лежать на этом холсте, иначе layeredimage смещает наряд и эмоцию относительно тела. Проверяет `vn assets build`.
 - `image='<id>'` в `Character(...)` подставляется всегда (`scenes.py:315`) — то есть Ren'Py ждёт образ с тегом, совпадающим с id. Если `matrix` нет и `layeredimage` не сгенерился, `show <id>` упадёт в рантайме; `say` при этом работает.
 
 ---
@@ -262,7 +262,7 @@ label ch01_s020__body:
 | `vn char sheet` (лист персонажа) | NOT IMPLEMENTED (фаза 2) | там же |
 | Группа `overlays` | PARTIAL | сканируется (`pipeline.py:493`), собирается в `game/assets/spr/<id>/<pose>/overlays/*@2.webp`, но `emit_images` её **не эмитит** — только warning (`images.py:178-182`). Собранные overlay-слои = мёртвый вес в дистрибутиве |
 | `side/<emotion>@2.webp` (side images для say-окна) | NOT IMPLEMENTED | нормативно в `docs/conventions/naming.md:18` и `docs/ARCHITECTURE.md:144,454,922`; в `tools/vn/src/vn/` — ноль совпадений `side/` |
-| `canvas` | NOT IMPLEMENTED | схема есть, потребителей нет |
+| `canvas` | IMPLEMENTED (ADR-0012) | контракт холста мастеров |
 | `animated` (Live2D/Spine, G12) | NOT IMPLEMENTED | схема есть, потребителей нет; `assets_src/{live2d,spine_export}/characters/` содержат только `.gitkeep` |
 | Персонажи в паках | NOT IMPLEMENTED | компилятор берёт **только** `content/characters/*/character.yaml` (`compile.py:665`); `packs/<id>/characters/` сканирует лишь G7-проверка линтера (`lint.py:331-338`). Персонаж, объявленный в паке, не попадёт ни в `characters.gen.rpy`, ни в `images.gen.rpy` |
 | Переименование персонажа | NOT IMPLEMENTED (by design) | `renames@1` имеет секции `scenes`, `deleted_scenes`, `labels`, `vars` — секции `characters` **нет**. Комментарий линтера прямо говорит: «главы и персонажи механизма переименования не имеют» (`lint.py:320-321`) |
@@ -486,7 +486,7 @@ matrix:
 - **Не создавать `assets_src/png/characters/<id>/<pose>/side/`** — ветка не реализована, файлы просто не соберутся, а норма в `naming.md:18` описывает будущее.
 - **Не складывать аксессуары в `overlays/`** — соберутся в WebP, поедут в дистрибутив и не будут видны в игре.
 - **Не использовать один токен в двух группах matrix** (`school` и в `outfits`, и в `emotions`) — ошибка «имя используется в двух группах», layeredimage сломался бы на гейтинге.
-- **Не полагаться на `canvas` и `animated`** — их не читает ни одна строка кода. Live2D/Spine сегодня не поддержаны.
+- **Не полагаться на `animated`** — его не читает ни одна строка кода. Live2D/Spine сегодня не поддержаны. (`canvas` с ADR-0012 — рабочий контракт.)
 - **Не объявлять персонажа в `packs/<id>/characters/`** — компилятор туда не смотрит, `Character` не сгенерится, `say` упадёт `NameError`.
 - **Не запускать `vn build` до `vn assets build` вручную по частям**: `matrix.required` проверяется против **собранной** зоны, а не против `assets_src/`. `vn build` делает это в правильном порядке сам.
 - **Не рассчитывать на `vn char new/validate/sheet`** — три заглушки, exit 3.

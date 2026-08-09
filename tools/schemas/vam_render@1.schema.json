@@ -5,33 +5,87 @@
   "description": "VaM — опциональный третий источник конвейера рядом с DAZ (ADR-0006). Захват (скриншот/секвенция) объявлен так же, как DAZ-рендер: сцена + параметры -> выход -> провенанс.",
   "type": "object",
   "properties": {
-    "schema": {"const": "vam_render@1"},
-    "id": {"type": "string", "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$", "description": "Логический id результата (naming.md)"},
-    "scene": {"type": "string", "pattern": "^vam/.+\\.(json|vac|vap)$", "description": "Сцена VaM относительно assets_src/ (в git — манифест, бинарь через vn assets push)"},
-    "output": {"type": "string", "pattern": "^(png|video_src)/.+", "description": "Ожидаемый захват относительно assets_src/: png/** (скриншот) или video_src/** (секвенция/клип)"},
-    "version": {"type": "integer", "minimum": 1},
+    "schema": {
+      "const": "vam_render@1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$",
+      "description": "Логический id результата (naming.md)"
+    },
+    "scene": {
+      "type": "string",
+      "pattern": "^vam/.+\\.(json|vac|vap)$",
+      "description": "Сцена VaM относительно assets_src/ (в git — манифест, бинарь через vn assets push)"
+    },
+    "output": {
+      "type": "string",
+      "pattern": "^(art|png|video_src)/.+",
+      "description": "Ожидаемый захват относительно assets_src/: art/** (скриншот) или video_src/** (секвенция/клип). png/** — исторический алиас art/"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
     "license": {
       "type": "array",
-      "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
       "description": "id записей из content/licenses.yaml (license_registry@1) для ассетов, использованных в этом рендере/захвате. Релизный гейт проверяет game_use и (для nsfw-выходов) nsfw_allowed."
     },
     "capture": {
       "type": "object",
       "properties": {
         "resolution": {
-          "type": "array", "items": {"type": "integer", "minimum": 16},
-          "minItems": 2, "maxItems": 2
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 16
+          },
+          "minItems": 2,
+          "maxItems": 2
         },
-        "mode": {"enum": ["screenshot", "sequence"], "description": "screenshot -> png, sequence -> кадры для video_src"},
-        "camera": {"type": "string", "description": "Имя WindowCamera/атома камеры в сцене"},
-        "plugins": {"type": "array", "items": {"type": "string"}, "description": "Задействованные плагины (капчур, свет и т.п.) — для воспроизводимости"},
-        "vamx": {"type": "boolean", "description": "Использовалось расширение vamX"},
-        "notes": {"type": "string"}
+        "mode": {
+          "enum": [
+            "screenshot",
+            "sequence"
+          ],
+          "description": "screenshot -> png, sequence -> кадры для video_src"
+        },
+        "camera": {
+          "type": "string",
+          "description": "Имя WindowCamera/атома камеры в сцене"
+        },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Задействованные плагины (капчур, свет и т.п.) — для воспроизводимости"
+        },
+        "vamx": {
+          "type": "boolean",
+          "description": "Использовалось расширение vamX"
+        },
+        "notes": {
+          "type": "string"
+        }
       },
-      "required": ["resolution", "mode"],
+      "required": [
+        "resolution",
+        "mode"
+      ],
       "additionalProperties": false
     }
   },
-  "required": ["schema", "id", "scene", "output", "capture"],
+  "required": [
+    "schema",
+    "id",
+    "scene",
+    "output",
+    "capture"
+  ],
   "additionalProperties": false
 }

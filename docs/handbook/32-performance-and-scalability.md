@@ -124,7 +124,7 @@ print('tl', s('game/tl')/1024, 'КБ'); print('vncache', s('.vncache')/1048576, 
 | **Объём `init`-кода** | `Running init code` 21 мс. Крупнейшие init-потребители — реестры `VN_*` (`init -100`), `layeredimage` и `image` (`init offset = 0`, `images.gen.rpy:7`), стили `20_ui` | IMPLEMENTED, компактный кодоген: `chapter_select.gen.rpy` — **цикл по `VN_CHAPTERS`**, а не развёртка (ровно как требует `ARCHITECTURE.md:1601`) |
 | **Число image-стейтментов** | сейчас 5 `image` + 1 `layeredimage`; каждый `image` — отдельный стейтмент базового приоритета 500 | IMPLEMENTED |
 | **Декодированная память образов** | реальные размеры: спрайт-слой 1200×2200 → `1200*2200*4 = 10 560 000 Б = 10,07 МиБ`; фон/CG 1920×1080 → `7,91 МиБ` | считается только в этом файле — валидатора нет |
-| **`config.image_cache_size_mb`** | **не переопределён нигде в проекте**; дефолт SDK — `400` (`$RENPY_SDK/renpy/config.py:100`) | дефолт движка |
+| **`config.image_cache_size_mb`** | задаётся из `project.yaml: render.image_cache_mb` через `generated/render.gen.rpy` (ADR-0012); худшая сцена гейтится `vn assets memory` | решение проекта |
 | **Prediction** | предсказание не настраивается и не эмитится; `ARCHITECTURE.md:2391` называет prediction «главным узким местом» и требует predict-списков данными | NOT IMPLEMENTED |
 | **Видео в памяти** | `Movie(...)` в галерее живёт ровно пока показан экран (`20_ui/screens/gallery.rpy:105-107`); в сценах видео сейчас не используется вообще | IMPLEMENTED (галерея) |
 | **Rollback / история** | `config.hard_rollback_limit = 100` (`00_core/001_boot.rpy:9`), `config.history_length = 250` (`20_ui/screens/history.rpy:6`) | IMPLEMENTED; это единственные две перф-относящиеся константы рантайма |

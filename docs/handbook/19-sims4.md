@@ -141,7 +141,7 @@ Tray-бандл/сейв/`.package` — бинарные сырцы: в хран
 
 ## 5. Что делает `vn assets sims4 validate`
 
-Код: `../../tools/vn/src/vn/cli.py:718-741` → `../../tools/vn/src/vn/assets/sims4.py:34-80`. Флаги: `--scope <подпуть>`, `--no-provenance`. Это **третья структурная копия** валидатора daz/vam — те же шесть шагов, отличаются только ключи (`scene`/`capture`) и тексты.
+Код: `../../tools/vn/src/vn/cli.py:718-741` → `../../tools/vn/src/vn/assets/sims4.py:34-80`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три копии сведены к одному контракту — `tools/vn/src/vn/assets/sources.py`; различия источников стали данными (`SourceKind`).
 
 | Шаг | Что происходит | Строка |
 |---|---|---|
@@ -152,7 +152,7 @@ Tray-бандл/сейв/`.package` — бинарные сырцы: в хран
 | 5 | Нет файла выхода → **warning** `«выход … ещё не захвачен»`, обработка останавливается | `sims4.py:69-72` |
 | 6 | Выход есть и не `--no-provenance` → пишется `<output>.provenance.json`, kind `sims4_render` (`provenance.py:304-306`) | `sims4.py:73-79` |
 
-**Чего не делает:** не открывает и не парсит Tray-бандл; не сверяет `resolution` с реальным PNG; не проверяет соответствие `id` и `output`; **не проверяет, что `game_version` похожа на настоящую версию** — схема требует лишь `type: string` (`sims4_render@1.schema.json:26`), без `minLength` и `pattern`, так что проходит любая строка, включая пустую; не требует `license`; ничего не запускает.
+**Чего не делает:** не открывает и не парсит Tray-бандл; (`resolution` против файла и `id` против `output` — сверяются с ADR-0012); **не проверяет, что `game_version` похожа на настоящую версию** — схема требует лишь `type: string` (`sims4_render@1.schema.json:26`), без `minLength` и `pattern`, так что проходит любая строка, включая пустую; не требует `license`; ничего не запускает.
 
 **Провенанс и цепочка.** `settings` — дословный снимок `capture`, включая `game_version` и `mods`. Полировка захвата в ComfyUI даёт цепочку `["sims4_render", "comfyui"]` — ровно это утверждает тест `test_provenance.py:266`; ADR-0007 §Решение п.2 называет такую полировку штатным способом закрыть стилевой разрыв с DAZ-реализмом.
 
@@ -212,7 +212,7 @@ Tray-бандл/сейв/`.package` — бинарные сырцы: в хран
 2. Зафиксировать версию игры (отключить авто-обновление) и заархивировать `.zip` совместимых версий модов рядом с проектом.
 3. Экспортировать сцену: Tray-файлы лота + семьи → zip → `assets_src/sims4/<ch>/<name>/tray_bundle.zip` (бинарь — через `vn assets push`, когда хранилище появится).
 4. Захватить: Capture UI выключен в **обоих** разделах, `headlineeffects off`, TAB-камера, ReShade-пресет зафиксирован → `assets_src/png/cg/<...>/<name>.png`.
-5. Написать `<name>.render.yaml` по таблице §4 — **скаффолда нет**, `vn assets sims4 new` не существует, YAML руками против схемы.
+5. Написать `<name>.render.yaml` — или сгенерировать заготовку: `vn assets new sims4 <logical_id> --scene …` (ADR-0012).
 6. `vn assets sims4 validate` → `vn assets build` → `vn build`.
 7. `vn release validate --flavor public` — должна появиться строка `Sims4-декларации: N проверено`.
 
@@ -220,8 +220,8 @@ Tray-бандл/сейв/`.package` — бинарные сырцы: в хран
 
 | Приоритет | Что | Где |
 |---|---|---|
-| P1 | Сборщик «PNG-секвенция → контейнер `video_src`» для `mode: sequence` — сейчас нечем превратить кадры в видео-сырец | `../../tools/vn/src/vn/assets/video.py` |
-| P2 | Симметрия релизного гейта: `else` вместо `elif …checked` | `../../tools/vn/src/vn/release.py:369-378` |
+| ~~P1~~ | ~~Сборщик «PNG-секвенция → `video_src`»~~ — **сделано** (ADR-0012): `vn assets video seq` | `../../tools/vn/src/vn/assets/video.py` |
+| ~~P2~~ | ~~Симметрия релизного гейта~~ — **сделано** (ADR-0012): гейт отчитывается обо всех трёх источниках | `../../tools/vn/src/vn/release.py` |
 | P2 | Валидация формата `game_version` (сейчас проходит любая строка — даже пустая: в схеме только `type: string`) | `../../tools/schemas/sims4_render@1.schema.json` → `sims4_render@2` |
 | P3 | Строки про VaM/Sims4-декларации в `../conventions/naming.md` | документация |
 | P3 | Значение `ea` в enum `vendor` реестра лицензий — если источник вообще будет задействован | `../../tools/schemas/license_registry@1.schema.json` |

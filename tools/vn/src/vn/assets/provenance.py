@@ -225,6 +225,14 @@ def record(root: Path, artifact: Path, source: Path | None = None,
         parent = load(source)
         if parent:
             chain.extend(parent["chain"])
+    else:
+        # Шаг ПОВЕРХ того же файла (штатный путь AI-полировки, ADR-0006: «обычный
+        # comfyui-шаг поверх захвата»). Прошлая цепочка обязана уцелеть — иначе
+        # запись полировки стирала происхождение рендера, и артефакт переставал
+        # прослеживаться до .duf ровно в тот момент, когда становился финальным.
+        existing = load(artifact)
+        if existing:
+            chain.extend(existing["chain"])
 
     step = None
     api_graph = ui_graph = None
@@ -253,6 +261,11 @@ def record(root: Path, artifact: Path, source: Path | None = None,
         for key, value in (overrides or {}).items():
             if value is not None:
                 step[key] = value
+    # Повторная запись того же шага не должна растить цепочку: команду гоняют
+    # многократно (watch, повтор после правки), а история обработки от этого не
+    # меняется. Сравниваем по содержимому шага, а не по факту вызова.
+    if chain and chain[-1] == step:
+        chain.pop()
     chain.append(step)
 
     doc = {
@@ -263,9 +276,9 @@ def record(root: Path, artifact: Path, source: Path | None = None,
     return _write(root, artifact, doc), doc
 
 
-def _record_render(root: Path, decl_rel: str, output: Path, kind: str,
-                   source_path: str, settings: dict) -> Path:
-    """Провенанс объявленного рендера/захвата (DAZ или VaM): шаг-происхождение
+def record_render(root: Path, decl_rel: str, output: Path, kind: str,
+                  source_path: str, settings: dict) -> Path:
+    """Провенанс объявленного рендера/захвата (DAZ, VaM, Sims 4): шаг-происхождение
     становится началом цепочки. Существующие последующие шаги (AI-обработка,
     ручная правка) сохраняются, если артефакт не менялся. Прошлый шаг-происхождение
     любого движка (*_render) заменяется — у артефакта один источник."""
@@ -289,21 +302,6 @@ def _record_render(root: Path, decl_rel: str, output: Path, kind: str,
         "chain": chain,
     }
     return _write(root, output, doc)
-
-
-def record_daz(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
-    """Провенанс DAZ-рендера из декларации <name>.render.yaml (vn assets daz validate)."""
-    return _record_render(root, decl_rel, output, "daz_render", decl["source"], decl["render"])
-
-
-def record_vam(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
-    """Провенанс VaM-захвата из декларации <name>.render.yaml (vn assets vam validate)."""
-    return _record_render(root, decl_rel, output, "vam_render", decl["scene"], decl["capture"])
-
-
-def record_sims4(root: Path, decl_rel: str, decl: dict, output: Path) -> Path:
-    """Провенанс Sims4-захвата из декларации <name>.render.yaml (vn assets sims4 validate)."""
-    return _record_render(root, decl_rel, output, "sims4_render", decl["scene"], decl["capture"])
 
 
 def _manifest_hash(root: Path, rel: str) -> dict | None:
