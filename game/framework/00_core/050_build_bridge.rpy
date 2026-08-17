@@ -36,11 +36,51 @@ init python:
                 if ref not in entry["var_reads"]:
                     entry["var_reads"].append(ref)
 
+    def _vn_imspec(imspec):
+        """imspec -> (кортеж имени образа, выражение-строка или None).
+        Форм у кортежа несколько (renpy/ast.py: ImspecType); отличаются они тем,
+        что во «длинных» формах во втором поле лежит строка-выражение
+        (`show expression ...`), а в короткой — список at-трансформов."""
+        if not imspec:
+            return None, None
+        name = imspec[0]
+        expr = imspec[1] if len(imspec) > 1 and isinstance(imspec[1], str) else None
+        return (tuple(name) if name else None), expr
+
+    def _vn_record_image(entry, kind, node, line):
+        name, expr = _vn_imspec(getattr(node, "imspec", None))
+        if name is None and expr is None:
+            return              # `scene` без образа — просто очистка слоя
+        entry["image_refs"].append({
+            "line": line, "kind": kind,
+            "name": list(name) if name else None,
+            "expression": bool(expr),
+        })
+
     def _vn_walk_ast(nodes, entry):
         for node in nodes:
             cls = type(node).__name__
             line = getattr(node, "linenumber", 0)
-            if cls == "Label":
+            if cls in ("Show", "Scene", "Hide"):
+                _vn_record_image(entry, cls.lower(), node, line)
+            elif cls == "UserStatement":
+                # play/queue/stop — зарегистрированные стейтменты; их разобранная
+                # форма лежит в node.parsed как (имя, payload). Имя аудио приходит
+                # ИСХОДНЫМ ВЫРАЖЕНИЕМ (l.simple_expression), т.е. `calm_theme`
+                # для `play music calm_theme` (renpy/common/000statements.rpy).
+                try:
+                    stmt = node.get_name()
+                except Exception:
+                    stmt = ""
+                parsed = getattr(node, "parsed", None)
+                payload = parsed[1] if isinstance(parsed, tuple) and len(parsed) == 2 else None
+                if isinstance(payload, dict) and stmt.split(" ")[0] in ("play", "queue"):
+                    entry["audio_refs"].append({
+                        "line": line, "stmt": stmt,
+                        "file": payload.get("file"),
+                        "channel": payload.get("channel"),
+                    })
+            elif cls == "Label":
                 entry["labels"].append({"name": node.name, "line": line})
                 _vn_walk_ast(node.block, entry)
             elif cls == "Jump":
@@ -110,6 +150,7 @@ init python:
                 "labels": [], "jumps": [], "calls": [], "returns": [],
                 "menus": [], "says": 0, "say_list": [], "menu_markers": [],
                 "var_reads": [], "var_writes": [], "errors": [],
+                "image_refs": [], "audio_refs": [],
             }
             try:
                 with io.open(fn, "r", encoding="utf-8") as f:

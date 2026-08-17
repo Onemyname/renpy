@@ -818,6 +818,12 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
             raise CompileError(str(e))
         known_scenes = {u.full_id for u in units}
         status_by_ch = {c["id"]: c["status"] for c in chapters}
+        # Индекс образов для сверки ссылок show/scene/hide (раздел 3.9). Строится
+        # из тех же источников, что и emit_images, но ДО эмиссии: опечатка в имени
+        # обязана падать на сборке, а не исключением движка у игрока.
+        from .images import build_image_index
+
+        image_index = build_image_index(root, locations, char_docs)
         for u in units:
             u.analysis = analysis.get(str(root / u.rpy_rel).replace("\\", "/"), None) or \
                          analysis.get(str(root / u.rpy_rel), None) or {}
@@ -832,7 +838,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
                     )
             dispatch = sc.validate_scene(
                 u, known_scenes, status_by_ch.get(u.chapter_id, "draft"), scene_rep,
-                var_registry=var_registry,
+                var_registry=var_registry, image_index=image_index, audio_ids=audio_ids,
             )
             header = _header([(u.yaml_rel, inputs[u.yaml_rel]), (u.rpy_rel, inputs[u.rpy_rel])])
             scene_outputs[f"scenes/{u.chapter_id}/{u.full_id}.gen.rpy"] = sc.emit_scene(

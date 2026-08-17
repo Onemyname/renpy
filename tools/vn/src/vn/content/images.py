@@ -53,6 +53,93 @@ def load_locations(root: Path, src, registry, errors: list[str]) -> dict[str, di
 
 SIDE_DIR_TOKEN = "side"
 
+# Образы, объявленные рукописным framework (game/framework/20_ui/images.rpy), а не
+# компилятором. Список короткий и ведётся вручную осознанно: разбирать .rpy регексом
+# запрещено (G24), а гонять build-bridge ради двух служебных имён — дороже пользы.
+FRAMEWORK_IMAGE_TAGS = frozenset({"vn_black"})
+
+
+@dataclass
+class ImageIndex:
+    """Что игра сможет показать после сборки — в форме, пригодной для сверки
+    ссылок `show`/`scene`/`hide` из авторских сцен (ADR-0012, раздел 3.9).
+
+    exact     — полные имена образов (bg/cg/mov/side): кортеж токенов.
+    tags      — первые токены всех известных образов (для `hide <tag>`).
+    layered   — layeredimage: {tag: множество допустимых атрибутов}.
+    available — был ли вообще собран game/assets. Без собранной зоны индекс пуст
+                и сверка ссылок не имеет смысла (всё было бы «не существует»).
+    """
+
+    exact: set[tuple[str, ...]] = field(default_factory=set)
+    tags: set[str] = field(default_factory=set)
+    layered: dict[str, set[str]] = field(default_factory=dict)
+    available: bool = False
+
+
+def build_image_index(root: Path, locations: dict[str, dict],
+                      char_docs: list[tuple[str, dict]]) -> ImageIndex:
+    """Индекс образов из ТЕХ ЖЕ источников, что и emit_images: декларации локаций,
+    собранные деревья спрайтов/CG/видео/портретов и matrix персонажей.
+
+    Отдельный проход (а не побочный эффект эмиссии) нужен потому, что сверка ссылок
+    идёт на этапе валидации сцен — до того, как образы эмитятся."""
+    from ..assets.pipeline import side_tree, sprite_tree, variant_scale
+    from ..assets.video import movie_tree
+
+    idx = ImageIndex(available=(root / "game" / "assets").is_dir())
+    idx.tags |= FRAMEWORK_IMAGE_TAGS
+    idx.exact |= {(t,) for t in FRAMEWORK_IMAGE_TAGS}
+
+    for loc_id, meta in locations.items():
+        for variant in (meta.get("backgrounds") or {}):
+            idx.exact.add(("bg", loc_id, variant))
+    if locations:
+        idx.tags.add("bg")
+
+    cg_root = root / "game" / "assets" / "cg"
+    if cg_root.is_dir():
+        for f in sorted(cg_root.rglob("*")):
+            if not f.is_file() or f.suffix not in (".webp", ".png", ".jpg"):
+                continue
+            if f.stem.endswith(".thumb") or variant_scale(f.stem) != 1:
+                continue
+            rel = "cg/" + f.relative_to(cg_root).as_posix()
+            idx.exact.add(tuple(rel[: -len(f.suffix)].split("/")))
+        idx.tags.add("cg")
+
+    for rel in movie_tree(root):
+        idx.exact.add(tuple(rel[: -len(".webm")].split("/")))
+        idx.tags.add("mov")
+
+    for char_id, names in side_tree(root).items():
+        for name in names:
+            idx.exact.add(("side", char_id) if name == "base" else ("side", char_id, name))
+        idx.tags.add("side")
+
+    # layeredimage: допустимые атрибуты — пересечение matrix и фактически собранных
+    # слоёв, ровно как в emit_images (несобранное имя атрибутом не станет).
+    tree = sprite_tree(root)
+    for _rel, doc in char_docs:
+        char_id = doc["id"]
+        matrix = doc.get("matrix")
+        poses_files = tree.get(char_id, {})
+        if not matrix or not poses_files:
+            continue
+        attrs: set[str] = set()
+        for pose, have in poses_files.items():
+            if pose not in matrix["poses"] or not have["base"]:
+                continue
+            attrs.add(pose)
+            for group_key, gdir in (("outfits", "outfits"), ("emotions", "faces"),
+                                    ("overlays", "overlays")):
+                declared = matrix.get(group_key) or []
+                attrs |= {n for n in have[gdir] if n in declared}
+        if attrs:
+            idx.layered[char_id] = attrs
+            idx.tags.add(char_id)
+    return idx
+
 
 def _spr_ext(root: Path, char_id: str, poses_files: dict) -> str:
     from ..assets.pipeline import asset_ext

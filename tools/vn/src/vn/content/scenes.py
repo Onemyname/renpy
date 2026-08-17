@@ -66,8 +66,75 @@ def _literal_exit(expr: str | None) -> tuple[bool, str | None]:
     return False, None
 
 
+AUDIO_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _validate_refs(unit: SceneUnit, rep: SceneCompileReport, complain,
+                   image_index=None, audio_ids: set[str] | None = None) -> None:
+    """Сверка ссылок авторской сцены с тем, что реально существует после сборки.
+
+    Зачем отдельно от остальных проверок. `show mira hapy` и `play music clam_theme`
+    компилятор раньше пропускал молча: генерат собирался, lint был зелёным, а падало
+    это в рантайме у игрока (`show` на несуществующий образ — исключение движка,
+    `play` — тишина вместо музыки). Ошибка вида «опечатка в имени» — самый частый
+    класс правок в сценарии, и ловить её обязан билд.
+    """
+    a = unit.analysis
+    src = unit.rpy_rel
+
+    if image_index is not None and image_index.available:
+        for ref in a.get("image_refs") or []:
+            if ref.get("expression"):
+                rep.errors.append(
+                    f"{src}:{ref['line']}: {ref['kind']} expression — динамический образ "
+                    f"запрещён в авторских сценах (не проверяется и ломает prediction)"
+                )
+                continue
+            name = tuple(ref.get("name") or ())
+            if not name:
+                continue
+            tag = name[0]
+            if ref["kind"] == "hide":
+                # hide адресует ТЕГ, а не полное имя: атрибуты движок игнорирует.
+                if tag not in image_index.tags:
+                    complain(f"{src}:{ref['line']}: hide {tag} — нет такого образа/тега")
+                continue
+            if tag in image_index.layered:
+                unknown = [t for t in name[1:] if t not in image_index.layered[tag]]
+                if unknown:
+                    complain(
+                        f"{src}:{ref['line']}: {ref['kind']} {' '.join(name)} — у персонажа "
+                        f"{tag} нет атрибут(ов) {', '.join(sorted(unknown))} "
+                        f"(есть: {', '.join(sorted(image_index.layered[tag]))})"
+                    )
+            elif name not in image_index.exact:
+                hint = ""
+                if tag not in image_index.tags:
+                    hint = f"; тега {tag!r} нет вовсе"
+                complain(
+                    f"{src}:{ref['line']}: {ref['kind']} {' '.join(name)} — такого образа "
+                    f"нет в собранных ассетах{hint}"
+                )
+
+    if audio_ids is not None:
+        for ref in a.get("audio_refs") or []:
+            expr = ref.get("file")
+            if not isinstance(expr, str):
+                continue
+            # Ссылка на логический id — только если это голый идентификатор.
+            # Строковый литерал/выражение статически не разрешаются: пропускаем.
+            if not AUDIO_ID_RE.match(expr.strip()):
+                continue
+            if expr.strip() not in audio_ids:
+                complain(
+                    f"{src}:{ref['line']}: {ref['stmt']} {expr} — трек не объявлен "
+                    f"в content/audio/*.yaml (в рантайме будет тишина)"
+                )
+
+
 def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
-                   rep: SceneCompileReport, var_registry: set[str] | None = None) -> dict:
+                   rep: SceneCompileReport, var_registry: set[str] | None = None,
+                   image_index=None, audio_ids: set[str] | None = None) -> dict:
     """Проверка контракта. Возвращает контекст эмиссии:
     {exit_id -> [{to_label, when?}]}; недостижимые цели draft-глав заменены на fallback."""
     a = unit.analysis
@@ -175,6 +242,8 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
                                         f"но не указан в vars.reads")
 
     complain = rep.warnings.append if status == "draft" else rep.errors.append
+    _validate_refs(unit, rep, complain, image_index=image_index, audio_ids=audio_ids)
+
     dispatch: dict[str, list[dict]] = {}
     for exit_id, spec in exits.items():
         entries = []

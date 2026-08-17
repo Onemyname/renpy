@@ -111,6 +111,157 @@ def test_var_manifest_mismatch_warns_only_when_declared():
     assert rep2.errors == []
 
 
+def _index(exact=(), tags=(), layered=None, available=True):
+    from vn.content.images import ImageIndex
+
+    return ImageIndex(exact={tuple(e) for e in exact}, tags=set(tags),
+                      layered={k: set(v) for k, v in (layered or {}).items()},
+                      available=available)
+
+
+def test_show_unknown_image_is_error():
+    """Опечатка в `show` — исключение движка у игрока; ловить обязан билд."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(image_refs=[{"line": 4, "kind": "scene",
+                               "name": ["bg", "gate", "nite"], "expression": False}])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      image_index=_index(exact=[("bg", "gate", "day")], tags=["bg"]))
+    assert any("bg gate nite" in e and "нет в собранных ассетах" in e for e in rep.errors)
+
+
+def test_show_unknown_tag_gets_hint():
+    rep = sc.SceneCompileReport()
+    a = _analysis(image_refs=[{"line": 2, "kind": "show",
+                               "name": ["mirra", "happy"], "expression": False}])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      image_index=_index(tags=["mira"], layered={"mira": ["happy"]}))
+    assert any("тега 'mirra' нет вовсе" in e for e in rep.errors)
+
+
+def test_layeredimage_attribute_validated():
+    rep = sc.SceneCompileReport()
+    a = _analysis(image_refs=[{"line": 3, "kind": "show",
+                               "name": ["mira", "hapy"], "expression": False}])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      image_index=_index(tags=["mira"],
+                                         layered={"mira": ["stand", "happy", "sad"]}))
+    assert any("нет атрибут(ов) hapy" in e for e in rep.errors)
+
+    ok = sc.SceneCompileReport()
+    a2 = _analysis(image_refs=[{"line": 3, "kind": "show",
+                                "name": ["mira", "stand", "happy"], "expression": False}])
+    sc.validate_scene(_unit(analysis=a2), {"ch01_s010"}, "release", ok,
+                      image_index=_index(tags=["mira"],
+                                         layered={"mira": ["stand", "happy"]}))
+    assert ok.errors == []
+
+
+def test_hide_validates_tag_only():
+    """hide адресует тег: атрибуты движок игнорирует, и валидатор тоже."""
+    ok = sc.SceneCompileReport()
+    a = _analysis(image_refs=[{"line": 9, "kind": "hide",
+                               "name": ["mira", "whatever"], "expression": False}])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", ok,
+                      image_index=_index(tags=["mira"], layered={"mira": ["stand"]}))
+    assert ok.errors == []
+
+    bad = sc.SceneCompileReport()
+    a2 = _analysis(image_refs=[{"line": 9, "kind": "hide",
+                                "name": ["ghost"], "expression": False}])
+    sc.validate_scene(_unit(analysis=a2), {"ch01_s010"}, "release", bad,
+                      image_index=_index(tags=["mira"]))
+    assert any("hide ghost" in e for e in bad.errors)
+
+
+def test_show_expression_forbidden():
+    rep = sc.SceneCompileReport()
+    a = _analysis(image_refs=[{"line": 5, "kind": "show", "name": None, "expression": True}])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      image_index=_index(tags=["mira"]))
+    assert any("show expression" in e for e in rep.errors)
+
+
+def test_image_refs_skipped_when_assets_not_built():
+    """Без собранной game/assets индекс пуст — сверка молчит, иначе на свежем
+    клоне падала бы каждая ссылка."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(image_refs=[{"line": 4, "kind": "show",
+                               "name": ["anything", "at", "all"], "expression": False}])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      image_index=_index(available=False))
+    assert rep.errors == []
+
+
+def test_undeclared_audio_is_error():
+    rep = sc.SceneCompileReport()
+    a = _analysis(audio_refs=[
+        {"line": 4, "stmt": "play music", "file": "clam_theme", "channel": None},
+        {"line": 5, "stmt": "play sound", "file": "door_slam", "channel": None},
+    ])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      audio_ids={"calm_theme", "door_slam"})
+    assert any("play music clam_theme" in e for e in rep.errors)
+    assert not any("door_slam" in e for e in rep.errors)
+
+
+def test_audio_literal_and_expression_skipped():
+    """Строковый литерал и сложное выражение статически не разрешаются — не ругаемся."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(audio_refs=[
+        {"line": 4, "stmt": "play music", "file": '"assets/audio/bgm/x.ogg"', "channel": None},
+        {"line": 5, "stmt": "play music", "file": "tracks[i]", "channel": None},
+    ])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep, audio_ids=set())
+    assert rep.errors == []
+
+
+def test_refs_draft_downgrades_to_warning():
+    rep = sc.SceneCompileReport()
+    a = _analysis(
+        image_refs=[{"line": 4, "kind": "show", "name": ["ghost"], "expression": False}],
+        audio_refs=[{"line": 5, "stmt": "play music", "file": "nope", "channel": None}],
+    )
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "draft", rep,
+                      image_index=_index(tags=["mira"]), audio_ids=set())
+    assert rep.errors == []
+    assert len(rep.warnings) == 2
+
+
+def test_build_image_index_sources(tmp_path):
+    """Индекс собирается из тех же источников, что и emit_images."""
+    from vn.content.images import build_image_index
+
+    root = tmp_path / "repo"
+    (root / "game" / "assets" / "cg" / "ep1").mkdir(parents=True)
+    (root / "game" / "assets" / "cg" / "ep1" / "kiss.webp").write_bytes(b"x")
+    (root / "game" / "assets" / "cg" / "ep1" / "kiss@2.webp").write_bytes(b"x")
+    (root / "game" / "assets" / "cg" / "ep1" / "kiss.thumb.webp").write_bytes(b"x")
+    spr = root / "game" / "assets" / "spr" / "mira"
+    (spr / "stand" / "outfits").mkdir(parents=True)
+    (spr / "stand" / "faces").mkdir(parents=True)
+    (spr / "stand" / "base.webp").write_bytes(b"x")
+    (spr / "stand" / "outfits" / "school.webp").write_bytes(b"x")
+    (spr / "stand" / "faces" / "happy.webp").write_bytes(b"x")
+    (spr / "side").mkdir(parents=True)
+    (spr / "side" / "base.webp").write_bytes(b"x")
+
+    locations = {"gate": {"id": "gate", "backgrounds": {"day": "assets/bg/gate/day.webp"}}}
+    chars = [("content/characters/mira/character.yaml", {
+        "id": "mira",
+        "matrix": {"poses": ["stand"], "outfits": ["school"], "emotions": ["happy"]},
+    })]
+    idx = build_image_index(root, locations, chars)
+
+    assert idx.available
+    assert ("bg", "gate", "day") in idx.exact
+    assert ("cg", "ep1", "kiss") in idx.exact
+    assert ("cg", "ep1", "kiss@2") not in idx.exact      # вариант, не отдельный образ
+    assert ("cg", "ep1", "kiss.thumb") not in idx.exact  # миниатюра галереи
+    assert ("side", "mira") in idx.exact
+    assert idx.layered["mira"] == {"stand", "school", "happy"}
+    assert ("vn_black",) in idx.exact                    # служебный образ framework
+
+
 def test_emit_scene_wrapper():
     rep = sc.SceneCompileReport()
     unit = _unit(meta={"exits": {"done": "s020"}})
