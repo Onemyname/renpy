@@ -122,7 +122,7 @@ python -c "import hashlib,sys; print(hashlib.blake2s(sys.argv[1].encode(), diges
 
 Что проверено по фактам:
 
-- **`.rpa`-архивы в проекте не используются — NOT IMPLEMENTED.** `build.archive` не встречается в `game/` ни разу. `ARCHITECTURE.md:943` описывает будущую тематическую упаковку (`archive_spr.rpa`, `archive_bg.rpa`) — это целевое состояние, не текущее. Сама документация Ren'Py про архивы: «While not very secure, this protects files from casual copying» (https://www.renpy.org/doc/html/build.html).
+- **`.rpa`-архивы в проекте не используются — по норме.** `build.archive` не встречается в `game/` ни разу, и `ARCHITECTURE.md` §2.4 (`:943`) фиксирует россыпь как норму: Steam дельта-патчит отдельные файлы, а защиты `.rpa` всё равно не даёт (распаковывается извне, G9). Тематическая упаковка (`archive_spr.rpa`, `archive_bg.rpa`) осталась лишь опцией mobile-поставки фазы 3, её появление в desktop-дистрибутиве — осознанное решение с ADR. Сама документация Ren'Py про архивы: «While not very secure, this protects files from casual copying» (https://www.renpy.org/doc/html/build.html).
 - **Скрипт едет открытым текстом.** В patron-zip лежат 36 `.rpy` и 36 `.rpyc`. Генерируемая сцена содержит авторское тело целиком: `game/generated/scenes/ch01/ch01_s010.gen.rpy` включает секцию «Авторский источник (копия)» с блоком `label ch01_s010__body:` и всеми репликами. То есть распаковщик даже не нужен — достаточно распаковать zip.
 - **Декомпилятор существует и работает.** `unrpyc` v2.0.4 (2026-02-24, MIT, https://github.com/CensoredUsername/unrpyc) восстанавливает `.rpy` из `.rpyc` для Ren'Py 8.x. Инструменты семейства «распаковать чужую VN» публичны и общеизвестны в жанре.
 - **Вотермарка ≠ защита.** `build_overlay.rpy` — 17 строк, статичный полупрозрачный текст в углу; никакого рантайм-трекинга. Это трассировка утечки, а не DRM.
@@ -282,7 +282,7 @@ assets:
 | **Sonniss GDC bundles** | https://sonniss.com/gdc-bundle-license/ | Коммерческое использование без атрибуции разрешено; нельзя продавать сами эффекты; **запрещено использовать их для обучения ИИ**; morality-клаузы нет | рекомендованный источник SFX |
 | **Freesound** | https://freesound.org/help/faq/ | Лицензия **у каждого звука своя**: CC0 / CC-BY (атрибуция) / **CC-BY-NC (нельзя)**. Практическое правило — только CC0 | — |
 | **A Sound Effect** | https://www.asoundeffect.com/ | Royalty-free, атрибуция не нужна; но операционные условия задаёт вендор конкретной библиотеки — сохраняйте файл лицензии в папку покупки | — |
-| **Chatterbox** (TTS) | MIT, https://github.com/resemble-ai/chatterbox | Самая чистая лицензия в категории. Все выходы несут нейро-вотермарку Perth — это нормально, снимать её не нужно и не следует | `vn voice *` — **NOT IMPLEMENTED** (стаб, фаза 2, `cli.py:1087`) |
+| **Chatterbox** (TTS) | MIT, https://github.com/resemble-ai/chatterbox | Самая чистая лицензия в категории. Все выходы несут нейро-вотермарку Perth — это нормально, снимать её не нужно и не следует | кандидат под `vn voice tts` (сама команда — стаб фазы 2, `cli.py:1278-1281`; остальной контур `vn voice` работает — [23-audio.md](23-audio.md) §8) |
 | **Kokoro-82M** (TTS) | Apache-2.0, https://huggingface.co/hexgrad/Kokoro-82M | Без клонирования, 54 фиксированных голоса | — |
 | **XTTS-v2 / F5-TTS / Fish Speech / IndexTTS-2** | CPML (текст больше не отдаётся) / веса CC-BY-NC / research license / bilibili custom: https://huggingface.co/coqui/XTTS-v2 · https://github.com/SWivid/F5-TTS · https://github.com/fishaudio/fish-speech · https://github.com/index-tts/index-tts | ⛔ Коммерчески неприменимы или требуют отдельного договора | не используются |
 | **ElevenLabs** | https://elevenlabs.io/terms-of-use · https://elevenlabs.io/use-policy | Условия по взрослому контенту **верифицировать не удалось** — читать самому в браузере и получать ответ от поддержки письменно | — |
@@ -400,7 +400,7 @@ python -m pytest tools/vn/tests -q     # 7. тесты тулинга зелён
 | Сделать авто-гейт по `commercial_use` | Требует решения по ADR-0008 **и** работающего провенанса (сегодня 0 сайдкаров). Источник данных — `chain[].model` |
 | Персональный patron-токен на получателя | Отдельный прогон `vn release build --patron-token <случайный токен>` на каждого; автоматизации нет. Токен генерировать `secrets.token_hex(16)` и держать в своём реестре вне репозитория — в сборку уедет только `patron_tag` |
 | Исключить новую зону из дистрибутива | `build.classify("<glob>", None)` в `game/options.rpy`; **обязательно** проверить результат по собранному zip |
-| Добавить `.rpa`-архивы | `build.archive()` в `options.rpy`. Помнить: это не защита («not very secure» по докам Ren'Py), а упаковка. `ARCHITECTURE.md:943` описывает тематическое разбиение как целевое |
+| Добавить `.rpa`-архивы | Только через ADR: `ARCHITECTURE.md` §2.4 фиксирует россыпь как desktop-норму (Steam-дельта-патчи), тематические `.rpa` — опция mobile фазы 3. И помнить: это не защита («not very secure» по докам Ren'Py), а упаковка |
 
 ## Чего НЕ делать
 

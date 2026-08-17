@@ -27,7 +27,7 @@ vn content graph            # Mermaid-граф сцен в stdout
 | `loc/po/`, `loc/ledger/` | обмен с переводчиками; ledger — вход компилятора (реестр меню) | да |
 | `assets_src/` | сырцы (PNG/PSD/видео) | частично, порог ADR-0004 |
 | `game/assets/` | выход `vn assets build`; **вход** компилятора (реестр образов, галерея) | нет |
-| `game/generated/` | выход компилятора, 19 файлов + `manifest.json` | нет |
+| `game/generated/` | выход компилятора, 20 файлов + `manifest.json` | нет |
 | `game/tl/` | выход `vn loc import` | нет |
 | `game/framework/` | рукописный код надстройки — **не генерат** | да |
 
@@ -35,9 +35,9 @@ vn content graph            # Mermaid-граф сцен в stdout
 
 ---
 
-## 2. Полная таблица «вход → выход» (19 выходов)
+## 2. Полная таблица «вход → выход» (20 выходов)
 
-Все 19 путей — относительно `game/generated/`. Столбец «Заголовок» — что реально перечислено в шапке файла после `# source:` (см. §6, там есть расхождения).
+Все 20 путей — относительно `game/generated/`. Столбец «Заголовок» — что реально перечислено в шапке файла после `# source:` (см. §6, там есть расхождения).
 
 | # | Выход | Назначение | Реально читает | Эмиттер |
 |---|---|---|---|---|
@@ -45,29 +45,31 @@ vn content graph            # Mermaid-граф сцен в stdout
 | 2 | `state/defaults.gen.rpy` | создание named stores (`init -980 python in <store>`) + `default <store>.<name>` + `vn_save_schema` / `vn_build_save_schema` | `content/variables/*.vars.yaml`, `content/chapters/*/vars.yaml`, `project.yaml:save_schema` | `compile.py:90` |
 | 3 | `state/snapshot.gen.rpy` | `SNAPSHOT_VARS` / `SNAPSHOT_STORES` для `vn_state` — единый маппинг store↔dict для миграций (G5) | те же vars-документы, `store: persistent` исключён | `compile.py:332` |
 | 4 | `state/migrations.gen.rpy` | исходники миграций сейвов инлайнятся строковыми литералами и грузятся `exec` в `MIGRATIONS` | `content/migrations/NNNN_*.py` + `registry.yaml` | `compile.py:352` |
-| 5 | `registry/audio.gen.rpy` | `define audio.<id> = "<file>"` | `content/audio/*.yaml` (`tracks`) | `compile.py:301` |
+| 5 | `registry/audio.gen.rpy` | `define audio.<id> = "<file>"` (`loop_start` — штатным префиксом `"<loop N>file"`; `volume` уезжает клаузой play-оператора в обвязке сцены) | `content/audio/*.yaml` (`tracks`; коллизия id между kind — ошибка) | `compile.py:377` |
 | 6 | `registry/characters.gen.rpy` | `define <id> = Character(...)` | `content/characters/*/character.yaml` (`id,name,color,voice_tag`) | `scenes.py:310` |
-| 7 | `registry/images.gen.rpy` | `image bg …`, `image cg …`, `image mov … = Movie(...)`, `layeredimage <char>`, `config.tag_layer` | `content/locations/*/location.yaml`, `character.yaml:matrix` + **скан `game/assets/{cg,mov,spr}`** | `images.py:48` |
+| 7 | `registry/images.gen.rpy` | `image bg …`, `image cg …`, `image mov … = Movie(...)`, `layeredimage <char>`, `layeredimage shot_<chNN>_<sNNN>` (shots@1, ADR-0013), `config.tag_layer` | `content/locations/*/location.yaml`, `character.yaml:matrix`, `chapters/*/shots/*.shots.yaml` + **скан `game/assets/{cg,mov,spr,shots}`** | `images.py:281` |
 | 8 | `registry/chapters.gen.rpy` | `VN_CHAPTERS` (id, title_key, entry_label, status, pack) + `VN_PACKS` | все `chapter.yaml` (ядро + паки) + `packs/*/manifest.yaml` | `scenes.py:276` |
 | 9 | `registry/scenes.gen.rpy` | `VN_SCENES` — плоский список сцен для QA и валидаторов | id сцен из имён файлов | `scenes.py:299` |
 | 10 | `registry/menus.gen.rpy` | `VN_MENUS` (choice-id → подписи), пустые `VN_MENUS_TL`/`VN_STRINGS_TL`, `VN_STRINGS`, `VN_SOURCE_LANG` | `loc/ledger/ch*.json`, `content/ui/strings.yaml`, `loc/loc.yaml:source` | `compile.py:313` |
-| 11 | `registry/overrides.gen.rpy` | `config.label_overrides.update({...})` + shim-метки с размоткой стека (G7) | `content/renames.yaml` | `compile.py:407` |
+| 11 | `registry/overrides.gen.rpy` | `config.label_overrides.update({...})` + shim-метки с размоткой стека (G7); плюс shim-метки для выпущенных id, отсутствующих в этой сборке — маршрут на `vn_scene_unavailable` (`missing_content`) вместо ScriptError у игрока | `content/renames.yaml`, `content/registry/id_registry.json` | `compile.py:488` |
 | 12 | `registry/ui_frames.gen.rpy` | `define vn_frame_<id> = Frame(..., Borders(...))` для генерируемых панелей (ADR-0009) | `content/ui/panels.yaml` | `tools/vn/src/vn/assets/ui.py:119` |
 | 13 | `registry/achievements.gen.rpy` | `VN_ACHIEVEMENTS` — триггеры по стабильным якорям (scene/beat/var) | `content/achievements/*.yaml` | `compile.py:114` |
 | 14 | `registry/gallery.gen.rpy` | `VN_GALLERY_CATEGORIES` + `VN_GALLERY` (ADR-0010) | `content/gallery/*.yaml` + проверки файлов в `game/assets/**` + `strings.yaml` (warn) | `compile.py:148` |
-| 15 | `screens/chapter_select.gen.rpy` | статический шаблон экрана выбора глав; эмитится **только если есть главы** (`compile.py:870`) | ничего (шаблон) | `scenes.py:324` |
-| 16–19 | `scenes/<chNN>/<full_id>.gen.rpy` | label-обвязка сцены (см. §5). Сейчас 4 файла: `ch01/ch01_s010`, `ch01/ch01_s020`, `ch01/ch01_s030`, `ch90/ch90_s010` | пара `*.scene.{yaml,rpy}` + AST от build-bridge + локации + audio-id | `scenes.py:197` |
+| 15 | `screens/chapter_select.gen.rpy` | статический шаблон экрана выбора глав; эмитится **только если есть главы** | ничего (шаблон) | `scenes.py:461` |
+| 16 | `render.gen.rpy` | потолок качества текстур сборки (ADR-0012): `define config.automatic_oversampling` + `define vn_build_max_oversampling`; настройку игрока поверх применяет `00_core/095_quality.rpy` | `project.yaml: render.max_oversampling` | `compile.py:105` |
+| 17–20 | `scenes/<chNN>/<full_id>.gen.rpy` | label-обвязка сцены (см. §5) + инжекция `voice vn.voice_path("<say-id>")` перед озвученными репликами (C5). Сейчас 4 файла: `ch01/ch01_s010`, `ch01/ch01_s020`, `ch01/ch01_s030`, `ch90/ch90_s010` | пара `*.scene.{yaml,rpy}` + AST от build-bridge + локации + audio-id + voice-манифесты `chapters/*/voice/*.voice.yaml` | `scenes.py:334` |
 | — | `manifest.json` | контракт инкрементальности: `{schema, tool, inputs, outputs}`; в `outputs` себя не включает | все зарегистрированные через `src()` входы + blake3 всех выходов | `compile.py:912-922` |
 
-### 30 входов
+### 36 входов
 
-Ровно те, что перечислены в `game/generated/manifest.json:2-33`. Их регистрирует `src()` (`compile.py:599-608`), и он же поднимает `CompileError`, если обязательный файл отсутствует:
+Ровно те, что перечислены в `game/generated/manifest.json`. Их регистрирует `src()`, и он же поднимает `CompileError`, если обязательный файл отсутствует:
 
 ```
 project.yaml
 content/renames.yaml, content/ui/{panels,strings}.yaml
-content/variables/core.vars.yaml
-content/audio/{bgm,sfx}.yaml
+content/registry/id_registry.json                       (shim-метки выпущенных id, G7)
+content/variables/{core,settings,wardrobe}.vars.yaml
+content/audio/{bgm,amb,sfx}.yaml
 content/achievements/core.achievements.yaml
 content/gallery/core.gallery.yaml
 content/characters/mira/character.yaml
@@ -75,6 +77,8 @@ content/locations/{rooftop,school_gate}/location.yaml
 content/migrations/{registry.yaml,0002_route_prologue.py}
 content/chapters/ch01_awakening/{chapter.yaml,vars.yaml}
 content/chapters/ch01_awakening/scenes/s0{10,20,30}_*.scene.{yaml,rpy}   (6 файлов)
+content/chapters/ch01_awakening/shots/s030.shots.yaml   (послойные шоты, ADR-0013)
+content/chapters/ch01_awakening/voice/ru.voice.yaml     (voice-манифест, C5)
 loc/loc.yaml, loc/ledger/{ch01,ch90}.json
 packs/{ep_beach,nsfw}/manifest.yaml
 packs/ep_beach/chapters/ch90_beach/chapter.yaml
@@ -83,7 +87,7 @@ packs/ep_beach/chapters/ch90_beach/scenes/s010_shore.scene.{yaml,rpy}
 
 **Чего в этом списке нет и почему это важно:**
 
-- `content/flags.yaml`, `content/anchors.yaml`, `content/registry/id_registry.json` — компилятор их **не открывает вовсе** (строки `flags`/`anchors`/`id_registry` в `compile.py` не встречаются). Их держит живыми только линтер (§8, `lint.py:39-41`) и релизный гейт.
+- `content/flags.yaml`, `content/anchors.yaml` — компилятор их **не открывает вовсе** (строки `flags`/`anchors` в `compile.py` не встречаются). Их держит живыми только линтер (§8, `lint.py:39-41`) и релизный гейт. (`id_registry.json` из этой категории выбыл: компилятор читает его для shim-меток выпущенных сцен, `compile.py:872-879`.)
 - `game/assets/**` — сканы `emit_images` и пробы галереи **не проходят через `src()`**, значит их нет в `manifest["inputs"]`. Пересобрали ассеты — генерат меняется, а «входы» в манифесте те же. Это одна из причин, по которой инкрементальность по входам не построена.
 
 ---
@@ -354,7 +358,7 @@ game/framework/90_debug         docs
 
 ---
 
-## 8. Реестр схем (36 файлов)
+## 8. Реестр схем (39 файлов)
 
 `tools/vn/src/vn/schemas.py` (51 строка). Каталог — `tools/schemas/`, никакого синглтона нет: каждый потребитель строит свой `SchemaRegistry` (линтер `lint.py:114`, компилятор `compile.py:591`, доктор, релизный гейт, `vn pack validate` и др.).
 
@@ -488,7 +492,7 @@ vn build                      # ожидается: build: OK
 vn build --check              # ожидается: check: генерат свеж
 
 # Тесты тулинга
-python -m pytest tools/vn/tests -q          # 152 теста
+python -m pytest tools/vn/tests -q          # 240 тестов
 python -m pytest tools/vn/tests/test_compile.py tools/vn/tests/test_lint.py \
                 tools/vn/tests/test_schemas.py tools/vn/tests/test_scene_pipeline.py \
                 tools/vn/tests/test_verify_regressions.py -q
@@ -511,7 +515,7 @@ vn play                                     # требует непустой ga
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/content/compile.py` (923 стр., эмиттеры + оркестрация `compile_content:587`), `tools/vn/src/vn/content/lint.py` (411 стр.), `tools/vn/src/vn/content/scenes.py` (валидация C2 + эмиссия обвязки), `tools/vn/src/vn/content/analyze.py`, `game/framework/00_core/050_build_bridge.rpy`, `tools/vn/src/vn/schemas.py`, `tools/vn/src/vn/cli.py:84-153` (порядок `vn build`), `game/generated/manifest.json` (актуальные 30 входов / 19 выходов) |
+| **Читать перед изменением** | `tools/vn/src/vn/content/compile.py` (923 стр., эмиттеры + оркестрация `compile_content:587`), `tools/vn/src/vn/content/lint.py` (411 стр.), `tools/vn/src/vn/content/scenes.py` (валидация C2 + эмиссия обвязки), `tools/vn/src/vn/content/analyze.py`, `game/framework/00_core/050_build_bridge.rpy`, `tools/vn/src/vn/schemas.py`, `tools/vn/src/vn/cli.py:84-153` (порядок `vn build`), `game/generated/manifest.json` (актуальные 36 входов / 20 выходов) |
 | **Не трогать** | `game/generated/**` (генерат), `game/assets/**` (выход `vn assets build`), `game/tl/**` (выход `vn loc import`), `.vncache/**` (кэш), `build/**` — всё производное и вне git. Правки там исчезнут при первой же сборке |
 | **Зависимости (что сломается ниже по течению)** | правка эмиттера → меняются байты генерата → `vn build --check` краснеет у всех, пока не пересоберут; правка `050_build_bridge.rpy` → инвалидируется весь `.vncache/analyze-*.json` и требуется полный прогон движка; правка схемы → линт, компилятор, `vn doctor` (проверка №6) и релизный гейт строят реестр заново; добавление/удаление выхода → предыдущий `manifest.json` даст диффом удаление осиротевших `.rpy` + `.rpyc`; правка `content/renames.yaml` → `registry/overrides.gen.rpy` (shim-метки и `config.label_overrides`) |
 | **Валидация** | `vn content lint` → `vn build` → `vn build --check` → `python -m pytest tools/vn/tests -q`. Для сцен обязателен `RENPY_SDK` |

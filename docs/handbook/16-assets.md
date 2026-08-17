@@ -111,7 +111,7 @@ ffmpeg -y -hide_banner -loglevel error -i <src>
 ### 4.1 Логические id ассетов
 
 `^(bg|cg|spr|mov|ui|vfx|bgm|amb|sfx)/[a-z0-9_/]+$` (`naming.md:17`). Пример: `bg/school_gate/day`, `mov/demo/ambient`.
-Из девяти префиксов производятся восемь: `bg`, `cg`, `spr`, `mov`, `ui` и `bgm|amb|sfx` (ветка `copy_audio`, §2 — работает, но сырцов в репозитории пока нет). `vfx` — **NOT IMPLEMENTED**, схемы `vfx@1` в `tools/schemas/` нет.
+Из девяти префиксов производятся восемь: `bg`, `cg`, `spr`, `mov`, `ui` и `bgm|amb|sfx` (ветка `copy_audio`, §2 — работает, но сырцов в репозитории пока нет). `vfx` — **NOT IMPLEMENTED**, схемы `vfx@1` в `tools/schemas/` нет. Отдельно живут id слоёв послойных шотов — `shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>]` (§13.7): они наравне с `bg|cg|spr|mov` считаются выпущенными id ассетов в `id_registry@1`/`renames@1`.
 
 ### 4.2 Пути: сырец → выход
 
@@ -451,14 +451,37 @@ vn build                                  # -> image mov demo rain = Movie(...)
 
 ### 13.6 Звук — читайте внимательно
 
-**Трансформация `copy_audio` работает** (§2): кладёте `.ogg` в `assets_src/audio_stems/{bgm,amb,sfx}/`, `vn assets build` копирует его в `game/assets/audio/<kind>/<id>.ogg` байт в байт. Нормализации громкости в конвейере нет — файл должен приезжать уже сведённым.
+**Трансформация `copy_audio` работает** (§2): кладёте `.ogg` в `assets_src/audio_stems/{bgm,amb,sfx}/`, `vn assets build` копирует его в `game/assets/audio/<kind>/<id>.ogg` байт в байт. Нормализации громкости для музыки/SFX в конвейере нет — файл должен приезжать уже сведённым.
 
 ```bash
 cp market_theme.ogg assets_src/audio_stems/bgm/market_theme.ogg
 vn assets build && ls game/assets/audio/bgm/
 ```
 
-Декларативная половина — отдельный шаг: `content/audio/*.yaml` (`schema: audio@1`, `kind: bgm|sfx`) компилируется в `define audio.<id> = "<file>"` (`tools/vn/src/vn/content/compile.py:301-309`), и сейчас оба файла имеют `tracks: {}`. Пока трек там не объявлен, `music:` в сцене даёт ошибку компиляции. См. [Аудио](23-audio.md).
+Декларативная половина — отдельный шаг: `content/audio/*.yaml` (`schema: audio@1`, `kind: bgm|amb|sfx`) компилируется в `define audio.<id> = "<file>"`, и сейчас все три файла имеют `tracks: {}`. Пока трек там не объявлен, `music:`/`ambient:` в сцене даёт ошибку компиляции. **Озвучка идёт своей веткой** `voice_opus`: мастера `assets_src/voice/<lang>/<chNN>/<line_id>.(wav|flac|ogg|opus)` транскодируются в `game/assets/voice/<lang>/<chNN>/<line_id>.opus` (Opus 96k, loudnorm −19 LUFS); покрытие описывают манифесты `voice@1`. См. [Аудио](23-audio.md) §3 и §8.
+
+### 13.7 Послойный шот (shots@1, ADR-0013)
+
+Полнокадровый кадр как `env`-подложка + вырезанные слои поверх — наряд персонажа меняется без перерендера кадра. Полное решение — [ADR-0013](../adr/0013-layered-shots.md).
+
+```bash
+# 1. Мастера — класс `shot` render-профиля (env — непрозрачная подложка, задаёт холст;
+#    остальные слои — с альфой, на том же холсте; оверсэмпл @N — как у всех классов):
+#    assets_src/art/shots/ch01/s030/sunset/env.jpg
+#    assets_src/art/shots/ch01/s030/sunset/mira__school.png     # <layer>__<variant>
+#    assets_src/art/shots/ch01/s030/sunset/mira__casual.png
+vn assets build      # -> game/assets/shots/ch01/s030/sunset/*.webp
+
+# 2. Декларация — content/chapters/ch01_awakening/shots/s030.shots.yaml (schema: shots@1):
+#    shots.<shot>.layers (env обязателен; у слоя — variants и опц. var: переменная гардероба)
+#    shots.<shot>.order — ЯВНЫЙ z-порядок, обязан перечислить каждый слой ровно один раз
+vn build             # -> layeredimage shot_ch01_s030 в game/generated/registry/images.gen.rpy
+
+# 3. В сцене:  scene shot_ch01_s030 sunset  (наряд — из переменной g.mira_outfit;
+#              явный атрибут mira_school / mira_casual переопределяет)
+```
+
+Что валидируется на сборке (битый layeredimage не эмитится): схема; сцена-владелец существует; `order` ↔ `layers`; `var` объявлена в Variable Registry (иначе гардероб не попал бы в сейв, G5); каждый объявленный слой/вариант собран — ошибка; собранный, но не объявленный — предупреждение; ссылки `scene shot_… <шот> <вариант>` в `.rpy` сверяются индексом образов (`tools/vn/src/vn/content/compile.py:961-976`, `images.py:182-279`, `assets/pipeline.py:370-412`). Модель памяти `vn assets memory` учитывает худший шот сцены (env + самый тяжёлый вариант каждого слоя), id слоёв `shots/...` — выпущенные id в `id_registry@1`/`renames@1`. У `env` вариантов не бывает — вариативная среда объявляется отдельным шотом. Показ в сцене — [12-scenes.md](12-scenes.md).
 
 ## 14. Чеклист нового ассета
 

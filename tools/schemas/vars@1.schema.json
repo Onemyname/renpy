@@ -17,7 +17,7 @@
         "type": "object",
         "properties": {
           "type": {"enum": ["str", "int", "float", "bool", "list", "dict"]},
-          "default": {"type": ["string", "integer", "number", "boolean", "array", "object"]},
+          "default": {"type": ["string", "integer", "number", "boolean", "array", "object", "null"], "description": "null допустим: «не выбрано/не назначено» — валидный простой тип для сейва и rollback"},
           "doc": {"type": "string"},
           "range": {
             "type": "array", "minItems": 2, "maxItems": 2,

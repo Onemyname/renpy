@@ -42,7 +42,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 
 Главная ставка проекта: **тулинг — это второй продукт размером с игру**
 (`ARCHITECTURE.md:4070`). Поэтому здесь есть свой компилятор контента, свой ассет-конвейер,
-свой релизный гейт и 152 теста на всё это — при одной черновой главе игры.
+свой релизный гейт и 240 тестов на всё это — при одной черновой главе игры.
 
 ## 2. Монетизация: флейворы `public` и `patron`
 
@@ -91,14 +91,14 @@ Steam — горизонт: `vn release steam` — заглушка фазы 3 (
 | Языковые пакеты | 3 — `en`, `de`, `pseudo`; покрытие 115/115 (100 %), fuzzy 0 | `loc/po/` |
 | JSON Schema | 36 (включая `assets_manifest@1` и `build_info@2`) | `tools/schemas/` |
 | Выходы Content Compiler | 19 `*.gen.rpy` + `manifest.json` | `game/generated/` |
-| Тесты | 152 функции в 19 файлах `test_*.py` | `tools/vn/tests/` |
+| Тесты | 240 функций в 23 файлах `test_*.py` | `tools/vn/tests/` |
 | Фикстуры сейв-корпуса | 2 — `schema1-demo.save` (схема 1, `ch01_s010`) и `schema2-demo.save` (схема 2, `ch01_s020`) | `ci/fixtures/saves/` |
 | ADR | 11 решений + шаблон; 10 приняты, ADR-0008 предложен, ни один не заменён | `docs/adr/` |
 | Релизы | 0.1.0 … 0.1.4 | `docs/CHANGELOG.md` |
 
 Проверенные прогоны на машине владельца (Windows 11, RTX 5080, Python 3.12.10):
 `vn doctor` → 8 PASS / 0 FAIL; `vn build` → `build: OK` за ~0.3 с на прогретом кэше;
-`pytest tools/vn/tests -q` → 152 passed; `vn release validate --flavor public` → 16 PASS, exit 0
+`pytest tools/vn/tests -q` → 240 passed; `vn release validate --flavor public` → 16 PASS, exit 0
 (в том числе `сейв-корпус: 2 фикстур`); `vn save corpus` → OK, обе фикстуры загружены и мигрированы;
 `vn pipeline doctor` → PASS (ffmpeg 8.1.2 VP9, ComfyUI `D:\ComfyUI`, PyTorch 2.11.0+cu128,
 6 обязательных моделей, DAZ Studio 6), WARN на неустановленные Virt-a-Mate и The Sims 4.
@@ -135,7 +135,7 @@ Steam — горизонт: `vn release steam` — заглушка фазы 3 (
 | CLI `vn` — 20 доменов, exit-коды 0/1/2/3 | **IMPLEMENTED** | Module-docstring `cli.py:4-5` до сих пор врёт про «фазу 0» |
 | Content Compiler `content/**` → 19 `*.gen.rpy` | **IMPLEMENTED** | Свежесть считается сравнением байт выходов; `manifest["inputs"]` пишется, но никогда не читается |
 | `vn content lint` (34 правила, строгость по статусу главы) | **IMPLEMENTED** | Нет `--strict/--arch/--schemas` из ARCHITECTURE.md — только `--layout/--no-layout` |
-| Реестр схем `tools/schemas/` (36 схем, `@N`) | **IMPLEMENTED** | Дыра G16 закрыта: `assets_manifest@1` заведена, и `.vncache/assets-manifest.json` валидируется ею при записи (`assets/pipeline.py:441-450`) |
+| Реестр схем `tools/schemas/` (39 схем, `@N`) | **IMPLEMENTED** | Дыра G16 закрыта: `assets_manifest@1` заведена, и `.vncache/assets-manifest.json` валидируется ею при записи (`assets/pipeline.py:441-450`) |
 | Ассет-конвейер (PNG→WebP, превью, кэш, GC, сироты, звук) | **IMPLEMENTED** | Ветка `copy_audio` читает нормативную зону `assets_src/audio_stems/{bgm,amb,sfx}/` (`assets/pipeline.py:159-170`), `.ogg` уезжает в `game/assets/audio/<kind>/`; тест `test_audio_stems_branch_copies_ogg`. Но контента нет: ни одного `.ogg` в репозитории, `content/audio/{bgm,sfx}.yaml` — `tracks: {}` |
 | Видео-конвейер VP9/WebM + сайдкар `mov_meta@1` | **IMPLEMENTED** | Нет alpha-видео, 2-pass, профилей `hd`/`mobile`, loudnorm |
 | Генерируемые UI-панели (ADR-0009), 8 панелей | **IMPLEMENTED / UNDOCUMENTED** | В `ARCHITECTURE.md` — ноль упоминаний. Нарушений `2*Borders` больше нет: под мелкие кнопки заведены `chip`/`chip_active` (radius 8, Borders 11, минимум 22×22), на них переведены стили `vn_gal_tab` и `vn_gal_ctl_button`; регресс стерегут тесты в `test_ui_panels.py` |
@@ -166,7 +166,7 @@ Steam — горизонт: `vn release steam` — заглушка фазы 3 (
 |---|---|---|
 | **0** — фундамент репозитория (недели 1–2) | Зоны каталогов, `CODEOWNERS`, `.gitattributes`/`.gitignore`, `project.yaml`, реестр схем, скелет CLI, lockfile, ADR-процесс | **ЗАКРЫТА.** DoD «пустой проект собирается `vn build` и запускается, CI зелёный» выполнен |
 | **1** — вертикальный срез (месяцы 1–3) | Content Compiler, ассет-конвейер, layeredimage-эмиттер + golden-тесты, `vn bootstrap` + CI «clone → ≤ 5 мин», базовый CI, ролевой инсталлер | **ПОЧТИ ЗАКРЫТА.** Не сделано: golden-тесты через `renpy compile`+lint (в `tools/vn/tests/` ноль совпадений на «golden», ни один тест не запускает SDK), `vn bootstrap` в смысле G4, CI-джоба «clone → ≤ 5 мин», однокомандный ролевой инсталлер, `vn char new`/`char validate` (обе — заглушки *фазы 1*) |
-| **2** — производство и первый релиз (месяцы 3–9) | Локализация, сейвы и миграции, релизный конвейер, QA-автопилот, видео/WebM, звуковой конвейер | **ЧАСТИЧНО.** Сделано: локализация целиком, `vn save check/corpus` (2 фикстуры, миграция реально проигрывается), `vn release changelog/validate/build`, `vn test smoke`, видео-конвейер, транспорт звука (`assets_src/audio_stems/` → `game/assets/audio/`). Не сделано: звуковой конвейер сверх копирования (`loop`/`loop_start`/`volume` из `audio@1` не эмитятся, loudnorm нет) и сам звуковой контент; озвучка (`vn voice *` — заглушки), Steam-депоты, каналы dev/beta/release, `vn test replay/paths`, `vn migrate`, `vn shell`, перф-бюджеты сверх cold-start и размеров каталогов |
+| **2** — производство и первый релиз (месяцы 3–9) | Локализация, сейвы и миграции, релизный конвейер, QA-автопилот, видео/WebM, звуковой конвейер | **ЧАСТИЧНО.** Сделано: локализация целиком, `vn save check/corpus` (2 фикстуры, миграция реально проигрывается), `vn release changelog/validate/build`, `vn test smoke`, видео-конвейер, транспорт звука (`assets_src/audio_stems/` → `game/assets/audio/`) с эмиссией `loop_start`/`volume`, канал `ambient` + дакинг, озвучка целиком (`voice@1`, `vn voice manifest/import/validate`, транскод `voice_opus`, гейт в `vn release validate`). Не сделано: сам музыкальный/SFX-контент и loudnorm для него; `vn voice tts`, Steam-депоты, каналы dev/beta/release, `vn test replay/paths`, `vn migrate`, `vn shell`, перф-бюджеты сверх cold-start и размеров каталогов |
 | **3** — рост после 1.0 | Live2D/Spine, DLC-инфраструктура, скриншот-тесты, телеметрия, моды/Workshop | **НЕ НАЧАТА** (кроме частичного каркаса паков). Единственная фаза без DoD в документе |
 
 **Вывод для читателя:** формулировка «Статус: фаза 0» в `README.md:43` и «фаза 0 не содержит
@@ -253,7 +253,7 @@ Ren'Py и релизный конвейер — все четыре с `ffmpeg` 
 vn doctor                              # ожидаем 8 PASS, 0 FAIL
 vn build                               # ожидаем "build: OK"
 vn build --check                       # CI-режим: генерат свеж? (упадёт после нового коммита — см. ниже)
-python -m pytest tools/vn/tests -q     # ожидаем 152 passed
+python -m pytest tools/vn/tests -q     # ожидаем 240 passed
 vn release validate --flavor public    # ожидаем 16 PASS, exit 0 (в т.ч. «сейв-корпус: 2 фикстур»)
 vn save corpus                         # обе фикстуры грузятся; schema1-demo мигрирует 1 -> 2
 vn loc report                          # de/en/pseudo — 115/115, fuzzy 0

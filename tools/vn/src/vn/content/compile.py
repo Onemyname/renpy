@@ -122,7 +122,11 @@ def _emit_render(root: Path, sources) -> str:
         f"define config.image_cache_size_mb = {cfg.image_cache_mb}\n\n"
         "# Автоподбор оверсэмпл-вариантов (<name>@2/@4) под физический экран.\n"
         "# Фиксируем явно: от него зависит, увидит ли игрок 4K-ассеты вообще.\n"
-        "define config.automatic_oversampling = 4\n"
+        "# Это ПОТОЛОК СБОРКИ (project.yaml: render.max_oversampling); настройка\n"
+        "# качества игрока может опустить его ниже (00_core/095_quality.rpy).\n"
+        f"define config.automatic_oversampling = {cfg.max_oversampling}\n\n"
+        "# Потолок сборки для настройки качества (не трогать руками).\n"
+        f"define vn_build_max_oversampling = {cfg.max_oversampling}\n"
     )
 
 
@@ -375,7 +379,12 @@ def _emit_audio(audio_docs: list[tuple[str, dict]], sources) -> str:
     n = 0
     for rel, doc in sorted(audio_docs):
         for track_id, spec in sorted((doc.get("tracks") or {}).items()):
-            out.append(f'define audio.{track_id} = "{spec["file"]}"')
+            file = spec["file"]
+            # Точка лупа — штатным префиксом partial-playback ("<loop N>file"):
+            # движок сам зацикливает с указанной секунды, кода в рантайме ноль.
+            if spec.get("loop_start"):
+                file = f"<loop {spec['loop_start']}>{file}"
+            out.append(f'define audio.{track_id} = "{file}"')
             n += 1
     if not n:
         out.append("# Треки не объявлены (content/audio/*.yaml пусты).")
@@ -476,7 +485,9 @@ def _collect_migrations(root: Path, src, project: dict, errors: list[str]):
     return migrations
 
 
-def _emit_overrides(renames: dict, sources) -> str:
+def _emit_overrides(renames: dict, sources,
+                    registry_scenes: list[str] | None = None,
+                    known_scenes: set[str] | None = None) -> str:
     out = [_header(sources)]
     scene_renames: dict = renames.get("scenes") or {}
     deleted: dict = renames.get("deleted_scenes") or {}
@@ -496,6 +507,21 @@ def _emit_overrides(renames: dict, sources) -> str:
             out.append(f"label {old}:\n    $ vn.unwind_call_stack()\n    jump {new}\n")
     else:
         out.append("# Переименований нет — shim-метки не требуются.")
+
+    # Shim-метки для выпущенных id, отсутствующих в ЭТОЙ сборке (G7, раздел 3.8):
+    # сейв внутри неустановленного пака/эпизода без них падает ScriptError прямо
+    # в crash-экран. С ними игрок получает объяснение и выбор действия.
+    missing = sorted(set(registry_scenes or []) - (known_scenes or set())
+                     - set(overrides))
+    if missing:
+        out.append("# Выпущенные сцены вне этой сборки (id_registry): маршрут на")
+        out.append("# «контент недоступен» вместо ScriptError у игрока.")
+        for scene_id in missing:
+            out.append(
+                f"label {scene_id}:\n"
+                f"    $ vn.unwind_call_stack()\n"
+                f'    $ vn_unavailable_reason = "missing_content"\n'
+                f"    jump vn_scene_unavailable\n")
     return "\n".join(out) + "\n"
 
 
@@ -575,6 +601,8 @@ def _collect_chapters(root: Path, src, registry, errors: list[str],
     паку — по расположению (C10), поле chapter.yaml pack: не существует."""
     chapters: list[dict] = []
     units: list[sc.SceneUnit] = []
+    voice_docs: list[tuple[str, str, str, dict]] = []    # (chapter, lang, rel, doc)
+    shots_docs: list[tuple[str, str, dict]] = []        # (chapter, rel, doc)
     zones = [("core", root / "content" / "chapters")]
     for pack_id in sorted(packs or {}):
         zones.append((pack_id, root / "packs" / pack_id / "chapters"))
@@ -583,7 +611,88 @@ def _collect_chapters(root: Path, src, registry, errors: list[str],
             continue
         for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
             _collect_chapter_dir(root, src, registry, errors, chapters, units, d, pack_id)
-    return chapters, units
+            _collect_voice_dir(root, src, registry, errors, voice_docs, d)
+            _collect_shots_dir(root, src, registry, errors, shots_docs, d)
+    return chapters, units, voice_docs, shots_docs
+
+
+SHOTS_YAML_RE = re.compile(r"^(s\d{3})\.shots\.yaml$")
+
+
+def _collect_shots_dir(root: Path, src, registry, errors, shots_docs, d):
+    """Декларации послойных шотов (shots@1, ADR-0013): schema + инварианты файла.
+    Существование сцены и переменных гардероба сверяется позже, когда собраны
+    сцены и Variable Registry."""
+    sdir = d / "shots"
+    if not sdir.is_dir():
+        return
+    ch_id = d.name[:4]
+    for f in sorted(sdir.glob("*.shots.yaml")):
+        rel, _digest = src(f)
+        m = SHOTS_YAML_RE.match(f.name)
+        if not m:
+            errors.append(f"{rel}: имя файла вне конвенции sNNN.shots.yaml")
+            continue
+        doc = load_yaml(f)
+        s_errs = registry.validate(doc, rel)
+        if s_errs:
+            errors.extend(s_errs)
+            continue
+        if doc["scene"] != m.group(1):
+            errors.append(f"{rel}: scene ({doc['scene']}) != имени файла ({m.group(1)})")
+            continue
+        bad = False
+        for shot_id, spec in sorted((doc.get("shots") or {}).items()):
+            layers = spec["layers"]
+            if layers.get("env", {}).get("variants"):
+                errors.append(
+                    f"{rel}: {shot_id}: у подложки env вариантов не бывает — "
+                    f"вариативная среда = отдельный шот")
+                bad = True
+            if sorted(spec["order"]) != sorted(layers):
+                errors.append(
+                    f"{rel}: {shot_id}: order {spec['order']} != слоям "
+                    f"{sorted(layers)} — z-порядок обязан перечислить каждый слой "
+                    f"ровно один раз")
+                bad = True
+        if not bad:
+            shots_docs.append((ch_id, rel, doc))
+
+
+def _collect_voice_dir(root: Path, src, registry, errors, voice_docs, d):
+    """Voice-манифесты главы (voice@1, C5): schema + инварианты пути.
+    Сверка line_id с фактическими say-id сцен — позже, когда есть AST."""
+    from ..voice import LANG_RE, MANIFEST_SUFFIX
+
+    vdir = d / "voice"
+    if not vdir.is_dir():
+        return
+    ch_id = d.name[:4]
+    for f in sorted(vdir.glob("*" + MANIFEST_SUFFIX)):
+        rel, _digest = src(f)
+        lang = f.name[: -len(MANIFEST_SUFFIX)]
+        doc = load_yaml(f)
+        v_errs = registry.validate(doc, rel)
+        if v_errs:
+            errors.extend(v_errs)
+            continue
+        if not LANG_RE.match(lang):
+            errors.append(f"{rel}: имя файла {lang!r} — не код языка "
+                          f"(ожидается <lang>{MANIFEST_SUFFIX})")
+            continue
+        if doc["lang"] != lang:
+            errors.append(f"{rel}: lang ({doc['lang']}) != имени файла ({lang})")
+            continue
+        if doc["chapter"] != ch_id:
+            errors.append(f"{rel}: chapter ({doc['chapter']}) != главе каталога ({ch_id})")
+            continue
+        bad = sorted(lid for lid in (doc.get("lines") or {})
+                     if not lid.startswith(ch_id + "_"))
+        if bad:
+            errors.extend(f"{rel}: {lid}: реплика чужой главы в манифесте {ch_id}"
+                          for lid in bad)
+            continue
+        voice_docs.append((ch_id, lang, rel, doc))
 
 
 def _collect_chapter_dir(root: Path, src, registry, errors, chapters, units, d, pack_id):
@@ -723,14 +832,24 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
             gal_docs.append((rel, doc))
             gal_sources.append((rel, inputs[rel]))
 
-    # Аудио
+    # Аудио: единый реестр треков с kind — id глобально уникален между kind'ами,
+    # иначе define audio.<id> одного файла молча перезаписал бы другой.
     audio_docs, audio_sources = [], []
     audio_dir = root / "content" / "audio"
     if audio_dir.is_dir():
         for f in sorted(audio_dir.glob("*.yaml")):
             audio_sources.append(src(f))
             audio_docs.append((f.name, load_yaml(f)))
-    audio_ids = {tid for _, doc in audio_docs for tid in (doc.get("tracks") or {})}
+    audio_tracks: dict[str, dict] = {}
+    for rel_name, doc in sorted(audio_docs):
+        for tid, spec in sorted((doc.get("tracks") or {}).items()):
+            if tid in audio_tracks:
+                errors.append(
+                    f"content/audio/{rel_name}: трек {tid!r} уже объявлен как "
+                    f"{audio_tracks[tid]['kind']} — define audio.{tid} перезаписался бы молча"
+                )
+                continue
+            audio_tracks[tid] = dict(spec, kind=doc.get("kind"))
 
     # Персонажи
     char_docs, char_sources = [], []
@@ -747,6 +866,20 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     renames_path = root / "content" / "renames.yaml"
     renames_src = src(renames_path)
     renames = load_yaml(renames_path)
+
+    # Реестр выпущенных id (G7/C16): сцены из него, отсутствующие в сборке,
+    # получают shim-метки (сейв неустановленного пака не должен падать в crash).
+    registry_scenes: list[str] = []
+    id_registry_path = root / "content" / "registry" / "id_registry.json"
+    overrides_sources = [renames_src]
+    if id_registry_path.is_file():
+        rel, _d = src(id_registry_path)
+        try:
+            registry_scenes = list(
+                json.loads(id_registry_path.read_text(encoding="utf-8")).get("scenes") or [])
+        except Exception:
+            errors.append(f"{rel}: не парсится как JSON")
+        overrides_sources.append((rel, inputs[rel]))
 
     # Локализация: ledger'ы (реестр меню), UI-строки, языки
     menus: dict[str, list] = {}
@@ -795,7 +928,8 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
 
     # Паки (G9/G10) и главы: ядро + packs/<id>/chapters
     packs = _collect_packs(root, src, registry, errors)
-    chapters, units = _collect_chapters(root, src, registry, errors, packs)
+    chapters, units, voice_docs, shots_docs = _collect_chapters(
+        root, src, registry, errors, packs)
     if errors:
         raise CompileError(f"{len(errors)} ошибок:\n" + "\n".join(errors))
 
@@ -823,12 +957,55 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         # обязана падать на сборке, а не исключением движка у игрока.
         from .images import build_image_index
 
-        image_index = build_image_index(root, locations, char_docs)
+        # Декларации шотов: сцена существует, переменные гардероба объявлены (G5).
+        for s_ch, s_rel, s_doc in shots_docs:
+            complain = (scene_rep.warnings.append
+                        if status_by_ch.get(s_ch, "draft") == "draft"
+                        else scene_rep.errors.append)
+            if f"{s_ch}_{s_doc['scene']}" not in known_scenes:
+                complain(f"{s_rel}: сцены {s_ch}_{s_doc['scene']} нет в сборке — "
+                         f"шоты некому показывать")
+            for shot_id, spec in sorted((s_doc.get("shots") or {}).items()):
+                for layer, lspec in sorted(spec["layers"].items()):
+                    var = lspec.get("var")
+                    if var and var not in var_registry:
+                        scene_rep.errors.append(
+                            f"{s_rel}: {shot_id}: слой {layer}: переменной {var} нет "
+                            f"в Variable Registry — гардероб не попадёт в сейв (G5)")
+
+        image_index = build_image_index(root, locations, char_docs, shots_docs)
         for u in units:
             u.analysis = analysis.get(str(root / u.rpy_rel).replace("\\", "/"), None) or \
                          analysis.get(str(root / u.rpy_rel), None) or {}
             if not u.analysis:
                 scene_rep.errors.append(f"{u.rpy_rel}: build-bridge не вернул анализ")
+
+        # Голос (C5/§4.9): line_id манифестов сверяется с ФАКТИЧЕСКИМИ say-id из AST —
+        # опечатка или пере-id-шеная реплика ловится сборкой, а не тишиной у игрока.
+        # voiced = реплики, покрытые хотя бы одним языком: voice-оператор один, язык
+        # выбирает рантайм (vn.voice_path) с деградацией до оригинала.
+        say_ids_by_scene: dict[str, set[str]] = {
+            u.full_id: {s["id"] for s in (u.analysis.get("say_list") or []) if s.get("id")}
+            for u in units
+        }
+        voiced: set[str] = set()
+        for v_ch, _v_lang, v_rel, v_doc in voice_docs:
+            complain = (scene_rep.warnings.append
+                        if status_by_ch.get(v_ch, "draft") == "draft"
+                        else scene_rep.errors.append)
+            for lid in sorted(v_doc.get("lines") or {}):
+                scene_of_line = lid[: len("chNN_sNNN")]
+                if scene_of_line not in say_ids_by_scene:
+                    complain(f"{v_rel}: {lid}: сцены {scene_of_line} нет в сборке")
+                elif lid not in say_ids_by_scene[scene_of_line]:
+                    complain(
+                        f"{v_rel}: {lid}: в сцене нет реплики с таким id — опечатка, "
+                        f"реплика удалена или vn loc keys не прогнан")
+                else:
+                    voiced.add(lid)
+
+        for u in units:
+            if not u.analysis:
                 continue
             for p in u.meta.get("participants") or []:
                 if p not in char_ids:
@@ -838,11 +1015,13 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
                     )
             dispatch = sc.validate_scene(
                 u, known_scenes, status_by_ch.get(u.chapter_id, "draft"), scene_rep,
-                var_registry=var_registry, image_index=image_index, audio_ids=audio_ids,
+                var_registry=var_registry, image_index=image_index,
+                audio_tracks=audio_tracks,
             )
             header = _header([(u.yaml_rel, inputs[u.yaml_rel]), (u.rpy_rel, inputs[u.rpy_rel])])
             scene_outputs[f"scenes/{u.chapter_id}/{u.full_id}.gen.rpy"] = sc.emit_scene(
-                u, dispatch, audio_ids, locations, scene_rep, header
+                u, dispatch, audio_tracks, locations, scene_rep, header,
+                voiced={lid for lid in voiced if lid.startswith(u.full_id + "_")},
             )
         # title_key глав обязан существовать в strings.yaml (иначе в меню — сырой ключ)
         for c in chapters:
@@ -906,9 +1085,11 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
             f"{len(scene_rep.errors)} ошибок компиляции сцен:\n" + "\n".join(scene_rep.errors)
         )
 
-    # Реестр образов: фоны локаций + layeredimage из matrix и собранных слоёв (G11)
+    # Реестр образов: фоны локаций + шоты + layeredimage из matrix и слоёв (G11)
     img_rep = ImagesReport()
-    images_out = emit_images(root, locations, char_docs, img_rep, _header(char_sources or [proj_src]))
+    images_out = emit_images(root, locations, char_docs, img_rep,
+                             _header(char_sources or [proj_src]),
+                             shots_docs=shots_docs)
     result.warnings.extend(img_rep.warnings)
     if img_rep.errors:
         raise CompileError(
@@ -944,7 +1125,9 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "registry/scenes.gen.rpy": sc.emit_scene_registry(units, _header([proj_src])),
         "registry/characters.gen.rpy": sc.emit_characters(char_docs, _header(char_sources or [proj_src])),
         "registry/menus.gen.rpy": _emit_menus(menus, ui_strings, source_lang, [proj_src]),
-        "registry/overrides.gen.rpy": _emit_overrides(renames, [renames_src]),
+        "registry/overrides.gen.rpy": _emit_overrides(
+            renames, overrides_sources, registry_scenes=registry_scenes,
+            known_scenes={u.full_id for u in units}),
     }
     outputs.update(scene_outputs)
     if chapters:

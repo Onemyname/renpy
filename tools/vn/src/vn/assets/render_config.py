@@ -50,6 +50,10 @@ DEFAULTS: dict = {
     # Сколько «поколений» сцен должно помещаться в кэш одновременно: текущая сцена
     # + предзагрузка следующей + запас на откат. Меньше 2 — гарантированный трэш.
     "cache_generations": 3,
+    # -> config.automatic_oversampling: до какого @N движок поднимает вариант под
+    # физический экран. Потолок сборки; настройка качества игрока может опустить
+    # его ниже (framework/00_core/095_quality.rpy), выше — не может.
+    "max_oversampling": 4,
     "thumb": {"max_side": 512, "quality": 80, "out_format": "webp"},
     "classes": {
         "bg": {
@@ -82,6 +86,20 @@ DEFAULTS: dict = {
             "master_scale": 2,
             "variants": [1, 2],
             "quality": {"full": 95, "draft": 50},
+            "out_format": "webp",
+            "thumb": False,
+            "source_min": None,
+        },
+        "shot": {
+            # Слои послойных шотов (shots@1, ADR-0013). alpha: any — политика
+            # прозрачности решается по РОЛИ слоя в discovery: env (подложка) —
+            # forbid, остальные слои — require; классовое поле здесь не работает.
+            "formats": ["png", "jpg", "jpeg", "webp", "tif", "tiff"],
+            "alpha": "any",
+            "layout": "screen",
+            "variants": [1, 2],
+            "aspect_tolerance": 0.01,
+            "quality": {"full": 90, "draft": 50},
             "out_format": "webp",
             "thumb": False,
             "source_min": None,
@@ -203,6 +221,7 @@ class RenderConfig:
     image_cache_mb: int
     cache_generations: int
     thumb: dict
+    max_oversampling: int = 4
     classes: dict[str, AssetClass] = field(default_factory=dict)
 
     # ── Пиксельная модель кэша Ren'Py ────────────────────────────────────────
@@ -256,5 +275,6 @@ def load_render_config(root: Path | None = None, project: dict | None = None) ->
         image_cache_mb=int(merged["image_cache_mb"]),
         cache_generations=int(merged["cache_generations"]),
         thumb=dict(merged["thumb"]),
+        max_oversampling=int(merged["max_oversampling"]),
         classes=classes,
     )

@@ -77,8 +77,30 @@ class ImageIndex:
     available: bool = False
 
 
+def shot_tag(chapter_id: str, scene_short: str) -> str:
+    """Тег layeredimage послойных шотов сцены: один тег на сцену (ADR-0013).
+    Смена шота = смена атрибута группы shot: движок сам снимает предыдущий
+    (групповая эксклюзивность), а выбранные варианты слоёв (наряд) ПЕРЕЖИВАЮТ
+    смену шота — атрибуты тега липкие."""
+    return f"shot_{chapter_id}_{scene_short}"
+
+
+def _shot_attrs(doc: dict) -> set[str]:
+    """Все атрибуты layeredimage шотов сцены: id шотов + <layer>_auto/<layer>_<variant>."""
+    attrs: set[str] = set()
+    for shot_id, spec in (doc.get("shots") or {}).items():
+        attrs.add(shot_id)
+        for layer, lspec in (spec.get("layers") or {}).items():
+            for v in (lspec.get("variants") or []):
+                attrs.add(f"{layer}_{v}")
+            if lspec.get("var"):
+                attrs.add(f"{layer}_auto")
+    return attrs
+
+
 def build_image_index(root: Path, locations: dict[str, dict],
-                      char_docs: list[tuple[str, dict]]) -> ImageIndex:
+                      char_docs: list[tuple[str, dict]],
+                      shots_docs: list[tuple[str, str, dict]] | None = None) -> ImageIndex:
     """Индекс образов из ТЕХ ЖЕ источников, что и emit_images: декларации локаций,
     собранные деревья спрайтов/CG/видео/портретов и matrix персонажей.
 
@@ -138,6 +160,14 @@ def build_image_index(root: Path, locations: dict[str, dict],
         if attrs:
             idx.layered[char_id] = attrs
             idx.tags.add(char_id)
+
+    # Послойные шоты (shots@1): атрибуты — из деклараций. Расхождение деклараций
+    # с собранными слоями ловит эмиттер (ошибка сборки), поэтому индексу
+    # пересечение с файловой системой не требуется.
+    for chapter_id, _rel, doc in (shots_docs or []):
+        tag = shot_tag(chapter_id, doc["scene"])
+        idx.layered[tag] = _shot_attrs(doc)
+        idx.tags.add(tag)
     return idx
 
 
@@ -149,8 +179,108 @@ def _spr_ext(root: Path, char_id: str, poses_files: dict) -> str:
     return ".webp"
 
 
+def _emit_shots(root: Path, shots_docs: list[tuple[str, str, dict]],
+                rep: ImagesReport) -> list[str]:
+    """layeredimage на сцену из shots@1 (ADR-0013): нативная композиция вместо
+    перехвата show у референсов-конкурентов.
+
+    Канон эмиттера — G11, как у персонажей: селекторная группа shot
+    (`attribute <id> default Null()`), слои гейтятся if_any по шоту, каждый
+    attribute несёт явный displayable. Слой с `var:` получает атрибут
+    <layer>_auto (default): ConditionSwitch выбирает вариант по переменной
+    гардероба — rollback и смена посреди сцены работают штатно, предикция
+    прогревает обе ветки (predict_all). Явные атрибуты <layer>_<variant>
+    позволяют сценаристу переопределить выбор на конкретном шоте."""
+    from ..assets.pipeline import SHOT_ENV, asset_ext, shot_tree
+
+    out: list[str] = []
+    tree = shot_tree(root)
+    for chapter_id, rel, doc in sorted(shots_docs, key=lambda t: (t[0], t[2]["scene"])):
+        scene_short = doc["scene"]
+        tag = shot_tag(chapter_id, scene_short)
+        built = (tree.get(chapter_id) or {}).get(scene_short) or {}
+        shots = doc.get("shots") or {}
+
+        lines = [f"layeredimage {tag}:"]
+        lines.append("    group shot:")
+        for i, shot_id in enumerate(shots):
+            default = " default" if i == 0 else ""
+            lines.append(f"        attribute {shot_id}{default} Null()")
+
+        ok = True
+        defaults_done: set[str] = set()    # группы, у которых default уже назначен
+        for shot_id, spec in shots.items():
+            built_layers = built.get(shot_id) or {}
+            base = f"assets/shots/{chapter_id}/{scene_short}/{shot_id}"
+            ext = asset_ext(root, f"shots/{chapter_id}/{scene_short}/{shot_id}/{SHOT_ENV}")
+            layers = spec["layers"]
+            # Слои, собранные конвейером, но не объявленные — осиротевший арт.
+            for l, variants in sorted(built_layers.items()):
+                if l not in layers:
+                    rep.warnings.append(
+                        f"{rel}: {shot_id}: слой {l} собран в game/assets, но не "
+                        f"объявлен — в кадр не попадёт")
+                    continue
+                declared_v = set(layers[l].get("variants") or [])
+                for v in variants:
+                    if v and v not in declared_v:
+                        rep.warnings.append(
+                            f"{rel}: {shot_id}: вариант {l}__{v} собран, но не объявлен")
+
+            lines.append("")
+            lines.append(f"    # шот {shot_id}: z-порядок {', '.join(spec['order'])}")
+            for layer in spec["order"]:
+                lspec = layers[layer]
+                variants = lspec.get("variants") or []
+                have = set(built_layers.get(layer) or [])
+                if not variants:
+                    if "" not in have:
+                        rep.errors.append(
+                            f"{rel}: {shot_id}: слоя {layer} нет в собранных ассетах "
+                            f"({base}/{layer}{ext}) — прогоните vn assets build")
+                        ok = False
+                        continue
+                    lines.append(f'    always "{base}/{layer}{ext}" if_any ["{shot_id}"]')
+                    continue
+                missing = [v for v in variants if v not in have]
+                if missing:
+                    rep.errors.append(
+                        f"{rel}: {shot_id}: у слоя {layer} не собраны варианты "
+                        f"{', '.join(missing)} ({base}/{layer}__<вариант>{ext})")
+                    ok = False
+                    continue
+                var = lspec.get("var")
+                lines.append(f"    group {layer}:")
+                if var:
+                    default = "" if layer in defaults_done else " default"
+                    defaults_done.add(layer)
+                    # Первый вариант — ветка по умолчанию (значение вне списка =
+                    # дефолт, а не пустой слой).
+                    cond = []
+                    for v in variants[1:]:
+                        cond.append(f"\"{var} == '{v}'\"")
+                        cond.append(f'"{base}/{layer}__{v}{ext}"')
+                    cond += ['"True"', f'"{base}/{layer}__{variants[0]}{ext}"']
+                    lines.append(
+                        f"        attribute {layer}_auto{default} ConditionSwitch("
+                        f"{', '.join(cond)}, predict_all=True) if_any [\"{shot_id}\"]")
+                for j, v in enumerate(variants):
+                    default = ""
+                    if not var and j == 0 and layer not in defaults_done:
+                        default = " default"
+                        defaults_done.add(layer)
+                    lines.append(
+                        f'        attribute {layer}_{v}{default} '
+                        f'"{base}/{layer}__{v}{ext}" if_any ["{shot_id}"]')
+        if ok:
+            out.append("\n".join(lines))
+            out.append("")
+    return out
+
+
 def emit_images(root: Path, locations: dict[str, dict],
-                char_docs: list[tuple[str, dict]], rep: ImagesReport, header: str) -> str:
+                char_docs: list[tuple[str, dict]], rep: ImagesReport, header: str,
+                shots_docs: list[tuple[str, str, dict]] | None = None) -> str:
     from ..assets.pipeline import sprite_tree
 
     # image/layeredimage имеют СОБСТВЕННЫЙ базовый приоритет 500: offset 500 дал бы
@@ -219,6 +349,10 @@ def emit_images(root: Path, locations: dict[str, dict],
         n_mov += 1
     if n_mov:
         out.append("")
+
+    # ── Послойные шоты (shots@1, ADR-0013): layeredimage на сцену ────────────
+    if shots_docs:
+        out += _emit_shots(root, shots_docs, rep)
 
     # ── layeredimage персонажей из matrix + собранных слоёв (G11) ────────────
     tree = sprite_tree(root)

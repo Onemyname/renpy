@@ -463,7 +463,7 @@ vn build                                         # job build-test (:67)
 vn loc keys --check                              # (:70)
 "$RENPY_SDK/renpy.exe" . lint                    # (:73) — в CI это renpy.sh под xvfb
 vn content compile --check                       # (:76)
-python -m pytest tools/vn/tests -q               # (:79) — 152 теста
+python -m pytest tools/vn/tests -q               # (:79) — 240 тестов
 ```
 
 Если локально зелено, а CI красный — проверьте по порядку:
@@ -574,7 +574,7 @@ vn build --check                       # check: генерат свеж
 "$RENPY_SDK/renpy.exe" . lint          # родной lint движка по game/**
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (21 скриншот)
 vn save check && vn save corpus        # 2 фикстуры: целы, грузятся, миграция 0002 исполняется
-python -m pytest tools/vn/tests -q     # 152 passed
+python -m pytest tools/vn/tests -q     # 240 passed
 ```
 
 После правок в `game/framework/90_debug/**` или `game/options.rpy` дополнительно:

@@ -47,7 +47,7 @@ vn play
 | `game/build_id.json` | метаданные флейвора | **нет** (`.gitignore:8`) | — | — | — | `vn release build` (живёт только во время distribute) |
 | `assets_src/` | сырцы: PNG-слои, mp4, `*.video.yaml`; зона звука — `audio_stems/{bgm,amb,sfx}/*.ogg` (создана, пока пуста) | **частично** (ADR-0004) | нет | **должны быть**, но пусто | 157 КБ (11 бинарей / 129,3 КБ) | `git clone` + `vn assets pull` (когда манифесты появятся) |
 | `loc/` | `loc.yaml`, PO, ledger | **да** | нет | нет | 17 файлов / 53,5 КБ | `git clone` |
-| `tools/vn/`, `tools/schemas/`, `tools/vn.lock` | CLI, **36 схем**, пины | **да** | нет | нет | 93 файла / 615,4 КБ в git (на диске больше — `__pycache__`, `.egg-info`) | `git clone` |
+| `tools/vn/`, `tools/schemas/`, `tools/vn.lock` | CLI, **39 схем**, пины | **да** | нет | нет | 93 файла / 615,4 КБ в git (на диске больше — `__pycache__`, `.egg-info`) | `git clone` |
 | `tools/comfyui-models.yaml` | манифест моделей ComfyUI | **да** | нет | нет | 6,4 КБ | `git clone` |
 | `ci/fixtures/saves/` | **2 фикстуры** сейв-корпуса (`schema1-demo`, `schema2-demo`) | **да** | нет | нет | 19,2 КБ | `git clone` |
 | `ci/fixtures/rpyc-line/` | **52 `.rpyc` — единственные в git** | **да** | нет | нет | 183,9 КБ | `git clone` (см. §2.1) |
@@ -283,7 +283,7 @@ vn pipeline models --pull                      # ~35 ГБ обязательны
 
 # 8. Проверка
 vn build --check                               # «check: генерат свеж»
-python -m pytest tools/vn/tests -q             # 152 passed
+python -m pytest tools/vn/tests -q             # 240 passed
 vn play
 ```
 
@@ -438,7 +438,7 @@ vn play
 ## Проверка
 
 ```bash
-vn doctor                          # 8 галок (в т.ч. «реестр схем: 36 схем»); отдельная строка про .vnstorage.local.yaml, если активен
+vn doctor                          # 8 галок (в т.ч. «реестр схем: 39 схем»); отдельная строка про .vnstorage.local.yaml, если активен
 vn assets status                   # сейчас: «манифестов нет — сырцы ещё не пушились»
 vn content lint                    # в т.ч. порог ADR-0004 по бинарям в assets_src/
 vn build --check                   # «check: генерат свеж» — производные зоны на месте и актуальны

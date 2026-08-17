@@ -26,6 +26,7 @@ assets_src/**/*.psd   filter=lfs diff=lfs merge=lfs -text
 assets_src/**/*.ogg   filter=lfs diff=lfs merge=lfs -text
 assets_src/**/*.wav   filter=lfs diff=lfs merge=lfs -text
 assets_src/**/*.flac  filter=lfs diff=lfs merge=lfs -text
+assets_src/**/*.opus  filter=lfs diff=lfs merge=lfs -text
 assets_src/**/*.mp4   filter=lfs diff=lfs merge=lfs -text
 assets_src/**/*.mov   filter=lfs diff=lfs merge=lfs -text
 assets_src/**/*.mkv   filter=lfs diff=lfs merge=lfs -text

@@ -49,7 +49,7 @@ setx RENPY_SDK "C:\Users\<you>\renpy-sdk\renpy-8.5.3-sdk"   # и ОТКРОЙТ�
 vn doctor                                # окружение: сейчас 8 PASS / 0 FAIL
 vn build                                 # lint → ассеты → генерат → game/tl → бюджеты
 vn play                                  # запуск игры (нужен RENPY_SDK)
-python -m pytest tools/vn/tests -q       # 152 passed
+python -m pytest tools/vn/tests -q       # 240 passed
 ```
 
 `setx` виден только **новым** процессам. В bash-сессии агента `RENPY_SDK` не наследуется —
@@ -110,7 +110,7 @@ python -m pytest tools/vn/tests -q       # 152 passed
 | [13-dialogue.md](13-dialogue.md) | реплики, say-id, `$ vn_menu`, выборы, ветвление внутри сцены | пишете текст |
 | [14-localization.md](14-localization.md) | round-trip PO, добавление языка, псевдолокаль, покрытие | перевод, новый язык |
 | [15-gallery.md](15-gallery.md) | галерея (ADR-0010) и достижения (backend есть, UI нет) | CG/видео в галерею |
-| [16-assets.md](16-assets.md) | `assets_src/` → `game/assets/`: 7 трансформаций, именование, кэш, хранилище сырцов | куда положить картинку/видео/звук |
+| [16-assets.md](16-assets.md) | `assets_src/` → `game/assets/`: трансформации (включая послойные шоты shots@1 и транскод озвучки), именование, кэш, хранилище сырцов | куда положить картинку/видео/звук |
 
 ### Производство визуала
 
@@ -122,7 +122,7 @@ python -m pytest tools/vn/tests -q       # 152 passed
 | [20-image-generation.md](20-image-generation.md) | ComfyUI: окружение, модели, провенанс, консистентность персонажа | полировка/вариации кадра |
 | [21-video-generation.md](21-video-generation.md) | Wan I2V вручную → `video_src` → VP9/WebM + `mov_meta@1` | движущийся кадр |
 | [22-rendering.md](22-rendering.md) | разрешения, профили `draft`/`full`, качество, бюджеты | настройка рендера |
-| [23-audio.md](23-audio.md) | музыка и SFX; тракт `assets_src/audio_stems/` → `game/assets/audio/` работает, но контента ноль | первый трек |
+| [23-audio.md](23-audio.md) | музыка, SFX и озвучка: тракт `audio_stems/` работает (но треков ноль), голосовой контур `voice@1` + `vn voice` работает целиком | первый трек или дубль |
 | [24-post-processing.md](24-post-processing.md) | что сделать в редакторе до `assets_src/` и чего конвейер не делает | между рендером и репозиторием |
 
 ### Процессы
@@ -130,7 +130,7 @@ python -m pytest tools/vn/tests -q       # 152 passed
 | Файл | О чём | Когда открывать |
 |---|---|---|
 | [26-automation.md](26-automation.md) | что делает машина, что руками, и что автоматизировать следующим | планирование работ |
-| [27-testing.md](27-testing.md) | 7 уровней проверок, 152 pytest, smoke-автопилот, сейв-корпус, чеклисты | перед push |
+| [27-testing.md](27-testing.md) | 7 уровней проверок, 240 pytest, smoke-автопилот, сейв-корпус, чеклисты | перед push |
 | [28-debugging.md](28-debugging.md) | логи, dev-меню, crash-репорты, чтение генерата, сужение поломки | «что-то не работает» |
 | [29-build-and-release.md](29-build-and-release.md) | флейворы, гейт из 19 проверок, дистрибутивы, тег → GitHub Release | выпуск |
 | [30-packs-and-dlc.md](30-packs-and-dlc.md) | формат пака, что собирается, что не собирается, гейт владения выключен | отдельная единица поставки |
@@ -173,7 +173,9 @@ python -m pytest tools/vn/tests -q       # 152 passed
 | Добавить спрайт / позу / эмоцию | [10](10-characters.md) | `assets_src/png/characters/<id>/<pose>/` |
 | Добавить CG | [16](16-assets.md), [17](17-daz-studio.md) | `assets_src/png/cg/chNN/<name>.png` → `vn assets build` |
 | Добавить видео | [21](21-video-generation.md) | `assets_src/video_src/<group>/<name>.mp4` → `vn assets video build` |
-| Добавить звук | [23](23-audio.md) | `.ogg` в `assets_src/audio_stems/{bgm,amb,sfx}/` → `vn assets build` → id в `content/audio/bgm.yaml` |
+| Добавить звук | [23](23-audio.md) | `.ogg` в `assets_src/audio_stems/{bgm,amb,sfx}/` → `vn assets build` → id в `content/audio/{bgm,amb,sfx}.yaml` |
+| Добавить озвучку главы | [23](23-audio.md) §8 | `vn voice manifest chNN --lang <код> -o лист.csv` → запись → `vn voice import <dir> --lang <код>` → `vn assets build` |
+| Добавить послойный шот | [16](16-assets.md) §13.7, [12](12-scenes.md) | слои в `assets_src/art/shots/chNN/sNNN/<shot>/` + `shots/sNNN.shots.yaml` → `scene shot_chNN_sNNN <shot>` |
 | Добавить элемент галереи | [15](15-gallery.md) | `content/gallery/core.gallery.yaml` |
 | Добавить достижение | [15](15-gallery.md) | `content/achievements/core.achievements.yaml` (UI достижений нет) |
 | Поменять строку интерфейса | [06](06-frontend.md), [14](14-localization.md) | `content/ui/strings.yaml` → `vn loc extract && vn loc import` |
@@ -186,7 +188,7 @@ python -m pytest tools/vn/tests -q       # 152 passed
 | Написать миграцию сейва | [07](07-backend.md) | `content/migrations/` + `registry.yaml`, бамп `project.yaml: save_schema` |
 | Добавить команду CLI | [25](25-custom-engine.md) | `tools/vn/src/vn/cli.py` |
 | Добавить правило линтера | [08](08-content-pipeline.md) §7 | `tools/vn/src/vn/content/lint.py` |
-| Добавить схему | [08](08-content-pipeline.md) §8 | `tools/schemas/<id>@N.schema.json` (сейчас 36 файлов) |
+| Добавить схему | [08](08-content-pipeline.md) §8 | `tools/schemas/<id>@N.schema.json` (сейчас 39 файлов) |
 | Добавить тест | [27](27-testing.md) | `tools/vn/tests/test_*.py` |
 | Выпустить релиз | [29](29-build-and-release.md) | `vn release validate --flavor public` → тег `v<X.Y.Z>` |
 | Починить красный CI | [36](36-troubleshooting.md) §8, [04](04-development-workflow.md) | воспроизвести локально: `vn build --check` |
@@ -250,7 +252,7 @@ flowchart TB
 [ ] vn doctor                                      # 8 PASS / 0 FAIL
 [ ] прочитать 02-architecture.md §2-3 (зоны) и 35-agent-rules.md
 [ ] vn build && vn play                            # игра запустилась
-[ ] python -m pytest tools/vn/tests -q             # 152 passed
+[ ] python -m pytest tools/vn/tests -q             # 240 passed
 [ ] правка — только в источниках истины (content/, packs/, assets_src/, loc/, game/framework/, tools/)
 [ ] vn content lint && vn build && python -m pytest tools/vn/tests -q
 [ ] git status --short — ни одного файла из game/generated | game/assets | game/tl
@@ -301,21 +303,21 @@ flowchart TB
 | Ren'Py | SDK 8.5.3, пин в `project.yaml:5` |
 | Контент | 1 глава ядра `ch01_awakening` (3 сцены, `status: draft`) + 1 пак-глава `ch90` в `packs/ep_beach`; 1 персонаж (`mira`), 2 локации |
 | Языки | `en`, `de`, `pseudo` — 115/115 строк, fuzzy 0 |
-| Тесты / схемы / релизный гейт | 152 pytest · 36 JSON Schema · 19 проверок гейта (16 PASS, exit 0) |
+| Тесты / схемы / релизный гейт | 240 pytest · 39 JSON Schema · 19 проверок гейта (16 PASS, exit 0) |
 
 **Работает:** компилятор контента, ассет-конвейер (включая ветку звука `audio_stems`), локализация
 round-trip, галерея, сейвы и миграции внутри игры, сейв-корпус с проверкой миграций (2 фикстуры),
 релизный гейт и сборка обоих флейворов, 4 GitHub-workflow с пиннованным тулчейном `tools/vn.lock`.
 **Частично:** флейворы (гейтят только `nsfw` и `watermark`), паки (компилируются только `chapters/`),
-звук (тракт жив, но в репозитории ноль `.ogg` и `content/audio/*.yaml` пусты),
+звук (тракт, канал `ambient` и озвучка `voice@1`/`vn voice` живые — но музыки/SFX ноль, `content/audio/*.yaml` пусты, `vn voice tts` — заглушка),
 CODEOWNERS (все хэндлы — плейсхолдеры).
 **Нет вообще:** автоматизации рендера и ComfyUI, Steam-аплоада, `vn validate` /
 `vn build --use-artifact` из `ARCHITECTURE.md`, `CLAUDE.md`/`AGENTS.md`.
 
 Три главных пункта из [37-roadmap.md](37-roadmap.md): **P0-1** закрыть ADR-0008 (единственный
 непринятый ADR — правовой статус NSFW-стека); **P0-2** пройти пилот контента насквозь
-DAZ → ComfyUI → provenance → `video_src` → сцена; **P0-3** довести аудио: конвейерная ветка
-с 2026-08-08 живая, но нужны первые `.ogg`, чтение `loop/loop_start/volume` эмиттером и loudnorm.
+DAZ → ComfyUI → provenance → `video_src` → сцена; **P0-3** довести аудио: `loop_start`/`volume`
+и голосовой контур уже эмитятся/работают, но нужны первые боевые `.ogg` и loudnorm для музыки/SFX.
 
 ---
 
@@ -355,7 +357,7 @@ DAZ → ComfyUI → provenance → `video_src` → сцена; **P0-3** дове
 ```bash
 vn content lint                              # 0 ошибок
 vn build                                     # build: OK
-python -m pytest tools/vn/tests -q           # 152 passed
+python -m pytest tools/vn/tests -q           # 240 passed
 git status --short                           # ни одного файла из game/generated|assets|tl
 ```
 

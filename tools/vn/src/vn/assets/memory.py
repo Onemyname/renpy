@@ -16,6 +16,7 @@
 
 Что считается сценой (модель, а не догадка):
     фон локации  +  Σ по участникам (base + самый тяжёлый outfit + самая тяжёлая face)
+    + самый тяжёлый послойный шот сцены (env + худший вариант каждого слоя, shots@1)
 Плюс запас на UI. Это верхняя граница того, что одновременно живёт в кэше при
 показе сцены. Оверсэмпл учитывается честно: на 4K-экране движок грузит `@2`,
 поэтому worst-case считается для КРУПНЕЙШЕГО отгружаемого варианта.
@@ -77,6 +78,25 @@ def _cost_of(costs: dict[str, int], logical: str, scale: int) -> int:
         if (key := f"{logical}{ext}") in costs:
             return costs[key]
     return 0
+
+
+def _shot_cost(costs: dict[str, int], chapter_id: str, scene_short: str,
+               shots_doc: dict, scale: int) -> tuple[int, str]:
+    """Худший послойный шот сцены: env + самый тяжёлый вариант каждого слоя.
+    Одновременно показывается один шот, но кэш держит его целиком."""
+    worst, worst_id = 0, ""
+    for shot_id, spec in (shots_doc.get("shots") or {}).items():
+        total = 0
+        for layer, lspec in (spec.get("layers") or {}).items():
+            base = f"shots/{chapter_id}/{scene_short}/{shot_id}/{layer}"
+            variants = lspec.get("variants") or []
+            if variants:
+                total += max(_cost_of(costs, f"{base}__{v}", scale) for v in variants)
+            else:
+                total += _cost_of(costs, base, scale)
+        if total > worst:
+            worst, worst_id = total, shot_id
+    return worst, worst_id
 
 
 def _character_cost(costs: dict[str, int], char_id: str, scale: int) -> tuple[int, str]:
@@ -162,13 +182,25 @@ def analyze(root: Path, cfg: RenderConfig | None = None,
         if not chapters.is_dir():
             continue
         for ch_dir in sorted(p for p in chapters.iterdir() if p.is_dir()):
+            ch_id = ch_dir.name[:4]
+            # Декларации послойных шотов главы: короткий id сцены -> документ
+            shots_by_scene: dict[str, dict] = {}
+            for shf in sorted((ch_dir / "shots").glob("*.shots.yaml")) \
+                    if (ch_dir / "shots").is_dir() else []:
+                try:
+                    sdoc = load_yaml(shf) or {}
+                except Exception:
+                    continue
+                if sdoc.get("scene"):
+                    shots_by_scene[sdoc["scene"]] = sdoc
             for sf in sorted((ch_dir / "scenes").glob("*.scene.yaml")) \
                     if (ch_dir / "scenes").is_dir() else []:
                 try:
                     meta = load_yaml(sf) or {}
                 except Exception:
                     continue
-                sid = f"{ch_dir.name[:4]}_{meta.get('id', sf.stem)}"
+                short = meta.get("id", sf.stem)
+                sid = f"{ch_id}_{short}"
                 parts: list[tuple[str, int]] = []
                 total = ui_reserve
                 parts.append(("ui+текстбокс", ui_reserve))
@@ -184,6 +216,12 @@ def analyze(root: Path, cfg: RenderConfig | None = None,
                     c, pose = _character_cost(costs, char, scale)
                     total += c
                     parts.append((f"{char} ({pose or 'нет спрайтов'})", c))
+                if short in shots_by_scene:
+                    c, shot_id = _shot_cost(costs, ch_id, short,
+                                            shots_by_scene[short], scale)
+                    if c:
+                        total += c
+                        parts.append((f"shot {shot_id}", c))
                 rep.scenes.append(SceneCost(sid, total, parts))
 
     for sc in rep.scenes:

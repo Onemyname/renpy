@@ -140,20 +140,76 @@ def test_import_emits_runtime_manifest_and_registration(tmp_path):
     assert "translate en python:" in cmn
 
 
+def _mk_font(root, name):
+    """Файл-заглушка шрифта в game/fonts/: импорт эмитит переопределение роли
+    только для реально существующего файла."""
+    fdir = root / "game" / "fonts"
+    fdir.mkdir(parents=True, exist_ok=True)
+    (fdir / name).write_bytes(b"stub")
+
+
 def test_import_applies_package_font(tmp_path):
+    """Плоский font — исторический алиас fonts.text: старые пакеты обязаны
+    работать без правок манифеста."""
     root = _mk_loc_root(tmp_path)
     (root / "loc" / "po" / "ja").mkdir(parents=True)
     (root / "loc" / "po" / "ja" / "language.yaml").write_text(
         "schema: language@1\ncode: ja\nname: 日本語\nfont: fonts/NotoSansJP.ttf\n",
         encoding="utf-8",
     )
+    _mk_font(root, "NotoSansJP.ttf")
     extract(root)
-    import_translations(root)
+    rep = import_translations(root)
+    assert rep.warnings == []
     cmn = (root / "game" / "tl" / "ja" / "common.rpy").read_text(encoding="utf-8")
     assert "translate ja python:" in cmn
     assert "gui.text_font = 'fonts/NotoSansJP.ttf'" in cmn
     mf = json.loads((root / "game" / "tl" / "ja" / "language.json").read_text(encoding="utf-8"))
     assert mf["font"] == "fonts/NotoSansJP.ttf" and mf["name"] == "日本語"
+
+
+def test_import_applies_role_fonts(tmp_path):
+    """fonts.<роль> переопределяет соответствующую gui-переменную: CJK-языку
+    одного gui.text_font мало — имя персонажа осталось бы тофу."""
+    root = _mk_loc_root(tmp_path)
+    (root / "loc" / "po" / "ja").mkdir(parents=True)
+    (root / "loc" / "po" / "ja" / "language.yaml").write_text(
+        "schema: language@1\ncode: ja\nname: 日本語\n"
+        "fonts:\n  text: fonts/NotoSansJP.ttf\n  name: fonts/NotoSansJP-Bold.ttf\n",
+        encoding="utf-8",
+    )
+    _mk_font(root, "NotoSansJP.ttf")
+    _mk_font(root, "NotoSansJP-Bold.ttf")
+    extract(root)
+    rep = import_translations(root)
+    assert rep.warnings == []
+    cmn = (root / "game" / "tl" / "ja" / "common.rpy").read_text(encoding="utf-8")
+    assert "gui.text_font = 'fonts/NotoSansJP.ttf'" in cmn
+    assert "gui.name_text_font = 'fonts/NotoSansJP-Bold.ttf'" in cmn
+    # Незаданные роли не трогаем: рантайм остаётся на базовых из gui.rpy
+    assert "gui.interface_text_font" not in cmn
+    # fonts.text — это и шрифт native-названия в списке языков (манифест)
+    mf = json.loads((root / "game" / "tl" / "ja" / "language.json").read_text(encoding="utf-8"))
+    assert mf["font"] == "fonts/NotoSansJP.ttf"
+
+
+def test_import_skips_missing_font_file(tmp_path):
+    """Отсутствующий файл шрифта — warning, переопределение НЕ эмитится:
+    рантайм остаётся на читаемом базовом шрифте, а не падает на битом пути."""
+    root = _mk_loc_root(tmp_path)
+    (root / "loc" / "po" / "ja").mkdir(parents=True)
+    (root / "loc" / "po" / "ja" / "language.yaml").write_text(
+        "schema: language@1\ncode: ja\nname: 日本語\n"
+        "fonts:\n  interface: fonts/Missing.ttf\n",
+        encoding="utf-8",
+    )
+    extract(root)
+    rep = import_translations(root)
+    assert any("fonts.interface" in w and "Missing.ttf" in w for w in rep.warnings)
+    cmn = (root / "game" / "tl" / "ja" / "common.rpy").read_text(encoding="utf-8")
+    assert "gui.interface_text_font" not in cmn
+    # Регистрационный блок обязан остаться валидным и пустым
+    assert "translate ja python:\n    pass" in cmn
 
 
 def test_removed_language_cleans_tl(tmp_path):

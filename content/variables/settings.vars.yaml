@@ -1,0 +1,10 @@
+schema: vars@1
+# Настройки игрока, живущие вне движковых preferences (C9: плоская модель
+# persistent.vn_*). Дефолты эмитятся в generated/state/defaults.gen.rpy.
+store: persistent
+vars:
+  vn_quality_cap:
+    type: int
+    default: null
+    doc: "Потолок качества текстур: null = авто (потолок сборки), 1 = без @N-вариантов (00_core/095_quality.rpy)"
+    since: 2

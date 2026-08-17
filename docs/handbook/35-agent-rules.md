@@ -61,7 +61,7 @@
     vn build                             # lint -> ассеты -> компилятор -> loc import -> бюджеты
     vn content lint                      # 34 правила, 5-10 c
     vn play  |  vn dev                   # запуск | запуск + watch content/ и assets_src/
-    python -m pytest tools/vn/tests -q   # 152 теста, ~9 c
+    python -m pytest tools/vn/tests -q   # 240 тестов, ~9 c
 Обязательный хвост ЛЮБОЙ правки:
     vn content lint && vn build && python -m pytest tools/vn/tests -q
 Трогал рантайм/сейвы/локализацию — добавь: vn test smoke --picks 0,0 && vn save corpus
@@ -134,7 +134,7 @@
    vn <group> --help                          # флаги конкретной команды
    grep -rn "<термин>" tools/vn/src/vn/       # тулинг
    grep -rn "<термин>" game/framework/        # рантайм
-   ls tools/schemas/ | grep <сущность>        # 36 схем — есть ли уже декларация
+   ls tools/schemas/ | grep <сущность>        # 39 схем — есть ли уже декларация
    ls content/                                # чем объявляется предметная область
    ```
    Если механизм уже есть — расширять его, а не писать второй. Каталог `content/` содержит 8 предметных зон (`chapters characters locations audio variables migrations registry ui`) плюс `gallery/`, `achievements/`, `licenses.yaml` — половину «нового» уже можно объявить существующей схемой.
@@ -151,7 +151,7 @@
 | Не менять архитектуру попутно | Норма раздела 0 меняется ADR-ом отдельным коммитом, а не строчкой внутри фичи |
 | Данные — в YAML + схему | Новая сущность = `content/<зона>/*.yaml` + `tools/schemas/<name>@1.schema.json` + правило в `tools/vn/src/vn/content/lint.py` + тест. Хардкод в `.rpy` не переводится, не валидируется и не мигрируется |
 | UI — через `vn_*` и `gui.*` | Литерал в экране не попадёт в PO-экстракцию (`content/ui/strings.yaml:3-4`); число вместо токена ломает панели (ADR-0009) |
-| Обновить тесты | `tools/vn/tests/` — 19 файлов `test_*.py` + `conftest.py`, 152 теста. Новое правило линтера без теста в `test_lint.py` — незакрытая правка |
+| Обновить тесты | `tools/vn/tests/` — 23 файла `test_*.py` + `conftest.py`, 240 тестов. Новое правило линтера без теста в `test_lint.py` — незакрытая правка |
 | Обновить документацию | Назвать, какой файл хендбука затронут, и поправить его. Если изменился статус механизма — поправить пометку |
 
 ### 2.3. После
@@ -161,7 +161,7 @@
 vn content lint                          # 34 правила
 vn build                                 # lint -> ассеты -> компилятор -> loc import -> бюджеты
 vn content compile --check               # «check: генерат свеж»
-python -m pytest tools/vn/tests -q       # 152 passed
+python -m pytest tools/vn/tests -q       # 240 passed
 
 # 2. Дополнительно по зоне правки
 vn loc keys --check                      # трогал реплики/меню в *.scene.rpy
@@ -286,11 +286,12 @@ grep -n "\-\-<флаг>" tools/vn/src/vn/cli.py
 
 # Что отложено честной заглушкой (exit 3)?
 grep -n "_stub(\|_stub_group(" tools/vn/src/vn/cli.py
-# одиночные заглушки:  371, 372 (migrate, shell), 1260 (save migrate),
-#                      1405 (test replay|screens|paths), 1565 (release steam)
-# группы заглушек:     _stub_group — генератор cli.py:501-505, вызовы :958 (char), :1087 (voice)
+# одиночные заглушки:  393, 394 (migrate, shell), 1278-1281 (voice tts),
+#                      1484 (save migrate), 1659 (test replay|screens|paths),
+#                      1819 (release steam)
+# группы заглушек:     _stub_group — генератор cli.py:523-527, вызов :1097 (char)
 # определение:         def _stub — cli.py:34
-# ЛОЖНЫЕ срабатывания шаблона "_stub(": :487 scene_stub, :493 new_stub — это рабочий код
+# ЛОЖНЫЕ срабатывания шаблона "_stub(": scene_stub / new_stub — это рабочий код
 
 # Механизм упоминается в ARCHITECTURE.md, но есть ли он в коде?
 grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
@@ -301,7 +302,7 @@ grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
 | Фаза | Команды |
 |---|---|
 | 1 | `vn char new`, `vn char validate` |
-| 2 | `vn migrate`, `vn shell`, `vn char sheet`, `vn voice manifest\|import\|tts\|validate`, `vn test replay`, `vn test paths` |
+| 2 | `vn migrate`, `vn shell`, `vn char sheet`, `vn voice tts` (остальной `vn voice` — живой), `vn test replay`, `vn test paths` |
 | 3 | `vn save migrate`, `vn test screens`, `vn release steam` |
 
 **Отсутствуют вовсе** (даже заглушки нет — click вернёт usage error, exit 2): `vn validate` (группы не существует), `vn build --use-artifact <sha>`, `vn content lint --strict/--arch/--schemas`, `vn content rename`, `vn content who-writes`, `vn play --scene`, `vn test perf`, `vn loc report --gate`, `vn release changelog --from`.
@@ -343,7 +344,7 @@ grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
 |---|---|
 | `vn content lint` | OK, 3 предупреждения (перечислены ниже) |
 | `vn build` | `build: OK`; generated: 2 записано, 17 без изменений |
-| `python -m pytest tools/vn/tests -q` | 152 passed in 8.9s |
+| `python -m pytest tools/vn/tests -q` | 240 passed in 8.9s |
 | `vn test smoke --picks 0,0` | НЕ ЗАПУСКАЛОСЬ: нет RENPY_SDK в этой сессии |
 
 ## Затронутые нормы
@@ -359,7 +360,7 @@ ADR не требуется: раздел 0 ARCHITECTURE.md не менялся.
 
 Требования к содержанию:
 
-- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `152 passed`.
+- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `240 passed`.
 - **Не запускавшаяся проверка называется прямо** («НЕ ЗАПУСКАЛОСЬ: причина»), а не опускается. Типичная причина в этом репозитории — отсутствие `RENPY_SDK` в bash-сессии агента.
 - **Предупреждения линтера перечисляются**, даже если exit 0: `vn content lint` печатает warnings, которые в главе со `status: release` станут ошибками (G15).
 - **Затронутые нормы называются номерами** — это язык ревью в этом проекте.
@@ -444,7 +445,7 @@ git diff --stat                                  # объём правки со�
 vn content lint
 vn build
 vn content compile --check
-python -m pytest tools/vn/tests -q               # 152 passed
+python -m pytest tools/vn/tests -q               # 240 passed
 
 # 4. По зоне правки
 vn loc keys --check                              # реплики/меню

@@ -107,7 +107,7 @@ def built_asset_ids(root: Path) -> list[str]:
 
     assets = root / "game" / "assets"
     out: set[str] = set()
-    for kind in ("bg", "cg", "spr", "mov"):
+    for kind in ("bg", "cg", "spr", "shots", "mov"):
         base = assets / kind
         if not base.is_dir():
             continue
@@ -459,6 +459,23 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
             "покрытие переводов: " + (
                 f"ниже порога {threshold:.0%} — {', '.join(weak)}" if weak
                 else f"все языки ≥ {threshold:.0%}"))
+
+    # Озвучка (§4.9/C5): структурные поломки и дыры в озвученных главах = FAIL
+    # (реплика без дубля посреди озвученной главы слышна игроку как обрыв),
+    # драфты (TTS/черновые дубли) = WARN — играбельно, но не релизное качество.
+    from .voice import validate as voice_validate
+
+    vo = voice_validate(root)
+    if vo.errors:
+        add("FAIL", f"озвучка: {len(vo.errors)} ошибок — {vo.errors[0]}")
+    elif vo.holes:
+        add("FAIL", f"озвучка: {len(vo.holes)} непокрытых реплик в озвученных "
+                    f"главах — {vo.holes[0]} (vn voice validate --report)")
+    elif vo.drafts:
+        add("WARN", f"озвучка: {len(vo.drafts)} черновых дублей (draft) — "
+                    f"{vo.drafts[0]}")
+    elif vo.coverage:
+        add("PASS", f"озвучка: {len(vo.coverage)} шардов глава×язык покрыты полностью")
 
     from .assets.licenses import validate_licenses
 

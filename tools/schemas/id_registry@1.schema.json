@@ -44,7 +44,7 @@
       "uniqueItems": true,
       "items": {
         "type": "string",
-        "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$"
+        "pattern": "^(bg|cg|spr|shots|mov)/[a-z0-9_/]+$"
       },
       "description": "Логические id ассетов, показанных игрокам. Галерея открывает картинки по ИМЕНИ образа (persistent._seen_images), поэтому переименование ассета после релиза стирает игроку прогресс — исчезновение id без записи в renames.assets ловит линтер (ADR-0012)"
     }

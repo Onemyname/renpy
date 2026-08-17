@@ -1,0 +1,11 @@
+schema: shots@1
+# Послойные шоты сцены s030 (shots@1, ADR-0013): кадр = env-подложка + вырезанные
+# слои. Наряд Миры выбирает переменная гардероба (атрибут mira_auto по умолчанию);
+# сценарист может переопределить его атрибутом mira_school / mira_casual.
+scene: s030
+shots:
+  sunset:
+    layers:
+      env: {}
+      mira: {variants: [school, casual], var: g.mira_outfit}
+    order: [env, mira]

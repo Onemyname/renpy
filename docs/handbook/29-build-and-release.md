@@ -288,7 +288,7 @@ $ vn release validate --flavor steam
 
 **Что не уезжает в дистрибутив** (`game/options.rpy:13-51`, всё через `build.classify(…, None)`): исходные зоны `tools/** content/** assets_src/** loc/** docs/** ci/** packs/** build/** .vncache/** .git/**`, дотфайлы, `CODEOWNERS`, `README.md`, `project.yaml`, `.vnstorage.yaml`, `hdrs.tmp`, `log.txt`, `traceback.txt`, `errors.txt`; плюс `game/framework/90_debug/**`, `game/generated/qa/**`, `game/generated/manifest.json`; плюс каждый `game/tl/<code>/**`, у которого в `language.json` стоит `"synthetic": true` (то есть pseudo, [14-localization.md](14-localization.md)); плюс глобы флейвора. Проверено на архивах: в `0.1.0-public` и `0.1.0-patron` нет ни `90_debug/`, ни `tl/pseudo/`.
 
-**`.rpa`-архивы — NOT IMPLEMENTED.** Вызова `build.archive(...)` нет нигде в `game/`; ассеты едут россыпью. `../ARCHITECTURE.md:943` описывает тематические архивы (`archive_spr.rpa` и т. д.) как целевое состояние.
+**`.rpa`-архивов нет — и это норма, а не недоделка.** Вызова `build.archive(...)` нет нигде в `game/`; ассеты едут россыпью — `../ARCHITECTURE.md` §2.4 (`:943`) фиксирует это осознанно: Steam дельта-патчит отдельные файлы, монолитный `.rpa` при правке одного спрайта перекачивался бы игроками целиком, а защиты упаковка не добавляет. Тематические `.rpa` (`archive_spr.rpa` и т. д.) — только опция mobile-поставки фазы 3; их появление в desktop-дистрибутиве — осознанное решение с ADR. Инвариант закреплён гард-тестом: `test_options_rpy_ships_assets_loose_without_rpa` (`tools/vn/tests/test_release.py:250`) краснеет на любом `build.archive` в `game/options.rpy`.
 
 ---
 
@@ -454,7 +454,7 @@ $ vn release validate --flavor steam
 - [ ] `vn build` — `build: OK`
 - [ ] `vn content lint` — 0 ошибок
 - [ ] `vn content compile --check` — `check: генерат свеж`
-- [ ] `python -m pytest tools/vn/tests -q` — 152 passed (с заданным `RENPY_SDK`; без него 4 движковых теста пропускаются)
+- [ ] `python -m pytest tools/vn/tests -q` — 240 passed (с заданным `RENPY_SDK`; без него и ffmpeg часть тестов молча скипается — см. 27-testing.md §1)
 - [ ] `vn loc keys --check` — say-id и ledger свежи (G8)
 - [ ] `vn loc report` — все несинтетические языки ≥ 98 % (порог `loc/loc.yaml: release_coverage_min`)
 - [ ] `vn pack validate` — все паки совместимы с фасадом `vn.*` (`api_level`, `requires.core`)
@@ -591,7 +591,7 @@ git tag -d v0.1.5 && git push origin :refs/tags/v0.1.5
 
 **Затащить `cold_start_s` в релиз.** Либо шаг `vn test smoke --picks 0,0` в `release.yml` перед `vn release build`, либо новая проверка в гейте, читающая результат последнего smoke из `.vncache/smoke/`. Первый вариант честнее — он меряет ту же сборку.
 
-**Включить `.rpa`-архивы.** `build.archive(...)` + `build.classify(..., "archive_*")` в `game/options.rpy`; помнить, что после этого `game/assets/` перестанет лежать россыпью и проверки размеров придётся считать по архивам.
+**Включить `.rpa`-архивы (только через ADR).** Россыпь в desktop-каналах — норма `../ARCHITECTURE.md` §2.4 (Steam-дельта-патчи); тематические `.rpa` допустимы лишь как опция mobile-поставки фазы 3. Технически это `build.archive(...)` + `build.classify(..., "archive_*")` в `game/options.rpy`; помнить, что после этого проверки размеров придётся считать по архивам, а каждый патч будет размером с архив.
 
 ## Чего НЕ делать
 
@@ -647,4 +647,4 @@ git describe --tags --exact-match 2>/dev/null   # тег == project.yaml: versio
 | **Не трогать** | `game/build_id.json` (пишет и удаляет `vn release build`), `build/**` (dist, rpyc-cache, packs — производная зона, `.gitignore:20`), `game/generated/**`, `game/assets/**`, `game/tl/**`; `ci/fixtures/rpyc-line/**` — только через `vn save corpus` |
 | **Зависимости** | правка `project.yaml: version` → тег, `config.version`, имя архива, каталог `build/rpyc-cache/<version>/`; правка `flavors` → `build_id.json` → рантайм-гейты достижений и галереи; правка `budgets` → и `vn build`, и гейт; правка `renpy_sdk` → руками синхронизировать `RENPY_VERSION` в `ci.yml:13`, `nightly.yml:12`, `release.yml:19`; правка `game/options.rpy` → состав каждого дистрибутива |
 | **Валидация** | `vn release validate --flavor public && vn release validate --flavor patron`; полная — `vn release build --flavor public --package win` с проверкой содержимого zip (см. «Проверка») |
-| **Частые ошибки** | 1) выдумать флаг: `vn validate`, `vn build --use-artifact`, `vn release changelog --from`, `vn release build --channel` — их нет; 2) считать `flavors.<f>.packs` и `early_content` работающими гейтами — они не читаются никем; 3) назвать `vn package` способом собрать релиз — получится dev-сборка без `build_id.json`; 4) цитировать `../ARCHITECTURE.md` как описание реализованного (это целевой документ: Steam, депоты, каналы, `.rpa`, `rpyc-compat` — NOT IMPLEMENTED); 5) утверждать, что гейт — 19 строк вывода: в коде 19 проверок, но три молчат при пустых данных, сегодня видно 16/17; 6) ставить тег, не бампнув `project.yaml`; 7) писать про `patron_token` в `build_id.json` — с ADR-0011 туда пишется `patron_tag` (схема `build_info@2`), а сам токен остаётся на машине сборки |
+| **Частые ошибки** | 1) выдумать флаг: `vn validate`, `vn build --use-artifact`, `vn release changelog --from`, `vn release build --channel` — их нет; 2) считать `flavors.<f>.packs` и `early_content` работающими гейтами — они не читаются никем; 3) назвать `vn package` способом собрать релиз — получится dev-сборка без `build_id.json`; 4) цитировать `../ARCHITECTURE.md` как описание реализованного (это целевой документ: Steam, депоты, каналы, `rpyc-compat` — NOT IMPLEMENTED; `.rpa` — отдельный случай: §2.4 фиксирует россыпь как норму, и код ей соответствует); 5) утверждать, что гейт — 19 строк вывода: в коде 19 проверок, но три молчат при пустых данных, сегодня видно 16/17; 6) ставить тег, не бампнув `project.yaml`; 7) писать про `patron_token` в `build_id.json` — с ADR-0011 туда пишется `patron_tag` (схема `build_info@2`), а сам токен остаётся на машине сборки |

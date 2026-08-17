@@ -213,6 +213,21 @@ msgid "{#file_time}%d.%m.%Y %H:%M"
 msgstr "[[{#file_time}%d.%m.%Y %H:%M~~~~~~~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.flow.act_load"
+msgid "Загрузить сохранение"
+msgstr "[[Зąгрųзįть сǫхрąнęнįę~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.act_main_menu"
+msgid "В главное меню"
+msgstr "[[В глąвнǫę мęню~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.act_quit"
+msgid "Выйти из игры"
+msgstr "[[Выйтį įз įгры~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.flow.end_of_content"
 msgid "Продолжение следует…"
 msgstr "[[Прǫдǫлжęнįę слęдųęт…~~~~~~~~]"
@@ -232,11 +247,6 @@ msgstr ""
 "ÅRCHÏTÊCTÛRÊ.md).~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]"
 
 #. UI/мета-строка
-msgctxt "string:ui.flow.return_to_menu"
-msgid "Возврат в главное меню."
-msgstr "[[Вǫзврąт в глąвнǫę мęню.~~~~~~~~~]"
-
-#. UI/мета-строка
 msgctxt "string:ui.flow.save_from_newer"
 msgid ""
 "Сохранение сделано в более новой версии игры. Обновите игру, чтобы "
@@ -246,9 +256,36 @@ msgstr ""
 "прǫдǫлжįть.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]"
 
 #. UI/мета-строка
-msgctxt "string:ui.flow.scene_unavailable"
-msgid "Эта сцена недоступна в текущей версии игры."
-msgstr "[[Этą сцęнą нęдǫстųпнą в тęкųщęй вęрсįį įгры.~~~~~~~~~~~~~~~~~]"
+msgctxt "string:ui.flow.unavailable_draft"
+msgid ""
+"Вы дошли до края написанной истории: продолжение этой ветки появится в "
+"следующем обновлении."
+msgstr ""
+"[[Вы дǫшлį дǫ крąя нąпįсąннǫй įстǫрįį: прǫдǫлжęнįę этǫй вęткį пǫявįтся в "
+"слęдųющęм ǫбнǫвлęнįį.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.unavailable_missing"
+msgid ""
+"Эта часть истории не входит в текущую сборку игры: эпизод или дополнение не "
+"установлены."
+msgstr ""
+"[[Этą чąсть įстǫрįį нę вхǫдįт в тęкųщųю сбǫркų įгры: эпįзǫд įлį дǫпǫлнęнįę "
+"нę ųстąнǫвлęны.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.unavailable_title"
+msgid "Сцена недоступна"
+msgstr "[[Сцęнą нęдǫстųпнą~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.unavailable_unknown"
+msgid ""
+"Сцена не смогла продолжиться. Похоже, сохранение сделано в несовместимой "
+"версии игры."
+msgstr ""
+"[[Сцęнą нę смǫглą прǫдǫлжįться. Пǫхǫжę, сǫхрąнęнįę сдęлąнǫ в нęсǫвмęстįмǫй "
+"вęрсįį įгры.~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.gallery.cat.cg"
@@ -396,9 +433,24 @@ msgid "Полный экран"
 msgstr "[[Пǫлный экрąн~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.prefs.graphics"
+msgid "Качество текстур"
+msgstr "[[Кąчęствǫ тęкстųр~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.prefs.language"
 msgid "Язык"
 msgstr "[[Язык~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.quality_auto"
+msgid "Авто"
+msgstr "[[Ąвтǫ~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.quality_eco"
+msgid "Экономное"
+msgstr "[[Экǫнǫмнǫę~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.prefs.skip"

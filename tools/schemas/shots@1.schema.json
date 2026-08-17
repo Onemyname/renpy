@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/shots@1",
+  "title": "shots@1 — послойные полнокадровые шоты сцены (content/chapters/chNN_slug/shots/sNNN.shots.yaml, ADR-0013)",
+  "type": "object",
+  "$defs": {
+    "slug": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "layer": {
+      "type": "object",
+      "properties": {
+        "variants": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/slug"},
+          "description": "Варианты слоя (наряд/свет): файлы <layer>__<variant>.<ext>. Первый — дефолт"
+        },
+        "var": {
+          "type": "string",
+          "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$",
+          "description": "Переменная Variable Registry, выбирающая вариант по значению-имени (гардероб игрока); без неё вариант выбирает сценарист атрибутом <layer>_<variant>"
+        }
+      },
+      "additionalProperties": false,
+      "dependentRequired": {"var": ["variants"]}
+    }
+  },
+  "properties": {
+    "schema": {"const": "shots@1"},
+    "scene": {
+      "type": "string",
+      "pattern": "^s\\d{3}$",
+      "description": "Короткий id сцены-владельца; обязан совпадать с именем файла sNNN.shots.yaml"
+    },
+    "shots": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "layers": {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": {"pattern": "^[a-z][a-z0-9_]*$"},
+            "additionalProperties": {"$ref": "#/$defs/layer"},
+            "required": ["env"],
+            "description": "env — обязательная непрозрачная подложка шота; остальные слои — вырезанные (альфа обязательна)"
+          },
+          "order": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"$ref": "#/$defs/slug"},
+            "description": "Явный z-порядок ВСЕХ слоёв шота снизу вверх (обычно env первым)"
+          }
+        },
+        "required": ["layers", "order"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "scene", "shots"],
+  "additionalProperties": false
+}

@@ -17,7 +17,9 @@ project.yaml: render (render_config.py). Здесь только исполне�
   <art>/characters/<key>/<pose>/{outfits,faces,overlays}/<name>.<ext>
   <art>/backgrounds/<...>/<name>.<ext>      # вложенность разрешена
   <art>/cg/<...>/<name>.<ext>
+  <art>/shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>].<ext>   # послойные шоты (shots@1)
   assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg
+  assets_src/voice/<lang>/<chNN>/<line_id>.(wav|flac|ogg|opus)  # мастера озвучки (§4.9)
   assets_src/video_src/<group>/<name>.(mp4|mov|mkv|webm|m4v|avi)
 Допустимые расширения мастера — per-class (render.classes.<c>.formats).
 
@@ -28,7 +30,9 @@ project.yaml: render (render_config.py). Здесь только исполне�
   game/assets/spr/<key>/<pose>/{base,outfits/<o>,faces/<e>,overlays/<n>}[@N].webp
   game/assets/bg/<...>/<name>[@N].webp   (+ <name>.thumb.webp)
   game/assets/cg/<...>/<name>[@N].webp   (+ <name>.thumb.webp)
+  game/assets/shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>][@N].webp
   game/assets/audio/{bgm,amb,sfx}/<id>.ogg
+  game/assets/voice/<lang>/<chNN>/<line_id>.opus
   game/assets/mov/<group>/<name>[@N].webm (+ .webm.meta.json — mov_meta@1)
 """
 
@@ -51,15 +55,24 @@ TRANSFORMS = {
     "img_sprite": "2",
     "img_bg": "2",
     "img_cg": "2",
+    "img_shot": "1",
     "img_thumb": "2",
     "ui_panel": "1",
     "copy_audio": "1",
+    "voice_opus": "1",
     "video2webm": "2",
     "mov_poster": "1",
 }
 
 # Растровый класс -> трансформация. Ключи совпадают с render.classes.
-CLASS_TRANSFORM = {"spr": "img_sprite", "bg": "img_bg", "cg": "img_cg"}
+CLASS_TRANSFORM = {"spr": "img_sprite", "bg": "img_bg", "cg": "img_cg",
+                   "shot": "img_shot"}
+
+# Конвенция путей послойных шотов (shots@1): shots/<chNN>/<sNNN>/<shot>/<файл>.
+SHOT_CH_RE = re.compile(r"^ch\d{2}$")
+SHOT_SCENE_RE = re.compile(r"^s\d{3}$")
+# Опорный слой шота: непрозрачная подложка, задаёт холст всем слоям.
+SHOT_ENV = "env"
 
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 MANIFEST = "assets-manifest.json"
@@ -136,8 +149,12 @@ def _is_sidecar(path: Path) -> bool:
 
 # ── Проба и валидация мастера ────────────────────────────────────────────────
 
-def _validate_master(rep: AssetBuildResult, rel: str, src: Path, cls) -> dict | None:
+def _validate_master(rep: AssetBuildResult, rel: str, src: Path, cls,
+                     alpha: str | None = None) -> dict | None:
     """Формат, прозрачность, минимальный размер, пропорции. None = мастер отбракован.
+
+    alpha — переопределение классовой политики прозрачности для классов, где она
+    зависит от роли файла (shot: env — forbid, слои — require).
 
     Ни одна из проверок не «молча пропускает»: неподходящий файл обязан назвать
     себя ошибкой, иначе он исчезает из сборки и всплывает чёрным экраном в игре."""
@@ -154,13 +171,15 @@ def _validate_master(rep: AssetBuildResult, rel: str, src: Path, cls) -> dict | 
         rep.errors.append(f"{rel}: {e}")
         return None
 
-    if cls.alpha == "require" and not info["has_alpha"]:
+    if alpha is None:
+        alpha = cls.alpha
+    if alpha == "require" and not info["has_alpha"]:
         rep.errors.append(
             f"{rel}: класс {cls.name} требует прозрачности, а мастер непрозрачен "
             f"(альфа-минимум {info['alpha_min']}) — фон не вырезан; "
             f"такой слой ляжет в игре прямоугольником поверх фона")
         return None
-    if cls.alpha == "forbid" and info["has_alpha"]:
+    if alpha == "forbid" and info["has_alpha"]:
         rep.warnings.append(
             f"{rel}: у класса {cls.name} прозрачность не используется — "
             f"альфа-канал будет отброшен при сборке")
@@ -192,13 +211,15 @@ def _validate_master(rep: AssetBuildResult, rel: str, src: Path, cls) -> dict | 
 
 def _image_jobs(rep: AssetBuildResult, cfg: RenderConfig, rel: str, src: Path,
                 cls_name: str, out_base: str,
-                expect_size: tuple[int, int] | None = None) -> list[Job]:
+                expect_size: tuple[int, int] | None = None,
+                alpha: str | None = None) -> list[Job]:
     """Мастер -> задания на все отгружаемые варианты (+ миниатюра).
 
-    expect_size — обязательный холст (спрайты одной позы): слои layeredimage
-    складываются по координате (0,0), поэтому разный холст = поехавшая композиция."""
+    expect_size — обязательный холст (спрайты одной позы, слои шота): слои
+    layeredimage складываются по координате (0,0), поэтому разный холст =
+    поехавшая композиция. alpha — per-role политика прозрачности (шоты)."""
     cls = cfg.cls(cls_name)
-    info = _validate_master(rep, rel, src, cls)
+    info = _validate_master(rep, rel, src, cls, alpha=alpha)
     if info is None:
         return []
     if expect_size and info["size"] != tuple(expect_size):
@@ -213,7 +234,7 @@ def _image_jobs(rep: AssetBuildResult, cfg: RenderConfig, rel: str, src: Path,
             f"{rel}: вариант @{scale} не собран — мастер {info['width']}x{info['height']} "
             f"мал для него (нужен вдвое крупнее); игра останется на меньшем варианте")
     jobs: list[Job] = []
-    keep_alpha = cls.alpha != "forbid"
+    keep_alpha = (alpha or cls.alpha) != "forbid"
     for v in variants:
         jobs.append(Job(
             src=src,
@@ -346,6 +367,50 @@ def _discover(root: Path, rep: AssetBuildResult,
                 out_base = f"{cls_name}/" + "/".join([*parts[:-1], f.stem])
                 jobs += _image_jobs(rep, cfg, rel, f, cls_name, out_base)
 
+    # ── Послойные шоты (shots@1, ADR-0013): жёсткая глубина, единый холст ────
+    # art/shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>].<ext>. env — подложка
+    # без альфы, задаёт холст шота; остальные слои обязаны быть вырезаны (альфа)
+    # и лежать на ТОМ ЖЕ холсте: layeredimage кладёт слои в (0,0).
+    for art in _art_roots(root):
+        shots_dir = art / "shots"
+        if not shots_dir.is_dir():
+            continue
+        for shot_dir in sorted(d for d in shots_dir.glob("*/*/*") if d.is_dir()):
+            ch, sid, shot = shot_dir.relative_to(shots_dir).parts
+            files = [f for f in sorted(shot_dir.iterdir())
+                     if f.is_file() and not _is_sidecar(f)]
+            for f in files:
+                consumed.add(f)
+            drel = _rel(root, shot_dir)
+            if not (SHOT_CH_RE.match(ch) and SHOT_SCENE_RE.match(sid)
+                    and SLUG_RE.match(shot)):
+                rep.errors.append(
+                    f"{drel}: путь вне конвенции shots/<chNN>/<sNNN>/<shot>/")
+                continue
+            env = _pick_master(shot_dir, SHOT_ENV, cfg.cls("shot").formats)
+            canvas = None
+            if env is None:
+                rep.errors.append(
+                    f"{drel}: нет обязательного слоя {SHOT_ENV}.* — подложка задаёт "
+                    f"холст и не даёт кадру просвечивать")
+            else:
+                try:
+                    canvas = imaging.probe(env)["size"]
+                except imaging.ImagingError:
+                    canvas = None
+            for f in files:
+                rel = _rel(root, f)
+                layer, _, variant = f.stem.partition("__")
+                if not SLUG_RE.match(layer) or (variant and not SLUG_RE.match(variant)):
+                    rep.errors.append(
+                        f"{rel}: имя слоя вне конвенции <layer>[__<variant>].<ext>")
+                    continue
+                jobs += _image_jobs(
+                    rep, cfg, rel, f, "shot", f"shots/{ch}/{sid}/{shot}/{f.stem}",
+                    # env задаёт холст (сам не сверяется), остальные — на нём же
+                    expect_size=(None if f == env else canvas),
+                    alpha=("forbid" if layer == SHOT_ENV else "require"))
+
     # ── Звук: побайтовое копирование ────────────────────────────────────────
     audio = root / "assets_src" / "audio_stems"
     if audio.is_dir():
@@ -363,6 +428,42 @@ def _discover(root: Path, rep: AssetBuildResult,
                 if not _check_slug(rep, _rel(root, f), f.stem):
                     continue
                 jobs.append(Job(f, "copy_audio", f"audio/{kind}/{f.name}", {}))
+
+    # ── Голос (§4.9/C18): мастера дублей -> Opus 96k / −19 LUFS ─────────────
+    # Конвенция пути и line_id — те же, что у voice-манифестов (voice.py);
+    # сверку «файл ↔ строка манифеста» делает vn voice validate, здесь — только
+    # физика: транскод каждого мастера в game/assets/voice/.
+    voice_src = root / "assets_src" / "voice"
+    if voice_src.is_dir():
+        from ..voice import LANG_RE, LINE_ID_RE, MASTER_EXTS
+
+        vfiles = [f for f in sorted(voice_src.rglob("*"))
+                  if f.is_file() and not _is_sidecar(f)]
+        for f in vfiles:
+            consumed.add(f)
+        if vfiles:
+            from ..pipeline import find_ffmpeg
+
+            if find_ffmpeg() is None:
+                rep.errors.append(
+                    "assets_src/voice: есть мастера озвучки, но ffmpeg не найден "
+                    "(vn pipeline doctor) — голосовая ветка не собирается")
+                vfiles = []
+        for f in vfiles:
+            rel = _rel(root, f)
+            parts = f.relative_to(voice_src).parts
+            if len(parts) != 3 or not LANG_RE.match(parts[0]) \
+                    or not LINE_ID_RE.match(f.stem) or not f.stem.startswith(parts[1] + "_"):
+                rep.errors.append(
+                    f"{rel}: путь вне конвенции voice/<lang>/<chNN>/<line_id>.<ext>")
+                continue
+            if f.suffix.lower() not in MASTER_EXTS:
+                rep.errors.append(
+                    f"{rel}: формат {f.suffix} не поддержан "
+                    f"({', '.join(MASTER_EXTS)})")
+                continue
+            jobs.append(Job(f, "voice_opus",
+                            f"voice/{parts[0]}/{parts[1]}/{f.stem}.opus", {}))
 
     # ── Видео (ADR-0006) + оверсэмпл-варианты ───────────────────────────────
     jobs += _video_jobs(root, rep, cfg, consumed)
@@ -503,7 +604,7 @@ def _orphan_masters(root: Path, consumed: set[Path], rep: AssetBuildResult) -> N
     Это главный источник «тихой потери»: JPG в спрайтах, лишний уровень
     вложенности, опечатка в имени папки — раньше всё это просто исчезало."""
     zones = [*_art_roots(root)]
-    for extra in ("audio_stems", "video_src"):
+    for extra in ("audio_stems", "video_src", "voice"):
         d = root / "assets_src" / extra
         if d.is_dir():
             zones.append(d)
@@ -521,7 +622,7 @@ def _orphan_masters(root: Path, consumed: set[Path], rep: AssetBuildResult) -> N
 
 def _transform(job: Job, profile: str, cfg: RenderConfig) -> bytes:
     t = job.transform
-    if t in ("img_sprite", "img_bg", "img_cg"):
+    if t in ("img_sprite", "img_bg", "img_cg", "img_shot"):
         q = job.params["quality"]
         quality = int(q.get(profile, q.get("full", 90)))
         return imaging.encode(
@@ -563,6 +664,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
     only_transforms: собрать подмножество трансформаций (например {"video2webm"});
     манифест и orphan-очистка остальных веток не трогаются."""
     from . import video as videomod
+    from ..voice import VoiceError, encode_opus
 
     rep = AssetBuildResult()
     cfg = load_render_config(root)
@@ -666,9 +768,11 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
                     data = videomod.encode_video(job.src, job.extra["opts"], profile, video_tmp)
                 elif job.transform == "ui_panel":
                     data = _transform_ui_panel(job.extra["spec"], profile)
+                elif job.transform == "voice_opus":
+                    data = encode_opus(job.src, root / ".vncache" / "voice-tmp")
                 else:
                     data = _transform(job, profile, cfg)
-            except (OSError, imaging.ImagingError, videomod.VideoError) as e:
+            except (OSError, imaging.ImagingError, videomod.VideoError, VoiceError) as e:
                 rep.errors.append(f"{_rel(root, job.src)}: трансформация упала: {e}")
                 continue
             _write_atomic(blob, data)
@@ -692,7 +796,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
         # Стоимость в пикселях кэша Ren'Py — считаем один раз при сборке и храним
         # в манифесте: модель памяти (memory.py) не должна декодировать тысячи
         # файлов на каждый прогон QA.
-        if job.transform in ("img_sprite", "img_bg", "img_cg"):
+        if job.transform in ("img_sprite", "img_bg", "img_cg", "img_shot"):
             try:
                 entry["cost_px"] = imaging.decoded_cost_px(data)
             except Exception:
@@ -888,6 +992,27 @@ def sprite_tree(root: Path) -> dict[str, dict[str, dict[str, list[str]]]]:
                         if f.is_file() and variant_scale(f.stem) == 1)
             poses[pose_dir.name] = entry
         tree[char_dir.name] = poses
+    return tree
+
+
+def shot_tree(root: Path) -> dict[str, dict[str, dict[str, dict[str, list[str]]]]]:
+    """Скан собранных шотов: {chNN: {sNNN: {shot: {layer: [варианты]}}}}.
+    Безвариантный слой — {layer: [""]}. Только референсные имена (без @N):
+    эмиттер и валидация ссылаются на них, движок сам подберёт крупный вариант."""
+    tree: dict = {}
+    base = root / "game" / "assets" / "shots"
+    if not base.is_dir():
+        return tree
+    for shot_dir in sorted(d for d in base.glob("*/*/*") if d.is_dir()):
+        ch, sid, shot = shot_dir.relative_to(base).parts
+        layers: dict[str, list[str]] = {}
+        for f in sorted(shot_dir.iterdir()):
+            if not f.is_file() or variant_scale(f.stem) != 1:
+                continue
+            layer, _, variant = reference_name(f.stem).partition("__")
+            layers.setdefault(layer, []).append(variant)
+        if layers:
+            tree.setdefault(ch, {}).setdefault(sid, {})[shot] = layers
     return tree
 
 

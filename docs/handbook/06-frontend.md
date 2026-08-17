@@ -340,7 +340,7 @@ vn loc report                              # все языки 100%, fuzzy 0
 vn test smoke --picks 0,0                  # автопрохождение; скриншоты .vncache/smoke/shot*.png
 vn test smoke --lang pseudo                # псевдолокаль +40% длины строк — проверка вёрстки
 vn test smoke --lang de
-python -m pytest tools/vn/tests -q         # 152 теста (в т.ч. 9 в test_ui_panels.py)
+python -m pytest tools/vn/tests -q         # 240 тестов (в т.ч. 9 в test_ui_panels.py)
 vn release validate --flavor public        # релизный гейт (19 проверок), если готовите релиз
 ```
 

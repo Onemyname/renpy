@@ -118,12 +118,12 @@ echo $RENPY_SDK           # bash-сессии агента НЕ наследую
 |---|---|---|---|---|
 | `click` | 8.4.2 | 8.4.2 | вся структура CLI: группы, коды возврата, `--help` | IMPLEMENTED |
 | `PyYAML` | 6.0.3 | 6.0.3 | чтение `project.yaml`, `*.scene.yaml`, `panels.yaml`, манифеста моделей | IMPLEMENTED |
-| `jsonschema` | 4.26.0 | 4.26.0 | реестр из 36 схем `tools/schemas/*.schema.json`, Draft 2020-12 (`schemas.py:13-51`) | IMPLEMENTED |
+| `jsonschema` | 4.26.0 | 4.26.0 | реестр из 39 схем `tools/schemas/*.schema.json`, Draft 2020-12 (`schemas.py:13-51`) | IMPLEMENTED |
 | `blake3` | 1.0.9 | 1.0.9 | ключ кэша трансформаций `blake3(src:transform:version:profile)` (`tools/vn/src/vn/assets/pipeline.py`) | IMPLEMENTED |
 | `Pillow` | 12.3.0 | 12.3.0 | PNG→WebP, миниатюры, генерация UI-панелей (`tools/vn/src/vn/assets/ui.py`) | IMPLEMENTED |
 | `psd-tools` | 1.18.0 | 1.18.0 | нарезка PSD в `assets_src/png/**` (`tools/vn/src/vn/assets/psd.py`) | **IMPLEMENTED / UNEXERCISED** — в репозитории ноль `.psd`, ноль тестов, `.vncache/psd_png/` не создавался |
 | `polib` | 1.2.0 | 1.2.0 | PO round-trip локализации (`tools/vn/src/vn/loc/po.py`) | IMPLEMENTED |
-| `pytest` | 9.1.1 | 9.1.1 | 152 теста в 19 файлах `tools/vn/tests/` | IMPLEMENTED |
+| `pytest` | 9.1.1 | 9.1.1 | 240 тестов в 23 файлах `tools/vn/tests/` | IMPLEMENTED |
 
 Полезно знать про **Pillow**: WebP-`quality` по умолчанию **80** (у `cwebp` и ImageMagick — 75), `alpha_quality` — 100, `method` 0–6 (по умолчанию 4); `Image.open()` **ленив** — для QA нужен `.load()`/`.verify()`, иначе обрезанный файл пройдёт молча; Pillow **не** делает цветоуправление при открытии — `info['icc_profile']` это просто bytes.
 Документация: https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html — таблица параметров сохранения по форматам (единственная страница, которая нужна для нашего конвейера). Релизы смотреть на https://github.com/python-pillow/Pillow/releases: внутренний `CHANGES.rst` остановлен на 11.0.0 и отсылает туда же.
@@ -575,7 +575,7 @@ ffmpeg -version | head -1                     # 8.1.2-full_build-www.gyan.dev
 
 # Что этот файл описывает как работающее — работает
 vn build                                      # build: OK
-python -m pytest tools/vn/tests -q            # 152 passed
+python -m pytest tools/vn/tests -q            # 240 passed
 vn release validate --flavor public           # 16 PASS, exit 0
 vn pipeline models                            # статус 10 записей манифеста
 ```

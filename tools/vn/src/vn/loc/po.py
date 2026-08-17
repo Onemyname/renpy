@@ -2,7 +2,7 @@
 с msgctxt, импорт переводов в генерируемый game/tl/, псевдолокализация, отчёт покрытия.
 
 Язык = самоописывающийся пакет loc/po/<code>/ с манифестом language.yaml
-(code, native-название, опц. font/synthetic). Списка языков нет нигде:
+(code, native-название, опц. font/fonts/synthetic). Списка языков нет нигде:
 discover_languages() сканирует пакеты; рантайм сканирует сгенерированные
 game/tl/<code>/language.json (Language Registry, store vn_lang).
 
@@ -55,21 +55,49 @@ class LocError(Exception):
     pass
 
 
+# Роли шрифтов: ключ fonts.<роль> манифеста -> gui-переменная (game/gui.rpy).
+# Ровно те роли, которыми свёрстан UI: языку со своей письменностью (CJK,
+# тайский) одного gui.text_font мало — имена и интерфейс остались бы тофу.
+FONT_ROLES = (
+    ("text", "text_font"),
+    ("name", "name_text_font"),
+    ("interface", "interface_text_font"),
+    ("interface_semibold", "interface_semibold_font"),
+)
+
+
 @dataclass
 class Language:
     """Языковой пакет loc/po/<code>/ (манифест language.yaml, ADR-0005)."""
     code: str
     name: str
     font: str | None = None
+    fonts: dict = field(default_factory=dict)
     synthetic: bool = False
 
     def manifest(self) -> dict:
         """Рантайм-манифест game/tl/<code>/language.json для Language Registry.
         generator — маркер владения: очистка tl трогает только свои файлы
         (модовый/ручной перевод, брошенный в game/tl, не наш — не удаляем)."""
+        # font — эффективный шрифт диалогов: им же список языков рисует
+        # native-название (core_screens, guard renpy.loadable), поэтому
+        # fonts.text попадает сюда наравне с плоским алиасом
         return {"code": self.code, "name": self.name,
-                "font": self.font, "synthetic": self.synthetic,
+                "font": self.fonts.get("text") or self.font, "synthetic": self.synthetic,
                 "generator": "vn loc import"}
+
+    def font_overrides(self) -> list[tuple[str, str, str]]:
+        """Заданные пакетом роли шрифтов: (ключ манифеста, gui-переменная, путь).
+        Плоский font — исторический алиас fonts.text: старые пакеты обязаны
+        работать без правок, но явный fonts.text выигрывает."""
+        out = []
+        for role, gui_var in FONT_ROLES:
+            path, key = self.fonts.get(role), f"fonts.{role}"
+            if role == "text" and not path and self.font:
+                path, key = self.font, "font"
+            if path:
+                out.append((key, gui_var, path))
+        return out
 
 
 @dataclass
@@ -120,10 +148,18 @@ def discover_languages(root: Path) -> list[Language]:
             # сортировку native-названий в рантайм-реестре (vn_lang.refresh)
             raise LocError(f"loc/po/{d.name}/language.yaml: name обязан быть строкой, "
                            f"получен {type(name).__name__}")
+        fonts = doc.get("fonts") or {}
+        if not isinstance(fonts, dict) or not all(
+                isinstance(k, str) and isinstance(v, str) for k, v in fonts.items()):
+            # Небрежный YAML (строка/список вместо маппинга) доехал бы до
+            # font_overrides() голым AttributeError без пути к манифесту
+            raise LocError(f"loc/po/{d.name}/language.yaml: fonts обязан быть "
+                           f"маппингом роль -> путь к шрифту")
         out.append(Language(
             code=code,
             name=name or code,
             font=doc.get("font"),
+            fonts=fonts,
             synthetic=bool(doc.get("synthetic")),
         ))
     return out
@@ -428,11 +464,23 @@ def import_translations(root: Path) -> LocReport:
         # Гарантированная регистрация языка в движке: renpy.known_languages()
         # видит только языки хотя бы с одним translate-стейтментом — язык,
         # у которого переведён только UI (lookup-словари ниже), без этого блока
-        # не появился бы в Language Registry. Здесь же — языкозависимый шрифт.
+        # не появился бы в Language Registry. Здесь же — шрифты по ролям.
         out.append(f"translate {lang.code} python:")
-        if lang.font:
-            out.append(f"    gui.text_font = {lang.font!r}")
-        else:
+        emitted = 0
+        for key, gui_var, font in lang.font_overrides():
+            if not (root / "game" / font).is_file():
+                # Битое переопределение не поставляем: пусть рантайм останется
+                # на читаемом базовом шрифте, а не упадёт на несуществующем файле
+                rep.warnings.append(
+                    f"loc/po/{lang.code}: {key} {font!r} не найден в game/ — "
+                    f"переопределение не эмитится, рантайм останется на базовом шрифте")
+                continue
+            if not emitted:
+                out.append("    # Пакет языка привозит свои шрифты: письменность "
+                           "(CJK/тайский и т.п.) не покрыта базовыми (ADR-0005)")
+            out.append(f"    gui.{gui_var} = {font!r}")
+            emitted += 1
+        if not emitted:
             out.append("    pass")
         out.append("")
         out.append("init 600 python:")
@@ -444,10 +492,6 @@ def import_translations(root: Path) -> LocReport:
         if not path.is_file() or path.read_text(encoding="utf-8") != data:
             path.write_text(data, encoding="utf-8")
             rep.changed.append(path.relative_to(root).as_posix())
-
-        if lang.font and not (root / "game" / lang.font).is_file():
-            rep.warnings.append(f"loc/po/{lang.code}: font {lang.font!r} не найден "
-                                f"в game/ — рантайм откатится на базовый шрифт")
 
         # Манифест языка для рантайм-дискавери (store vn_lang, ADR-0005)
         mf_path = lang_dir / "language.json"

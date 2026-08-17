@@ -109,16 +109,6 @@ msgstr ""
 "ARCHITECTURE.md)."
 
 #. UI/мета-строка
-msgctxt "string:ui.flow.return_to_menu"
-msgid "Возврат в главное меню."
-msgstr "Returning to the main menu."
-
-#. UI/мета-строка
-msgctxt "string:ui.flow.scene_unavailable"
-msgid "Эта сцена недоступна в текущей версии игры."
-msgstr "This scene is not available in the current version of the game."
-
-#. UI/мета-строка
 msgctxt "string:ui.main.version"
 msgid "версия [config.version]"
 msgstr "version [config.version]"
@@ -493,3 +483,73 @@ msgstr "Zoom"
 msgctxt "string:ui.nav.gallery"
 msgid "Галерея"
 msgstr "Gallery"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.act_load"
+msgid "Загрузить сохранение"
+msgstr "Load a save"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.act_main_menu"
+msgid "В главное меню"
+msgstr "Main menu"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.act_quit"
+msgid "Выйти из игры"
+msgstr "Quit the game"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.unavailable_draft"
+msgid ""
+"Вы дошли до края написанной истории: продолжение этой ветки появится в "
+"следующем обновлении."
+msgstr ""
+"You have reached the edge of the written story: this branch continues in a "
+"future update."
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.unavailable_missing"
+msgid ""
+"Эта часть истории не входит в текущую сборку игры: эпизод или дополнение не "
+"установлены."
+msgstr ""
+"This part of the story is not included in this build of the game: the "
+"episode or add-on is not installed."
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.unavailable_title"
+msgid "Сцена недоступна"
+msgstr "Scene unavailable"
+
+#. UI/мета-строка
+msgctxt "string:ui.flow.unavailable_unknown"
+msgid ""
+"Сцена не смогла продолжиться. Похоже, сохранение сделано в несовместимой "
+"версии игры."
+msgstr ""
+"The scene could not continue. It looks like this save was made in an "
+"incompatible version of the game."
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.graphics"
+msgid "Качество текстур"
+msgstr "Texture quality"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.quality_auto"
+msgid "Авто"
+msgstr "Auto"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.quality_eco"
+msgid "Экономное"
+msgstr "Economy"
+
+#~ msgctxt "string:ui.flow.return_to_menu"
+#~ msgid "Возврат в главное меню."
+#~ msgstr "Returning to the main menu."
+
+#~ msgctxt "string:ui.flow.scene_unavailable"
+#~ msgid "Эта сцена недоступна в текущей версии игры."
+#~ msgstr "This scene is not available in the current version of the game."

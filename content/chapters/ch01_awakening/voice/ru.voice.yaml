@@ -1,0 +1,21 @@
+schema: voice@1
+chapter: ch01
+lang: ru
+# Демо-озвучка исходного языка: черновые (draft) дубли-заглушки, полное покрытие
+# главы — релизный гейт даёт WARN за драфты, а smoke-прогон исполняет vn.voice_path
+# на каждой реплике. Боевые дубли заменят статус на final через vn voice import.
+lines:
+  ch01_s010_0001: {status: draft}
+  ch01_s010_0002: {status: draft}
+  ch01_s020_0001: {status: draft}
+  ch01_s020_0002: {status: draft}
+  ch01_s020_0003: {status: draft}
+  ch01_s020_0004: {status: draft}
+  ch01_s030_0001: {status: draft}
+  ch01_s030_0002: {status: draft}
+  ch01_s030_0003: {status: draft}
+  ch01_s030_0004: {status: draft}
+  ch01_s030_0005: {status: draft}
+  ch01_s030_0006: {status: draft}
+  ch01_s030_0007: {status: draft}
+  ch01_s030_0008: {status: draft}

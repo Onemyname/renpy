@@ -30,6 +30,35 @@ def test_call_stack_depth_assumption():
     ), "оба API исчезли из SDK — engine_compat.call_stack_depth() сломан, нужен новый fallback"
 
 
+@requires_sdk
+def test_voice_statement_contract():
+    """045_audio.rpy / emit_scene (C5): три допущения о voice-подсистеме движка.
+
+    1. voice-оператор принимает simple expression — генерат пишет
+       `voice vn.voice_path("<id>")`.
+    2. Имя проходит через config.voice_filename_format ("{filename}") и кладётся
+       в _voice.play как есть.
+    3. Falsy-имя не играет: потребление голоса гейтится truthiness `_voice.play`,
+       поэтому vn.voice_path возвращает "" (а не None: format(None) дал бы
+       строку "None" — «файл» с таким именем движок честно попытался бы играть).
+    """
+    src = (Path(SDK) / "renpy" / "common" / "00voice.rpy").read_text(encoding="utf-8")
+    parse_region = src.split("def parse_voice", 1)[1].split("def ", 1)[0]
+    assert "simple_expression" in parse_region, \
+        "voice-стейтмент больше не принимает simple expression — генерат сломан"
+    assert 'config.voice_filename_format = "{filename}"' in src, \
+        "дефолт voice_filename_format изменился — пересмотреть vn.voice_path"
+    assert "_voice.play = fn" in src and "if _voice.play:" in src, \
+        "потребление _voice.play больше не гейтится truthiness — '' перестал быть no-op"
+
+
+@requires_sdk
+def test_emphasize_audio_contract():
+    """045_audio.rpy: дакинг под голос — штатные config.emphasize_audio_*."""
+    assert _sdk_sources_contain("emphasize_audio_channels"), \
+        "config.emphasize_audio_channels исчез из движка — дакинг 045_audio.rpy мёртв"
+
+
 def test_api_level_sync():
     """VN_API_LEVEL (tools) обязан совпадать с API_LEVEL фасада vn.* (framework)."""
     import re

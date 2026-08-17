@@ -494,7 +494,7 @@ vn test smoke --lang pseudo --picks 0,0
 | `vn.beat("<id>")` — мелкий якорь внутри сцены для галереи/достижений | **IMPLEMENTED, но не эмитится**: `030_flow.rpy:19-24` работает, вызовов в `content/` ноль. Хотите якорь — пишите `$ vn.beat("x")` руками |
 | `vn loc keys --migrate --from --to` (перенос id между сценами) | **NOT IMPLEMENTED** — есть только `--check` |
 | High-watermark / «пенсионные» say-id | **NOT IMPLEMENTED** (ARCHITECTURE.md:2505, 2781) |
-| Озвучка реплик (`vn voice *`, `voice@1`) | **NOT IMPLEMENTED** — заглушка фазы 2, `cli.py:1087` |
+| TTS-черновики озвучки (`vn voice tts`) | **NOT IMPLEMENTED** — заглушка фазы 2, `cli.py:1278-1281`. Сама озвучка реплик (`voice@1`, `vn voice manifest\|import\|validate`, инжекция `voice vn.voice_path("<say-id>")` в генерат) — **IMPLEMENTED**, см. [23-audio.md](23-audio.md) §8 |
 | Градация строгости по `status` главы для say-id (draft = warning) | **NOT IMPLEMENTED** — `keys.py` одинаково строг ко всем главам |
 
 ---

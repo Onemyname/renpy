@@ -68,9 +68,13 @@ def _literal_exit(expr: str | None) -> tuple[bool, str | None]:
 
 AUDIO_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
+# Какие kind'ы треков допустимы на каком канале (C18 + канал ambient из
+# framework/00_core/045_audio.rpy). Каналы вне карты (voice, movie) не проверяются.
+CHANNEL_KINDS = {"music": {"bgm", "amb"}, "ambient": {"amb"}, "sound": {"sfx"}}
+
 
 def _validate_refs(unit: SceneUnit, rep: SceneCompileReport, complain,
-                   image_index=None, audio_ids: set[str] | None = None) -> None:
+                   image_index=None, audio_tracks: dict[str, dict] | None = None) -> None:
     """Сверка ссылок авторской сцены с тем, что реально существует после сборки.
 
     Зачем отдельно от остальных проверок. `show mira hapy` и `play music clam_theme`
@@ -116,7 +120,7 @@ def _validate_refs(unit: SceneUnit, rep: SceneCompileReport, complain,
                     f"нет в собранных ассетах{hint}"
                 )
 
-    if audio_ids is not None:
+    if audio_tracks is not None:
         for ref in a.get("audio_refs") or []:
             expr = ref.get("file")
             if not isinstance(expr, str):
@@ -125,16 +129,29 @@ def _validate_refs(unit: SceneUnit, rep: SceneCompileReport, complain,
             # Строковый литерал/выражение статически не разрешаются: пропускаем.
             if not AUDIO_ID_RE.match(expr.strip()):
                 continue
-            if expr.strip() not in audio_ids:
+            tid = expr.strip()
+            if tid not in audio_tracks:
                 complain(
                     f"{src}:{ref['line']}: {ref['stmt']} {expr} — трек не объявлен "
                     f"в content/audio/*.yaml (в рантайме будет тишина)"
+                )
+                continue
+            # Канал обязан соответствовать kind трека: sfx на канале music занял бы
+            # его и оборвал музыку, bgm на sound не зациклится.
+            channel = (ref.get("stmt") or "").split(" ")[-1]
+            kind = audio_tracks[tid].get("kind")
+            allowed = CHANNEL_KINDS.get(channel)
+            if allowed and kind and kind not in allowed:
+                complain(
+                    f"{src}:{ref['line']}: {ref['stmt']} {tid} — трек объявлен как "
+                    f"{kind}, каналу {channel} разрешены только "
+                    f"{'/'.join(sorted(allowed))}"
                 )
 
 
 def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
                    rep: SceneCompileReport, var_registry: set[str] | None = None,
-                   image_index=None, audio_ids: set[str] | None = None) -> dict:
+                   image_index=None, audio_tracks: dict[str, dict] | None = None) -> dict:
     """Проверка контракта. Возвращает контекст эмиссии:
     {exit_id -> [{to_label, when?}]}; недостижимые цели draft-глав заменены на fallback."""
     a = unit.analysis
@@ -242,7 +259,7 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
                                         f"но не указан в vars.reads")
 
     complain = rep.warnings.append if status == "draft" else rep.errors.append
-    _validate_refs(unit, rep, complain, image_index=image_index, audio_ids=audio_ids)
+    _validate_refs(unit, rep, complain, image_index=image_index, audio_tracks=audio_tracks)
 
     dispatch: dict[str, list[dict]] = {}
     for exit_id, spec in exits.items():
@@ -263,8 +280,60 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
     return dispatch
 
 
-def emit_scene(unit: SceneUnit, dispatch: dict, audio_ids: set[str],
-               locations: dict, rep: SceneCompileReport, header: str) -> str:
+def _inject_voice(rpy_text: str, say_list: list[dict], voiced: set[str]) -> str:
+    """Вставить `voice vn.voice_path("<id>")` перед каждой озвученной репликой
+    копии авторского текста (C5: компилятор инжектирует voice-операторы в генерат,
+    авторский источник не трогается).
+
+    Номера строк — из AST build-bridge (G24), вставки идут снизу вверх, чтобы
+    номера ещё не обработанных строк не сдвигались. Отступ наследуется от самой
+    реплики — say внутри ветки меню получает voice на той же глубине."""
+    if not voiced:
+        return rpy_text
+    lines = rpy_text.split("\n")
+    for say in sorted(say_list, key=lambda s: -int(s.get("line") or 0)):
+        sid = say.get("id")
+        i = int(say.get("line") or 0) - 1
+        if not sid or sid not in voiced or not (0 <= i < len(lines)):
+            continue
+        indent = lines[i][: len(lines[i]) - len(lines[i].lstrip())]
+        lines.insert(i, f'{indent}voice vn.voice_path("{sid}")')
+    return "\n".join(lines)
+
+
+def _emit_track(lines: list[str], unit: SceneUnit, decl: str,
+                audio_tracks: dict[str, dict], rep: SceneCompileReport,
+                field_name: str) -> None:
+    """`music:`/`ambient:` из scene.yaml -> play-оператор на канале по kind трека.
+
+    bgm играет на штатном music (fadeout+fadein = мягкая смена темы между
+    сценами), amb — на канале ambient (framework/00_core/045_audio.rpy):
+    музыка и эмбиенс локации сосуществуют, а не вытесняют друг друга.
+    Объявленная в audio@1 громкость трека применяется здесь же (клауза volume
+    play-оператора) — рантайм-кода для неё не существует."""
+    kind, _, track = decl.partition("/")
+    spec = audio_tracks.get(track)
+    if spec is None:
+        rep.errors.append(
+            f"{unit.yaml_rel}: {field_name} {decl}: трек {track!r} не объявлен "
+            f"в content/audio/")
+        return
+    if spec.get("kind") != kind:
+        rep.errors.append(
+            f"{unit.yaml_rel}: {field_name} {decl}: трек объявлен как "
+            f"{spec.get('kind')}, а не {kind}")
+        return
+    channel = "music" if kind == "bgm" else "ambient"
+    stmt = f"    play {channel} {track} fadeout 1.0 fadein 1.0"
+    volume = spec.get("volume")
+    if volume is not None and volume != 1:
+        stmt += f" volume {volume}"
+    lines.append(stmt)
+
+
+def emit_scene(unit: SceneUnit, dispatch: dict, audio_tracks: dict[str, dict],
+               locations: dict, rep: SceneCompileReport, header: str,
+               voiced: set[str] | None = None) -> str:
     lines = [header]
     lines.append(f"label {unit.full_id}:")
     lines.append(f'    $ vn.checkpoint("{unit.full_id}")')
@@ -300,15 +369,10 @@ def emit_scene(unit: SceneUnit, dispatch: dict, audio_ids: set[str],
         # Нейтральный фон: сцена без локации (или локация не прошла валидацию).
         lines.append("    scene vn_black with dissolve")
 
-    music = unit.meta.get("music")
-    if music:
-        track = music.split("/", 1)[1]
-        if track not in audio_ids:
-            rep.errors.append(
-                f"{unit.yaml_rel}: music {music}: трек {track!r} не объявлен в content/audio/"
-            )
-        else:
-            lines.append(f"    play music {track} fadein 1.0")
+    for field_name in ("music", "ambient"):
+        decl = unit.meta.get(field_name)
+        if decl:
+            _emit_track(lines, unit, decl, audio_tracks, rep, field_name)
 
     lines.append(f"    call {unit.full_id}__body from _call_{unit.full_id}__body")
     lines.append("    $ vn.check_scene_stack()")
@@ -322,6 +386,7 @@ def emit_scene(unit: SceneUnit, dispatch: dict, audio_ids: set[str],
             if e["to_label"] is None:
                 lines.append(f"        # TODO(draft): цель {e['todo']} ещё не написана")
                 lines.append("        $ vn.unwind_call_stack()")
+                lines.append('        $ vn_unavailable_reason = "draft_todo"')
                 lines.append("        jump vn_scene_unavailable")
             else:
                 lines.append(f"        jump {e['to_label']}")
@@ -334,10 +399,13 @@ def emit_scene(unit: SceneUnit, dispatch: dict, audio_ids: set[str],
         lines.append("        jump vn_end_of_content")
     lines.append("    # Неизвестный exit: разматываем стек и уходим на «сцена недоступна» (G7)")
     lines.append("    $ vn.unwind_call_stack()")
+    lines.append('    $ vn_unavailable_reason = "unknown_exit"')
     lines.append("    jump vn_scene_unavailable")
     lines.append("")
     lines.append(f"# ══ Авторский источник (копия): {unit.rpy_rel} ══")
-    lines.append(unit.rpy_text.rstrip("\n"))
+    body = _inject_voice(unit.rpy_text, unit.analysis.get("say_list") or [],
+                         voiced or set())
+    lines.append(body.rstrip("\n"))
     lines.append("")
     return "\n".join(lines)
 

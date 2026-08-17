@@ -1,6 +1,6 @@
 # 14. Локализация
 
-> **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 115/115. **Но:** номера say-id переиспользуемы после удаления реплики (нет high-watermark), озвучка/RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам.
+> **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 115/115; на те же say-id опирается озвучка (`voice@1`, см. [23-audio.md](23-audio.md) §8). **Но:** номера say-id переиспользуемы после удаления реплики (нет high-watermark), RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам.
 > **Отвечает на вопрос:** «Как добавить язык, как перевести новую строку, как не сломать переводы правкой сцены и что проверит релизный гейт».
 
 Локализация — единственная подсистема, которая пишет **в авторские исходники** (`vn loc keys` дописывает `id` прямо в `content/**/scenes/*.scene.rpy`) и полностью генерирует зону `game/tl/` (gitignored, `.gitignore:4`). Тулинг: `tools/vn/src/vn/loc/keys.py` (249 строк) и `tools/vn/src/vn/loc/po.py` (566 строк), CLI-группа `tools/vn/src/vn/cli.py:962-1086`. Рантайм: `game/framework/00_core/040_localization.rpy` (named stores `vn_lang` и `vn_loc`). Норматив — `../ARCHITECTURE.md` §5 (строки 2448-2916), архитектурное решение — `../adr/0005-language-packages-and-runtime-registry.md`.
@@ -66,14 +66,15 @@ flowchart TD
 
 **Статус: IMPLEMENTED** (ADR-0005). **Списка языков нет нигде** — ни в коде, ни в конфиге, ни в генерате.
 
-Пакет — это каталог `loc/po/<code>/` с манифестом `language.yaml` (`language@1`, ровно 4 ключа, `additionalProperties: false`):
+Пакет — это каталог `loc/po/<code>/` с манифестом `language.yaml` (`language@1`, 6 ключей, `additionalProperties: false`):
 
 | Ключ | Обязателен | Смысл |
 |---|---|---|
 | `schema` | да | const `language@1` |
-| `code` | да | `^[a-z][a-z0-9_]{1,15}$`, **обязан совпадать с именем каталога** — проверяется дважды: `po.py:111-116` и `tools/vn/src/vn/content/lint.py:144-155` |
+| `code` | да | `^[a-z][a-z0-9_]{1,15}$`, **обязан совпадать с именем каталога** — проверяется дважды: `po.py:140-144` и `tools/vn/src/vn/content/lint.py:144-155` |
 | `name` | да | native-название для UI (`Deutsch`, `日本語`), не английское |
-| `font` | нет | путь **относительно `game/`**; применяется ровно в одном месте — `gui.text_font` внутри `translate <code> python` (`po.py:432-436`) |
+| `font` | нет | путь **относительно `game/`**; исторический алиас `fonts.text` (старые пакеты работают без правок), явный `fonts.text` выигрывает |
+| `fonts` | нет | пер-языковые шрифты **по ролям** `gui`: `text` → `gui.text_font` (диалоги), `name` → `gui.name_text_font`, `interface` → `gui.interface_text_font`, `interface_semibold` → `gui.interface_semibold_font`. Пути относительно `game/` (pattern `^fonts/…\.(ttf\|otf\|ttc)$`); эмитятся внутри `translate <code> python` (`po.py:464-484`) |
 | `synthetic` | нет | `true` = язык генерируется инструментом (`pseudo`) |
 
 Реально в репозитории: `loc/po/en/language.yaml` (`name: English`), `loc/po/de/` (`Deutsch`), `loc/po/pseudo/` (`Pseudo (QA)`, `synthetic: true`). Исходный язык `ru` пакетом **не** является — он описан в `loc/loc.yaml` (`loc@2`, 7 строк):
@@ -119,7 +120,7 @@ loc/po/de/common.po         96 (95 string:* + 1 char:mira)
 vn loc import                 # или просто vn build
 ```
 
-Появится `game/tl/de/{dialogue_ch01.rpy, dialogue_ch90.rpy, common.rpy, language.json}`. `common.rpy` пишется **всегда** — он содержит гарантированный `translate <code> python:`, потому что `renpy.known_languages()` видит только языки, у которых есть хотя бы один translate-стейтмент (`po.py:428-436`). `dialogue_chNN.rpy` — только если в главе есть хотя бы одна доставленная строка (`po.py:392-398`).
+Появится `game/tl/de/{dialogue_ch01.rpy, dialogue_ch90.rpy, common.rpy, language.json}`. `common.rpy` пишется **всегда** — он содержит гарантированный `translate <code> python:`, потому что `renpy.known_languages()` видит только языки, у которых есть хотя бы один translate-стейтмент (`po.py:464-484`). `dialogue_chNN.rpy` — только если в главе есть хотя бы одна доставленная строка (`po.py:392-398`).
 
 Ноль правок кода, ноль правок конфигов: язык сам появляется в `screen language_picker()` (`game/framework/20_ui/screens/core_screens.rpy:343-372`).
 
@@ -333,7 +334,17 @@ vn loc report                  # ja должен быть > 0
 vn test smoke --picks 0,1 --lang ja    # прогон игры на языке
 ```
 
-Если у языка своя письменность — добавьте `font: fonts/NotoSansJP.ttf` в `loc/po/ja/language.yaml` и положите файл в `game/fonts/`. Применяется только `gui.text_font`; отсутствие файла — **warning, не ошибка** (`po.py:448-450`), в списке языков есть guard `renpy.loadable` (`core_screens.rpy:370`). Цепочек фолбэка (`FontGroup`) нет — см. NOT IMPLEMENTED ниже.
+Если у языка своя письменность — задайте шрифты по ролям в `loc/po/ja/language.yaml` и положите файлы в `game/fonts/`:
+
+```yaml
+fonts:
+  text: fonts/NotoSansJP.ttf                # gui.text_font — диалоги
+  name: fonts/NotoSansJP-Bold.ttf           # gui.name_text_font — имя персонажа
+  interface: fonts/NotoSansJP.ttf           # gui.interface_text_font — UI
+  interface_semibold: fonts/NotoSansJP-Bold.ttf   # gui.interface_semibold_font
+```
+
+Все роли опциональны; незаданные остаются на базовых из `gui.rpy`. Старый плоский `font:` — алиас `fonts.text`. Отсутствие файла — **warning, не ошибка**: переопределение роли не эмитится, рантайм остаётся на базовом шрифте (`po.py:471-477`); в списке языков есть guard `renpy.loadable` (`core_screens.rpy:370`). Цепочек фолбэка (`FontGroup`) нет — см. NOT IMPLEMENTED ниже.
 
 ### Чеклист: перед релизом
 
@@ -367,9 +378,9 @@ vn release validate --flavor public    # среди 19 проверок — ге
 
 | Механизм | Где заявлен | Статус |
 |---|---|---|
-| Озвучка: `vn voice manifest\|import\|tts\|validate`, схема `voice@1`, voice-паки | `../ARCHITECTURE.md`:2861-2892 | **NOT IMPLEMENTED**, заглушка фазы 2 — `cli.py:1087`, exit 3. Схемы `voice@1` в `tools/schemas/` нет. Строка `ui.prefs.volume_voice` существует, но это лишь подпись микшера |
+| Озвучка: TTS-черновики `vn voice tts`; voice-паки отдельными депотами; `vn loc report --domain voice` | `../ARCHITECTURE.md`:2861-2892 | `vn voice tts` — заглушка фазы 2 (`cli.py:1278-1281`, exit 3), паки не собираются, `--domain voice` не существует. Остальной голосовой контур (`voice@1`, `vn voice manifest\|import\|validate`, `vn.voice_path` с деградацией язык→оригинал) — **IMPLEMENTED**, покрытие описывают манифесты на тех же say-id из ledger — [23-audio.md](23-audio.md) §8 |
 | RTL (`config.rtl`, RLO/PDF-обрамление, зеркалирование UI, `pseudo_rtl`) | `../ARCHITECTURE.md`:2822-2824 | NOT IMPLEMENTED |
-| Шрифтовые фолбэк-цепочки (`FontGroup`, `fonts.gen.rpy`, kinsoku, `line_breaking`) | `../ARCHITECTURE.md`:2836-2860 | NOT IMPLEMENTED — только один `gui.text_font` на язык |
+| Шрифтовые фолбэк-цепочки (`FontGroup`, `fonts.gen.rpy`, kinsoku, `line_breaking`) | `../ARCHITECTURE.md`:2836-2860 | NOT IMPLEMENTED — есть только целиковая подмена по ролям (`fonts.*` в `language.yaml`), без смешивания глифов из нескольких шрифтов |
 | Множественные формы, форматирование чисел/дат (`loc/locale_rules.yaml`) | `../ARCHITECTURE.md`:2892 | NOT IMPLEMENTED |
 | POT-файлы, `msgmerge`, previous-msgid `#\|` | `../ARCHITECTURE.md`:2698-2707 | NOT IMPLEMENTED — merge написан руками на polib (`po.py:246-268`) |
 | Интеграция с CAT (`--push crowdin`, `--pull --min-status approved`, `--langs`, `--domains`) | `../ARCHITECTURE.md`:2760-2775 | NOT IMPLEMENTED — `extract`/`import` не принимают ни одного флага |
@@ -416,6 +427,6 @@ python -m pytest tools/vn/tests -q                # 138 тестов целик�
 | **Не трогать** | `game/tl/**` (генерат `vn loc import`, gitignored), `loc/ledger/*.json` (зеркало сцен, пересобирается), `game/generated/registry/menus.gen.rpy` (генерат компилятора). Правки здесь бесполезны — перезапишет сборка |
 | **Зависимости** | `content/ui/strings.yaml` → `VN_STRINGS` в `menus.gen.rpy` → `vn_loc.t()` во всех экранах `game/framework/20_ui/`; `loc/ledger/` → PO → `game/tl/` → движок; `loc/loc.yaml source` → `VN_SOURCE_LANG` → `vn_lang._source()` → `vn test smoke --lang`; покрытие → `release.py:380-406` → exit-код `vn release validate` |
 | **Валидация** | `vn loc keys --check` → `vn build --check` → `vn loc report` → `python -m pytest tools/vn/tests/test_loc.py -q` |
-| **Частые ошибки** | 1) Правка `game/tl/` вместо `loc/po/` — исчезнет на следующем `vn build`. 2) Литерал в экране вместо `vn_loc.t(key)` — строка не попадёт в PO и не переведётся. 3) Голый `[` в тексте — интерполяция, падение у игрока; эскейп `[[`. 4) Попытка перевести UI через `translate strings` — отменено ADR-0005 §4, работает только для имён персонажей. 5) Опора на `config.change_language_callbacks` — мёртв в Ren'Py 8.5, нужен `config.language_callbacks[lang]`. 6) Пересказ `../ARCHITECTURE.md` §5 как факта: `--gate`, POT/msgmerge, RTL, озвучка, high-watermark ledger — там описаны, но не реализованы |
+| **Частые ошибки** | 1) Правка `game/tl/` вместо `loc/po/` — исчезнет на следующем `vn build`. 2) Литерал в экране вместо `vn_loc.t(key)` — строка не попадёт в PO и не переведётся. 3) Голый `[` в тексте — интерполяция, падение у игрока; эскейп `[[`. 4) Попытка перевести UI через `translate strings` — отменено ADR-0005 §4, работает только для имён персонажей. 5) Опора на `config.change_language_callbacks` — мёртв в Ren'Py 8.5, нужен `config.language_callbacks[lang]`. 6) Пересказ `../ARCHITECTURE.md` §5 как факта: `--gate`, POT/msgmerge, RTL, high-watermark ledger — там описаны, но не реализованы |
 
 **Смежные файлы хендбука:** [12-scenes.md](12-scenes.md) (устройство `*.scene.rpy`), [13-dialogue.md](13-dialogue.md) (меню и `vn_menu`), [06-frontend.md](06-frontend.md) (экраны и `vn_loc.t`), [09-chapters.md](09-chapters.md), [10-characters.md](10-characters.md), [25-custom-engine.md](25-custom-engine.md) (CLI `vn`), [27-testing.md](27-testing.md) (`vn test smoke --lang`), [29-build-and-release.md](29-build-and-release.md) (релизный гейт), [30-packs-and-dlc.md](30-packs-and-dlc.md) (переводы глав пака).

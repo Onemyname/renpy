@@ -199,7 +199,7 @@ loc/po/{de,en,pseudo}/ch90.po
 
 Отсюда единственный работающий дизайн: **гейт логический** — метки пака физически присутствуют и инертны, а фильтрация идёт по данным реестров через `vn.pack_registry.owned()`.
 
-Дополнительный факт этого репозитория: `.rpa`-архивов **нет вовсе** — ни одного `build.archive(...)` в `game/`, ассеты едут россыпью. То есть даже файловой границы «что лежит в депоте пака» сегодня физически не существует. `.rpa` из `docs/ARCHITECTURE.md:943` — **NOT IMPLEMENTED**.
+Дополнительный факт этого репозитория: `.rpa`-архивов **нет вовсе** — ни одного `build.archive(...)` в `game/`, ассеты едут россыпью. То есть даже файловой границы «что лежит в депоте пака» сегодня физически не существует. Это норма, а не пробел: `docs/ARCHITECTURE.md` §2.4 (`:943`) фиксирует россыпь ради Steam-дельта-патчей; тематические `.rpa` — только опция mobile-поставки фазы 3, в desktop — лишь через ADR.
 
 Комментарий к этому есть прямо в докстринге команды (`cli.py:1603-1604`): «Скрипты пака грузятся всегда (управлять загрузкой нельзя, G9) — гейт логический».
 
@@ -353,7 +353,7 @@ game/generated/scenes/ нет ни одной их скомпилированн�
 | Рантайм-отключение несовместимого пака с сообщением | `ARCHITECTURE.md:3278` | NOT IMPLEMENTED — компилятор падает на этапе сборки |
 | `fallback_anchor` и graceful degradation сейва внутри отсутствующего DLC | `ARCHITECTURE.md:3300-3306` | NOT IMPLEMENTED — поле в схеме, читателей нет |
 | Вкомпилированные копии манифестов всех выпущенных паков | `ARCHITECTURE.md:3300` | NOT IMPLEMENTED |
-| `voice_pack`-депоты | `ARCHITECTURE.md:2883` | NOT IMPLEMENTED (вся группа `vn voice` — `_stub(2)`, `cli.py:1087`) |
+| `voice_pack`-депоты | `ARCHITECTURE.md:2883` | NOT IMPLEMENTED как поставка: `vn pack build` не пакует ассеты, opus-файлы едут в основном дистрибутиве. Сам голосовой контур (`voice@1`, `vn voice manifest\|import\|validate`, транскод) работает, и рантайм `vn.voice_path` уже готов к отсутствию файлов пака — no-op вместо падения ([23-audio.md](23-audio.md) §8) |
 
 ---
 
@@ -562,7 +562,7 @@ grep -n "VN_PACKS" game/generated/registry/chapters.gen.rpy
 vn release validate --flavor public     # проверка #3: manifest.yaml каждого пака флейвора
 vn release validate --flavor patron
 vn play                                 # глава ch90 в меню с бейджем DLC
-python -m pytest tools/vn/tests -q      # 152 passed (RENPY_SDK задан; без него 4 теста skip)
+python -m pytest tools/vn/tests -q      # 240 passed (RENPY_SDK задан; без него 6 тестов skip)
 ```
 
 Эталон на 2026-08-08: 2 пака (`ep_beach` с `ch90`, `nsfw` без глав), `VN_PACKS` из двух записей, `build/packs/ep_beach.zip` — 3522 байта / 3 файла, `build/packs/nsfw.zip` — 1 файл плюс строка `warning:` про отсутствие глав.

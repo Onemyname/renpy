@@ -1,0 +1,5 @@
+schema: audio@1
+kind: amb
+# Зацикленный эмбиенс локаций: scene.yaml `ambient: amb/<id>` играет его на канале
+# ambient одновременно с музыкой (framework/00_core/045_audio.rpy).
+tracks: {}

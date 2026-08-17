@@ -224,11 +224,21 @@ label start:
     $ renpy.jump(_chapters[0]["entry_label"])
 
 
+# Причина попадания на «сцена недоступна»: draft_todo (ветка ещё не написана),
+# missing_content (id из реестра отсутствует в сборке: пак/эпизод не установлен),
+# unknown_exit (несовместимый сейв). Выставляется генератом перед jump.
+default vn_unavailable_reason = None
+
 label vn_scene_unavailable:
     if vn_qa.autopilot_active():
         $ vn_qa.autopilot_finish("FAIL: vn_scene_unavailable")
-    $ renpy.say(None, vn_loc.t("ui.flow.scene_unavailable"))
-    $ renpy.say(None, vn_loc.t("ui.flow.return_to_menu"))
+    # Гейт нельзя объехать колёсиком (тот же приём, что у version-skew в after_load):
+    # rollback увёл бы игрока обратно в состояние, из которого сцена не продолжается.
+    $ renpy.block_rollback()
+    # Объяснение + выбор действия вместо безусловного выброса в меню: FW-аудит
+    # показал, что «сказали и рестартнули» — худший UX этой ситуации.
+    call screen vn_content_unavailable(vn_unavailable_reason)
+    $ vn_unavailable_reason = None
     $ renpy.full_restart()
 
 

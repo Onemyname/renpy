@@ -293,6 +293,23 @@ screen preferences():
                     text _g4 style "vn_group"
                     textbutton vn_loc.t("ui.prefs.skip_all") action Preference("skip", "toggle") style "vn_toggle_button"
                     textbutton vn_loc.t("ui.prefs.skip_after_choices") action Preference("after choices", "toggle") style "vn_toggle_button"
+                vbox:
+                    spacing gui.sp_m
+                    # Потолок качества текстур (00_core/095_quality.rpy): «авто» =
+                    # потолок сборки, «экономно» = без @N-вариантов — случай
+                    # «4K-монитор + слабый GPU», который автоподбор сам не покрывает.
+                    $ _g5 = vn_loc.t("ui.prefs.graphics").upper()
+                    text _g5 style "vn_group"
+                    hbox:
+                        spacing gui.sp_xs
+                        textbutton vn_loc.t("ui.prefs.quality_auto"):
+                            action Function(vn.set_quality_cap, None)
+                            selected vn.quality_cap() is None
+                            style "vn_seg_button"
+                        textbutton vn_loc.t("ui.prefs.quality_eco"):
+                            action Function(vn.set_quality_cap, 1)
+                            selected vn.quality_cap() == 1
+                            style "vn_seg_button"
                 use language_picker
 
 # Ряд «подпись + слайдер»: bar со штатным value-действием Preference(...)

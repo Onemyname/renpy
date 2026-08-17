@@ -107,16 +107,16 @@ ls ci/fixtures/saves/                                                 # сейч
 | **P2** | `content/flags.yaml` и `content/anchors.yaml`: оживить или удалить | Оба обязаны существовать (`lint.py:39-41`) и не читаются ничем. Файл, который обязателен и бесполезен, учит игнорировать декларации | `content/flags.yaml`, `content/anchors.yaml`, `tools/vn/src/vn/content/lint.py:34-42` | часы (удалить) / недели (реализовать flags) |
 | **P2** | `vn build --use-artifact <sha>` | Упоминается в `ARCHITECTURE.md` 14 раз и в ночном runbook как аварийный путь; в коде строка встречается один раз — в заголовке схемы. Аварийный путь исполняется руками | `tools/vn/src/vn/cli.py:84-88`, `tools/schemas/gen_manifest@1.schema.json:4` | дни |
 | **P2** | Группа `vn validate` | `ARCHITECTURE.md` описывает `vn validate --schemas/--budgets`; группы нет вовсе. Сегодня то же достигается через `vn build --check` + `vn release validate` | `tools/vn/src/vn/cli.py` (нет `@main.group()` с именем `validate`) | дни |
-| **P2** | `.rpa`-архивы для паков | G9 и `ARCHITECTURE.md:943` требуют `build.archive`; в `game/` ноль вхождений. DLC поставляется россыпью файлов | `game/options.rpy`, `tools/vn/src/vn/cli.py:279-370` | дни |
+| **P2** | ~~`.rpa`-архивы для паков~~ — снято нормой | `ARCHITECTURE.md` §2.4 (`:943`) фиксирует поставку россыпью ради Steam-дельта-патчей; тематические `.rpa` — только опция mobile-поставки фазы 3, их появление в desktop — осознанное решение с ADR. Файловой границы депота пака по-прежнему нет, но это вопрос депотов (`vn release steam`), а не архивов | `game/options.rpy`, `docs/ARCHITECTURE.md:943` | — |
 | **P2** | Контакт-листы рендеров (`vn assets sheet`) | Нет способа отсмотреть пачку рендеров одним листом — художник открывает файлы по одному. Команда упомянута в `ARCHITECTURE.md`, отсутствует в CLI | нет кода; `tools/vn/src/vn/assets/pipeline.py` (превью-трансформация `png2webp_cg_thumb` уже есть) | дни |
-| **P2** | Нормализация громкости (loudnorm) в звуковом тракте | `ARCHITECTURE.md:1179` требует Opus 128k + `loudnorm −16 LUFS`; в коде видео `-an` по умолчанию, а `copy_audio` копирует `.ogg` байт-в-байт (ветка ожила 2026-08-08, но громкость по-прежнему не трогает). Заодно поля `loop`/`loop_start`/`volume` схемы `audio@1` валидируются и **игнорируются** эмиттером. Разнобой громкости треков правится вручную | `tools/vn/src/vn/assets/video.py:101-120`, `tools/vn/src/vn/assets/pipeline.py:232-234`, `tools/schemas/audio@1.schema.json` | дни |
+| **P2** | Нормализация громкости (loudnorm) для музыки/SFX | `ARCHITECTURE.md:1179` требует Opus 128k + `loudnorm`; в коде видео `-an` по умолчанию, а `copy_audio` копирует `.ogg` байт-в-байт — громкость музыки/SFX не трогается, разнобой правится вручную. Голос уже нормализуется (`voice_opus`: Opus 96k, −19 LUFS), `loop_start`/`volume` из `audio@1` эмитятся; мёртвым осталось только поле `loop` | `tools/vn/src/vn/assets/video.py:101-120`, `tools/vn/src/vn/assets/pipeline.py:636`, `tools/vn/src/vn/voice.py:289-308` | дни |
 | **P2** | Альфа-видео (`side_mask`) | `yuva420p` проходит валидацию с предупреждением, но маску никто не генерирует и `Movie()` не получает `side_mask=True` → такой файл отрисуется неправильно. Тупик, замаскированный под поддержку | `tools/vn/src/vn/assets/video.py:217-219`, `ARCHITECTURE.md:1143` | дни |
 | **P2** | `vn release steam` + каналы dev/beta/release | Заглушка фазы 3. Плюс `project@1` требует `^\d+\.\d+\.\d+$`, что делает теги `vX.Y.Z-rcN` невозможными — бета-канала нет ни в схеме, ни в CI | `tools/vn/src/vn/cli.py:1565`, `.github/workflows/release.yml:47-54` | недели |
 | **P2** | Ownership provider для паков | `set_ownership_provider` не имеет ни одного вызывающего; `owned()` всегда `True`. Проверить платный DLC невозможно | `game/framework/00_core/030_flow.rpy:73` | дни |
 | **P2** | `theme.yaml`: один источник UI-токенов | Радиусы объявлены дважды: `gui.radius_button/radius_panel` (осиротевшие, комментарий прямо говорит «задекларированы для theme.yaml») и `content/ui/panels.yaml` (реально используемые). `ARCHITECTURE.md:3811` описывает `ui/themes/*.yaml`, которых нет | `game/gui.rpy:71-73`, `content/ui/panels.yaml`, `ARCHITECTURE.md:3424,3811` | недели |
 | **P2** | UI достижений | Бэкенд, декларации и локализованные строки есть; ни один экран их не рисует. Игрок не видит того, что уже работает | `game/framework/00_core/080_achievements.rpy`, `game/framework/20_ui/` (ноль вхождений `achievement`) | дни |
 | **P3** | `vn char sheet` | Заглушка фазы 2; лист персонажа сегодня собирается глазами по дереву `assets_src/png/characters/` | `tools/vn/src/vn/cli.py:958` | дни |
-| **P3** | Озвучка и TTS (`vn voice *`) | Весь домен — заглушка фазы 2, схемы `voice@1` нет. Для текстовой VN не блокирует ничего | `tools/vn/src/vn/cli.py:1087` | недели |
+| **P3** | TTS-черновики озвучки (`vn voice tts`) | Единственная заглушка домена `vn voice`: остальной контур (схема `voice@1`, `manifest/import/validate`, транскод `voice_opus`, инжекция voice-операторов, гейт) реализован — [23-audio.md](23-audio.md) §8. Не блокирует ничего: черновики можно генерировать внешним TTS и заносить `vn voice import --draft` | `tools/vn/src/vn/cli.py:1278-1281` | дни |
 | **P3** | Live2D / Spine | Фаза 3; каталоги `assets_src/live2d/` и `assets_src/spine_export/` заведены пустыми. Направление проекта — DAZ-реализм, а не анимированные 2D-персонажи | `assets_src/live2d/`, `assets_src/spine_export/`, `ARCHITECTURE.md` §4.8 | месяцы |
 | **P3** | Локализация за пределами латиницы/кириллицы (RTL, локализуемые изображения) | Ни `config.rtl`, ни `FontGroup`, ни `game/assets/loc/**`. Актуально при выходе на арабский/иврит или при тексте внутри картинок | `game/framework/00_core/040_localization.rpy`, `ARCHITECTURE.md:2822-2834` | недели |
 | **P3** | Двухпроходный VP9 + профили `hd`/`mobile` | Сейчас один проход CRF и два профиля (`full`/`draft`). Выигрыш в размере есть, но бюджеты (`video_total_mb 300`) пока не близко | `tools/vn/src/vn/assets/video.py:86-120`, `ARCHITECTURE.md:1179` | дни |
@@ -237,9 +237,9 @@ vn build && vn test smoke --picks 0,0
 
 | Остаток | Факт на сегодня | Где |
 |---|---|---|
-| Ни одного трека | `content/audio/bgm.yaml` и `content/audio/sfx.yaml` — `tracks: {}`; в git ноль `.ogg` | `content/audio/*.yaml`, `git ls-files '*.ogg'` |
+| Ни одного трека | все три `content/audio/{bgm,amb,sfx}.yaml` — `tracks: {}`; в git ноль `.ogg` (озвучка при этом есть: демо-манифест ch01 и wav-мастера в `assets_src/voice/ru/ch01/`) | `content/audio/*.yaml`, `git ls-files '*.ogg'` |
 | Тракт не гонялся на данных | Ветка `copy_audio` исполнялась только в тесте на синтетическом корне | `tools/vn/tests/test_assets.py:52-79` |
-| Поля схемы мертвы | `loop`, `loop_start`, `volume` объявлены в `audio@1`, валидируются и **никем не читаются**: эмиттер их игнорирует | `tools/schemas/audio@1.schema.json`, `tools/vn/src/vn/content/` |
+| Мёртвое поле схемы | `loop` объявлено в `audio@1` и никем не читается (`loop_start` эмитится префиксом `"<loop N>"`, `volume` — клаузой play-оператора сцены) | `tools/schemas/audio@1.schema.json`, `tools/vn/src/vn/content/compile.py:377-391` |
 | Нет нормализации громкости | loudnorm отсутствует, `.ogg` копируется байт-в-байт (P2 в §4) | `tools/vn/src/vn/assets/pipeline.py:232-234` |
 
 **Статус:** IMPLEMENTED (тракт) / UNEXERCISED (данные) — код рабочий и покрыт тестом, но между
@@ -251,8 +251,9 @@ vn build && vn test smoke --picks 0,0
 
 **Что сделать.** Положить первый `.ogg` в `assets_src/audio_stems/bgm/`, объявить его в
 `content/audio/bgm.yaml` (чтобы компилятор эмитил `define audio.<id>`) и поставить `music:`
-в сцену. Дальше — решить, кто читает `loop`/`loop_start`/`volume`: либо научить эмиттер, либо
-убрать поля из схемы новой версией `audio@2` (мёртвое поле схемы учит игнорировать декларации).
+в сцену. Дальше — решить судьбу поля `loop`: либо научить эмиттер, либо убрать его из схемы
+новой версией `audio@2` (`loop_start` и `volume` уже читаются; мёртвое поле схемы учит
+игнорировать декларации).
 
 **Как проверить, что сделано:** `vn assets build` показывает выход `audio/bgm/<id>.ogg`;
 `vn content lint` зелёный; сцена с `music:` играет в `vn play`. Подробности —
@@ -535,9 +536,9 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 | **`flags.yaml` / `anchors.yaml`: оживить или удалить** | NOT IMPLEMENTED — оба обязательны (`lint.py:39-41`) и не читаются ничем; `anchors` запланированы на фазу 3 | Ветвление через `exits.when` и рантайм-`if` | `flags` — когда появится контент, который надо вырезать из релизной сборки; `anchors` — когда появятся моды |
 | **`vn build --use-artifact <sha>`** | NOT IMPLEMENTED — 14 упоминаний в `ARCHITECTURE.md`, одно в коде (заголовок схемы `gen_manifest@1.schema.json:4`) | Скачать артефакт `generated-${sha}` из Actions и распаковать в `game/generated/` руками | Когда сломанный компилятор реально остановит работу — то есть при команде > 1 |
 | **Группа `vn validate`** | NOT IMPLEMENTED — группы нет вовсе | `vn build --check` + `vn content lint` + `vn release validate --flavor <id>` | Низкий приоритет: покрытие уже есть, отличается только фасад |
-| **`.rpa`-архивы для паков** | NOT IMPLEMENTED — ноль вхождений `build.archive` в `game/` | Пак — zip из манифеста и сцен (`vn pack build`), контент едет файлами | При первой платной DLC |
+| **`.rpa`-архивы** | Отсутствуют **по норме** (`ARCHITECTURE.md` §2.4: россыпь ради Steam-дельта-патчей); тематические `.rpa` — опция mobile фазы 3 через ADR | Пак — zip из манифеста и сцен (`vn pack build`), контент едет файлами | Mobile-поставка фазы 3 |
 | **Контакт-листы рендеров** | NOT IMPLEMENTED — `vn assets sheet` упомянута в `ARCHITECTURE.md`, отсутствует | Открывать файлы по одному | Когда в главе десятки CG |
-| **Loudnorm / звуковой конвейер целиком** | NOT IMPLEMENTED — `tools/vn/src/vn/assets/video.py` кодирует с `-an`, `copy_audio` копирует байт в байт (`pipeline.py:232-234`); поля `loop`/`loop_start`/`volume` схемы `audio@1` эмиттером не читаются | Ручное выравнивание в редакторе | Сразу после первого трека (остаток P0-3) |
+| **Loudnorm для музыки/SFX** | NOT IMPLEMENTED — `tools/vn/src/vn/assets/video.py` кодирует с `-an`, `copy_audio` копирует байт в байт (голос при этом нормализуется веткой `voice_opus`; `loop_start`/`volume` эмитятся, мёртвым осталось поле `loop`) | Ручное выравнивание в редакторе | Сразу после первого трека (остаток P0-3) |
 | **Альфа-видео (`side_mask`)** | NOT IMPLEMENTED — `video.py:217-219` только предупреждает на `yuva420p` | Видео без прозрачности | Когда понадобится анимированный элемент поверх фона |
 | **`vn release steam` + каналы** | NOT IMPLEMENTED — заглушка фазы 3 (`cli.py:1565`); плюс `project@1` `^\d+\.\d+\.\d+$` делает теги `-rcN` невозможными (`release.yml:47-54`) | Ручная загрузка дистрибутива | При выходе в Steam |
 | **Ownership provider** | NOT IMPLEMENTED — `set_ownership_provider` (`030_flow.rpy:73`) без вызывающих, `owned()` всегда `True` | Все установленные паки считаются купленными | Вместе со Steam-депотами |
@@ -551,7 +552,7 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 | Пункт | Статус | Почему не раньше |
 |---|---|---|
 | `vn char sheet` | NOT IMPLEMENTED — заглушка фазы 2 (`cli.py:958`) | Полезен, когда персонажей больше пяти |
-| Озвучка и TTS (`vn voice manifest\|import\|tts\|validate`) | NOT IMPLEMENTED — весь домен заглушка фазы 2 (`cli.py:1087`), схемы `voice@1` нет | Текстовая VN продаётся без озвучки; домен большой |
+| TTS-черновики озвучки (`vn voice tts`) | NOT IMPLEMENTED — единственная заглушка живого домена `vn voice` (`cli.py:1278-1281`); контур `voice@1` + `manifest/import/validate` + `voice_opus` работает ([23-audio.md](23-audio.md) §8) | Черновики генерируются внешним TTS и заносятся `vn voice import --draft` |
 | Live2D / Spine | NOT IMPLEMENTED — фаза 3; каталоги `assets_src/live2d/`, `assets_src/spine_export/` пустые | Направление проекта — DAZ-реализм; G12 к тому же требует обязательный prebaked-fallback, то есть двойную работу |
 | RTL и локализуемые изображения | NOT IMPLEMENTED — ни `config.rtl`, ни `FontGroup`, ни `game/assets/loc/**` (`ARCHITECTURE.md:2822-2834`) | Нет ни одного RTL-языка в плане; текущие языки — `de`/`en`/`pseudo` |
 | Двухпроходный VP9, профили `hd`/`mobile` | NOT IMPLEMENTED — сейчас 1-проходный CRF и два профиля `full`/`draft` (`tools/vn/src/vn/assets/video.py:86-120`) | Бюджеты `video_total_mb 300` / `video_file_mb 40` (`release.py:29-54`) далеко не выбраны |
@@ -589,8 +590,8 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
    после пилота уже известно, что именно автоматизировать; `overlays` (P1-3);
    high-watermark (P1-8); флейворные гейты (P1-10, P1-11); `vn test replay|paths` (P1-12);
    гигиена — P1-13 CODEOWNERS и транзитивные пины лока (остаток P1-7); P1-6 закрыт.
-2. Из **P2** — то, что упирается в объём контента: контакт-листы, loudnorm, UI достижений,
-   `.rpa` при первой платной DLC.
+2. Из **P2** — то, что упирается в объём контента: контакт-листы, loudnorm для музыки/SFX,
+   UI достижений.
 3. Пересмотреть этот файл целиком: после 3–5 глав производственная боль будет измеримой,
    и приоритеты можно будет ставить по фактам, а не по коду.
 
@@ -608,7 +609,7 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 | Размер генерата | `generated_total_kb 2048` при 19 выходах на одну главу; выходы масштабируются линейно по сценам | P3 инкрементальная компиляция, контроль бюджета в `vn build` |
 | Видео-бюджет | `video_total_mb 300` при `video_file_mb 40` — это ~8 полноразмерных лупов на игру | P3 двухпроходный VP9 и профили `hd`/`mobile` |
 | Второй человек в проекте | Локи без TTL и без атомарности, CODEOWNERS из плейсхолдеров, ручной аварийный путь без `--use-artifact` | P1-13, P2 локи, P2 `--use-artifact` |
-| Продажи в Steam / DLC | `owned()` всегда `True`, депотов нет, каналов dev/beta/release нет, теги `-rcN` запрещены схемой | P2 `vn release steam`, P2 ownership provider, P2 `.rpa` |
+| Продажи в Steam / DLC | `owned()` всегда `True`, депотов нет, каналов dev/beta/release нет, теги `-rcN` запрещены схемой | P2 `vn release steam`, P2 ownership provider |
 | Локализация за пределами трёх языков | say-id переиспользуются; нет POT/msgmerge, глоссария, per-domain отчёта | P1-8 high-watermark, затем инструменты из `ARCHITECTURE.md` §5 по мере необходимости |
 
 ---
@@ -618,12 +619,12 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 - **Не реализовывать `ARCHITECTURE.md` подряд.** Документ — целевой контракт на 4180 строк
   и горизонт 5–10 лет. Реализация «по порядку разделов» гарантированно уведёт в атласы UI,
   телеметрию и Mod SDK раньше, чем в живой звук. Критерий один: производственная боль.
-- **Не оптимизировать `vn build`.** 0,3 с на прогретом кэше, 152 теста за 8,8 с. Инкрементальная
+- **Не оптимизировать `vn build`.** 0,3 с на прогретом кэше, 240 тестов за секунды. Инкрементальная
   компиляция по `manifest["inputs"]` — красивая задача с нулевой отдачей сегодня (P3).
 - **Не разворачивать S3 до пилота.** Пока в `assets_src/` 11 бинарных файлов на 129 КБ, S3
   добавит операционную сложность и ничего не решит. ADR-0004 сознательно легализовал PNG в git
   как временную меру — она ещё не исчерпана.
-- **Не расширять реестр схем ради полноты.** 36 схем уже есть, и с закрытием P1-6
+- **Не расширять реестр схем ради полноты.** 39 схем уже есть, и с закрытием P1-6
   (`assets_manifest@1`) недостающих нет вовсе. Новая схема без потребителя повторит судьбу
   `flags@1`/`anchors@1`. Отдельно: `build_info@1` оставлена в реестре намеренно — она помечена
   «устарела» и нужна, только чтобы читались артефакты сборок до 0.1.5 (ADR-0011); повторять
@@ -659,9 +660,9 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 
 | Фаза | Что обещает | Что уже сделано | Что осталось |
 |---|---|---|---|
-| **0 — фундамент** (:4072) | monorepo и зоны, CODEOWNERS, `.gitattributes`/`.gitignore`, `project.yaml`, реестр схем с правилом `schema: <name>@<int>`, скелет CLI `vn`, lockfile, ADR-процесс | Всё: зоны, 36 схем (`schemas.py:13-51`), CLI из 20 групп/команд, `tools/vn.lock` (читается всеми 7 установками CI с 2026-08-08), 11 ADR. DoD «пустой проект собирается и CI зелёный» выполнен | CODEOWNERS из плейсхолдеров (P1-13); в локе не закреплены транзитивные зависимости — остаток P1-7 |
+| **0 — фундамент** (:4072) | monorepo и зоны, CODEOWNERS, `.gitattributes`/`.gitignore`, `project.yaml`, реестр схем с правилом `schema: <name>@<int>`, скелет CLI `vn`, lockfile, ADR-процесс | Всё: зоны, 39 схем (`schemas.py:13-51`), CLI из 20 групп/команд, `tools/vn.lock` (читается всеми 7 установками CI с 2026-08-08), 11 ADR. DoD «пустой проект собирается и CI зелёный» выполнен | CODEOWNERS из плейсхолдеров (P1-13); в локе не закреплены транзитивные зависимости — остаток P1-7 |
 | **1 — вертикальный срез** (:4081) | Content Compiler с парсером Ren'Py (G24); asset pipeline (PSD, WebP, аудио, кэш по хэшу, `assets watch` draft); layeredimage-эмиттер + golden-тесты; `vn bootstrap` + CI «clone → ≤ 5 мин»; базовый CI; онбординг-инсталлер по ролям + `vn doctor` | Компилятор (19 выходов, парсер через SDK — `tools/vn/src/vn/content/analyze.py:37-70`); ассет-конвейер из 7 трансформаций с кэшем; layeredimage-эмиттер; `vn doctor` (8 PASS); CI на GitHub (7 определений job'ов). DoD «сценарист добавляет сцену без программиста» — да (`vn scene new`); «новая глава появляется в меню без ручной регистрации» — да | `vn char new|validate` — заглушка **фазы 1** (P1-1); PSD-путь не обкатан и без тестов (P0-2); аудио-тракт жив, но без единого трека и `.ogg` (остаток P0-3); `vn bootstrap` собирает локально, remote-fetch G4 отсутствует; джобы «clone → ≤ 5 мин» нет; `--role` у bootstrap нет; DoD «художник меняет эмоцию за ≤ 15 с» **не замерялся**: спрайты в `assets_src/png/characters/mira/a/**` есть, но это плейсхолдеры, а PSD-путь (§P0-2) на реальном арте не обкатан |
-| **2 — производство и релиз** (:4096) | локализация; сейвы с корпусом фикстур и `vn save check\|migrate\|corpus`; релизный конвейер (перенос `.rpyc`, каналы dev/beta/release, автоверсионирование, changelog, Steam-депоты); QA (автопилот под xvfb, чит-меню, детерминированный режим, перф-бюджеты); видео/WebM; атласы UI; звуковой конвейер | Локализация целиком (`loc keys/add/extract/import/pseudo/report`, 3 языка 115/115); `vn save check\|corpus` (2 фикстуры, миграция реально проигрывается) + линия `.rpyc` в git (52 файла); `vn package` с переносом `.rpyc` (G6); `vn release validate` (19 проверок) и `release build`; smoke-автопилот под xvfb + чит-меню Shift+J; видео/WebM (ADR-0006) | `vn save migrate` — заглушка фазы 3; каналов dev/beta/release нет, Steam нет (P2); `changelog` без `--from/--audience` и слеп к пакам; `vn test replay|paths` — заглушки (P1-12); перф-бюджеты кроме `cold_start_s` отсутствуют (P3); атласы UI — нет; звуковой конвейер — только копирование `.ogg`, без loudnorm и без чтения `loop`/`volume` (остаток P0-3, P2 loudnorm) |
+| **2 — производство и релиз** (:4096) | локализация; сейвы с корпусом фикстур и `vn save check\|migrate\|corpus`; релизный конвейер (перенос `.rpyc`, каналы dev/beta/release, автоверсионирование, changelog, Steam-депоты); QA (автопилот под xvfb, чит-меню, детерминированный режим, перф-бюджеты); видео/WebM; атласы UI; звуковой конвейер | Локализация целиком (`loc keys/add/extract/import/pseudo/report`, 3 языка 115/115); `vn save check\|corpus` (2 фикстуры, миграция реально проигрывается) + линия `.rpyc` в git (52 файла); `vn package` с переносом `.rpyc` (G6); `vn release validate` (19 проверок) и `release build`; smoke-автопилот под xvfb + чит-меню Shift+J; видео/WebM (ADR-0006) | `vn save migrate` — заглушка фазы 3; каналов dev/beta/release нет, Steam нет (P2); `changelog` без `--from/--audience` и слеп к пакам; `vn test replay|paths` — заглушки (P1-12); перф-бюджеты кроме `cold_start_s` отсутствуют (P3); атласы UI — нет; звуковой конвейер: `loop_start`/`volume` эмитятся, озвучка (`voice@1` + `vn voice` + `voice_opus`) работает, но музыка/SFX — только копирование `.ogg` без loudnorm (остаток P0-3, P2 loudnorm) |
 | **3 — рост** (:4106) | Live2D/Spine с prebaked-fallback; DLC (паки, `api_level`, матрица совместимости, voice-депоты); скриншот-тесты; телеметрия opt-in; моды/Workshop и Mod SDK последними | `vn pack validate|build` и `pack_manifest@1` с `api_level` уже есть; галерея (ADR-0010) и генерируемые UI-панели (ADR-0009) — тоже сделаны раньше срока | Live2D/Spine (P3); матрица совместимости DLC; voice-депоты (P3); `vn test screens` — заглушка фазы 3; телеметрия; `anchors.yaml` пуст (P2) |
 | **8.5 — кто поддерживает** (:4114) | ≥ 2 владельца на инструмент; runbook аварий; онбординг-документ tools-инженера как обязательный артефакт фазы 1 | Runbook есть (`docs/runbooks/pipeline-broken-at-night.md`); `docs/onboarding/tools-engineer.md` есть | Владельцы — плейсхолдеры (P1-13); карта модулей в `tools-engineer.md` покрывает 11 из ~28 модулей; шаг runbook «откат через `git revert tools/vn.lock`» стал исполнимым 2026-08-08 (P1-7), но сам runbook всё ещё описывает GitLab-пайплайн; `vn build --use-artifact` отсутствует (P2) |
 
@@ -790,5 +791,5 @@ vn doctor && vn build --check && python -m pytest tools/vn/tests -q && \
 | **Читать перед изменением** | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §8 (строки 4068-4122 — фазовый план), [`../adr/0008-ai-model-licensing-for-commercial-adult-content.md`](../adr/0008-ai-model-licensing-for-commercial-adult-content.md) (единственный непринятый ADR), [`../runbooks/pipeline-broken-at-night.md`](../runbooks/pipeline-broken-at-night.md), [`../../CODEOWNERS`](../../CODEOWNERS), `../../README.md:43`, профильный файл хендбука по затрагиваемой подсистеме |
 | **Не трогать** | Код проекта из этого файла не меняется — roadmap только описывает. Правка пункта не является разрешением править `tools/vn/`, `game/framework/` или `docs/ARCHITECTURE.md`. Изменение нормы раздела 0 `ARCHITECTURE.md` — только новым ADR |
 | **Зависимости (что ломается ниже по течению)** | Статусы механизмов дублируются в 01–36: при закрытии пункта обновляется профильный файл, иначе хендбук начнёт противоречить сам себе. Ссылки вида `файл:строка` уезжают вместе с кодом — после каждого закрытого пункта их надо перепроверять `sed -n '<N>p' <файл>`, а не переносить на глаз. Ссылки на несуществующие файлы хендбука (17–38) станут битыми, если файлы не будут созданы |
-| **Валидация** | `vn doctor` → `vn build --check` → `python -m pytest tools/vn/tests -q` (152 теста) → `vn release validate --flavor public` (19 проверок, из них `PASS сейв-корпус: 2 фикстур`). Плюс блок «Проверка» выше — он перепроверяет фактуру самого roadmap |
+| **Валидация** | `vn doctor` → `vn build --check` → `python -m pytest tools/vn/tests -q` (240 тестов) → `vn release validate --flavor public` (19 проверок, из них `PASS сейв-корпус: 2 фикстур`). Плюс блок «Проверка» выше — он перепроверяет фактуру самого roadmap |
 | **Частые ошибки** | 1) Считать `docs/ARCHITECTURE.md` описанием построенного — это целевой документ; проверенные статусы — здесь и в профильных файлах. 2) Повышать приоритет пункта «потому что это техдолг» — критерий один: скорость и качество производства VN. 3) Добавлять пункт без пути в репозитории и команды проверки. 4) Ссылаться на `.gitlab-ci.yml` как на пайплайн проекта — реально работает `.github/workflows/` (P0-6). 5) Ставить сроки: оценки здесь — порядок величины, не обязательство. 6) Считать пункт, помеченный `СДЕЛАНО частично`, полностью закрытым: у P0-3, P0-5, P1-7 и P1-15 остаток назван явно и не закрыт |

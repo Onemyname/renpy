@@ -86,3 +86,13 @@ msgstr "Tell the truth"
 msgctxt "ch01_s030_0006"
 msgid "Город лежит внизу, будто выдохнул."
 msgstr "The city lies below, as if it exhaled."
+
+#. говорит: рассказчик; сцена ch01_s030
+msgctxt "ch01_s030_0007"
+msgid "Закат раскрашивает крышу заново."
+msgstr "The sunset repaints the rooftop."
+
+#. говорит: рассказчик; сцена ch01_s030
+msgctxt "ch01_s030_0008"
+msgid "Мира успела переодеться — кадр это уже знает."
+msgstr "Mira has already changed — the frame knows it, too."

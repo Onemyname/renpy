@@ -54,7 +54,8 @@ exits:
 | `title_key` | `^[a-z0-9_.]+$` | **никто** | — | мёртвая поверхность схемы: `grep title_key` по `tools/vn/src/vn/` даёт только главы и галерею |
 | `participants` | массив `^[a-z][a-z0-9_]{1,23}$`, uniqueItems | `compile.py:755-760` | каждый id обязан существовать в `content/characters/`, иначе ошибка `участник 'x' не объявлен в content/characters/ (say упадёт NameError в рантайме)` | проверка **односторонняя**: персонаж, использованный в `.rpy` но не указанный в `participants`, не ловится ничем |
 | `location` | `^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)?$` — вариант **опционален** | `scenes.py:206-232` | `scene bg <loc> <variant> with dissolve`; при любой ошибке или отсутствии поля — `scene vn_black with dissolve` | компилятор **требует** `/<variant>`: `location: rooftop` lint-зелёный, build-красный |
-| `music` | `^(bgm\|amb)/[a-z][a-z0-9_]*$` | `scenes.py:234-242` | `music.split("/",1)[1]` обязан быть в объявленных треках → `play music <id> fadein 1.0` | сегодня `content/audio/{bgm,sfx}.yaml` имеют `tracks: {}` — **любое** значение `music:` = ошибка компиляции. Схема не допускает `/` в хвосте, т.е. `bgm/ch01/theme` невалиден |
+| `music` | `^bgm/[a-z][a-z0-9_]*$` | `scenes.py:304-331` | трек обязан быть объявлен в `content/audio/` с `kind: bgm` → `play music <id> fadeout 1.0 fadein 1.0` (+ `volume` из `audio@1`, если ≠ 1) | сегодня все `content/audio/*.yaml` имеют `tracks: {}` — **любое** значение `music:` = ошибка компиляции. Схема не допускает `/` в хвосте, т.е. `bgm/ch01/theme` невалиден |
+| `ambient` | `^amb/[a-z][a-z0-9_]*$` | `scenes.py:304-331` | зацикленный эмбиенс локации: `play ambient <id> …` на канале `ambient` (`045_audio.rpy:13`) — играет **одновременно** с `music` | то же: треков `amb` пока ноль. См. [23-audio.md](23-audio.md) §3 |
 | `vars.reads` / `vars.writes` | массивы `^(g\|chNN\|mech_*\|dlc_*)\.<name>$` | `scenes.py:160-175` | **только предупреждения**: сверка объявленного с фактом из AST | реальная проверка переменных — другая: любой store-атрибут из `.rpy` обязан быть в Variable Registry (`scenes.py:148-159`), ошибка (warning для `status: draft`) |
 | `exits` | объект; ключ `^[a-z][a-z0-9_]*$`; значение — `oneOf`: строка-target \| `{to,when}` \| массив `{to,when}`; `target` = `^(s\d{3}\|ch\d{2}/s\d{3})$` | `scenes.py:116-193` (валидация) + `:247-258` (эмиссия) | таблица диспетчеризации `if _return == "<id>"` | `when` — `{"type":"string","minLength":1}`, **никем не парсится и не проверяется**, несмотря на docstring `030_flow.rpy:57-59` «валидируется компилятором против реестра переменных» |
 
@@ -80,6 +81,18 @@ exits:
 
 **Грабля парсера:** Ren'Py дописывает неявный `Return` в конец каждого файла. Build-bridge его отрезает (`050_build_bridge.rpy:122-127`) — иначе каждый файл ловил бы правило №9. Если вы правите мост, не потеряйте этот срез.
 
+## Послойные шоты в сцене (shots@1)
+
+Полнокадровый кинематографический кадр можно собрать из слоёв вместо плоского `cg` ([ADR-0013](../adr/0013-layered-shots.md), декларация и мастера — [16-assets.md](16-assets.md)). На сцену эмитится один `layeredimage shot_<chNN>_<sNNN>`; в авторском `.rpy` шот показывается как обычный образ:
+
+```renpy
+# content/chapters/ch01_awakening/scenes/s030_rooftop.scene.rpy — рабочий пример
+scene shot_ch01_s030 sunset with dissolve        # шот sunset, наряд — из переменной гардероба
+scene shot_ch01_s030 sunset mira_school          # явный атрибут <layer>_<variant> переопределяет её
+```
+
+Смена шота — смена атрибута группы `shot` (предыдущий снимается сам, выбранный наряд «липнет» между шотами сцены). Слой с `var:` в декларации по умолчанию выбирает вариант `ConditionSwitch`'ем по переменной Variable Registry (у демо — `g.mira_outfit`). Ссылки `scene`/`show shot_… <шот> [<layer>_<variant>]` сверяются с декларацией на сборке, как атрибуты персонажей (`images.py:164-169`) — опечатка в имени шота или варианта краснит `vn build`, а не даёт пустой кадр игроку.
+
 ## Разбор реального генерата: `game/generated/scenes/ch01/ch01_s020.gen.rpy`
 
 Файл 39 строк. Первые 19 — обвязка (её пишет `emit_scene`, `scenes.py:197-273`), остальное — дословная копия авторского `.rpy`.
@@ -102,10 +115,11 @@ exits:
 15          jump ch01_s030
 16      # Неизвестный exit: разматываем стек и уходим на «сцена недоступна» (G7)
 17      $ vn.unwind_call_stack()
-18      jump vn_scene_unavailable
-19
-20  # ══ Авторский источник (копия): content/.../s020_school_gate.scene.rpy ══
-21  label ch01_s020__body:
+18      $ vn_unavailable_reason = "unknown_exit"
+19      jump vn_scene_unavailable
+20
+21  # ══ Авторский источник (копия): content/.../s020_school_gate.scene.rpy ══
+22  label ch01_s020__body:
     …далее — файл автора байт в байт…
 ```
 
@@ -116,12 +130,12 @@ exits:
 | 9 | Отметка прохождения: питает галерею, достижения и `vn.chapter_done` | `scenes.py:201`; рантайм `030_flow.rpy:12` |
 | 10 | Явная очистка слоя `sprites`. `scene` чистит только свой слой (`master`) — без этой строки персонажи предыдущей сцены протекали бы в следующую | `scenes.py:202-204` |
 | 11 | Фон из `location: school_gate/day`. Без `location:` здесь было бы `scene vn_black with dissolve` | `scenes.py:206-232`, см. [11-locations.md](11-locations.md) |
-| (нет) | `play music <id> fadein 1.0` — появилось бы между 11 и 12 при наличии `music:` | `scenes.py:234-242` |
+| (нет) | `play music <id> fadeout 1.0 fadein 1.0` и/или `play ambient <id> …` — появились бы между 11 и 12 при наличии `music:`/`ambient:` | `scenes.py:304-331,372-375` |
 | 12 | `call` (не `jump`!) в тело автора с явным `from`-именем: Ren'Py требует стабильные имена точек возврата для совместимости сейвов | `scenes.py:244` |
 | 13 | Инвариант G7: глубина call-стека на границе сцены = 0. Нарушение пишется в лог, не падает | `scenes.py:245`; рантайм `030_flow.rpy:44-48` |
 | 14-15 | Таблица диспетчеризации: **по одному блоку `if` на каждую запись `exits`**, в порядке YAML. С `when` строка была бы `if _return == "roof" and vn.eval_when('g.route == "mira"'):` | `scenes.py:247-258` |
-| 16-18 | Терминальный fallback: неизвестный/отсутствующий exit → размотать стек → `vn_scene_unavailable` | `scenes.py:266-268` |
-| 20+ | Копия авторского файла — поэтому в отладчике Ren'Py вы видите ваш текст, а не пересобранный | `scenes.py:270-271` |
+| 16-19 | Терминальный fallback: неизвестный/отсутствующий exit → размотать стек → причина `"unknown_exit"` → `vn_scene_unavailable` | `scenes.py:400-403` |
+| 21+ | Копия авторского файла (с инжектированными `voice vn.voice_path("<say-id>")` перед озвученными репликами, если глава покрыта voice-манифестом) — в отладчике Ren'Py вы видите ваш текст | `scenes.py:405-408`, `_inject_voice` `scenes.py:283-300` |
 
 Два других варианта финала обвязки — оба живые в репозитории:
 
@@ -134,6 +148,7 @@ exits:
         jump vn_end_of_content
     # Неизвестный exit: …
     $ vn.unwind_call_stack()
+    $ vn_unavailable_reason = "unknown_exit"
     jump vn_scene_unavailable
 ```
 
@@ -145,6 +160,7 @@ exits:
     if _return == "roof":
         # TODO(draft): цель ch01_s040 ещё не написана
         $ vn.unwind_call_stack()
+        $ vn_unavailable_reason = "draft_todo"
         jump vn_scene_unavailable
 ```
 
@@ -152,18 +168,19 @@ exits:
 
 ## Что происходит при неизвестном exit
 
-`vn.unwind_call_stack()` (`game/framework/00_core/030_flow.rpy:50-55`) в цикле делает `renpy.pop_call()`, пока глубина стека не станет 0 — **и только это**; куда идти дальше, решает вызывающий код. Дальше `jump vn_scene_unavailable` (`030_flow.rpy:227-232`):
+`vn.unwind_call_stack()` в цикле делает `renpy.pop_call()`, пока глубина стека не станет 0 — **и только это**; куда идти дальше, решает вызывающий код. Обвязка перед `jump vn_scene_unavailable` выставляет причину (`vn_unavailable_reason = "draft_todo" | "unknown_exit"`; рантайм добавляет `"missing_content"` для shim-меток выпущенных id, отсутствующих в сборке). Дальше (`030_flow.rpy:232-242`):
 
 ```renpy
 label vn_scene_unavailable:
     if vn_qa.autopilot_active():
         $ vn_qa.autopilot_finish("FAIL: vn_scene_unavailable")
-    $ renpy.say(None, vn_loc.t("ui.flow.scene_unavailable"))
-    $ renpy.say(None, vn_loc.t("ui.flow.return_to_menu"))
+    $ renpy.block_rollback()    # гейт нельзя объехать колёсиком
+    call screen vn_content_unavailable(vn_unavailable_reason)
+    $ vn_unavailable_reason = None
     $ renpy.full_restart()
 ```
 
-То есть игрок видит две реплики и возвращается в главное меню, а **smoke-автопилот считает прогон проваленным**. Это и есть способ поймать битую связку в CI: `vn test smoke` вернёт FAIL. Симметрично `vn_end_of_content` (`030_flow.rpy:235-242`) завершает автопилот успехом.
+Игрок видит модальный экран `vn_content_unavailable` (`game/framework/20_ui/screens/unavailable.rpy`) с объяснением причины и действиями «меню / загрузка / выход» вместо безусловного выброса в меню, а **smoke-автопилот считает прогон проваленным**. Это и есть способ поймать битую связку в CI: `vn test smoke` вернёт FAIL. Симметрично `vn_end_of_content` (`030_flow.rpy:245-…`) завершает автопилот успехом.
 
 ## `vn scene new` vs `vn scene stub`
 
@@ -320,7 +337,7 @@ flowchart TD
 - **Не проставляйте `id ch01_s020_0005` руками** — say-id раздаёт `vn loc keys` и пишет их в `loc/ledger/chNN.json`. Дубликат id ловится с сообщением `дубликат say-id … (copy-paste?) — переводы перезаписали бы друг друга` (`tools/vn/src/vn/loc/keys.py:100-105`).
 - **Не забывайте `vn loc keys` после написания реплик.** CI гоняет `vn loc keys --check` (`.github/workflows/ci.yml:64`) и падает на строках без id. `vn build` эту команду **не** вызывает.
 - **Не ставьте `location: rooftop`** без варианта — схема пропустит, компилятор упадёт.
-- **Не пишите `music:` сегодня** — в `content/audio/*.yaml` нет ни одного трека, любое значение = ошибка.
+- **Не пишите `music:`/`ambient:` сегодня** — в `content/audio/*.yaml` нет ни одного трека, любое значение = ошибка.
 - **Не рассчитывайте, что `id:` в YAML что-то решает** — identity сцены берётся из имени файла.
 - **Не кладите стейтменты вне `label`** в `.scene.rpy` — build-bridge отклонит файл целиком.
 - **Не ждите `$ vn_qa.choice(...)` в генерате.** `ARCHITECTURE.md:544-551` описывает его как первый стейтмент каждой ветки меню — **NOT IMPLEMENTED**: `emit_scene` копирует авторский источник дословно, а `vn_qa.choice` в `030_flow.rpy:98-101` — пустой `pass`.

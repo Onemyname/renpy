@@ -1,6 +1,6 @@
 # 25. Собственный движок: CLI `vn`
 
-> **Статус подсистемы:** IMPLEMENTED — одна точка входа, 20 команд/групп верхнего уровня, честный контракт кодов возврата, ~50 живых подкоманд. **Но:** 14 подкоманд — заглушки с номером фазы, десяток команд из `ARCHITECTURE.md` не существует вовсе (`vn validate`, `vn build --use-artifact`), а тестами покрыта ровно одна команда CLI — `pack build`. Lock-файл тулчейна `tools/vn.lock` с 2026-08-08 **читается** всеми пайплайнами (§8).
+> **Статус подсистемы:** IMPLEMENTED — одна точка входа, 20 команд/групп верхнего уровня, честный контракт кодов возврата, ~50 живых подкоманд. **Но:** 11 подкоманд — заглушки с номером фазы, десяток команд из `ARCHITECTURE.md` не существует вовсе (`vn validate`, `vn build --use-artifact`), а тестами покрыта ровно одна команда CLI — `pack build`. Lock-файл тулчейна `tools/vn.lock` с 2026-08-08 **читается** всеми пайплайнами (§8).
 > **Отвечает на вопрос:** «Какая команда `vn` мне нужна, что она делает, чем кончится и как добавить свою».
 
 `vn` — единственный инструмент проекта (норма G1). Это Python-пакет `vn-tools` в `tools/vn/`, ставится editable-установкой и даёт команду `vn`. Он собирает ассеты, компилирует контент, гоняет линт, локализацию, QA-прогоны, релизный гейт и паки. Ren'Py он **вызывает**, но не заменяет: движок остаётся Ren'Py 8.5.3, а `vn` — производственная обвязка вокруг него. Код: `../../tools/vn/src/vn/` (8112 строк, 30 модулей), точка входа `vn = "vn.cli:main"` (`../../tools/vn/pyproject.toml:24`).
@@ -148,9 +148,16 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 Подробно — [Локализация](14-localization.md).
 
-### 2.7 `vn voice` — «Озвучка (C5)» (`cli.py:1087`)
+### 2.7 `vn voice` — «Озвучка (C5/§4.9)» (`cli.py:1226-1311`)
 
-`voice manifest`, `voice import`, `voice tts`, `voice validate` — все четыре STUB, **фаза 2**.
+| Команда | Опции / аргументы | Что делает | Статус |
+|---|---|---|---|
+| `voice manifest CHAPTER` | `--lang` (**required**), `--char`, `-o/--out` (**required**) | CSV-лист записи для актёра/студии: реплики главы из ledger с контекстом соседних строк и статусом покрытия (`cli.py:1233-1252`) | IMPL |
+| `voice import SRC_DIR` | `--lang` (**required**), `--draft` | Разложить дубли `<line_id>.<ext>` по `assets_src/voice/<lang>/<chNN>/` и обновить манифесты `voice@1`; импорт атомарен — любая ошибка, и ни один файл не скопирован. Транскод в Opus — следующий `vn assets build` (`cli.py:1255-1275`) | IMPL |
+| `voice tts` | — | TTS-черновики непокрытых реплик | STUB — фаза 2 (`cli.py:1278-1281`) |
+| `voice validate` | `--report` | Манифесты ↔ ledger ↔ мастера: сироты в обе стороны, драфты, дыры покрытия; `--report` — сводка по главам и языкам (`cli.py:1284-1311`) | IMPL |
+
+Ядро — `tools/vn/src/vn/voice.py`; жёсткими драфты (WARN) и дыры покрытия (FAIL) становятся в релизном гейте (`release.py:464-478`). Подробно — [Аудио](23-audio.md) §8.
 
 ### 2.8 `vn save` (`cli.py:1093-1096`)
 
@@ -262,25 +269,25 @@ if [ "${rc:-0}" -eq 3 ]; then echo "ещё не фаза — пропускае�
 
 | Фаза | Команды | Регистрация |
 |---|---|---|
-| **1** | `char new`, `char validate` | `cli.py:958` |
-| **2** | `migrate`, `shell` | `cli.py:371`, `cli.py:372` |
-| **2** | `char sheet` | `cli.py:958` |
-| **2** | `voice manifest`, `voice import`, `voice tts`, `voice validate` | `cli.py:1087` |
-| **2** | `test replay`, `test paths` | `cli.py:1404-1405` |
-| **3** | `save migrate` | `cli.py:1259-1260` |
-| **3** | `test screens` | `cli.py:1404-1405` |
-| **3** | `release steam` | `cli.py:1565` |
+| **1** | `char new`, `char validate` | `cli.py:1097` |
+| **2** | `migrate`, `shell` | `cli.py:393`, `cli.py:394` |
+| **2** | `char sheet` | `cli.py:1097` |
+| **2** | `voice tts` (остальной `vn voice` — живой, §2.7) | `cli.py:1278-1281` |
+| **2** | `test replay`, `test paths` | `cli.py:1659` |
+| **3** | `save migrate` | `cli.py:1484` |
+| **3** | `test screens` | `cli.py:1659` |
+| **3** | `release steam` | `cli.py:1819` |
 
-Итого 14 заглушек (пересчитано по таблице выше и по `grep -n '_stub' cli.py`). Обратите внимание на аномалию: `char new` и `char validate` помечены **фазой 1**, то есть по плану они должны существовать уже сейчас. Персонажей приходится заводить редактированием YAML вручную.
+Итого 11 заглушек (пересчитано по таблице выше и по `grep -n '_stub' cli.py`). Обратите внимание на аномалию: `char new` и `char validate` помечены **фазой 1**, то есть по плану они должны существовать уже сейчас. Персонажей приходится заводить редактированием YAML вручную.
 
 Заглушки бывают двух видов в коде:
 
 ```python
 main.command(name="migrate", help="Миграции схем деклараций (фаза 2).")(_stub(2))   # одиночная
-_stub_group("voice", "Озвучка (C5).", {"manifest": 2, "import": 2, "tts": 2, "validate": 2})  # группа
+_stub_group("char", "Персонажи: new, validate, sheet (раздел 4).", {"new": 1, "validate": 1, "sheet": 2})  # группа
 ```
 
-`_stub_group` (`cli.py:501-505`) создаёт `click.Group` и вешает на каждую подкоманду `_stub(phase)` с автоматическим help-текстом.
+`_stub_group` (`cli.py:523-527`) создаёт `click.Group` и вешает на каждую подкоманду `_stub(phase)` с автоматическим help-текстом. Одиночная заглушка внутри живой группы — `voice.command(name="tts", ...)(_stub(2))` (`cli.py:1278-1281`).
 
 ---
 
@@ -404,7 +411,7 @@ tools/vn/
     loc/
       po.py       566       PO round-trip, пакеты языков, псевдолокаль, отчёт покрытия
       keys.py     249       say-id и маркеры меню, ledger
-  tests/                    19 файлов test_*.py + conftest.py, 152 теста, 3103 строки
+  tests/                    23 файла test_*.py + conftest.py, 240 тестов
 ```
 
 **Конвенция сокращений в хендбуке.** Ссылки вида `tools/vn/src/vn/content/lint.py:20-53`, `tools/vn/src/vn/loc/po.py:44`, `tools/vn/src/vn/assets/pipeline.py:38-46` — это **сокращение относительно `tools/vn/src/vn/`**, а не путь от корня репозитория. Каталоги `content/` и `loc/` в корне — совсем другие зоны (YAML-декларации и обмен с переводчиками), Python-файлов там нет. Полная форма первого сегмента: `tools/vn/src/vn/content/lint.py`, `tools/vn/src/vn/loc/po.py`, `tools/vn/src/vn/assets/pipeline.py`.
@@ -442,7 +449,7 @@ SDK ищется **только** через переменную окружен
 
 `SchemaRegistry` (`schemas.py:16-51`) строится **на каждый вызов заново** — синглтона нет; 13 мест в `tools/vn/src/vn/` создают собственный экземпляр (`doctor.py:99`, `tools/vn/src/vn/content/lint.py:114`, `tools/vn/src/vn/content/compile.py:591`, `release.py:261,292`, `cli.py:1580`, `pipeline.py:264`, шесть модулей в `assets/` — включая `assets/pipeline.py:450`, где с 2026-08-08 валидируется манифест сборки). Внутри экземпляра валидаторы `Draft202012Validator` мемоизируются по schema-id (`schemas.py:22, 43-46`). Правила именования и `const`-проверка — в [Контентный конвейер §8](08-content-pipeline.md).
 
-В `tools/schemas/` **36 схем** (было 34 до 2026-08-08): добавлены `assets_manifest@1` — под манифест `.vncache/assets-manifest.json`, и `build_info@2` — замена `build_info@1` по ADR-0011. `build_info@1` из реестра не удалена: она нужна, чтобы читались артефакты сборок до 0.1.5.
+В `tools/schemas/` **39 схем** (было 34 до 2026-08-08): добавлены `assets_manifest@1` — под манифест `.vncache/assets-manifest.json`, и `build_info@2` — замена `build_info@1` по ADR-0011. `build_info@1` из реестра не удалена: она нужна, чтобы читались артефакты сборок до 0.1.5.
 
 ---
 
@@ -564,7 +571,7 @@ _stub_group("bar", "Домен bar (раздел N).", {"new": 1, "check": 2})  
 - **на реальном репозитории** — `test_schemas.py` берёт `repo_root` и валидирует все стартовые декларации;
 - **на синтетическом скелете** — `test_compile.py:29` (`skeleton_no_chapters`) собирает в `tmp_path` минимальный репозиторий (копирует `project.yaml`, `.vnstorage.yaml`, `tools/schemas/`, `content/` без глав и локаций) — так тест не требует Ren'Py SDK.
 
-Запуск: `python -m pytest tools/vn/tests -q` (152 теста). См. [Тестирование](27-testing.md).
+Запуск: `python -m pytest tools/vn/tests -q` (240 тестов). См. [Тестирование](27-testing.md).
 
 Третий шаблон появился 2026-08-08 — **тест над CLI**: `test_release.py:141-146` (`_run_pack_build`) даёт `click.testing.CliRunner` + `monkeypatch.chdir(root)` (чтобы `_root()` нашёл синтетический корень) и проверяет код возврата и текст вывода команды. Так стоит закрывать команды, у которых логика неотделима от обвязки.
 
@@ -639,7 +646,7 @@ vn build                           # build: OK
 vn build --check                   # check: генерат свеж   ← то же гоняет CI
 
 # 4. Тесты тулинга
-python -m pytest tools/vn/tests -q # 152 passed
+python -m pytest tools/vn/tests -q # 240 passed
 
 # 5. Контракт кодов возврата (после правок в cli.py)
 vn char new;    echo $?            # 3  — заглушка фазы 1
@@ -662,5 +669,5 @@ vn --help && vn assets --help && vn assets video --help
 | **Читать перед изменением** | `../../tools/vn/src/vn/cli.py` (обвязка всех команд), `../../tools/vn/src/vn/repo.py` (поиск корня), `../../tools/vn/src/vn/doctor.py` (обнаружение SDK), `../../tools/vn/pyproject.toml` (зависимости, entry point), целевой модуль домена в `../../tools/vn/src/vn/<домен>/` |
 | **Не трогать** | `game/generated/`, `game/assets/`, `game/tl/`, `.vncache/`, `build/` — производные зоны, перезапишет сборка. `../ARCHITECTURE.md` — целевой документ, не описание построенного: не «приводить код в соответствие» с ним без задачи |
 | **Зависимости** | Правка `cli.py` ломает CI (`.github/workflows/{ci,nightly,canary,release}.yml`, `.gitlab-ci.yml` вызывают команды `vn` по именам), хуки и любые скрипты. Переименование команды/флага — breaking change. Новая зависимость в `pyproject.toml` **обязана** получить пин в `tools/vn.lock`: лок ставится первым во всех пайплайнах, и незапиненный пакет приедет из PyPI произвольной версии. Новая джоба CI обязана ставить лок до editable и `ffmpeg` до `vn build` — оба инварианта стережёт `tools/vn/tests/test_ci_config.py` |
-| **Валидация** | `python -m pytest tools/vn/tests -q` → 152 passed · `vn build --check` → `check: генерат свеж` · `vn doctor` → exit 0 · `vn --help` и `vn <группа> --help` без исключений |
+| **Валидация** | `python -m pytest tools/vn/tests -q` → 240 passed · `vn build --check` → `check: генерат свеж` · `vn doctor` → exit 0 · `vn --help` и `vn <группа> --help` без исключений |
 | **Частые ошибки** | 1) Логика написана прямо в `cli.py` — попадает в почти непокрытую тестами зону (закрыт только `pack build`). 2) Импорт модуля поднят на уровень `cli.py` — старт CLI дорожает для всех команд. 3) Заглушка сделана как `pass` вместо `_stub(N)` — команда молча «успешна». 4) Ошибка выброшена исключением вместо `_fail()` — нарушен контракт «exit 1 всегда с сообщением». 5) Флаг взят из `ARCHITECTURE.md` (`--use-artifact`, `vn validate`, `--gate`) — таких команд нет. 6) Предположение, что `RENPY_SDK` унаследован bash-сессией — его надо экспортировать вручную. 7) Схема добавлена без совпадения `properties.schema.const` с именем файла или без `additionalProperties: false` — падает `SchemaRegistry` и `test_registry_loads`. 8) Утверждение, что `tools/vn.lock` никем не читается — устарело с 2026-08-08 (§8) |

@@ -199,9 +199,26 @@ def test_undeclared_audio_is_error():
         {"line": 5, "stmt": "play sound", "file": "door_slam", "channel": None},
     ])
     sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
-                      audio_ids={"calm_theme", "door_slam"})
+                      audio_tracks={"calm_theme": {"kind": "bgm"},
+                                    "door_slam": {"kind": "sfx"}})
     assert any("play music clam_theme" in e for e in rep.errors)
     assert not any("door_slam" in e for e in rep.errors)
+
+
+def test_audio_kind_channel_mismatch_is_error():
+    """sfx на канале music занял бы канал и оборвал музыку — kind обязан
+    соответствовать каналу play-оператора (C18 + канал ambient)."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(audio_refs=[
+        {"line": 4, "stmt": "play music", "file": "door_slam", "channel": None},
+        {"line": 5, "stmt": "play ambient", "file": "rain", "channel": None},
+        {"line": 6, "stmt": "play sound", "file": "door_slam", "channel": None},
+    ])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep,
+                      audio_tracks={"door_slam": {"kind": "sfx"},
+                                    "rain": {"kind": "amb"}})
+    assert any("play music door_slam" in e and "sfx" in e for e in rep.errors)
+    assert len(rep.errors) == 1
 
 
 def test_audio_literal_and_expression_skipped():
@@ -211,7 +228,7 @@ def test_audio_literal_and_expression_skipped():
         {"line": 4, "stmt": "play music", "file": '"assets/audio/bgm/x.ogg"', "channel": None},
         {"line": 5, "stmt": "play music", "file": "tracks[i]", "channel": None},
     ])
-    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep, audio_ids=set())
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep, audio_tracks={})
     assert rep.errors == []
 
 
@@ -222,7 +239,7 @@ def test_refs_draft_downgrades_to_warning():
         audio_refs=[{"line": 5, "stmt": "play music", "file": "nope", "channel": None}],
     )
     sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "draft", rep,
-                      image_index=_index(tags=["mira"]), audio_ids=set())
+                      image_index=_index(tags=["mira"]), audio_tracks={})
     assert rep.errors == []
     assert len(rep.warnings) == 2
 

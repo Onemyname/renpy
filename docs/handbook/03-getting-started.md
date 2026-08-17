@@ -21,7 +21,7 @@ vn build                                         # -> build: OK
 vn play                                          # запуск игры
 ```
 
-Проверено на машине владельца 2026-08-08: `vn doctor` — 8 PASS / 0 FAIL, `vn build` — `build: OK` за **0.29 с** на прогретом кэше, `python -m pytest tools/vn/tests -q` — 152 passed.
+Проверено на машине владельца 2026-08-08: `vn doctor` — 8 PASS / 0 FAIL, `vn build` — `build: OK` за **0.29 с** на прогретом кэше, `python -m pytest tools/vn/tests -q` — 240 passed.
 
 ---
 
@@ -123,7 +123,7 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
  ✓ git-lfs (git-lfs/3.7.1 (GitHub; windows amd64; go 1.25.1; git b84b3384))
  ✓ корень репозитория: C:\Users\Vadim\IdeaProjects\renpy
  ✓ project.yaml (min_tools 0.1, vn 0.1.0)
- ✓ реестр схем: 36 схем
+ ✓ реестр схем: 39 схем
  ✓ шрифты UI: 3/3 материализованы
  ✓ Ren'Py SDK 8.5.3.26051504: C:\Users\Vadim\renpy-sdk\renpy-8.5.3-sdk
 ```
@@ -207,7 +207,7 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
 | `vn content lint` | 34 правила: схемы, именование, структура глав, exits, layout | когда `vn build` упал на lint | IMPLEMENTED |
 | `vn loc keys` | дописывает say-id и маркеры меню в авторские `.rpy`, обновляет `loc/ledger/chNN.json` | после правки/добавления реплик | IMPLEMENTED (`cli.py:966-993`) |
 | `vn test smoke` | in-process автопилот: проходит игру, скриншоты в `.vncache/smoke/`, проверка cold-start против бюджета 30 с | перед PR с изменением флоу | IMPLEMENTED (`cli.py:1347-1401`) |
-| `python -m pytest tools/vn/tests -q` | 152 теста в 19 файлах, ~7 с | при правке `tools/vn/` | IMPLEMENTED |
+| `python -m pytest tools/vn/tests -q` | 240 тестов в 23 файлах, ~7 с | при правке `tools/vn/` | IMPLEMENTED |
 | `vn doctor` | самодиагностика | когда «вчера работало» | IMPLEMENTED |
 
 Что `vn dev` **не** отслеживает: `loc/`, `packs/`, `game/`, `tools/`, `project.yaml` — пути watch-а захардкожены как `root/assets_src` и `root/content` (`devloop.py:33-34`). Правку пака или PO-файла придётся пересобирать руками.
@@ -278,7 +278,7 @@ vn play
 | `бюджет: game/assets: … МБ > бюджета 500 МБ` + `ошибка: бюджеты G19 превышены` | превышен размер-бюджет из `project.yaml:6-11` | почистите ассеты или обсудите бюджет отдельным PR; [32-performance-and-scalability.md](32-performance-and-scalability.md) |
 | `vn build` зелёный, но `vn doctor` красный по SDK | тёплый кэш анализа (`.vncache/analyze-*.json`) | `rm .vncache/analyze-*.json` и пересоберите — увидите настоящее состояние |
 | Кракозябры вместо русского в `vn --help` под Git Bash | реконфигурация stdout не успевает отработать до eager-опции `--help` (`cli.py:49-55`) | смотрите help из PowerShell |
-| `эта команда появится в фазе N (раздел 8 ARCHITECTURE.md)`, exit **3** | команда — честная заглушка `_stub` | это не поломка: `vn char new/validate` (фаза 1), `vn migrate`, `vn shell`, `vn char sheet`, `vn voice *`, `vn test replay|paths` (фаза 2), `vn save migrate`, `vn test screens`, `vn release steam` (фаза 3) |
+| `эта команда появится в фазе N (раздел 8 ARCHITECTURE.md)`, exit **3** | команда — честная заглушка `_stub` | это не поломка: `vn char new/validate` (фаза 1), `vn migrate`, `vn shell`, `vn char sheet`, `vn voice tts`, `vn test replay|paths` (фаза 2), `vn save migrate`, `vn test screens`, `vn release steam` (фаза 3) |
 
 Exit-коды CLI: `0` успех, `1` ошибка проверки/сборки (**всегда с сообщением, никогда голым трейсбеком** — `cli.py:22-24`), `2` usage error от click, `3` не реализовано в этой фазе (`cli.py:34-38`).
 
@@ -318,7 +318,7 @@ vn doctor                          # ожидается 8 галок, exit 0
 vn build                           # build: OK
 vn build --check                   # check: генерат свеж  (ничего не пишет)
 vn content lint                    # 0 ошибок
-python -m pytest tools/vn/tests -q # 152 passed
+python -m pytest tools/vn/tests -q # 240 passed
 vn loc keys --check                # loc keys --check: все строки с id, ledger свеж
 vn loc report                      # de/en/pseudo — 115/115 (100%), fuzzy 0
 vn play                            # игра стартует

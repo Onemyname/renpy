@@ -246,6 +246,15 @@ with Image.open(src) as im:
 
 **Что бюджеты НЕ ловят:** переразмеренный канвас отдельного спрайта, лишний альфа-пиксель в углу, `draft`-профиль в релизе, разное разрешение слоёв одной позы. Всё это проходит зелёным.
 
+### 9.3 Потолок качества текстур: сборка и игрок
+
+Автоподбор оверсэмпл-варианта `@N` (ADR-0012) выбирает картинку по **физическому экрану** и ничего не знает про GPU: 4K-монитор со слабой видеокартой получил бы `@2`-текстуры, которые железо не тянет. Потолков два:
+
+- **Потолок сборки** — `project.yaml: render.max_oversampling` эмитится в `game/generated/registry/render.gen.rpy` как `define config.automatic_oversampling = N` и `define vn_build_max_oversampling = N` (`tools/vn/src/vn/content/compile.py:125-129`). Выше отгруженных вариантов движок не прыгнет.
+- **Потолок игрока** — `persistent.vn_quality_cap` (`content/variables/settings.vars.yaml`: `null` = авто, `1` = без `@N`-вариантов) и фасад `vn.quality_cap()` / `vn.set_quality_cap()` в `game/framework/00_core/095_quality.rpy`. Игрок может только **опустить** потолок сборки; `set_quality_cap` применяет его на лету — выставляет `config.automatic_oversampling`, делает `renpy.free_memory()`, и уже показанные текстуры перезагружаются в новом качестве без перезапуска.
+
+UI — сег-кнопки «Качество текстур: Авто / Экономное» в настройках (`game/framework/20_ui/screens/core_screens.rpy:297-312`, строки `ui.prefs.graphics` / `ui.prefs.quality_auto` / `ui.prefs.quality_eco`). Оба API движка документированы (`config.automatic_oversampling`, `renpy.free_memory`) — обёртка engine_compat не требуется.
+
 ## 10. Декларация рендера — единственное машиночитаемое место для «профиля»
 
 `../../tools/schemas/daz_render@1.schema.json`. Обязательные поля: `schema`, `id`, `source` (`.duf` относительно `assets_src/`), `output`, `render`. Внутри `render` обязательны `resolution`, `renderer` (`iray|filament|viewport`), `camera`; опциональны `lighting`, `character_presets` и **свободной формы `quality`** — с прямым указанием в схеме: «max_samples, denoiser, …».

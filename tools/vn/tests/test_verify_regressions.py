@@ -110,6 +110,25 @@ def test_shims_unwind_call_stack(repo_root, tmp_path):
     assert "label ch03_s010:\n    $ vn.unwind_call_stack()\n    jump ch03_s020" in text
 
 
+def test_registry_scenes_missing_from_build_get_shims(repo_root, tmp_path):
+    """Выпущенный id вне сборки (неустановленный пак/эпизод) обязан получить
+    shim на «контент недоступен» — иначе сейв игрока падает ScriptError в
+    crash-экран (раздел 3.8 ARCHITECTURE.md; закрыто по FW-аудиту)."""
+    root = _copy_skeleton(repo_root, tmp_path)
+    (root / "content" / "registry" / "id_registry.json").write_text(
+        json.dumps({"schema": "id_registry@1", "chapters": ["ch77"],
+                    "scenes": ["ch77_s010"], "characters": [], "vars": [],
+                    "assets": []}),
+        encoding="utf-8",
+    )
+    gen = tmp_path / "gen"
+    compile_content(root, out_dir=gen)
+    text = (gen / "registry" / "overrides.gen.rpy").read_text(encoding="utf-8")
+    assert ("label ch77_s010:\n    $ vn.unwind_call_stack()\n"
+            '    $ vn_unavailable_reason = "missing_content"\n'
+            "    jump vn_scene_unavailable") in text
+
+
 def test_persistent_vars_require_vn_prefix(repo_root, tmp_path):
     root = _copy_skeleton(repo_root, tmp_path)
     (root / "content" / "variables" / "meta.vars.yaml").write_text(

@@ -18,7 +18,7 @@
     },
     "asset_id": {
       "type": "string",
-      "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$"
+      "pattern": "^(bg|cg|spr|shots|mov)/[a-z0-9_/]+$"
     }
   },
   "properties": {
@@ -76,7 +76,7 @@
       "type": "object",
       "description": "Переименования ассетов: старый логический id -> новый. Рантайм галереи считает исторические имена засчитанными, иначе игрок теряет открытые CG при простом переименовании файла",
       "propertyNames": {
-        "pattern": "^(bg|cg|spr|mov)/[a-z0-9_/]+$"
+        "pattern": "^(bg|cg|spr|shots|mov)/[a-z0-9_/]+$"
       },
       "additionalProperties": {
         "$ref": "#/$defs/asset_id"

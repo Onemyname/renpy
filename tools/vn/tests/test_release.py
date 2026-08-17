@@ -245,3 +245,23 @@ def test_built_asset_ids_ignores_derivatives(tmp_path):
     assert rel.built_asset_ids(tmp_path) == [
         "bg/roof/day", "cg/ch01/a", "mov/demo/x", "spr/mira/a/base",
     ]
+
+
+def test_options_rpy_ships_assets_loose_without_rpa(repo_root):
+    """Ассеты едут россыпью намеренно: Steam дельта-патчит отдельные файлы, а
+    монолитный .rpa перекачивался бы игроком целиком при правке одного спрайта;
+    защиты архив всё равно не добавляет — распаковывается извне (G9).
+    Появление .rpa — осознанное решение с ADR (мобильная поставка фазы 3,
+    ARCHITECTURE.md §2.4), а не случайная правка options.rpy — её и ловим."""
+    import re
+
+    text = (repo_root / "game" / "options.rpy").read_text(encoding="utf-8")
+    assert "build.archive" not in text, (
+        "в game/options.rpy появился build.archive — desktop-поставка должна "
+        "остаться россыпью (Steam delta-патчи); если это осознанно — нужен ADR")
+    # Второй путь к .rpa — классификация ассетов в имя архива вместо None
+    for pattern, target in re.findall(r"build\.classify\(\s*([^,]+),\s*([^)]+)\)", text):
+        if "game/assets" in pattern:
+            assert target.strip() == "None", (
+                f"game/assets классифицирован в {target.strip()!r} — это упаковка "
+                "в архив, см. докстринг теста")

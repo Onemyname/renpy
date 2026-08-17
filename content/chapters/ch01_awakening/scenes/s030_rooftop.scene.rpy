@@ -13,5 +13,13 @@ label ch01_s030__body:
     scene cg ch01 rooftop_day with dissolve
     "Город лежит внизу, будто выдохнул." id ch01_s030_0006
 
+    # Послойный шот (shots@1, ADR-0013): env + слой Миры. Наряд берёт из
+    # g.mira_outfit (атрибут mira_auto по умолчанию) — смена переменной
+    # перекомпоновывает кадр без повторного show.
+    scene shot_ch01_s030 sunset with dissolve
+    "Закат раскрашивает крышу заново." id ch01_s030_0007
+    $ g.mira_outfit = "casual"
+    "Мира успела переодеться — кадр это уже знает." id ch01_s030_0008
+
     "КОНЕЦ ДЕМО-ГЛАВЫ" id ch01_s030_0005
     return

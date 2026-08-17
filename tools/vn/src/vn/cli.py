@@ -1223,7 +1223,92 @@ def loc_report():
     for lang, cov in sorted(rep.coverage.items()):
         pct = (cov["translated"] / cov["total"] * 100) if cov["total"] else 100.0
         click.echo(f"{lang}: {cov['translated']}/{cov['total']} ({pct:.0f}%), fuzzy: {cov['fuzzy']}")
-_stub_group("voice", "Озвучка (C5).", {"manifest": 2, "import": 2, "tts": 2, "validate": 2})
+# ── vn voice (C5/§4.9) ────────────────────────────────────────────────────────
+
+@main.group()
+def voice():
+    """Озвучка: покрытие по манифестам, импорт дублей, валидация (C5/§4.9)."""
+
+
+@voice.command("manifest")
+@click.argument("chapter")
+@click.option("--lang", required=True, help="Язык дублей (код языка, включая исходный).")
+@click.option("--char", default=None, help="Только реплики этого персонажа.")
+@click.option("-o", "--out", "out_path", required=True,
+              type=click.Path(dir_okay=False, path_type=Path),
+              help="Куда писать CSV-лист для актёра/студии.")
+def voice_manifest(chapter: str, lang: str, char: str | None, out_path: Path):
+    """Лист записи: реплики главы (id, кто, текст, контекст, статус покрытия)."""
+    from .voice import VoiceError, manifest_rows, write_manifest_csv
+
+    root = _root()
+    try:
+        rows = manifest_rows(root, chapter, lang, char=char)
+    except VoiceError as e:
+        _fail(str(e))
+    write_manifest_csv(rows, out_path)
+    covered = sum(1 for r in rows if r["status"])
+    click.secho(f"voice manifest: {len(rows)} реплик -> {out_path} "
+                f"(уже покрыто: {covered})", fg="green")
+
+
+@voice.command("import")
+@click.argument("src_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+@click.option("--lang", required=True, help="Язык импортируемых дублей.")
+@click.option("--draft", is_flag=True,
+              help="Пометить дубли как draft (черновые/TTS): warning в релизном гейте.")
+def voice_import(src_dir: Path, lang: str, draft: bool):
+    """Разложить дубли <line_id>.<ext> по assets_src/voice/ и обновить манифесты.
+
+    Импорт атомарен: любая ошибка валидации имён/ledger — и ни один файл
+    не скопирован (половинчатый импорт хуже отказа). Транскод в Opus — vn assets build."""
+    from .voice import import_takes
+
+    root = _root()
+    rep = import_takes(root, src_dir, lang, status="draft" if draft else "final")
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    if rep.errors:
+        _fail(f"voice import: {len(rep.errors)} ошибок — ничего не импортировано")
+    click.secho(f"voice import: {len(rep.imported)} дублей "
+                f"({', '.join(rep.updated_manifests)}); транскод — vn assets build",
+                fg="green")
+
+
+voice.command(
+    name="tts",
+    help="TTS-черновики непокрытых реплик. Появится в фазе 2 (раздел 8 ARCHITECTURE.md).",
+)(_stub(2))
+
+
+@voice.command("validate")
+@click.option("--report", "show_report", is_flag=True,
+              help="Сводка покрытия по главам и языкам.")
+def voice_validate(show_report: bool):
+    """Манифесты <-> ledger <-> мастера: сироты в обе стороны, драфты, дыры покрытия.
+
+    Ошибки валят команду; драфты и дыры здесь информационные — жёсткими они
+    становятся в релизном гейте (vn release validate: драфты = WARN, дыры = FAIL)."""
+    from .voice import validate as voice_validate_fn
+
+    root = _root()
+    rep = voice_validate_fn(root)
+    for w in rep.warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    if show_report:
+        if not rep.coverage:
+            click.echo("озвучиваемых глав нет (content/chapters/*/voice/)")
+        for (ch, lang), (covered, total) in sorted(rep.coverage.items()):
+            pct = covered / total * 100 if total else 100.0
+            click.echo(f"{ch} [{lang}]: покрыто {covered}/{total} ({pct:.0f}%)")
+        for h in rep.holes:
+            click.echo(f"  непокрыто {h}")
+    if not rep.ok:
+        _fail(f"voice: {len(rep.errors)} ошибок")
+    click.secho(f"voice: OK (драфтов: {len(rep.drafts)}, непокрыто: {len(rep.holes)})",
+                fg="green")
 # ── vn save ───────────────────────────────────────────────────────────────────
 
 FIXTURES_DIR = "ci/fixtures/saves"

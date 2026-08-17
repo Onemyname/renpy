@@ -33,7 +33,12 @@
       "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,23}$"}
     },
     "location": {"type": "string", "pattern": "^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)?$"},
-    "music": {"type": "string", "pattern": "^(bgm|amb)/[a-z][a-z0-9_]*$"},
+    "music": {"type": "string", "pattern": "^bgm/[a-z][a-z0-9_]*$"},
+    "ambient": {
+      "type": "string",
+      "pattern": "^amb/[a-z][a-z0-9_]*$",
+      "description": "Зацикленный эмбиенс локации; играет на канале ambient ОДНОВРЕМЕННО с music"
+    },
     "vars": {
       "type": "object",
       "properties": {

@@ -1,9 +1,9 @@
 # 23. Аудио
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED. Декларации, кодоген и ветка сборки `copy_audio` работают: зона источника приведена к нормативной `assets_src/audio_stems/{bgm,amb,sfx}/`. Но в репозитории **ноль звуковых файлов**, `content/audio/*.yaml` пусты (`tracks: {}`), озвучка (`vn voice`) — заглушка фазы 2, нормализация громкости NOT IMPLEMENTED.
-> **Отвечает на вопрос:** «Как в игре появляется музыка и звук, что из этого уже работает, и что конкретно сделать, чтобы добавить первый трек».
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED. Декларации, кодоген, ветка сборки `copy_audio`, канал `ambient`, дакинг под голос и **весь голосовой контур** (`voice@1`, `vn voice manifest|import|validate`, `vn.voice_path`, транскод `voice_opus` с loudnorm) работают. Но музыки/SFX в репозитории **ноль** (`content/audio/*.yaml` пусты, `tracks: {}`), loudnorm для bgm/amb/sfx NOT IMPLEMENTED (`copy_audio` копирует байты), `vn voice tts` — заглушка фазы 2.
+> **Отвечает на вопрос:** «Как в игре появляется музыка, звук и озвучка, что из этого уже работает, и что конкретно сделать, чтобы добавить первый трек или дубль».
 
-Аудио-контур размазан по четырём местам: декларации `content/audio/{bgm,sfx}.yaml` (схема `audio@1`), эмиттер `_emit_audio` в Content Compiler, ветка `copy_audio` в ассет-конвейере и поле `music:` в `*.scene.yaml`. Голос — отдельный контур (`vn voice`, voice-паки), которого не существует. Общая механика ассетов — [Ассеты](16-assets.md), общий поток данных — [Сквозной конвейер](08-content-pipeline.md).
+Аудио-контур размазан по нескольким местам: декларации `content/audio/{bgm,amb,sfx}.yaml` (схема `audio@1`), эмиттер `_emit_audio` в Content Compiler, ветка `copy_audio` в ассет-конвейере, поля `music:`/`ambient:` в `*.scene.yaml` и аудио-рантайм `game/framework/00_core/045_audio.rpy` (канал `ambient`, дакинг, `vn.voice_path`). Голос — отдельный контур: манифесты `voice@1` + `vn voice` + ветка `voice_opus` (§8). Общая механика ассетов — [Ассеты](16-assets.md), общий поток данных — [Сквозной конвейер](08-content-pipeline.md).
 
 ## Быстрый ответ
 
@@ -12,7 +12,8 @@
 cat content/audio/bgm.yaml            # → tracks: {}
 cat game/generated/registry/audio.gen.rpy   # → "# Треки не объявлены"
 ls assets_src/audio_stems/            # → bgm/ amb/ sfx/, в каждом только .gitkeep
-vn voice validate                     # → «появится в фазе 2», exit 3
+vn voice validate --report            # → покрытие озвучки по главам и языкам
+ls assets_src/voice/ru/ch01/          # → wav-мастера демо-дублей ch01
 ```
 
 Чтобы добавить трек — раздел «Как добавить трек» ниже.
@@ -23,25 +24,31 @@ vn voice validate                     # → «появится в фазе 2», 
 
 | Механизм | Статус | Код |
 |---|---|---|
-| Декларации `content/audio/*.yaml`, схема `audio@1` | IMPLEMENTED (файлы пусты: `tracks: {}`) | `../../tools/schemas/audio@1.schema.json` |
-| Эмиттер `define audio.<id>` → `registry/audio.gen.rpy` | PARTIALLY IMPLEMENTED — эмитит только `file`, поля `loop`/`loop_start`/`volume` игнорируются | `../../tools/vn/src/vn/content/compile.py:301-311` |
-| `music:` в `scene.yaml` → `play music <id> fadein 1.0` | IMPLEMENTED | `../../tools/vn/src/vn/content/scenes.py:231-242` |
-| Проверка «трек объявлен» при компиляции сцены | IMPLEMENTED (ошибка компиляции) | `scenes.py:237-241` |
-| Трансформация `copy_audio` (`assets_src/audio_stems/…` → `game/assets/audio/…`) | IMPLEMENTED — зона источника совпадает с нормативной, ветка покрыта тестом `test_audio_stems_branch_copies_ogg` | `../../tools/vn/src/vn/assets/pipeline.py:159-170`, `:232-233` |
+| Декларации `content/audio/*.yaml`, схема `audio@1` | IMPLEMENTED (все три файла — `bgm/amb/sfx` — пусты: `tracks: {}`) | `../../tools/schemas/audio@1.schema.json` |
+| Эмиттер `define audio.<id>` → `registry/audio.gen.rpy` | IMPLEMENTED — `file` + `loop_start` (штатный префикс `"<loop N>file"`); `volume` уходит клаузой play-оператора в сцене; поле `loop` по-прежнему игнорируется | `../../tools/vn/src/vn/content/compile.py:377-391`, `scenes.py:328-331` |
+| Коллизия id трека между `kind` (bgm/amb/sfx) | IMPLEMENTED — ошибка компиляции («define audio.<id> перезаписался бы молча») | `compile.py:843-852` |
+| `music:` в `scene.yaml` → `play music <id> fadeout 1.0 fadein 1.0 [volume V]` | IMPLEMENTED | `../../tools/vn/src/vn/content/scenes.py:304-331` |
+| `ambient:` в `scene.yaml` → `play ambient <id> …` (одновременно с музыкой) | IMPLEMENTED — канал `ambient` регистрирует рантайм | `scenes.py:304-331`, `../../game/framework/00_core/045_audio.rpy:13` |
+| Дакинг под голос (`config.emphasize_audio_*`: канал voice приглушает остальные до 0.6) | IMPLEMENTED (штатный механизм движка) | `045_audio.rpy:18-20` |
+| Проверка «трек объявлен» + «kind трека соответствует каналу» (и для рукописных `play`/`queue` в `.rpy`) | IMPLEMENTED (ошибка компиляции) | `scenes.py:71-73,123-149,314-325` |
 | Проверка существования файла из `file:` | NOT IMPLEMENTED — ни в линтере, ни в компиляторе; `renpy lint` в конвейере не вызывается вообще | — |
-| Запрет сырых путей в `play`-операторах (ARCHITECTURE.md:1181) | NOT IMPLEMENTED — в `lint.py` ноль аудио-правил | `../../tools/vn/src/vn/content/lint.py` |
-| `loudnorm` в конвейере (ARCHITECTURE.md:1181) | NOT IMPLEMENTED — `copy_audio` = побайтовое копирование | `pipeline.py:232-233` |
-| Микшеры и слайдеры громкости music/sound/voice | IMPLEMENTED (штатные Ren'Py) | `../../game/framework/20_ui/screens/core_screens.rpy:283-287` |
-| `voice_tag` персонажа → `Character(..., voice_tag=…)` | IMPLEMENTED | `scenes.py:316-317`, `game/generated/registry/characters.gen.rpy:9` |
-| `vn voice manifest\|import\|tts\|validate` | NOT IMPLEMENTED — стаб фазы 2, exit 3 | `../../tools/vn/src/vn/cli.py:1087` |
-| Схема `voice@1`, voice-манифесты, `vn.voice_path()`, voice-паки | NOT IMPLEMENTED — ни схемы, ни каталогов, ни рантайм-функции | — |
+| Запрет сырых путей в `play`-операторах (ARCHITECTURE.md:1181) | PARTIAL — строковый литерал в `play` статически не разрешается и просто пропускается проверкой; отдельного запрета нет | `scenes.py:126-131` |
+| `loudnorm` для bgm/amb/sfx (ARCHITECTURE.md:1181) | NOT IMPLEMENTED — `copy_audio` = побайтовое копирование; loudnorm есть только в голосовой ветке `voice_opus` | `pipeline.py:636` |
+| Трансформация `copy_audio` (`assets_src/audio_stems/…` → `game/assets/audio/…`) | IMPLEMENTED — зона источника совпадает с нормативной, ветка покрыта тестом `test_audio_stems_branch_copies_ogg` | `../../tools/vn/src/vn/assets/pipeline.py:415-430` |
+| Микшеры и слайдеры громкости music/sound/voice | IMPLEMENTED (штатные Ren'Py; канал `ambient` висит на микшере music) | `../../game/framework/20_ui/screens/core_screens.rpy:283-287` |
+| `voice_tag` персонажа → `Character(..., voice_tag=…)` | IMPLEMENTED | `game/generated/registry/characters.gen.rpy:9` |
+| `vn voice manifest\|import\|validate` | IMPLEMENTED | `../../tools/vn/src/vn/cli.py:1226-1311`, `../../tools/vn/src/vn/voice.py` |
+| `vn voice tts` (TTS-черновики непокрытых реплик) | NOT IMPLEMENTED — стаб фазы 2, exit 3 | `cli.py:1278-1281` |
+| Схема `voice@1`, voice-манифесты, инжекция `voice vn.voice_path("<id>")`, транскод `voice_opus` | IMPLEMENTED (§8) | `../../tools/schemas/voice@1.schema.json`, `compile.py:985-1005`, `scenes.py:283-300`, `pipeline.py:432-466` |
+| Гейт озвучки в `vn release validate` (ошибки/дыры = FAIL, драфты = WARN) | IMPLEMENTED | `../../tools/vn/src/vn/release.py:464-478` |
+| Voice-паки как отдельные Steam-депоты | NOT IMPLEMENTED — `vn pack build` кладёт в архив только сцены и манифест | [30-packs-and-dlc.md](30-packs-and-dlc.md) |
 | Аудио в реестре лицензий `content/licenses.yaml` | IMPLEMENTED вручную / автоматика NOT IMPLEMENTED — гейт сверяет только `*.render.yaml` из `assets_src/{daz,vam,sims4}` | `../../tools/vn/src/vn/assets/licenses.py:23-27,72-76` |
 
-Проверено на диске: `find` по `*.ogg *.opus *.mp3 *.wav *.flac` во всём репозитории (кроме `.git`) даёт **пустой список**. `game/assets/audio/` отсутствует.
+Проверено на диске: музыки и SFX нет — `find` по `*.ogg *.mp3 *.flac` в `assets_src/audio_stems/` пуст, `game/assets/audio/{bgm,amb,sfx}` отсутствуют. Озвучка есть: `assets_src/voice/ru/ch01/*.wav` (демо-дубли ch01) и их opus-выходы в `game/assets/voice/ru/ch01/` после `vn assets build`.
 
 ## 2. Декларации: `content/audio/*.yaml` (`audio@1`)
 
-Один файл на вид звука. Сейчас их два, оба — скелеты:
+Один файл на вид звука. Сейчас их три (`bgm.yaml`, `amb.yaml`, `sfx.yaml`), все — скелеты:
 
 ```yaml
 # content/audio/bgm.yaml
@@ -50,27 +57,27 @@ kind: bgm
 tracks: {}
 ```
 
-`content/audio/amb.yaml` **не существует**, но схема его допускает, а компилятор берёт `content/audio/*.yaml` глобом (`compile.py:656-660`) — достаточно создать файл с `kind: amb`.
+Компилятор берёт `content/audio/*.yaml` глобом — имя файла декоративно, вид звука определяет поле `kind`.
 
 ### Полная таблица полей (`tools/schemas/audio@1.schema.json`)
 
 | Поле | Уровень | Тип / ограничение | Обяз. | Эмитится в генерат? |
 |---|---|---|---|---|
 | `schema` | корень | `const: "audio@1"` | да | нет (служебное) |
-| `kind` | корень | `enum: bgm \| amb \| sfx` | да | нет — **на генерат не влияет вообще** |
+| `kind` | корень | `enum: bgm \| amb \| sfx` | да | не эмитится, но **валидируется**: канал play-оператора обязан соответствовать kind трека (`scenes.py:71-73,139-149`), а `music:`/`ambient:` в scene.yaml выбирают канал по kind (`scenes.py:326`) |
 | `tracks` | корень | объект; ключи (id трека) по `^[a-z][a-z0-9_]*$` | да | ключ → имя `define audio.<id>` |
 | `tracks.<id>.file` | трек | строка, строго `^assets/audio/(bgm\|amb\|sfx)/[a-z0-9_]+\.ogg$` | **да** | **да** — значение `define` |
-| `tracks.<id>.loop` | трек | boolean | нет | **нет — игнорируется** |
-| `tracks.<id>.loop_start` | трек | number ≥ 0 | нет | **нет — игнорируется** |
-| `tracks.<id>.volume` | трек | number 0…1 | нет | **нет — игнорируется** |
+| `tracks.<id>.loop` | трек | boolean | нет | **нет — игнорируется** (каналы music/ambient зациклены и так) |
+| `tracks.<id>.loop_start` | трек | number ≥ 0 | нет | **да** — штатным префиксом partial playback: `define audio.<id> = "<loop N>file"` (`compile.py:383-386`) |
+| `tracks.<id>.volume` | трек | number 0…1 | нет | **да** — клаузой `volume V` play-оператора сцены, если ≠ 1 (`scenes.py:328-331`); рукописный `play sound <id>` в `.rpy` её **не** получает |
 
 `additionalProperties: false` на обоих уровнях — лишнее поле роняет валидацию схемы.
 
-**Три ловушки в этой таблице:**
+**Две оставшиеся ловушки и одна закрытая:**
 
 1. **`.ogg` захардкожен в паттерне.** `.opus`, `.mp3`, `.flac` схему не пройдут, хотя Ren'Py их играет (раздел 5). Это соответствует норме ARCHITECTURE.md:183 («`.ogg` для bgm/amb/sfx, `.opus` для voice»), но означает, что переход на Opus для музыки = новая схема `audio@2`, а не правка одного файла.
 2. **`kind` и префикс пути в `file` не связаны.** Ничто не мешает объявить в `sfx.yaml` трек с `file: assets/audio/bgm/x.ogg`. Проверки нет.
-3. **Пространство id — плоское.** `audio_ids` собирается объединением всех треков из всех файлов (`compile.py:661`), а `define audio.<id>` живёт в одном неймспейсе Ren'Py. Два трека с одинаковым id в `bgm.yaml` и `sfx.yaml` — коллизия `define`, которую никто не ловит.
+3. ~~Пространство id — плоское и коллизии не ловятся~~ — **закрыто**: id глобально уникален между kind'ами, дубль в двух файлах — ошибка компиляции «define audio.<id> перезаписался бы молча» (`compile.py:843-852`).
 
 ### Что получается на выходе
 
@@ -80,46 +87,49 @@ tracks: {}
 init offset = 500
 
 define audio.market_theme = "assets/audio/bgm/market_theme.ogg"
+define audio.rain = "<loop 6.333>assets/audio/amb/rain.ogg"    # loop_start: 6.333
 ```
 
-Сейчас вместо строк — `# Треки не объявлены (content/audio/*.yaml пусты).` (`compile.py:308-309`).
+Сейчас вместо строк — `# Треки не объявлены (content/audio/*.yaml пусты).` (`compile.py:389-390`).
 Файл производный: правки в `game/generated/` перезапишет ближайший `vn build`.
 
 ## 3. Как трек попадает в сцену
 
-Единственный поддерживаемый путь — поле `music:` в `*.scene.yaml`:
+Декларативный путь — поля `music:` и `ambient:` в `*.scene.yaml` (могут стоять одновременно):
 
 ```yaml
 # content/chapters/ch01_awakening/scenes/s030_rooftop.scene.yaml
-# (реальная сцена репозитория; строка music: — то, что вы дописываете)
+# (реальная сцена репозитория; строки music:/ambient: — то, что вы дописываете)
 schema: scene@1
 id: s030
 location: rooftop/day
-music: bgm/market_theme        # ^(bgm|amb)/[a-z][a-z0-9_]*$
+music: bgm/market_theme        # ^bgm/[a-z][a-z0-9_]*$
+ambient: amb/rooftop_wind      # ^amb/[a-z][a-z0-9_]*$ — играет ОДНОВРЕМЕННО с музыкой
 ```
 
-Компилятор (`scenes.py:231-242`) вставляет строку в обёртку сцены — **после** `scene bg`, **до** `call …__body`:
+Компилятор (`scenes.py:304-331,372-375`) вставляет play-операторы в обёртку сцены — **после** `scene bg`, **до** `call …__body`:
 
 ```renpy
 label ch01_s030:
     $ vn.checkpoint("ch01_s030")
     $ renpy.scene("sprites")
     scene bg rooftop day with dissolve
-    play music market_theme fadein 1.0
+    play music market_theme fadeout 1.0 fadein 1.0
+    play ambient rooftop_wind fadeout 1.0 fadein 1.0 volume 0.8   # volume — из audio@1, если ≠ 1
     call ch01_s030__body from _call_ch01_s030__body
 ```
 
 Что здесь важно знать:
 
-- **Префикс `bgm/`/`amb/` декоративен.** Код делает `track = music.split("/", 1)[1]` и дальше работает только с id. `music: amb/market_theme` даст тот же `play music market_theme`.
-- **Незнакомый трек — ошибка компиляции**, а не предупреждение: `music bgm/x: трек 'x' не объявлен в content/audio/` (`scenes.py:237-241`). Это единственная аудио-проверка во всём тулинге.
-- **`fadein 1.0` захардкожен**, менять нечем — только правкой `scenes.py`.
+- **Канал выбирается по `kind` трека**: `bgm` → штатный `music`, `amb` → канал `ambient` (`scenes.py:326`), который регистрирует `045_audio.rpy:13` (`renpy.music.register_channel("ambient", mixer="music", loop=True, tight=True)`). Раньше эмбиенс пришлось бы играть на `music`, вытесняя музыку, — теперь они сосуществуют.
+- **Незнакомый трек — ошибка компиляции**: `music bgm/x: трек 'x' не объявлен в content/audio/` (`scenes.py:316-320`). Несовпадение `kind` с префиксом декларации (`music: bgm/<id>`, а трек объявлен как `amb`) — тоже ошибка (`scenes.py:321-325`).
+- **`fadeout 1.0 fadein 1.0` захардкожены**, менять нечем — только правкой `scenes.py`.
 - **Клауза `if_changed` не эмитится**, `stop music` — тоже. Поведение при одном и том же треке в соседних сценах и на конце главы проверяйте на живом материале: треков в репозитории нет, утверждать нечего.
-- **SFX через `scene.yaml` не декларируются.** Поле `music` — единственное аудио-поле в `scene@1`. Звуки пишутся руками в авторском `*.scene.rpy`: `play sound door_open`. Ограничение `__body`-контракта на это не распространяется (запрещены только jump/call наружу — см. [Сцены](12-scenes.md)), но и проверок никаких: опечатка в id вылезет в рантайме.
+- **SFX через `scene.yaml` не декларируются.** Звуки пишутся руками в авторском `*.scene.rpy`: `play sound door_open`. Опечатка в id **ловится на сборке**: голый идентификатор в `play`/`queue` сверяется с объявленными треками, а канал — с `kind` трека (`sfx` на `music` занял бы канал и оборвал музыку) — `scenes.py:123-149`, карта каналов `CHANNEL_KINDS` (`scenes.py:71-73`: music ← bgm/amb, ambient ← amb, sound ← sfx). Строковые литералы и выражения статически не разрешаются и пропускаются.
 
 ## 4. Зона источника: `assets_src/audio_stems/`
 
-**Единственный вход аудио-тракта** — `assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg`. Discovery (`pipeline.py:159-170`):
+**Вход тракта музыки/SFX** — `assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg` (мастера озвучки живут в своей зоне `assets_src/voice/`, §8). Discovery (`pipeline.py:415-430`):
 
 ```python
 # Зона звука — audio_stems (ARCHITECTURE.md:393, conventions/folder-layout.md:29):
@@ -128,8 +138,12 @@ audio = root / "assets_src" / "audio_stems"
 if audio.is_dir():
     for kind in ("bgm", "amb", "sfx"):
         ...
-        for f in sorted(kdir.glob("*.ogg")):
-            jobs.append((f, "copy_audio", f"audio/{kind}/{f.name}", None))
+        for f in sorted(kdir.iterdir()):
+            ...
+            if f.suffix.lower() != ".ogg":
+                rep.errors.append(f"{_rel(root, f)}: в audio_stems только .ogg")
+                continue
+            jobs.append(Job(f, "copy_audio", f"audio/{kind}/{f.name}", {}))
 ```
 
 Подкаталоги `bgm/`, `amb/`, `sfx/` заведены в репозитории (`.gitkeep`) — конвенция видна глазами, а не только в коде. Имена `.ogg` — обязательный slug `^[a-z][a-z0-9_]*$`; нарушение = ошибка сборки, а не молчание.
@@ -138,7 +152,7 @@ if audio.is_dir():
 
 **Почему чинили код, а не документы.** Имя `audio_stems` — нормативное: `docs/ARCHITECTURE.md:393` (дерево репозитория) и `../conventions/folder-layout.md:29`. Переименование зоны потребовало бы ADR и правки обоих документов; правка кода — одна строка и сходится с тем, что уже лежит на диске. Регрессия закрыта тестом `test_audio_stems_branch_copies_ogg` (`../../tools/vn/tests/test_assets.py`): `.ogg` в `assets_src/audio_stems/bgm/` обязан появиться в `game/assets/audio/bgm/`.
 
-**Оставшаяся шероховатость — семантика имени.** «Stems» в звуковой индустрии — это многодорожечные исходники сведения (проекты DAW, WAV-мастера), а конвейер ждёт **финальный `.ogg`** для побайтового копирования (`pipeline.py:232-233` — `src.read_bytes()`, без транскода). Пока зона одна, и правило простое:
+**Оставшаяся шероховатость — семантика имени.** «Stems» в звуковой индустрии — это многодорожечные исходники сведения (проекты DAW, WAV-мастера), а конвейер ждёт **финальный `.ogg`** для побайтового копирования (`pipeline.py:636` — байты как есть, без транскода). Пока зона одна, и правило простое:
 
 ```
 assets_src/audio_stems/{bgm,amb,sfx}/*.ogg   # готовые файлы — вход конвейера, в git
@@ -159,20 +173,20 @@ assets_src/audio_stems/{bgm,amb,sfx}/*.ogg   # готовые файлы — в�
 |---|---|---|---|
 | Музыка / эмбиенс | стерео | 96 kbps | Vorbis VBR, `-q:a 4…5` — сверяйте по фактическому размеру |
 | SFX (one-shot) | моно/стерео | 64–96 kbps | Vorbis `-q:a 3…4`; короткие файлы, битрейт почти не двигает итог |
-| Голос | **моно** | 32–48 kbps | `.opus` (норма ARCHITECTURE.md:183) — контур не реализован |
+| Голос | **моно** | 32–48 kbps | `.opus` 96k / −19 LUFS — делает конвейер (`voice_opus`, §8), мастера сдавайте wav/flac |
 | Мастера | — | FLAC/WAV | `assets_src/audio_stems/`, **вне git** |
 
 Opus заметно компактнее Vorbis при том же качестве (рекомендация VN-сообщества: https://vndev.wiki/Guide:Audio_Formats, там же — оговорка про чуть более дорогой декод). Для нас это аргумент в пользу `audio@2` в будущем, но не повод обходить схему сегодня.
 
 **Зацикливание.** Ren'Py умеет задавать точки прямо в имени файла — свойства `from`, `loop`, `to` документированы по отдельности, например `play music "<loop 6.333>bgm.ogg"`. Комбинированная форма `<from X loop Y to Z>` в документации примером не показана — проверяйте, прежде чем закладываться. Есть также `"<silence 3.0>"` и `"<sync channelname>track.ogg"`.
 
-**Ловушка нашего конвейера:** поля `loop` и `loop_start` в `audio@1` есть, но эмиттер их **не читает**. Поставить точку лупа сегодня можно только одним способом — вписав префикс прямо в `file:`… чего не даст паттерн схемы (`^assets/audio/…\.ogg$`). Практический вывод: **точку лупа режьте в самом файле** (по нулевому пересечению, в REAPER/Audacity), чтобы файл зацикливался бесшовно сам по себе. Поддержка `loop_start` в эмиттере — отдельная задача.
+**Точка лупа в нашем конвейере:** `loop_start` из `audio@1` эмитится штатным префиксом — `define audio.<id> = "<loop N>assets/audio/…"` (`compile.py:383-386`), движок сам зацикливает с указанной секунды. Поле `loop` (boolean) по-прежнему не читается — каналы `music`/`ambient` зациклены по умолчанию. Если материал позволяет, всё равно предпочитайте луп, срезанный в самом файле по нулевому пересечению: `<loop N>` не спасает от щелчка на стыке, если волна в точках стыка не совпадает.
 
-Каналы и микшеры — штатные Ren'Py: каналы `music` / `sound`, микшеры `music` / `sfx` / `voice`, дополнительные каналы через `renpy.music.register_channel()`. Три слайдера в настройках уже есть (`core_screens.rpy:283-287`, строки `ui.prefs.volume{,_music,_sound,_voice}` в `content/ui/strings.yaml:103-106`) — слайдер «Голос» существует и работает как микшер, хотя озвучки в игре нет.
+Каналы и микшеры: штатные `music` / `sound` / `voice` плюс наш канал `ambient` (`045_audio.rpy:13` — `register_channel("ambient", mixer="music", loop=True, tight=True)`: громкость эмбиенса регулируется слайдером музыки, `tight` даёт бесшовный кроссфейд при смене файла). Дакинг под голос — штатный `config.emphasize_audio_*` (`045_audio.rpy:18-20`): пока звучит канал `voice`, остальные каналы приглушаются до 0.6 за 0.5 с; без озвучки конфиг безвреден. Три слайдера в настройках (`core_screens.rpy:283-287`, строки `ui.prefs.volume{,_music,_sound,_voice}` в `content/ui/strings.yaml`) — слайдер «Голос» управляет микшером озвучки (§8).
 
 ## 6. Нормализация громкости — делать до `assets_src/`
 
-**Статус в конвейере: NOT IMPLEMENTED.** ARCHITECTURE.md:1181 обещает, что аудио «проходит тот же компилятор (loudnorm; выход — `.ogg`)». Реально `copy_audio` — это `src.read_bytes()`, побайтовая копия. Никакой нормализации, никакого транскода, никакой проверки громкости в тулинге нет. Значит, **нормализованным файл должен приезжать в `assets_src/audio_stems/` уже готовым** — иначе разнобой громкости между 40 треками из четырёх генераторов уедет в билд как есть.
+**Статус в конвейере: NOT IMPLEMENTED для bgm/amb/sfx.** ARCHITECTURE.md:1181 обещает, что аудио «проходит тот же компилятор (loudnorm; выход — `.ogg`)». Реально `copy_audio` — это побайтовая копия. Значит, **нормализованным файл должен приезжать в `assets_src/audio_stems/` уже готовым** — иначе разнобой громкости между 40 треками из четырёх генераторов уедет в билд как есть. Исключение — голос: ветка `voice_opus` нормализует каждый дубль однопроходным `loudnorm I=-19:TP=-1.5:LRA=11` при транскоде в Opus 96k (`voice.py:289-308`, §8) — мастера дублей класть в `assets_src/voice/` можно сырыми.
 
 **Целевые значения.** Единственная игровая рекомендация — **ASWG-R001 v1.10** (Sony Worldwide Studios Audio Standards Working Group, 2013): **−24 (±2) LKFS** интегрированно для домашних платформ, **−18 (±2) LKFS** для портативных, максимум True Peak **−1 dBTP**. LKFS и LUFS — взаимозаменяемы. Вещательный EBU R 128 — −23 LUFS (https://tech.ebu.ch/publications/r128).
 
@@ -246,31 +260,45 @@ ffmpeg в проекте уже пиннован и проверяется `vn p
 
 ⚠️ **Автоматика этого не проверит.** `validate_licenses` (`licenses.py:72-76`) сканирует только `assets_src/{daz,vam,sims4}/**/*.render.yaml` и сверяет их поле `license:`. У аудио деклараций `*.render.yaml` нет — записи в реестре живут «на честном слове» и в релизном гейте не участвуют. Дисциплина ручная: **покупка/скачивание → запись в реестр → только потом файл в `assets_src/`**. Подробности юридического контура — [Безопасность и право](33-security-and-legal.md), лицензирование AI-моделей — `../adr/0008-ai-model-licensing-for-commercial-adult-content.md` (статус: **предложено**, решение владельца не принято).
 
-## 8. Озвучка — NOT IMPLEMENTED целиком
+## 8. Озвучка — IMPLEMENTED (кроме `vn voice tts`)
 
-**Что есть:**
+Голосовой контур §4.9/C5 работает насквозь: манифест → мастер → транскод → voice-оператор в генерате → рантайм-резолвер → релизный гейт. Демо в репозитории: `content/chapters/ch01_awakening/voice/ru.voice.yaml` покрывает все реплики ch01 черновыми (`draft`) дублями, мастера — `assets_src/voice/ru/ch01/*.wav`.
 
-- `voice_tag` в `character@1`; у `mira` — `voice_tag: mira`; эмитится в `Character(..., voice_tag='mira')` (`characters.gen.rpy:9`). Это даёт бесплатный per-character mute в настройках — и всё.
-- Слайдер микшера `voice` в настройках.
+**Источник истины — voice-манифесты** `content/chapters/chNN_slug/voice/<lang>.voice.yaml` (схема `voice@1`, шард глава × язык — merge-конфликтов между главами и языками нет):
 
-**Чего нет:** схемы `voice@1`, каталогов `content/chapters/*/voice/`, функции `vn.voice_path()`, паков `kind: voice_pack`, и самих команд:
-
+```yaml
+schema: voice@1
+chapter: ch01
+lang: ru
+lines:
+  ch01_s010_0001: {status: draft}            # draft = TTS/черновой дубль -> WARN в гейте
+  ch01_s010_0002: {status: final, actor: aria}
 ```
-$ vn voice validate
-эта команда появится в фазе 2 (раздел 8 ARCHITECTURE.md)
-$ echo $?
-3
+
+Ключи `lines` — те же стабильные say-id, которые `vn loc keys` дописывает в авторский `.rpy` (формат `^ch\d{2}_s\d{3}_\d{4}$`, см. [Локализация](14-localization.md)): озвучка не отвязывается от реплики ни правкой текста, ни правкой перевода. `config.auto_voice` **сознательно не используется** (норма G8): его id — хэш от label+текста, любая правка реплики молча отвязала бы записанный дубль.
+
+**Файлы.** Мастера дублей — `assets_src/voice/<lang>/<chNN>/<line_id>.(wav|flac|ogg|opus)` (`voice.py:38,123-130`). Ветка `voice_opus` ассет-конвейера (`pipeline.py:432-466`, транскод `voice.py:289-308` — ffmpeg, Opus 96k, однопроходный loudnorm −19 LUFS / TP −1.5) кладёт их в `game/assets/voice/<lang>/<chNN>/<line_id>.opus`. Путь шардирован по главе, чтобы тысячи файлов не легли в один каталог.
+
+**Компилятор** (`compile.py:985-1005`, `scenes.py:283-300`) собирает множество реплик, покрытых хотя бы одним языком, и в копии авторского текста вставляет перед каждой из них `voice vn.voice_path("<line_id>")` — voice-оператор один, язык выбирает рантайм.
+
+**Рантайм** — `vn.voice_path()` в `game/framework/00_core/045_audio.rpy:26-45`: файл текущего языка → деградация до языка оригинала → `""` (falsy → voice-оператор движка = no-op, закреплено контракт-тестом engine_compat). Не установлен voice-пак / нет дубля — реплика просто молчит, без падения. Плюс дакинг: пока канал `voice` звучит, остальные приглушаются (§5).
+
+**CLI** (`cli.py:1226-1311`):
+
+```bash
+vn voice manifest ch01 --lang ru -o ch01_ru.csv   # лист записи для актёра/студии
+                                                  #   (id, кто, текст, контекст, статус; --char — фильтр)
+vn voice import takes/ --lang ru [--draft]        # разложить дубли <line_id>.<ext> по assets_src/voice/
+                                                  #   и дописать манифесты; импорт атомарен
+vn assets build                                   # транскод voice_opus -> game/assets/voice/
+vn voice validate --report                        # манифесты<->ledger<->мастера: сироты в обе стороны,
+                                                  #   драфты, дыры покрытия, сводка по главам и языкам
+vn voice tts                                      # TTS-черновики: ЗАГЛУШКА фазы 2, exit 3 (cli.py:1278-1281)
 ```
 
-(`cli.py:1087` — `_stub_group("voice", "Озвучка (C5).", {"manifest": 2, "import": 2, "tts": 2, "validate": 2})`.)
+**Валидация и гейт.** `vn voice validate` (`voice.py:133-187`) ловит: line_id вне ledger главы, манифест без мастера, мастер-сироту без строки манифеста, путь вне конвенции. В `vn release validate` (`release.py:464-478`): структурные ошибки и **дыры покрытия в озвученных главах = FAIL** (реплика без дубля посреди озвученной главы слышна игроку как обрыв), **драфты = WARN**.
 
-**Как это спроектировано** (ARCHITECTURE.md §4.9 и §5.9.3 — читать целиком перед реализацией, ниже только каркас):
-
-- `config.auto_voice` **сознательно не используется** (норма G8): его id — хэш от label+текста, любая правка реплики молча отвязывает записанный дубль. Вместо него компилятор вставляет явные операторы `voice vn.voice_path("ch03_s012_0042")` перед озвученными репликами.
-- Стабильные line-id — те же say-id, которые `vn loc keys` физически дописывает в авторский `.rpy` парсером Ren'Py (это уже работает — см. [Локализация](14-localization.md)). Формат `^ch\d{2}_s\d{3}_\d{4}$`.
-- Покрытие описывают манифесты `content/chapters/chNN/voice/<lang>.voice.yaml` (шард глава × язык).
-- Файлы — `voice/<lang>/<line_id>.opus` **внутри voice-пака**, не в основном дистрибутиве: три языка × тысячи реплик — это гигабайты, из которых игроку нужен один язык.
-- Пайплайн фазы 2: `vn voice manifest` (лист для студии) → `vn voice import` (раскладка дублей, транскод в opus 96k / LUFS −19) → `vn voice tts` (черновики для непокрытых реплик) → `vn voice validate --report` (покрытие, сироты, драфты).
+**Что осталось NOT IMPLEMENTED:** `vn voice tts` (черновики для непокрытых реплик — фаза 2) и поставка `voice/<lang>/` отдельными voice-паками/Steam-депотами (сегодня opus-файлы едут в основном дистрибутиве; `vn pack build` ассеты не пакует — [30-packs-and-dlc.md](30-packs-and-dlc.md)). Рантайм к пакам уже готов: отсутствующий файл — no-op.
 
 **Решения по TTS на 2026** (из ресёрча; лицензии проверяйте сами по ссылкам перед коммерческим использованием):
 
@@ -292,7 +320,7 @@ $ echo $?
 |---|---|---|---|
 | `assets_total_mb` | 500 МБ | `project.yaml:8`, `../../tools/vn/src/vn/release.py:33-37` | всё `game/assets/` целиком (спрайты + фоны + CG + видео + аудио) |
 | `video_total_mb` | 300 МБ | там же | только `game/assets/mov/` — то есть аудио конкурирует со статикой за остаток |
-| **ADR-0004: бинари в `assets_src/`** | **warn > 30 МБ, error > 50 МБ** | `lint.py:375-399` | все нетекстовые файлы под `assets_src/` — **включая ваши `.ogg`** |
+| **ADR-0004: бинари в `assets_src/`** | **warn > 30 МБ, error > 50 МБ** | `lint.py:375-399` | все нетекстовые файлы под `assets_src/` — **включая ваши `.ogg` и wav-мастера озвучки** (мимо LFS) |
 
 Сейчас в `assets_src/` **0.126 МБ** бинарей (10 демо-PNG + один mp4). Считаем по формуле `размер ≈ битрейт × длительность / 8`:
 
@@ -329,15 +357,18 @@ kind: bgm
 tracks:
   market_theme:
     file: assets/audio/bgm/market_theme.ogg     # путь ОТ game/, не от корня репозитория
+    loop_start: 6.333    # опционально: эмитится как "<loop 6.333>..." — луп с этой секунды
+    volume: 0.8          # опционально: клауза volume у play-оператора сцены
 ```
 
-Поля `loop`/`loop_start`/`volume` писать можно (схема пропустит), но эмиттер их игнорирует — не полагайтесь.
+Поле `loop` (boolean) писать можно, но оно игнорируется — каналы music/ambient зациклены и так.
 
 **3. Подключите к сцене** — либо декларативно, либо руками:
 
 ```yaml
-# в *.scene.yaml — музыка сцены
+# в *.scene.yaml — музыка и/или эмбиенс сцены (играют одновременно)
 music: bgm/market_theme
+ambient: amb/rooftop_wind
 ```
 
 ```renpy
@@ -378,7 +409,7 @@ vn play                        # слушаем
 - **Не класть `.ogg` мимо `assets_src/audio_stems/{bgm,amb,sfx}/`** — других зон звука конвейер не знает (§4). Симптом — пустой `game/assets/audio/` и полное молчание сборки.
 - **Не править `game/generated/registry/audio.gen.rpy` и `game/assets/audio/`** — обе зоны производные, перезапишет ближайший `vn build` / `vn assets build`.
 - **Не писать сырые пути в `play`-операторах** (`play music "assets/audio/bgm/x.ogg"`). ARCHITECTURE.md:1181 объявляет это запрещённым, но линтера на это нет — запрет держится только на вашей дисциплине, и он правильный: сырой путь ломает единый неймспейс `define audio.*` и переименование файла.
-- **Не рассчитывать на `loop_start` и `volume` в `audio@1`** — эмиттер их не читает. Луп режьте в файле.
+- **Не рассчитывать на поле `loop` в `audio@1`** — оно не читается (в отличие от `loop_start` и `volume`). И помните: `volume` применяется только к play-операторам, эмитируемым из `music:`/`ambient:` сцены, — рукописный `play sound <id>` его не получает.
 - **Не нормализовать каждый файл по отдельности в один и тот же LUFS** — категории поплывут относительно друг друга.
 - **Не забывать `-ar 48000` после `loudnorm`** — фильтр оставит файл на 192 кГц.
 - **Не заливать WAV/FLAC-мастера в git** — ADR-0004 краснеет на 50 МБ, а история append-only необратима.
@@ -392,13 +423,14 @@ vn play                        # слушаем
 vn content lint            # схемы деклараций + бюджет бинарей ADR-0004
 vn assets build            # перенос .ogg; молчание = каталог-источник назван неверно
 vn assets validate         # сырцы + ссылки контента (в т.ч. music-треки сцен)
+vn voice validate --report # озвучка: манифесты <-> ledger <-> мастера, покрытие
 vn build                   # полный проход: lint -> ассеты -> генерат -> tl
 vn build --check           # CI-режим: ничего не пишет, краснеет на несвежем
 vn play                    # слушаем в игре
-python -m pytest tools/vn/tests -q    # 138 тестов; аудио-веток среди них нет
+python -m pytest tools/vn/tests -q
 ```
 
-Отрицательный тест на связность (полезен, потому что это единственная аудио-проверка в тулинге): впишите в сцену `music: bgm/nonexistent` и запустите `vn build` — должно упасть с `трек 'nonexistent' не объявлен в content/audio/`.
+Отрицательный тест на связность: впишите в сцену `music: bgm/nonexistent` и запустите `vn build` — должно упасть с `трек 'nonexistent' не объявлен в content/audio/`.
 
 ## Ресурсы
 
@@ -414,8 +446,8 @@ python -m pytest tools/vn/tests -q    # 138 тестов; аудио-веток 
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/schemas/audio@1.schema.json`, `../../tools/vn/src/vn/content/compile.py:301-311,655-661`, `../../tools/vn/src/vn/content/scenes.py:231-242`, `../../tools/vn/src/vn/assets/pipeline.py:37-46,159-170,232-233`, `../../tools/schemas/scene@1.schema.json`, `../ARCHITECTURE.md` §2.9 (:183, :1181), §4.9 (:2341), §5.9.3 (:2867) |
-| **Не трогать** | `game/generated/registry/audio.gen.rpy` (генерат), `game/assets/audio/` (генерат), `game/tl/` — всё перезаписывается сборкой |
-| **Зависимости** | Новый id трека → `audio.gen.rpy` → `play music` в обёртках сцен. Смена паттерна `file` в `audio@1` → новая схема `audio@2` + миграция деклараций. Правка `pipeline.py:159` (имя зоны) → инвалидация ключей кэша `copy_audio` и рассинхрон с ARCHITECTURE.md:392 и `../conventions/folder-layout.md:29`. Любые файлы в `assets_src/` → счётчик ADR-0004 в `lint.py:375-399` |
-| **Валидация** | `vn content lint` → `vn assets build` → `vn build` → `vn build --check`; `python -m pytest tools/vn/tests -q` |
-| **Частые ошибки** | 1) Класть `.ogg` мимо `assets_src/audio_stems/{bgm,amb,sfx}/` — другой зоны у `copy_audio` нет, а молчаливо пропущенный файл выглядит как зелёная сборка. 2) Верить полям `loop`/`loop_start`/`volume` — схема их принимает, эмиттер игнорирует. 3) Считать `bgm/`/`amb/` в `music:` значащим префиксом — код его отбрасывает, неймспейс id плоский. 4) Ожидать проверки существования файла из `file:` — её нет нигде, `renpy lint` в конвейере не вызывается. 5) Верить ARCHITECTURE.md:1181 про `loudnorm` в компиляторе — это целевое состояние, реально `copy_audio` копирует байты. 6) Расширять `.ogg` до `.opus` правкой одного YAML — паттерн `audio@1` этого не пропустит |
+| **Читать перед изменением** | `../../tools/schemas/audio@1.schema.json`, `../../tools/schemas/voice@1.schema.json`, `../../tools/vn/src/vn/voice.py`, `../../tools/vn/src/vn/content/compile.py:377-391,835-852,985-1005`, `../../tools/vn/src/vn/content/scenes.py:71-73,123-149,283-331`, `../../tools/vn/src/vn/assets/pipeline.py:415-466`, `../../game/framework/00_core/045_audio.rpy`, `../../tools/schemas/scene@1.schema.json`, `../ARCHITECTURE.md` §2.9, §4.9, §5.9.3 |
+| **Не трогать** | `game/generated/registry/audio.gen.rpy` (генерат), `game/assets/audio/` и `game/assets/voice/` (генерат), `game/tl/` — всё перезаписывается сборкой |
+| **Зависимости** | Новый id трека → `audio.gen.rpy` → `play music/ambient` в обёртках сцен. Смена паттерна `file` в `audio@1` → новая схема `audio@2` + миграция деклараций. Правка имени зоны `audio_stems` → инвалидация ключей кэша `copy_audio` и рассинхрон с ARCHITECTURE.md и `../conventions/folder-layout.md`. Voice-манифесты → ledger локализации (`vn loc keys`) → инжекция voice-операторов → релизный гейт. Любые файлы в `assets_src/` мимо LFS → счётчик ADR-0004 в `lint.py:375-399` |
+| **Валидация** | `vn content lint` → `vn assets build` → `vn voice validate --report` → `vn build` → `vn build --check`; `python -m pytest tools/vn/tests -q` |
+| **Частые ошибки** | 1) Класть `.ogg` мимо `assets_src/audio_stems/{bgm,amb,sfx}/` — другой зоны у `copy_audio` нет, а молчаливо пропущенный файл выглядит как зелёная сборка. 2) Верить полю `loop` — схема его принимает, эмиттер игнорирует (`loop_start` и `volume` при этом работают). 3) Считать `bgm/`/`amb/` в `music:`/`ambient:` декоративными — kind трека обязан соответствовать полю и каналу, иначе ошибка компиляции. 4) Ожидать проверки существования файла из `file:` — её нет нигде, `renpy lint` в конвейере не вызывается. 5) Верить ARCHITECTURE.md:1181 про `loudnorm` в компиляторе для музыки — это целевое состояние, реально `copy_audio` копирует байты (loudnorm есть только у `voice_opus`). 6) Расширять `.ogg` до `.opus` правкой одного YAML — паттерн `audio@1` этого не пропустит. 7) Эмитить voice-операторы руками или через `config.auto_voice` — их вставляет компилятор по манифестам (G8) |

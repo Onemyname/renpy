@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/voice@1",
+  "title": "voice@1 — покрытие озвучкой: content/chapters/chNN_slug/voice/<lang>.voice.yaml (шард глава × язык, §4.9/C5)",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "voice@1"},
+    "chapter": {
+      "type": "string",
+      "pattern": "^ch\\d{2}$",
+      "description": "Глава манифеста; обязана совпадать с главой каталога и префиксом каждого line_id"
+    },
+    "lang": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(_[A-Z]{2})?$",
+      "description": "Язык озвучки (код языка, включая исходный из loc.yaml); обязан совпадать с именем файла <lang>.voice.yaml"
+    },
+    "lines": {
+      "type": "object",
+      "description": "line_id реплики (say-id из vn loc keys) -> статус её озвучки на этом языке",
+      "propertyNames": {"pattern": "^ch\\d{2}_s\\d{3}_\\d{4}$"},
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "enum": ["draft", "final"],
+            "description": "draft — TTS/черновой дубль (warning в релизном гейте), final — записанный дубль"
+          },
+          "actor": {"type": "string", "minLength": 1}
+        },
+        "required": ["status"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["schema", "chapter", "lang", "lines"],
+  "additionalProperties": false
+}

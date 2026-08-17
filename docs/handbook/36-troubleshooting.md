@@ -193,14 +193,14 @@ grep config.version game/generated/version.gen.rpy
 ### `<путь>: <место>: <сообщение> ` — документ не прошёл схему
 
 **Симптомы:** ошибка формата `content/chapters/ch01_awakening/chapter.yaml: scene_order/2: 'sXXX' does not match …`.
-**Вероятная причина:** документ валидируется против `tools/schemas/<name>@<N>.schema.json` по полю `schema:` (Draft 2020-12, `schemas.py:34-51`). В реестре 36 схем.
+**Вероятная причина:** документ валидируется против `tools/schemas/<name>@<N>.schema.json` по полю `schema:` (Draft 2020-12, `schemas.py:34-51`). В реестре 39 схем.
 **Диагностика:**
 ```bash
 ls tools/schemas/                      # какие схемы вообще есть
 grep -n '"required"' tools/schemas/scene@1.schema.json
 ```
 **Решение:** привести документ к схеме. Если поля действительно не хватает в схеме — новая схема заводится **новым файлом** `name@<N+1>.schema.json`, старая остаётся (норма G16); имя файла и `properties.schema.const` обязаны совпадать, иначе реестр не соберётся вовсе.
-**Профилактика:** правьте схему и документы одним PR; `vn doctor` печатает `реестр схем: 36 схем` — если число упало, схема сломана.
+**Профилактика:** правьте схему и документы одним PR; `vn doctor` печатает `реестр схем: 39 схем` — если число упало, схема сломана.
 
 ### `.vncache/assets-manifest.json: <место>: <сообщение jsonschema>` — манифест ассетов не прошёл свою схему
 
@@ -899,7 +899,7 @@ vn assets validate                     # assets validate: OK
 vn assets video validate               # video validate: OK (N файлов)
 vn loc keys --check                    # все строки с id, ledger свеж
 vn loc report                          # de/en/pseudo — 115/115 (100%), fuzzy 0
-python -m pytest tools/vn/tests -q     # 152 passed
+python -m pytest tools/vn/tests -q     # 240 passed
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (N скриншотов)
 vn save check && vn save corpus        # 2 фикстур: schema1-demo мигрирует 1 -> 2, schema2-demo уже на 2
 vn release validate --flavor public    # 16 PASS, exit 0

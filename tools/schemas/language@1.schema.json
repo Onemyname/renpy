@@ -15,7 +15,30 @@
     },
     "font": {
       "type": "string", "minLength": 1,
-      "description": "Опциональный шрифт (путь относительно game/): для языков, чьи глифы не покрыты базовым шрифтом (CJK и т.п.). Применяется translate <code> python и в списке языков"
+      "description": "Опциональный шрифт (путь относительно game/): для языков, чьи глифы не покрыты базовым шрифтом (CJK и т.п.). Применяется translate <code> python и в списке языков. Исторический алиас fonts.text: если задан fonts.text — выигрывает он"
+    },
+    "fonts": {
+      "type": "object",
+      "description": "Пер-языковые шрифты по ролям gui (пути относительно game/): язык со своей письменностью (CJK, тайский) привозит шрифты в своём пакете, а не правит базовый gui.rpy (ADR-0005). Отсутствие файла — warning импорта, переопределение роли не эмитится",
+      "properties": {
+        "text": {
+          "type": "string", "pattern": "^fonts/[A-Za-z0-9._-]+\\.(ttf|otf|ttc)$",
+          "description": "gui.text_font — диалоги (алиас плоского font, приоритетнее его)"
+        },
+        "name": {
+          "type": "string", "pattern": "^fonts/[A-Za-z0-9._-]+\\.(ttf|otf|ttc)$",
+          "description": "gui.name_text_font — имя персонажа над репликой"
+        },
+        "interface": {
+          "type": "string", "pattern": "^fonts/[A-Za-z0-9._-]+\\.(ttf|otf|ttc)$",
+          "description": "gui.interface_text_font — UI"
+        },
+        "interface_semibold": {
+          "type": "string", "pattern": "^fonts/[A-Za-z0-9._-]+\\.(ttf|otf|ttc)$",
+          "description": "gui.interface_semibold_font — заголовки/кнопки"
+        }
+      },
+      "additionalProperties": false
     },
     "synthetic": {
       "type": "boolean",
