@@ -252,6 +252,49 @@ def test_built_asset_ids_ignores_derivatives(tmp_path):
     ]
 
 
+def test_built_asset_ids_include_composite_shot_id(tmp_path):
+    """У послойного шота своего файла нет (кадр собирает движок из слоёв, ADR-0013),
+    а галерея разблокирует его по атрибуту ШОТА, не по имени файла слоя. Поэтому
+    составной id шота — такой же выпущенный id, и перечислять его обязан тот же
+    обход, что и файловые: иначе штамп реестра не заметит шот, и переименование
+    молча отберёт у игроков открытый кадр (G7)."""
+    import vn.release as rel
+
+    shots = tmp_path / "game" / "assets" / "shots" / "ch01" / "s030"
+    for rel_path in ("sunset/env.webp", "sunset/env@2.webp", "sunset/mira__school.webp",
+                     "sunset/mira__casual.webp", "sunset.thumb.webp"):
+        p = shots / rel_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"x")
+    assert rel.built_asset_ids(tmp_path) == [
+        "shots/ch01/s030/sunset",                  # сам шот — по каталогу слоёв
+        "shots/ch01/s030/sunset/env",
+        "shots/ch01/s030/sunset/mira__casual",
+        "shots/ch01/s030/sunset/mira__school",
+    ]
+
+
+def test_stamp_freezes_composite_shot_id(tmp_path):
+    """Релиз штампует id шота наравне с файловыми ассетами, и штамп схемно валиден:
+    id_registry@1 допускает префикс shots/ (ADR-0013, п. 7)."""
+    import vn.release as rel
+    from vn.schemas import SchemaRegistry
+
+    root = _mk_root(tmp_path)
+    _mk_chapter(root, "ch01", "release")
+    layers = root / "game" / "assets" / "shots" / "ch01" / "s030" / "sunset"
+    layers.mkdir(parents=True)
+    (layers / "env.webp").write_bytes(b"x")
+
+    assert rel.stamp_id_registry(root) > 0
+    reg = json.loads((root / rel.ID_REGISTRY_REL).read_text(encoding="utf-8"))
+    assert "shots/ch01/s030/sunset" in reg["assets"]         # шот
+    assert "shots/ch01/s030/sunset/env" in reg["assets"]     # и его слой
+    assert SchemaRegistry(root / "tools" / "schemas").validate(
+        reg, rel.ID_REGISTRY_REL) == []
+    assert rel.stamp_id_registry(root) == 0                  # append-only, идемпотентно
+
+
 def test_options_rpy_ships_assets_loose_without_rpa(repo_root):
     """Ассеты едут россыпью намеренно: Steam дельта-патчит отдельные файлы, а
     монолитный .rpa перекачивался бы игроком целиком при правке одного спрайта;

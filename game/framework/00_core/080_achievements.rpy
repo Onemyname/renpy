@@ -89,4 +89,21 @@ init -980 python in vn_ach:
     def all_ids():
         return sorted(_registry())
 
+    # ── Данные для UI ─────────────────────────────────────────────────────────
+    # Производные для игрока живут в фасаде, а не в вёрстке: и экран достижений,
+    # и пункт рельсы навигации задают ОДИН вопрос — «что показывать игроку», —
+    # поэтому ответ существует в одном месте (как vn_gal.items/progress).
+    # all_ids() остаётся «всё, что есть в реестре» — платформенная регистрация
+    # ачивок в Steam (035_platform.rpy) идёт по нему, а не по видимым.
+
+    def visible_ids():
+        """Видимые игроку ачивки в стабильном порядке (по id, как all_ids)."""
+        return [ach_id for ach_id in all_ids() if visible(ach_id)]
+
+    def progress():
+        """(получено, всего) по ВИДИМЫМ ачивкам. Тотальных чисел нигде не
+        хранится — счётчик пересчитывается из реестра (как vn_gal.progress)."""
+        ids = visible_ids()
+        return sum(1 for ach_id in ids if has(ach_id)), len(ids)
+
 default persistent.vn_achievements = {}

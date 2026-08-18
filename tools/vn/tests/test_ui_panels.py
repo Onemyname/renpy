@@ -344,8 +344,11 @@ def test_every_frame_consumer_is_not_smaller_than_2x_borders(repo_root, ui_scale
 
     consumers = _frame_consumers(styles)
     # Парсер молча «починился бы», сломавшись: убеждаемся, что он что-то видит.
+    # vn_toast в списке ещё и потому, что тост уже жил с литеральным Solid при
+    # объявленной и собранной панели toast: возврат к литералу — регресс.
     assert {c[0] for c in consumers} >= {
-        "choice_button", "vn_gal_cell", "vn_gal_tab", "vn_gal_ctl_button"}
+        "choice_button", "vn_gal_cell", "vn_gal_tab", "vn_gal_ctl_button",
+        "vn_toast"}
 
     unchecked = []
     for name, key, pid in consumers:

@@ -1,13 +1,19 @@
 """Регрессии по находкам верификации фазы 0: устойчивость lint, --check, shim-размотка,
-обязательные входы компилятора."""
+обязательные входы компилятора, переносимость самого набора между cwd."""
 
+import ast
 import json
 import shutil
+from pathlib import Path
 
 import pytest
 
+from conftest import BASE_OUTPUTS
+
 from vn.content.compile import CompileError, compile_content
 from vn.content.lint import lint
+
+TESTS_DIR = Path(__file__).resolve().parent
 
 
 def _copy_skeleton(repo_root, tmp_path):
@@ -81,8 +87,6 @@ def test_check_mode_writes_nothing_and_detects_stale(repo_root, tmp_path):
     gen = tmp_path / "generated"
     res = compile_content(root, out_dir=gen, check=True)
     assert not gen.exists() or not any(gen.iterdir())   # ничего не записано
-    from tests.test_compile import BASE_OUTPUTS
-
     assert len(res.stale) == len(BASE_OUTPUTS)           # всё «устарело» (генерата нет)
 
     compile_content(root, out_dir=gen)
@@ -182,3 +186,69 @@ def test_doctor_font_check_noop_without_fonts_dir(tmp_path):
     from vn.doctor import _lfs_pointer_fonts
 
     assert _lfs_pointer_fonts(tmp_path) == ([], 0)
+
+
+def test_suite_never_imports_itself_as_package():
+    """Набор обязан импортироваться при ЛЮБОМ cwd: `python -m pytest tools/vn/tests`
+    из корня репозитория так же зелен, как прогон из tools/vn.
+
+    Ломала это ровно одна форма — `from tests.test_compile import BASE_OUTPUTS`:
+    пакета `tests` не существует (в каталоге нет __init__.py), он «появляется»
+    только когда на sys.path есть tools/vn, то есть когда pytest запущен ИЗ
+    tools/vn. Из корня тот же набор давал один красный тест, невоспроизводимый
+    локально ничем, — то есть поломку видел только CI. Импорт по имени модуля
+    (`from test_compile import ...`) и `from conftest import ...` работают всегда:
+    каталог самого теста pytest кладёт на sys.path сам.
+
+    Разбор — AST, а не поиск подстроки: те же строки цитируются в докстрингах
+    (test_ci_config), и текстовая проверка ловила бы объяснение вместо импорта.
+    """
+    bad: list[str] = []
+    for f in sorted(TESTS_DIR.glob("*.py")):
+        for node in ast.walk(ast.parse(f.read_text(encoding="utf-8"), filename=f.name)):
+            if isinstance(node, ast.ImportFrom):
+                if node.level:          # from . import x — тоже требует пакета
+                    bad.append(f"{f.name}:{node.lineno}: относительный импорт")
+                elif (node.module or "").split(".")[0] == "tests":
+                    bad.append(f"{f.name}:{node.lineno}: from {node.module} import ...")
+            elif isinstance(node, ast.Import):
+                bad += [f"{f.name}:{node.lineno}: import {a.name}" for a in node.names
+                        if a.name.split(".")[0] == "tests"]
+    assert not bad, ("набор импортирует себя как пакет — прогон из корня репозитория "
+                     f"упадёт ModuleNotFoundError: {bad}")
+
+
+def test_lint_catches_renamed_layered_shot(repo_root, tmp_path):
+    """Сеть G7 обязана ловить переименование ШОТА, а не только его слоёв.
+
+    Разблокировка галереи у `kind: shot` идёт по тегу образа плюс атрибуту шота
+    (`_seen_shot`, ADR-0013 в редакции 2026-08-18), поэтому переименованный шот
+    остаётся у игроков закрытым — молча, как и переименованный CG. До штампа
+    составного id (`shots/<chNN>/<sNNN>/<shot>`) реестр этого не видел: обход
+    ассетов перечислял файлы, а своего файла у шота нет.
+    """
+    root = _copy_skeleton(repo_root, tmp_path)
+    shot = root / "game" / "assets" / "shots" / "ch01" / "s030" / "sunset"
+    shot.mkdir(parents=True)
+    (shot / "env.webp").write_bytes(b"x")
+    reg = root / "content" / "registry" / "id_registry.json"
+    doc = json.loads(reg.read_text(encoding="utf-8"))
+    doc["assets"] = ["shots/ch01/s030/sunset", "shots/ch01/s030/sunset/env"]
+    reg.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    assert not any("shots/ch01/s030/sunset" in e for e in lint(root).errors)
+
+    shot.rename(shot.with_name("dusk"))          # шот переименован целиком
+    errors = lint(root).errors
+    assert any("shots/ch01/s030/sunset исчез" in e and "renames.assets" in e
+               for e in errors), errors
+
+    # Запись о переименовании — единственный законный способ: она же учитывается
+    # рантаймом галереи, поэтому открытый кадр у игрока остаётся открытым.
+    (root / "content" / "renames.yaml").write_text(
+        "schema: renames@1\nscenes: {}\ndeleted_scenes: {}\nlabels: {}\nvars: {}\n"
+        "assets:\n"
+        "  shots/ch01/s030/sunset: shots/ch01/s030/dusk\n"
+        "  shots/ch01/s030/sunset/env: shots/ch01/s030/dusk/env\n",
+        encoding="utf-8")
+    assert not any("shots/ch01/s030/sunset" in e for e in lint(root).errors)

@@ -99,41 +99,63 @@ def _shot_cost(costs: dict[str, int], chapter_id: str, scene_short: str,
     return worst, worst_id
 
 
-def _character_cost(costs: dict[str, int], char_id: str, scale: int) -> tuple[int, str]:
-    """Худшая поза персонажа: base + самый тяжёлый наряд + самая тяжёлая эмоция."""
-    prefix = f"spr/{char_id}/"
-    poses: dict[str, dict[str, list[int]]] = {}
-    for key in costs:
-        if not key.startswith(prefix):
+SPR_PREFIX = "spr/"
+# Группы слоёв позы: spr/<char>/<pose>/base + <pose>/outfits/<name> + <pose>/faces/<name>
+CHAR_GROUPS = ("base", "outfits", "faces")
+
+
+def _character_index(costs: dict[str, int], scale: int) -> dict[str, tuple[int, str]]:
+    """{персонаж: (худшая поза в пикселях, её имя)} — ОДНИМ проходом по манифесту.
+
+    Худшая поза = base + самый тяжёлый наряд + самая тяжёлая эмоция.
+
+    Почему предындексация, а не расчёт по требованию: стоимость персонажа от сцены
+    не зависит, а участников у сцен тысячи. Расчёт «на каждого участника каждой
+    сцены» перебирал бы весь манифест заново, то есть стоил бы ПРОИЗВЕДЕНИЕ
+    «сцены × участники × выходы» — на корпусе 2000 сцен и 2000 образов это
+    ~20 млн итераций и секунды на ровном месте (7.6 ARCHITECTURE.md). Здесь —
+    один проход и словарь, дальше стоимость берётся lookup'ом.
+    """
+    # {масштаб: {персонаж: {поза: {группа: [стоимости]}}}}. Масштабов держим два:
+    # запрошенный и референсный — на референсный движок откатывается, если крупного
+    # варианта у персонажа нет вовсе. Остальные в модель не входят: они не грузятся.
+    scales = (scale, 1) if scale > 1 else (1,)
+    tree: dict[int, dict[str, dict[str, dict[str, list[int]]]]] = {s: {} for s in scales}
+    for key, px in costs.items():
+        if not key.startswith(SPR_PREFIX):
             continue
-        rest = key[len(prefix):]
-        parts = rest.split("/")
-        if len(parts) == 2:                   # <pose>/base[@N].ext
-            pose, leaf = parts[0], parts[1]
+        parts = key[len(SPR_PREFIX):].split("/")
+        if len(parts) == 3:                   # <char>/<pose>/base[@N].ext
+            char, pose, leaf = parts
             group = "base"
-        elif len(parts) == 3:                 # <pose>/<group>/<name>[@N].ext
-            pose, group, leaf = parts
+        elif len(parts) == 4:                 # <char>/<pose>/<group>/<name>[@N].ext
+            char, pose, group, leaf = parts
         else:
             continue
         stem = leaf.rsplit(".", 1)[0]
         want_scale = int(stem.split("@")[1]) if "@" in stem else 1
-        if want_scale != scale:
-            # Учитываем только тот вариант, который реально грузится на этом масштабе.
-            # Если крупного варианта нет, референсный подхватится ниже.
+        if want_scale not in tree:
             continue
-        poses.setdefault(pose, {"base": [], "outfits": [], "faces": []})
-        if group in poses[pose]:
-            poses[pose][group].append(costs[key])
-    if not poses and scale > 1:
-        return _character_cost(costs, char_id, 1)
-    worst, worst_pose = 0, ""
-    for pose, groups in poses.items():
-        total = (max(groups["base"], default=0)
-                 + max(groups["outfits"], default=0)
-                 + max(groups["faces"], default=0))
-        if total > worst:
-            worst, worst_pose = total, pose
-    return worst, worst_pose
+        poses = tree[want_scale].setdefault(char, {})
+        # Поза заводится и при незнакомой группе: она реально существует, просто
+        # ничего не стоит, — иначе персонаж «без спрайтов» и персонаж с одними
+        # незнакомыми группами перестали бы различаться.
+        groups = poses.setdefault(pose, {g: [] for g in CHAR_GROUPS})
+        if group in groups:
+            groups[group].append(px)
+
+    index: dict[str, tuple[int, str]] = {}
+    for want_scale in scales:                 # запрошенный масштаб идёт первым
+        for char, poses in tree[want_scale].items():
+            if char in index:
+                continue                      # референсный вариант — только откат
+            worst, worst_pose = 0, ""
+            for pose, groups in poses.items():
+                total = sum(max(groups[g], default=0) for g in CHAR_GROUPS)
+                if total > worst:
+                    worst, worst_pose = total, pose
+            index[char] = (worst, worst_pose)
+    return index
 
 
 def analyze(root: Path, cfg: RenderConfig | None = None,
@@ -152,6 +174,11 @@ def analyze(root: Path, cfg: RenderConfig | None = None,
         rep.warnings.append(
             "модель памяти: манифест сборки пуст — соберите vn assets build")
         return rep
+
+    # Всё, что не зависит от сцены, считается ДО цикла по сценам: и стоимость
+    # персонажа, и раскладка локаций. Иначе стоимость отчёта — произведение
+    # «сцены × выходы манифеста», а не сумма (замеры — 7.6 ARCHITECTURE.md).
+    char_index = _character_index(costs, scale)
 
     # Локации: <loc>/<variant> -> логический путь ассета
     locations: dict[str, dict[str, str]] = {}
@@ -213,7 +240,7 @@ def analyze(root: Path, cfg: RenderConfig | None = None,
                         total += c
                         parts.append((f"bg {loc}", c))
                 for char in (meta.get("participants") or []):
-                    c, pose = _character_cost(costs, char, scale)
+                    c, pose = char_index.get(char, (0, ""))
                     total += c
                     parts.append((f"{char} ({pose or 'нет спрайтов'})", c))
                 if short in shots_by_scene:

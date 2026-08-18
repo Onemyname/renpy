@@ -1,4 +1,5 @@
-"""Платформенный слой (ADR-0014): эмиттер platform.gen.rpy, Steam-поставка.
+"""Платформенный слой (ADR-0014): эмиттер platform.gen.rpy, Steam-поставка,
+платформенные инварианты вёрстки (подсказки управления).
 
 Принцип под тестом: Steam — данные и один файл фасада, не ветвление по коду.
 Без appid генерат выключает Steam; депоты и VDF — чистая генерация без
@@ -6,6 +7,7 @@ credentials; отсутствие библиотек — предупрежде�
 
 from __future__ import annotations
 
+import re
 import zipfile
 
 import pytest
@@ -20,6 +22,10 @@ from vn.release import (
     steam_libs_status,
     steam_stage_content,
 )
+
+
+# Подсказки управления в вёрстке: vn_ui.hint("<ключ>") (components.rpy).
+_HINT_RE = re.compile(r'vn_ui\.hint\(\s*"([a-z0-9_.]+)"\s*\)')
 
 
 def test_emit_platform_disabled_by_default():
@@ -191,3 +197,32 @@ def test_platform_facade_is_single_steam_touchpoint(repo_root):
             if f.name != "035_platform.rpy":
                 offenders.append(str(f.relative_to(repo_root)))
     assert offenders == [], f"Steam-специфика вне фасада: {offenders}"
+
+
+def test_control_hints_declare_both_key_variants(repo_root):
+    """Подсказка управления читает ПАРУ ключей: vn_ui.hint("X") отдаёт X_pad на
+    controller-first окружении (Deck/Big Picture) и X_kbd на остальных. Забытая
+    половина не падает и не видна разработчику: vn_loc.t вернёт сам ключ, и
+    ровно на том окружении, которое он не открывает.
+
+    Проверкой «ключ vn_loc.t объявлен» такая пара не ловится по построению —
+    ключ собирается конкатенацией в рантайме, в исходнике его нет. Отсюда
+    отдельный гард, и живёт он здесь: пара существует ИЗ-ЗА платформы.
+
+    Разбор вёрстки регексом допустим: тест сторожит исходник и компилятором не
+    является (G24 — про Content Compiler), а вызовов hint в UI единицы."""
+    from vn.repo import load_yaml
+
+    strings = load_yaml(repo_root / "content" / "ui" / "strings.yaml")["strings"]
+    calls = {}
+    for f in sorted((repo_root / "game").rglob("*.rpy")):
+        for key in _HINT_RE.findall(f.read_text(encoding="utf-8")):
+            calls.setdefault(key, set()).add(str(f.relative_to(repo_root)))
+
+    # Парсер молча «починился бы», сломавшись: подсказки в вёрстке есть.
+    assert "ui.history.hint" in calls, calls
+    for key, where in sorted(calls.items()):
+        for suffix in ("_kbd", "_pad"):
+            assert key + suffix in strings, (
+                f"{key}{suffix}: нет в content/ui/strings.yaml — "
+                f"{sorted(where)} покажет игроку сам ключ вместо подсказки")

@@ -57,4 +57,8 @@ test:
   script:
     # Свежесть генерата из артефакта стадии build (режим без записи, G1)
     - xvfb-run -a vn content compile --check
-    - xvfb-run -a python -m pytest tools/vn/tests -q
+    # pytest — в подоболочке из tools/vn: так его гоняет разработчик, так же обязан
+    # гонять и любой пайплайн (rootdir, sys.path и кэш совпадают, а значит красное
+    # в CI воспроизводится локально одной командой). Остальные команды джобы
+    # отсчитывают проект от корня репозитория, поэтому cd — только здесь.
+    - (cd tools/vn && xvfb-run -a python -m pytest tests -q)

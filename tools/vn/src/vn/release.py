@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -95,14 +96,31 @@ def _released_ids(root: Path) -> dict:
                 variables.append(f"{store}.{name}")
     # Логические id собранных ассетов: галерея открывает картинки по ИМЕНИ образа
     # (persistent._seen_images), поэтому имя ассета — такой же выпущенный id, как
-    # id сцены, и исчезать молча не должен (ADR-0012).
+    # id сцены, и исчезать молча не должен (ADR-0012). Послойные шоты штампуются
+    # своим составным id — см. built_asset_ids.
     return {"chapters": chapters, "scenes": scenes, "characters": chars,
             "vars": variables, "assets": built_asset_ids(root)}
 
 
+# Файл слоя послойного шота: shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>]
+# (ADR-0013). Группа 1 — составной id самого шота: каталог слоёв и есть шот, потому
+# что имя каталога мастеров = его id, а собственного файла у шота нет.
+SHOT_LAYER_RE = re.compile(
+    r"^(shots/ch\d{2}/s\d{3}/[a-z][a-z0-9_]*)/[a-z][a-z0-9_]*(?:__[a-z][a-z0-9_]*)?$")
+
+
 def built_asset_ids(root: Path) -> list[str]:
     """Логические id ассетов в game/assets: только референсные варианты, без
-    производных (миниатюры, постеры, метаданные) — они не адресуются сценарием."""
+    производных (миниатюры, постеры, метаданные) — они не адресуются сценарием.
+
+    Послойный шот попадает в список ДВАЖДЫ: своими слоями и СОСТАВНЫМ id
+    (`shots/<chNN>/<sNNN>/<shot>`). Одних слоёв мало: галерея разблокирует шот по
+    тегу образа плюс атрибуту ШОТА (`_seen_shot`, ADR-0013 в редакции 2026-08-18),
+    поэтому переименование шота стирает игроку открытый кадр ровно так же, как
+    переименование файла, — и обязано ловиться сетью G7 наравне с файловыми id.
+    Источник один и тот же (собранное дерево), иначе штамп реестра и lint-проверка
+    «выпущенный ассет исчез» разошлись бы и дали ложную красноту.
+    """
     from .assets.pipeline import POSTER_SUFFIX, variant_scale
 
     assets = root / "game" / "assets"
@@ -119,7 +137,10 @@ def built_asset_ids(root: Path) -> list[str]:
                 continue
             if variant_scale(f.stem) != 1:
                 continue
-            out.add(rel.rsplit(".", 1)[0])
+            logical = rel.rsplit(".", 1)[0]
+            out.add(logical)
+            if kind == "shots" and (m := SHOT_LAYER_RE.match(logical)):
+                out.add(m.group(1))
     return sorted(out)
 
 

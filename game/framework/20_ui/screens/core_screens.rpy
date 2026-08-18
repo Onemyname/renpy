@@ -528,10 +528,16 @@ style vn_toast:
     # 36/32 px собраны из шкалы отступов, чтобы в стиле не осталось литералов.
     xpos gui.sp_l + gui.sp_xs + gui.overscan_pad
     ypos gui.sp_l + gui.overscan_pad
-    background Solid("#18181bf2")
+    # Фон — генерируемая панель toast (ADR-0009), как у выборов и слотов: тост
+    # висит над кадром (в т.ч. над ярким WebM-лупом) и обязан отделяться от него
+    # скруглением, обводкой и тенью, а Solid ничего из этого не рисует. Цвет
+    # уехал в декларацию content/ui/panels.yaml — в вёрстке пикселей не осталось.
+    # Геометрия: панель объявлена под фактическую высоту тоста (padding + строка
+    # ~50 px), минимум 2*Borders = 40 px — сторожит test_ui_panels.
+    background vn_frame_toast
     padding (gui.sp_m + 6, gui.sp_m - 2)
 
 style vn_toast_text:
     font gui.interface_text_font
     size gui.interface_text_size - gui.sp_xs
-    color "#e4e4e7"
+    color gui.sub_color

@@ -11,9 +11,27 @@ import shutil
 from helpers import img, mk_root, write_project
 
 from vn.assets import imaging
-from vn.assets.memory import analyze, load_costs, recommended_cache_mb
+from vn.assets.memory import (_character_index, analyze, load_costs,
+                              recommended_cache_mb)
 from vn.assets.pipeline import build_assets
 from vn.assets.render_config import load_render_config
+
+# Манифест-образец для предындексации персонажей. Числа подобраны так, чтобы каждая
+# ветка формулы ADR-0012 читалась в ответе: у mira дороже поза b (но только на @2),
+# у наряда два варианта разной цены, у nika крупного варианта нет вовсе — движок
+# откатится на референсный. Фон в наборе есть намеренно: он не персонаж.
+CHAR_COSTS = {
+    "spr/mira/a/base.webp": 10,
+    "spr/mira/a/base@2.webp": 40,
+    "spr/mira/a/outfits/school.webp": 3,
+    "spr/mira/a/outfits/school@2.webp": 12,
+    "spr/mira/a/outfits/casual@2.webp": 20,
+    "spr/mira/a/faces/smile@2.webp": 5,
+    "spr/mira/b/base@2.webp": 100,
+    "spr/nika/c/base.webp": 7,
+    "spr/nika/c/faces/sad.webp": 2,
+    "bg/roof/day@2.webp": 999,
+}
 
 
 def test_cache_limit_matches_engine_formula():
@@ -124,3 +142,75 @@ def test_emitted_render_config_matches_project(tmp_path, repo_root):
     assert f"define config.image_cache_size_mb = {cfg.image_cache_mb}" in text
     assert "define config.automatic_oversampling = 4" in text
     assert "init offset = -950" in text
+
+
+def test_character_index_keeps_worst_case_formula():
+    """Предындексация обязана давать РОВНО те числа, что расчёт по одному персонажу:
+    base + самый тяжёлый наряд + самая тяжёлая эмоция на том масштабе, который
+    реально грузится, с откатом на референсный вариант. Формула здесь записана
+    числами, а не кодом: оптимизация не должна тихо менять вердикт бюджета.
+    """
+    # @2: у mira поза b (100) дороже позы a (40 + max(12, 20) + 5 = 65);
+    # у nika крупных вариантов нет — откат на референсные (7 + 2).
+    assert _character_index(CHAR_COSTS, 2) == {"mira": (100, "b"), "nika": (9, "c")}
+    # @1: позы b на референсном масштабе не существует, остаётся a (10 + 3 + 0).
+    assert _character_index(CHAR_COSTS, 1) == {"mira": (13, "a"), "nika": (9, "c")}
+    # Персонаж без спрайтов в индекс не попадает — сцена считает его нулём
+    assert "bg" not in _character_index(CHAR_COSTS, 2)
+
+
+def test_character_index_ignores_manifest_order():
+    """Индекс строится одним проходом по манифесту, поэтому его результат не имеет
+    права зависеть от порядка ключей: порядок задаёт обход assets_src на сборке
+    (файловая система), а бюджет сцены — величина проекта, не машины сборки."""
+    reversed_costs = dict(reversed(list(CHAR_COSTS.items())))
+    shuffled = dict(sorted(CHAR_COSTS.items(), key=lambda kv: kv[1]))
+    for scale in (1, 2):
+        assert _character_index(reversed_costs, scale) == _character_index(CHAR_COSTS, scale)
+        assert _character_index(shuffled, scale) == _character_index(CHAR_COSTS, scale)
+
+
+def test_character_costs_indexed_once_for_all_scenes(tmp_path, repo_root, monkeypatch):
+    """Стоимость персонажа считается ОДИН раз на отчёт, а не на каждую сцену.
+
+    Расчёт по требованию перебирал весь манифест заново для каждого участника
+    каждой сцены, и стадия «модель памяти» росла как произведение «сцены × выходы»:
+    на корпусе 2000 сцен это измеримо (7.6 ARCHITECTURE.md), на порядок больше —
+    уже минуты. Число проходов и есть предмет проверки: оно обязано остаться
+    единицей при любом количестве сцен, иначе произведение вернётся незаметно.
+    """
+    from vn.assets import memory
+
+    root = mk_root(tmp_path)
+    shutil.copytree(repo_root / "tools" / "schemas", root / "tools" / "schemas")
+    ch = root / "assets_src" / "art" / "characters" / "mira" / "a"
+    img(ch / "base.png", (128, 96), "RGBA", "PNG", color=(1, 2, 3, 255))
+    img(ch / "outfits" / "school.png", (128, 96), "RGBA", "PNG", color=(4, 5, 6, 255))
+    assert build_assets(root).errors == []
+
+    # Один и тот же участник в трёх сценах двух глав: если бы индекс строился в
+    # цикле, порядок обхода сцен мог бы влиять на числа — а он не влияет.
+    for ch_dir, scene_ids in (("ch01_demo", ("s010", "s020")), ("ch02_demo", ("s010",))):
+        scenes = root / "content" / "chapters" / ch_dir / "scenes"
+        scenes.mkdir(parents=True)
+        for sid in scene_ids:
+            (scenes / f"{sid}_x.scene.yaml").write_text(
+                f"schema: scene@1\nid: {sid}\nparticipants: [mira]\n", encoding="utf-8")
+
+    calls = []
+    real_index = memory._character_index
+
+    def counting_index(costs, scale):
+        calls.append(scale)
+        return real_index(costs, scale)
+
+    monkeypatch.setattr(memory, "_character_index", counting_index)
+    rep = memory.analyze(root)
+
+    assert len(rep.scenes) == 3
+    assert calls == [rep.scale], f"индекс построен {len(calls)} раз(а) на 3 сцены"
+    per_scene = {sc.scene_id: dict((label, px) for label, px in sc.parts) for sc in rep.scenes}
+    costs = load_costs(root)
+    expected = costs["spr/mira/a/base@2.webp"] + costs["spr/mira/a/outfits/school@2.webp"]
+    assert {s: parts["mira (a)"] for s, parts in per_scene.items()} == {
+        "ch01_s010": expected, "ch01_s020": expected, "ch02_s010": expected}

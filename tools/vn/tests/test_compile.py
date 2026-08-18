@@ -6,26 +6,9 @@ import shutil
 
 import pytest
 
-from vn.content.compile import CompileError, compile_content
+from conftest import BASE_OUTPUTS
 
-BASE_OUTPUTS = {
-    "version.gen.rpy",
-    "render.gen.rpy",       # ADR-0012: config.image_cache_size_mb из project.yaml
-    "platform.gen.rpy",     # ADR-0014: config.steam_appid + карта DLC-владения
-    "state/defaults.gen.rpy",
-    "state/snapshot.gen.rpy",
-    "state/migrations.gen.rpy",
-    "registry/achievements.gen.rpy",
-    "registry/audio.gen.rpy",
-    "registry/chapters.gen.rpy",
-    "registry/scenes.gen.rpy",
-    "registry/characters.gen.rpy",
-    "registry/images.gen.rpy",
-    "registry/menus.gen.rpy",
-    "registry/overrides.gen.rpy",
-    "registry/ui_frames.gen.rpy",     # ADR-0009: Frame'ы генерируемых панелей
-    "registry/gallery.gen.rpy",       # ADR-0010: реестр галереи
-}
+from vn.content.compile import CompileError, compile_content
 
 
 def skeleton_no_chapters(repo_root, tmp_path):

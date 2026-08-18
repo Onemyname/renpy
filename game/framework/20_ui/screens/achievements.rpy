@@ -19,21 +19,6 @@
 
 init offset = 0
 
-init -970 python in vn_ach:
-    # Производные для UI живут в фасаде достижений, а не в вёрстке: и экран, и
-    # пункт рельсы навигации (core_screens.rpy) задают ОДИН вопрос — «что
-    # показывать игроку», — поэтому ответ существует в одном месте.
-
-    def visible_ids():
-        """Видимые игроку ачивки в стабильном порядке (по id, как all_ids)."""
-        return [ach_id for ach_id in all_ids() if visible(ach_id)]
-
-    def progress():
-        """(получено, всего) по ВИДИМЫМ ачивкам. Тотальных чисел нигде не
-        хранится — счётчик пересчитывается из реестра (как vn_gal.progress)."""
-        ids = visible_ids()
-        return sum(1 for ach_id in ids if has(ach_id)), len(ids)
-
 
 screen achievements():
     tag menu

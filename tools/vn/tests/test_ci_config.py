@@ -139,8 +139,10 @@ def test_lock_installed_before_editable():
 def test_ffmpeg_installed_before_vn_build():
     """ADR-0006: в assets_src/video_src лежат сырцы, и видео-ветка конвейера без ffmpeg
     бросает VideoError. Любой пайплайн, который зовёт vn build, обязан поставить ffmpeg
-    раньше. GitLab исключён намеренно: конфиг исторический и вне паритета (нет ни LFS,
-    ни релиза) — долг разбирается в docs/handbook/04-development-workflow.md §4."""
+    раньше. GitLab исключён намеренно и точечно: зеркало отстаёт по СОСТАВУ шагов
+    (нет ни LFS-чекаута, ни ffmpeg, ни релизных джоб) — этот долг разбирается в
+    docs/handbook/04-development-workflow.md §4. Не отстаёт оно в ФОРМЕ прогонов:
+    см. test_pytest_runs_from_tools_vn_in_every_pipeline."""
     checked = 0
     for job, cmds in _github_jobs().items():
         build_at = next((i for i, c in enumerate(cmds) if VN_BUILD.search(c)), None)
@@ -287,28 +289,45 @@ def test_missing_external_toolchains_are_asserted_not_silenced():
                         "запишет мастера в assets_src — бэкенд обязан быть пиннован")
 
 
-def test_pytest_runs_from_tools_vn():
-    """Набор импортирует сам себя как пакет (test_verify_regressions:
-    `from tests.test_compile import BASE_OUTPUTS`), и это работает только когда на
-    sys.path есть tools/vn — то есть когда pytest запущен ИЗ tools/vn, как его
-    запускает разработчик. `python -m pytest tools/vn/tests` из корня репозитория
-    даёт ModuleNotFoundError: No module named 'tests': один красный тест, который
-    локально не воспроизводится ничем. Ровно тот класс поломок, ради которого
+def _pytest_invocations():
+    """[(пайплайн, команда, cwd шага)] — каждый прогон pytest во ВСЕХ пайплайнах.
+
+    Формы две, потому что таковы механизмы: GitHub задаёт каталог шага полем
+    working-directory, у GitLab такого поля нет вовсе — там cwd меняется только
+    подоболочкой внутри самой команды (и внутри многострочного блока GitHub —
+    тоже, иначе cd увёл бы и остальные команды блока).
+    """
+    runs = []
+    for workflow, step in _github_steps("pytest"):
+        runs += [(workflow, cmd, step.get("working-directory"))
+                 for cmd in _lines(step.get("run")) if "pytest" in cmd]
+    for job, cmds in _gitlab_jobs().items():
+        runs += [(job, cmd, None) for cmd in cmds if "pytest" in cmd]
+    return runs
+
+
+def test_pytest_runs_from_tools_vn_in_every_pipeline():
+    """Прогон набора обязан совпадать с локальным во всех пайплайнах, включая
+    зеркало GitLab: pytest запускается ИЗ tools/vn.
+
+    Исторически это было жёстче: набор импортировал сам себя как пакет
+    (tests.test_compile), и запуск из корня падал ModuleNotFoundError — по одному
+    красному тесту, невоспроизводимому локально. Импорты починены
+    (test_verify_regressions.test_suite_never_imports_itself_as_package), но
+    инвариант остаётся: одинаковый cwd = одинаковые rootdir, sys.path и кэш
+    pytest, то есть красное в CI воспроизводится одной командой разработчика.
+    Разъехавшийся cwd — это снова «зелено локально, красно в CI», ради чего и
     существует этот файл.
 
-    Формы две, потому что таковы шаги: у отдельного шага — working-directory,
-    внутри блока из нескольких команд (canary) — подоболочка, потому что остальные
-    команды блока отсчитывают проект от корня репозитория.
+    Паритет тут полный, в отличие от LFS/ffmpeg/релизных шагов: чем гонять набор,
+    зеркало не отличается от GitHub ничем, поэтому и повода расходиться нет.
     """
-    steps = _github_steps("pytest")
-    assert steps, "ни один workflow не гоняет pytest — проверка выродилась"
-    for workflow, step in steps:
-        for cmd in _lines(step.get("run")):
-            if "pytest" not in cmd:
-                continue
-            assert "cd tools/vn" in cmd or step.get("working-directory") == "tools/vn", (
-                f"{workflow}: pytest запускается не из tools/vn ({cmd!r}) — "
-                f"набор не сможет импортировать себя")
+    runs = _pytest_invocations()
+    assert runs, "ни один пайплайн не гоняет pytest — проверка выродилась"
+    for pipeline, cmd, workdir in runs:
+        assert "cd tools/vn" in cmd or workdir == "tools/vn", (
+            f"{pipeline}: pytest запускается не из tools/vn ({cmd!r}) — прогон "
+            f"перестаёт совпадать с локальным")
 
 
 def test_nightly_corpus_scale_is_explicit_and_bounded():
