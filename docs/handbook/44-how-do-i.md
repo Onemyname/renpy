@@ -335,9 +335,13 @@ $EDITOR content/achievements/core.achievements.yaml
 #     trigger: {scene: ch01_s030}          # ровно ОДИН из scene | beat | var
 $EDITOR content/ui/strings.yaml            # ach.my_ach.name / .desc
 vn build
+
+# посмотреть глазами, как она выглядит игроку (прохождение этот экран не открывает)
+VN_AUTOPILOT_SCREENS=achievements vn test smoke --picks 0,0
+open .vncache/smoke/screen_achievements.png
 ```
 
-Якоря стабильны и переживают правку/перевод текста, поэтому ачивку можно добавить в уже написанную главу, не трогая её `.rpy`.
+Якоря стабильны и переживают правку/перевод текста, поэтому ачивку можно добавить в уже написанную главу, не трогая её `.rpy`. **Экран достижений правок не требует** — он читает реестр и не знает ни одного id.
 
 **Подробнее:** [15-gallery.md](15-gallery.md) (тот же механизм якорей), Steam-сторона — [39-platforms.md](39-platforms.md) §4.
 
@@ -347,6 +351,8 @@ vn build
 - `trigger: {var: …}` срабатывает не мгновенно: `check()` вызывается только из `vn.checkpoint` / `vn.beat` / `vn.chapter_done`, поэтому присваивание в середине сцены выдаст ачивку лишь на следующей границе.
 - Забытый `name_key`/`desc_key` в `strings.yaml` — только **warning**, в UI появится сырой ключ.
 - В Steamworks API Name ачивки обязан **побуквенно** совпадать с id из YAML — маппингов нет намеренно (`ci/steam/README.md`).
+- `hidden: true` прячет **и название, и описание** до получения (на экране будет «???»). Это удобно для сюжетных спойлеров, но проверить внешний вид такой ачивки на боевых декларациях сегодня нельзя — обе объявленные видимы и к концу прогона получены ([15-gallery.md](15-gallery.md)).
+- Прогресса («10 из 30») у ачивки нет: поля `progress` нет ни в схеме, ни в эмиттере, ни в сторе. Не обещайте его игроку в описании.
 
 ## 12. Как добавить элемент галереи
 
@@ -426,7 +432,7 @@ vn loc add ja --name 日本語        # создаст loc/po/ja/{language.yaml,
 #   loc/po/ja/language.yaml: fonts: {text: fonts/NotoSansJP-Regular.ttf, ...}
 vn loc extract        # подтянуть новые строки, переводы сохраняются
 vn loc import         # PO -> game/tl/ja/ (входит в vn build)
-vn loc report         # покрытие; сейчас de/en/pseudo — 130/130
+vn loc report         # покрытие; сейчас de/en/pseudo — 136/136
 vn build && RENPY_VARIANT= vn play
 ```
 
@@ -589,9 +595,9 @@ git commit -m "release: 0.1.6 — <итог одной строкой>"
 git tag v0.1.6 && git push --follow-tags        # -> .github/workflows/release.yml
 ```
 
-Гейт — **20 проверок**; на текущем чекауте `--flavor public` печатает 19 строк: молчит одна — реестр лицензий (деклараций ноль). Молчать могут три (покрытие переводов, озвучка, лицензии) — у них нет безусловной `else`-ветки; здесь озвучка не молчит, а даёт WARN. Молчащая проверка — не пропущенная.
+Гейт — **21 проверка**; на текущем чекауте `--flavor public` печатает 20 строк: молчит одна — реестр лицензий (деклараций ноль). Молчать могут три (покрытие переводов, озвучка, лицензии) — у них нет безусловной `else`-ветки; здесь озвучка не молчит, а даёт WARN. Молчащая проверка — не пропущенная.
 
-**Реальный вывод на HEAD (`vn release validate --flavor public`, exit 0):** 19 строк, из них 18 PASS и `WARN озвучка: 14 черновых дублей (draft) — ru: ch01_s010_0001`. **WARN релиз не валит** — `ok` становится `False` только на FAIL. «Все строки PASS» больше не эталон.
+**Реальный вывод на HEAD (`vn release validate --flavor public`, exit 0):** 20 строк, из них 18 PASS и два WARN — `озвучка: 14 черновых дублей (draft) — ru: ch01_s010_0001` и `зрелость контента: ни одна глава ещё не доведена до status=release (ch01) — флейвор с early_content=false собирается, но гейт станет строгим с первой release-главой`. `--flavor patron` — 21 строка, один WARN, тоже exit 0. **WARN релиз не валит** — `ok` становится `False` только на FAIL. Держите в голове вторую строку: гейт зрелости самоактивирующийся, и `draft`-главы станут FAIL в тот прогон, где появится первая `status: release` ([29 §5.1](29-build-and-release.md#maturity-gate-rule)). «Все строки PASS» не эталон.
 
 **Подробнее:** [29-build-and-release.md](29-build-and-release.md).
 
@@ -614,7 +620,7 @@ vn release steam --flavor public [--branch beta]
 steamcmd +login <build-account> +run_app_build build/steam/app_build_public.vdf +quit
 ```
 
-Шаблон VDF подставляет `ContentRoot "."` и `BuildOutput "output"` **относительными** путями (`release.py:203-204`), поэтому SteamPipe создаст `build/steam/output/` и будет искать `content/<flavor>/<platform>/*` относительно самого VDF, а не текущего каталога.
+Шаблон VDF подставляет `ContentRoot "."` и `BuildOutput "output"` **относительными** путями (`release.py:231-232`), поэтому SteamPipe создаст `build/steam/output/` и будет искать `content/<flavor>/<platform>/*` относительно самого VDF, а не текущего каталога.
 
 **Подробнее:** [40-steamworks.md](40-steamworks.md), `ci/steam/README.md`, [39-platforms.md](39-platforms.md) §3.
 
@@ -804,12 +810,13 @@ vn content lint                            # lint: OK (0 предупрежде�
 vn build                                   # build: OK
 vn build --check                           # ничего не пишет
 vn loc keys --check
-vn loc report                              # de/en/pseudo — 130/130 (100%), fuzzy 0
+vn loc report                              # de/en/pseudo — 136/136 (100%), fuzzy 0
 vn voice validate --report
 vn assets memory                           # память: OK
 vn test oversample --scale 2               # oversample: OK
-python -m pytest tools/vn/tests -q         # 254 passed
-vn release validate --flavor public        # 19 строк, 0 FAIL (1 WARN про драфты озвучки — норма)
+python -m pytest tools/vn/tests -q         # 278 passed
+vn release validate --flavor public        # 20 строк, 0 FAIL, 2 WARN (зрелость контента, драфты озвучки), exit 0
+vn release validate --flavor patron        # 21 строка, 0 FAIL, 1 WARN — норма
 ```
 
 ## Для AI-агента

@@ -13,7 +13,7 @@ vn pipeline doctor                 # GPU, драйвер, ffmpeg+VP9, ComfyUI, �
 vn assets build --profile draft    # быстрый черновой энкод, пока итерируете картинку
 vn assets build                    # full — то, что уедет игроку
 vn build                           # lint -> ассеты -> генерат -> tl -> БЮДЖЕТЫ
-vn release validate --flavor public # 20 проверок, включая бюджеты и лицензии
+vn release validate --flavor public # 21 проверка, включая бюджеты и лицензии
 ```
 
 **Целевая сетка игры — 1920×1080** (`game/gui.rpy:9`, `gui.init(1920, 1080)`). Фоны и CG рендерятся ровно под неё, спрайты — в 2× и уезжают с суффиксом `@2`.
@@ -103,7 +103,7 @@ with Image.open(src) as im:
 
 Следствия, которые надо принять как данность:
 
-- **Никакого масштабирования спрайтов и фонов нет.** Какое разрешение отрендерили — такое и уедет в билд. `@2` — это только суффикс имени выхода (`pipeline.py:122`), сообщающий Ren'Py про oversampling; кода, который что-то умножает на два, в проекте не существует. Механика oversampling — https://www.renpy.org/doc/html/displaying_images.html
+- **Никакого масштабирования спрайтов и фонов нет.** Какое разрешение отрендерили — такое и уедет в билд. `@2` — это только суффикс имени выхода (`pipeline.py:122`), сообщающий Ren'Py про oversampling. Единственное исключение — **UI-панели**: у них нет мастера-картинки, источник — декларация, поэтому вариант `@N` там не суффикс, а **отдельный рендер** в N раз крупнее (`assets/ui.py: _scaled_spec`, [16-assets.md](16-assets.md) §12). Механика oversampling — https://www.renpy.org/doc/html/displaying_images.html
 - **Кроп, поворот, цветокоррекция, обрезка альфа-каймы — не делаются.** Всё это ваша ответственность до `assets_src/` — [Постобработка](24-post-processing.md).
 - **ICC-профиль не сохраняется.** Pillow не переносит профиль, если его явно не передать, а `_webp_encode` его не передаёт. Значит всё, что попадает в `assets_src/`, обязано быть уже в sRGB (§5).
 
@@ -118,6 +118,7 @@ with Image.open(src) as im:
 | `game/assets/cg/ch01/rooftop_sunset.thumb.webp` | 512×288 | RGB |
 | `game/assets/spr/mira/a/base@2.webp` и все слои позы | 1200×2200 | RGBA |
 | `game/assets/ui/*.webp` | 26×26 … 116×116 | RGBA |
+| `game/assets/ui/*@2.webp` | 52×52 … 232×232 | RGBA |
 
 Спрайт 1200×2200 при `@2` занимает на экране 600×1100 виртуальных пикселей — чуть выше кадра 1080, то есть стандартное full-body-обрамление. Это ориентир, а не норма.
 
@@ -133,7 +134,7 @@ with Image.open(src) as im:
 | CG / событийный арт | 2048×1152 и выше | 1920×1080 |
 | Full-body спрайт | ~2400×4400 (2× ship) | 1200×2200, имя без `@2` — суффикс добавит конвейер |
 | Side/bust-портрет | кроп из спрайта, не отдельный рендер | — (**ветка `side/` NOT IMPLEMENTED**, `naming.md:18` её описывает, кода нет) |
-| UI | не рендерится | объявляется в `content/ui/panels.yaml` |
+| UI | не рендерится | объявляется в `content/ui/panels.yaml`; масштабные варианты (`@2`) рисует конвейер сам, класс `ui` render-профиля |
 
 ## 5. Цветоуправление: sRGB на всём пути
 
@@ -253,7 +254,7 @@ with Image.open(src) as im:
 - **Потолок сборки** — `render.max_oversampling` эмитится в `game/generated/render.gen.rpy` (файл лежит в корне генерата, не в `registry/`) как `define config.automatic_oversampling = N` и `define vn_build_max_oversampling = N` (`tools/vn/src/vn/content/compile.py:127-129`, выход объявлен в `:1135`). В `project.yaml` этот ключ **не задан** — работает дефолт `4` из `render_config.py:56`. Выше отгруженных вариантов движок не прыгнет.
 - **Потолок игрока** — `persistent.vn_quality_cap` (`content/variables/settings.vars.yaml`: `null` = авто, `1` = без `@N`-вариантов) и фасад `vn.quality_cap()` / `vn.set_quality_cap()` в `game/framework/00_core/095_quality.rpy`. Игрок может только **опустить** потолок сборки; `set_quality_cap` применяет его на лету — выставляет `config.automatic_oversampling`, делает `renpy.free_memory()`, и уже показанные текстуры перезагружаются в новом качестве без перезапуска.
 
-UI — сег-кнопки «Качество текстур: Авто / Экономное» в настройках (`game/framework/20_ui/screens/core_screens.rpy:297-312`, строки `ui.prefs.graphics` / `ui.prefs.quality_auto` / `ui.prefs.quality_eco`). Оба API движка документированы (`config.automatic_oversampling`, `renpy.free_memory`) — обёртка engine_compat не требуется.
+UI — сег-кнопки «Качество текстур: Авто / Экономное» в настройках (`game/framework/20_ui/screens/core_screens.rpy:303-318`, строки `ui.prefs.graphics` / `ui.prefs.quality_auto` / `ui.prefs.quality_eco`). Оба API движка документированы (`config.automatic_oversampling`, `renpy.free_memory`) — обёртка engine_compat не требуется.
 
 ## 10. Декларация рендера — единственное машиночитаемое место для «профиля»
 
@@ -276,7 +277,7 @@ render:
   quality: {profile: release, max_samples: 2500, converged_ratio: 0.95, denoiser: false}
 ```
 
-Что даёт: `vn assets daz validate` проверит схему, наличие `.duf` (локально или манифестом хранилища), наличие выхода, отсутствие дублей `output` — и запишет `*.provenance.json`. Гейт лицензий (`vn assets licenses`) проверит, что каждый id из `license: [...]` есть в `content/licenses.yaml`, что `game_use: true`, и что для выхода в `nsfw/` стоит `nsfw_allowed: true`. Обе проверки входят в релизный гейт (`release.py:337-356`, `:408-417`).
+Что даёт: `vn assets daz validate` проверит схему, наличие `.duf` (локально или манифестом хранилища), наличие выхода, отсутствие дублей `output` — и запишет `*.provenance.json`. Гейт лицензий (`vn assets licenses`) проверит, что каждый id из `license: [...]` есть в `content/licenses.yaml`, что `game_use: true`, и что для выхода в `nsfw/` стоит `nsfw_allowed: true`. Обе проверки входят в релизный гейт (`release.py:374-393`, `:408-417`).
 
 Что **не** даёт: `render.quality` никто не сравнивает с реальностью — это документация, а не гейт. Проверить, что кадр действительно посчитан 2500 сэмплами, невозможно.
 
@@ -314,7 +315,7 @@ render:
 
 - **Не искать `--profile qa` / `--profile hq` / `--profile mobile`.** Профилей у конвейера ровно два: `draft` и `full` (§2). Всё остальное — настройки внутри DAZ.
 - **Не пушить и не релизить после `--profile draft`.** Гейт этого не поймает (`release.py` не знает про профили), а игрок получит q50 и 720p.
-- **Не рассчитывать, что конвейер что-то отмасштабирует.** `@2` — суффикс имени, ресайза нет ни для спрайтов, ни для фонов; единственный ресайз в проекте — превью галереи (512 по длинной стороне).
+- **Не рассчитывать, что конвейер что-то отмасштабирует.** `@2` — суффикс имени, ресайза нет ни для спрайтов, ни для фонов; единственный ресайз в проекте — превью галереи (512 по длинной стороне). Векторные по природе UI-панели — не исключение из этого правила, а другой случай: они не масштабируются, а перерисовываются.
 - **Не менять параметры энкода, не бампнув версию трансформации** в `pipeline.py:38-46`. Кэш контентно-адресуемый: старые блобы выдадут старые пиксели как свежие, и никакая проверка этого не заметит.
 - **Не полагаться на `canvas` в `character.yaml`.** Поле есть в схеме и не читается ничем. Совпадение размеров слоёв — на человеке.
 - **Не рендерить спрайт на фоне и потом вырезать.** Частично прозрачные пиксели края унесут в себе цвет старого фона; премультипликация Ren'Py это не чинит. Рендерить сразу на прозрачном.
@@ -334,7 +335,7 @@ vn assets daz validate                # сейчас: деклараций не�
 vn assets licenses                    # сейчас: «деклараций рендеров нет; в реестре 3 записей»
 vn build                              # ассеты + генерат + бюджеты
 vn build --check                      # CI-режим, ничего не пишет
-vn release validate --flavor public   # 20 проверок
+vn release validate --flavor public   # 21 проверка
 python -c "from PIL import Image;import glob;[print(Image.open(p).size,p) for p in glob.glob('game/assets/spr/**/*.webp',recursive=True)]"
 ```
 
@@ -347,5 +348,5 @@ python -c "from PIL import Image;import glob;[print(Image.open(p).size,p) for p 
 | **Читать перед изменением** | `../../tools/vn/src/vn/assets/pipeline.py:38-46,82-91,219-246` (трансформации и их версии), `../../tools/vn/src/vn/release.py:28-53` (бюджеты), `../../project.yaml:6-11`, `../../tools/vn/src/vn/assets/daz.py`, `../../tools/schemas/daz_render@1.schema.json`, `../../tools/schemas/character@1.schema.json`, `../../tools/comfyui-models.yaml`, `../../tools/vn/src/vn/pipeline.py` (doctor/модели), `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md`, `../conventions/naming.md` |
 | **Не трогать** | `game/assets/**` и `game/generated/**` — производные зоны (`.gitignore:2-3`); `.vncache/**` — кэш и манифест сборки; `<ComfyUI>/models/.vn-models.json` — лок-файл моделей вне репозитория |
 | **Зависимости (что ломается ниже по течению)** | размер/качество выходов → бюджеты `release.budget_failures()` → красный `vn build` и красный релизный гейт; разрешение слоёв → визуальная рассинхронизация `layeredimage` (гейта нет); имя выхода `@2` → `tools/vn/src/vn/content/images.py:190,205,221`; `.thumb.webp` → резолв превью галереи (`tools/vn/src/vn/content/compile.py:139-227`); профиль сборки → ключ кэша (`pipeline.py:307-309`) и сравнение свежести (`pipeline.py:407`) |
-| **Валидация** | `vn pipeline doctor` → `vn assets build` → `vn assets validate` → `vn build` → `vn build --check` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests -q` (254 теста) |
+| **Валидация** | `vn pipeline doctor` → `vn assets build` → `vn assets validate` → `vn build` → `vn build --check` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests -q` (278 тестов) |
 | **Частые ошибки** | 1) Выдумывать профили конвейера — их ровно два, `draft` и `full`. 2) Считать, что рендер автоматизирован: headless-DAZ, очередь рендеров и вызов ComfyUI — **NOT IMPLEMENTED**, `*.render.yaml` в репозитории ноль. 3) Опираться на `docs/ARCHITECTURE.md` как на описание построенного: профили `hd`/`mobile` (:1179), `vfx@1` (:1074), `game/assets/registry.json` (:1085) — NOT IMPLEMENTED; про DAZ/ComfyUI там ноль упоминаний. 4) Менять качество энкода, не бампнув версию трансформации. 5) Считать `canvas` в `character.yaml` работающей проверкой — у поля ноль читателей. 6) Считать, что релиз отсечёт `draft`-артефакты — не отсечёт |

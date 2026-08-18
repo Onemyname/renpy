@@ -13,7 +13,9 @@ screen history():
         ypos 72
         xsize 1100
         text vn_loc.t("ui.nav.history") style "vn_hist_title"
-        text vn_loc.t("ui.history.hint") style "vn_hist_hint" xalign 1.0 yalign 1.0
+        # Подсказка закрытия зависит от окружения (vn_ui.hint, components.rpy):
+        # на Deck/ТВ «Esc» игроку не нажать — там пад-вариант той же строки.
+        text vn_ui.hint("ui.history.hint") style "vn_hist_hint" xalign 1.0 yalign 1.0
     if not _history_list:
         vbox:
             align (0.5, 0.5)

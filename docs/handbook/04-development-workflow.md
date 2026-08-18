@@ -156,13 +156,13 @@ watch(root, on_assets, lambda: None)   # cli.py:622
 vn release changelog                       # обновит ci/release-manifest.json (+ CHANGELOG, если менялись главы/сцены)
 #  вручную: дописать в docs/CHANGELOG.md 2-5 предложений для игрока
 #  вручную: бампнуть version в project.yaml (патч — фиксы, НОВАЯ ГЛАВА = minor, мажор — сезон)
-vn release validate --flavor public        # 20 проверок гейта, локально, до тега
+vn release validate --flavor public        # 21 проверка гейта, локально, до тега
 vn release validate --flavor patron
 git commit -m "release: 0.1.6 — <итог одной строкой>"
 git tag v0.1.6 && git push --follow-tags   # -> release.yml
 ```
 
-Гейт содержит **20 проверок**; на текущем чекауте для `public` печатается **19 строк** — лицензии молчат при пустом реестре деклараций, а вот озвучка не молчит: `WARN озвучка: 14 черновых дублей (draft) — ru: ch01_s010_0001`. **WARN релиз не валит** (`ok` становится `False` только на FAIL), поэтому «все строки PASS» больше не эталон зелёного релиза.
+Гейт содержит **21 проверку**; на текущем чекауте для `public` печатается **20 строк**, все без FAIL (exit 0) — оба флейвора собираются. Молчит одна проверка — лицензии молчат при пустом реестре деклараций. Два WARN штатные: `озвучка: 14 черновых дублей (draft) — ru: ch01_s010_0001` и `зрелость контента: ни одна глава ещё не доведена до status=release (ch01)`. Вторая строка — не шум, а таймер: гейт зрелости самоактивирующийся, и в тот прогон, где первая глава станет `status: release`, все оставшиеся `draft`-главы станут FAIL ([29 §5.1](29-build-and-release.md#maturity-gate-rule)). **WARN релиз не валит** (`ok` становится `False` только на FAIL), поэтому «все строки PASS» не эталон зелёного релиза.
 
 Подробности гейта, флейворов и дистрибутивов — [29-build-and-release.md](29-build-and-release.md), паков — [30-packs-and-dlc.md](30-packs-and-dlc.md), откат — [44-how-do-i.md](44-how-do-i.md) §22.
 
@@ -172,7 +172,7 @@ git tag v0.1.6 && git push --follow-tags   # -> release.yml
 
 ## 4. Что проверяет CI
 
-**Два конфига, авторитетный один.** Живой пайплайн — GitHub Actions: 4 workflow, **7 определений джоб** (`lint`, `build-test`, `smoke`, `fresh-renpy`, `build`, `dmg`, `publish`); на теге релизная `build` разворачивается матрицей `flavor: [public, patron]` в 2 прогона, то есть максимум 8 реальных прогонов. `.gitlab-ci.yml` — исторический, не в паритете (см. долг в конце раздела).
+**Два конфига, авторитетный один.** Живой пайплайн — GitHub Actions: 5 workflow, **9 определений джоб** (`lint`, `build-test`, `smoke`, `fresh-renpy`, `build`, `dmg`, `publish`); на теге релизная `build` разворачивается матрицей `flavor: [public, patron]` в 2 прогона, то есть максимум 8 реальных прогонов. `.gitlab-ci.yml` — исторический, не в паритете (см. долг в конце раздела).
 
 Общее для всех GitHub-workflow: `actions/checkout@v4` с `with: {lfs: true}` (без него шрифты приезжают указателями и игра падает `FreetypeError` — это и был инцидент 0.1.1), Python 3.12, установка тулчейна **двумя шагами** — сначала `pip install --quiet -r tools/vn.lock` (точные версии, G17), затем `pip install --quiet -e "tools/vn[dev]"`, `SDL_AUDIODRIVER: dummy`, `PYTHONIOENCODING: utf-8`, SDK 8.5.3 из кэша `actions/cache` по ключу `renpy-sdk-8.5.3-linux`, движок под `xvfb-run -a`.
 
@@ -215,7 +215,7 @@ git tag v0.1.6 && git push --follow-tags   # -> release.yml
 
 | Джоба | Что делает | Падает, если |
 |---|---|---|
-| `build` (matrix `flavor: [public, patron]`, `fail-fast: false`) | гейт тега (`:47-54`); кэш SDK; кэш `build/rpyc-cache` **отдельно на флейвор** (`key: rpyc-<flavor>-<ref>`, `:71-76`); `vn release build --flavor <f> --package win --package linux --package mac --timeout 1800`, для `patron` добавляется `--patron-token` из `secrets.PATRON_TOKEN` (`:78-87`) | тег ≠ `project.yaml version`; любой FAIL из 20 проверок гейта |
+| `build` (matrix `flavor: [public, patron]`, `fail-fast: false`) | гейт тега (`:47-54`); кэш SDK; кэш `build/rpyc-cache` **отдельно на флейвор** (`key: rpyc-<flavor>-<ref>`, `:71-76`); `vn release build --flavor <f> --package win --package linux --package mac --timeout 1800`, для `patron` добавляется `--patron-token` из `secrets.PATRON_TOKEN` (`:78-87`) | тег ≠ `project.yaml version`; любой FAIL из 21 проверки гейта |
 | `dmg` (needs `build`, `macos-latest`) | из артефакта `dist-public` берёт `*-mac.zip` → `hdiutil create … -format UDZO` (`:95-115`) | mac-zip или `.app` не найден |
 | `publish` (needs `build`, `dmg`) | `gh release create "$GITHUB_REF_NAME" … --generate-notes --verify-tag` (`:117-135`) | — |
 
@@ -250,7 +250,7 @@ vn loc keys --check                             # say-id и ledger свежи (G
 xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint   # Linux; на Windows исполняемый файл — renpy.exe (cli.py:286)
 vn test oversample --scale 2                    # движок подтверждает подхват @2
 vn content compile --check                      # генерат свеж, без записи
-(cd tools/vn && python -m pytest tests -q)      # 254 теста, ~4 с
+(cd tools/vn && python -m pytest tests -q)      # 278 тестов, ~4 с
 ```
 
 **Pre-push, если трогали рантайм, сейвы, локализацию или релизный путь** — то, что `ci.yml` не гоняет вообще:
@@ -260,7 +260,7 @@ vn test smoke --picks 0,0                 # прохождение в реаль
 vn save check                             # фикстуры читаются, vn_save_schema на месте
 vn save corpus                            # реальная загрузка сейва + миграции в after_load
 vn voice validate --report                # дыры покрытия озвучки = FAIL релизного гейта
-vn release validate --flavor public       # 20 проверок релизного гейта
+vn release validate --flavor public       # 21 проверка релизного гейта
 ```
 
 Разбор самих проверок — [27-testing.md](27-testing.md); что делать с падением — [28-debugging.md](28-debugging.md).
@@ -325,9 +325,9 @@ CI использует **обе** формы: сначала пишущий `vn
 
 ## 9. Как обновлять `docs/CHANGELOG.md` — PARTIAL
 
-Команда: `vn release changelog` (`cli.py:1725-1743` → `release.update_changelog`, `release.py:273-310`).
+Команда: `vn release changelog` (`cli.py:1725-1743` → `release.update_changelog`, `release.py:310-347`).
 
-1. Снимок `content/chapters/` — **только его** — в вид `{ch_id: {status, scenes[]}}` (`release.py:255-270`).
+1. Снимок `content/chapters/` — **только его** — в вид `{ch_id: {status, scenes[]}}` (`release.py:287-307`).
 2. Дифф против `ci/release-manifest.json` (предыдущее состояние).
 3. Если появились/исчезли главы или сцены — блок вставляется сразу после первой строки `../CHANGELOG.md`:
 
@@ -396,12 +396,12 @@ vn content lint                              # lint: OK (0 предупрежд�
 vn content compile --check                   # генерат свеж
 vn loc keys --check
 vn test oversample --scale 2                 # oversample: OK
-(cd tools/vn && python -m pytest tests -q)   # 254 passed
+(cd tools/vn && python -m pytest tests -q)   # 278 passed
 
 # Релизный путь цел (то, что ci.yml не гоняет)
 vn test smoke --picks 0,0                    # RESULT.txt = OK: vn_end_of_content
 vn save check && vn save corpus
-vn release validate --flavor public          # 19 строк, 0 FAIL (1 WARN — норма)
+vn release validate --flavor patron          # 21 строка, 0 FAIL (1 WARN — норма; у public 20 строк и 2 WARN, тоже exit 0)
 vn release validate --flavor patron
 
 # Гигиена git

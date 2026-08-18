@@ -19,7 +19,7 @@ vn assets daz validate                # схема + наличие сцены +
 vn assets licenses                    # каждый использованный продукт есть в реестре
 vn assets build                       # png/cg/** -> game/assets/cg/**.webp + .thumb.webp
 vn build                              # + генерат: image cg ch01 kiss
-vn release validate --flavor patron   # 20 проверок, из них 3 про DAZ/провенанс/лицензии
+vn release validate --flavor patron   # 21 проверка, из них 3 про DAZ/провенанс/лицензии
 ```
 
 Сегодня все пять команд выше отработают на пустом множестве: `vn assets daz validate` напечатает «деклараций нет (assets_src/daz/\*\*/\<name\>.render.yaml)» (`../../tools/vn/src/vn/cli.py:674-677`).
@@ -427,7 +427,7 @@ render:
 
 Выход: exit 1 при любых ошибках, иначе зелёная строка «daz validate: OK (N деклараций, M предупреждений)».
 
-`--no-provenance` — режим «только проверить»: сайдкары не создаются и не обновляются. Ровно так валидатор вызывается из релизного гейта (`../../tools/vn/src/vn/release.py:506-514`, `write_provenance=False`) — гейт не должен ничего писать в рабочее дерево.
+`--no-provenance` — режим «только проверить»: сайдкары не создаются и не обновляются. Ровно так валидатор вызывается из релизного гейта (`../../tools/vn/src/vn/release.py:576-584`, `write_provenance=False`) — гейт не должен ничего писать в рабочее дерево.
 
 ### 10.3 Чего валидатор **не** делает
 
@@ -480,7 +480,7 @@ render:
 - **Слуг — только в имени файла и папки.** В `id` слуг не входит: слуг можно менять, id — никогда (G7, `../conventions/naming.md:27`).
 - **Пере-рендер с новыми настройками = бамп `version`**, а не новое имя. Имя выхода стабильно, чтобы не плодить осиротевшие ассеты.
 - **Смена `id` = новый id + запись в `content/renames.yaml`** — id неизменяемы навсегда.
-- **NSFW-подпапка — публичный контракт, а не пожелание:** public-флейворы вырезают `game/assets/*/nsfw/**` на этапе distribute (`release.py:191-202`). Ошиблись папкой — 18+ уехал в публичный билд. Гейт проверяет соответствие каталогов, но не содержимое; ревью контента — на людях. См. [29-build-and-release.md](29-build-and-release.md).
+- **NSFW-подпапка — публичный контракт, а не пожелание:** public-флейворы вырезают `game/assets/*/nsfw/**` на этапе distribute (`release.py:441-452`). Ошиблись папкой — 18+ уехал в публичный билд. Гейт проверяет соответствие каталогов, но не содержимое; ревью контента — на людях. См. [29-build-and-release.md](29-build-and-release.md).
 
 ---
 
@@ -527,7 +527,7 @@ assets:
     invoice: "free-with-studio"
 ```
 
-Проверка — `vn assets licenses` (`../../tools/vn/src/vn/cli.py:767-786` → `tools/vn/src/vn/assets/licenses.py:53-109`), она же входит в релизный гейт (`release.py:408-417`). Что блокирует релиз (**FAIL**):
+Проверка — `vn assets licenses` (`../../tools/vn/src/vn/cli.py:767-786` → `tools/vn/src/vn/assets/licenses.py:53-109`), она же входит в релизный гейт (`release.py:475-484`). Что блокирует релиз (**FAIL**):
 
 | Условие | Код |
 |---|---|
@@ -640,7 +640,7 @@ vn assets provenance verify              # цепочки согласованы
 vn assets build                          # png/cg/** -> game/assets/cg/**
 vn content lint                          # в т.ч. порог бинарей ADR-0004
 vn build                                 # генерат: image cg …
-vn release validate --flavor patron      # 20 проверок; DAZ-декларации / провенанс / лицензии
+vn release validate --flavor patron      # 21 проверка; DAZ-декларации / провенанс / лицензии
 python -m pytest tools/vn/tests/test_provenance.py tools/vn/tests/test_licenses.py -q
 ```
 
@@ -681,8 +681,8 @@ python -m pytest tools/vn/tests/test_provenance.py tools/vn/tests/test_licenses.
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/schemas/daz_render@1.schema.json` (93 строки, `additionalProperties: false` на обоих уровнях), `../../tools/vn/src/vn/assets/daz.py` (31 строка — обёртка) и `../../tools/vn/src/vn/assets/sources.py` (286 строк — весь валидатор), `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/assets/licenses.py:53-109`, `../../tools/vn/src/vn/pipeline.py:82-141` (`_dim_settings`, `daz_studio_path`, `daz_content_library`), `../../tools/vn/src/vn/cli.py:751-778` (группа `vn assets daz`), `../../tools/vn/src/vn/release.py:506-514,584-592` (гейты), `../../tools/install-daz.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md:84-106`, `../conventions/naming.md:22`, `content/licenses.yaml` |
+| **Читать перед изменением** | `../../tools/schemas/daz_render@1.schema.json` (93 строки, `additionalProperties: false` на обоих уровнях), `../../tools/vn/src/vn/assets/daz.py` (31 строка — обёртка) и `../../tools/vn/src/vn/assets/sources.py` (286 строк — весь валидатор), `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/assets/licenses.py:53-109`, `../../tools/vn/src/vn/pipeline.py:82-141` (`_dim_settings`, `daz_studio_path`, `daz_content_library`), `../../tools/vn/src/vn/cli.py:751-778` (группа `vn assets daz`), `../../tools/vn/src/vn/release.py:576-584,584-592` (гейты), `../../tools/install-daz.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md:84-106`, `../conventions/naming.md:22`, `content/licenses.yaml` |
 | **Не трогать** | `game/assets/**`, `game/generated/**`, `.vncache/**` — производные зоны, перезапишет сборка. `assets_src/**/*.provenance.json` руками не правят: их пишут `vn assets daz validate` и `vn assets provenance record`; ручная правка ломает сверку хэшей в `vn release validate`. `D:\DAZ3D\**` — вне репозитория, скриптами проекта не управляется |
-| **Зависимости (что ломается ниже по течению)** | `output` декларации → путь PNG → `tools/vn/src/vn/assets/pipeline.py:351-368` (`img_cg` + `img_thumb`) → `game/assets/cg/**` → `tools/vn/src/vn/content/images.py` эмитит `image cg …` **по факту собранных файлов**, а не по декларациям: удалённый PNG даёт битую ссылку в рантайме, а не ошибку валидатора. Thumb-файлы читает галерея (`tools/vn/src/vn/content/compile.py:139-227`). NSFW-путь читает `release.py:191-202` при distribute. Бюджеты — `release.py:28-53`. Бинарь в `assets_src/` считает `tools/vn/src/vn/content/lint.py:371-399` (ADR-0004, 30/50 МБ) |
-| **Валидация** | `vn pipeline doctor` → `vn assets daz validate` → `vn assets licenses` → `vn assets provenance verify` → `vn assets build` → `vn content lint` → `vn build` → `vn release validate --flavor patron` → `python -m pytest tools/vn/tests -q` (254 теста) |
+| **Зависимости (что ломается ниже по течению)** | `output` декларации → путь PNG → `tools/vn/src/vn/assets/pipeline.py:351-368` (`img_cg` + `img_thumb`) → `game/assets/cg/**` → `tools/vn/src/vn/content/images.py` эмитит `image cg …` **по факту собранных файлов**, а не по декларациям: удалённый PNG даёт битую ссылку в рантайме, а не ошибку валидатора. Thumb-файлы читает галерея (`tools/vn/src/vn/content/compile.py:139-227`). NSFW-путь читает `release.py:441-452` при distribute. Бюджеты — `release.py:28-53`. Бинарь в `assets_src/` считает `tools/vn/src/vn/content/lint.py:371-399` (ADR-0004, 30/50 МБ) |
+| **Валидация** | `vn pipeline doctor` → `vn assets daz validate` → `vn assets licenses` → `vn assets provenance verify` → `vn assets build` → `vn content lint` → `vn build` → `vn release validate --flavor patron` → `python -m pytest tools/vn/tests -q` (278 тестов) |
 | **Частые ошибки** | 1) Считать, что что-то в репозитории рендерит: **автоматизации DAZ нет вообще**, ноль `.dsa`/`.duf`, `daz_studio_path()` только печатает путь в doctor. 2) Ссылаться на `docs/ARCHITECTURE.md` по вопросам DAZ — слова «DAZ» там нет ни разу, норма только в ADR-0006 и `docs/pipeline/phase-0.md`. 3) Верить строке «DAZ Studio 4.24+» в `phase-0.md:26` / `install-daz.ps1:109` — фактически стоит ветка 6, и для RTX 50xx 4.x нерабочая (§2.3). 4) Добавлять ключ в декларацию без бампа версии схемы — `additionalProperties: false` даст жёсткую ошибку на всех существующих декларациях. 5) Ожидать, что валидатор откроет `.duf` или потребует провенанс у каждого PNG — этого он не делает; а вот разрешение и `id` ↔ `output` с ADR-0012 проверяет (§10.2, §10.3, §10.5). 6) Искать пути DIM в `AppSettings.ini` вместо `UserAccounts\*.ini`. 7) Предполагать наличие хранилища сырцов: `~/vn-assets-store` не существует, `type: s3` кидает `StorageError` |

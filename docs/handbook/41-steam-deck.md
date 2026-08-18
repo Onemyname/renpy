@@ -1,6 +1,6 @@
 # 41. Steam Deck: как проверить эту игру
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — сборка и рантайм под Deck готовы (`controller_first()` → фуллскрин + масштаб интерфейса 1.4, раскладка пада, скролл-пресет), но **проверить сборку на Deck сегодня нельзя штатным путём**: раскладка депотов уже принимает linux-`tar.bz2` (`$RENPY_SDK/renpy/common/00build.rpy:424`) и работает, однако выкладывать некуда — приложения в Steamworks нет, `platform.steam.appid` (`project.yaml:15`) `null`, ключа `depots` нет, steam_api-библиотеки Valve на build-машине отсутствуют, а `steamcmd` в любом случае запускает человек. Ручная доставка (пути Б и В ниже) работает, но при ней движок **не** видит Deck: варианты `steam_deck`/`medium`/`touch` вставляет только успешная Steam-инициализация, а она требует App ID (`project.yaml:15` сейчас `null`) и библиотеку Valve. Ни один CI-прогон не запускается с `RENPY_VARIANT` — controller-first вёрстка не проверяется машиной вообще.
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED — сборка и рантайм под Deck готовы (`controller_first()` → фуллскрин + масштаб интерфейса 1.4, раскладка пада, скролл-пресет, подсказки без клавиатурной лексики), но **проверить сборку на Deck сегодня нельзя штатным путём**: раскладка депотов принимает linux-`tar.bz2` (`$RENPY_SDK/renpy/common/00build.rpy:424`) и кладёт содержимое в корень депота без каталога-обёртки (§2.3), однако выкладывать некуда — приложения в Steamworks нет, `platform.steam.appid` (`project.yaml:15`) `null`, ключа `depots` нет, steam_api-библиотеки Valve на build-машине отсутствуют. Аплоад автоматизирован ручным workflow `steam-upload`, но без секретов и App ID это no-op. Ручная доставка (пути Б и В ниже) работает, но при ней движок **не** видит Deck: варианты `steam_deck`/`medium`/`touch` вставляет только успешная Steam-инициализация. Вёрстку Deck-профиля теперь ночью снимает CI (`nightly.yml`, джоба `controller-first`, §8) — но только вёрстку: пада, Steam и тача машина не проверяет.
 > **Отвечает на вопрос:** «Я никогда не работал со Steam Deck. Что мне сделать руками, чтобы увидеть эту игру на нём и понять, что сломано».
 
 Это страница-процедура. Архитектура платформенного слоя (фасад `vn_platform`, ownership, ачивки, поставка в Steam) — [39-platforms.md](39-platforms.md); controller-first вёрстка экранов и её остатки — [42-big-picture.md](42-big-picture.md). Здесь только то, что делает человек с Deck в руках.
@@ -31,7 +31,7 @@ RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0
 ls .vncache/smoke/                    # скриншоты смотреть ГЛАЗАМИ
 ```
 
-Проверено на репозитории 2026-08-18 (HEAD `db28ce6`): `platform.steam.appid: null`, `vn release validate --flavor public` → 19 строк, 18 PASS + 1 WARN (черновая озвучка), exit 0.
+Проверено на репозитории 2026-08-18 (HEAD `e3c2842` + текущая итерация): `platform.steam.appid: null`; `vn release validate --flavor public` → 20 строк, 18 PASS + 2 WARN (черновая озвучка и зрелость контента: ни одной главы `status: release`), 0 FAIL, exit 0; `--flavor patron` → 21 строка, 1 WARN, exit 0.
 
 ---
 
@@ -94,10 +94,10 @@ vn release build --flavor public --package linux
 
 ### 2.3 `vn release steam` принимает linux-`tar.bz2` — но обёртку депота никто не проверял
 
-`steam_stage_content` (`tools/vn/src/vn/release.py:238-272`) знает, что формат пакета зависит от платформы, и распаковывает архив **по фактическому типу файла**:
+`steam_stage_content` (`tools/vn/src/vn/release.py:266-309`) знает, что формат пакета зависит от платформы, и распаковывает архив **по фактическому типу файла**:
 
 ```python
-_DIST_SUFFIX = {                              # release.py:159-163
+_DIST_SUFFIX = {                              # release.py:158-162
     "windows": ("-win", (".zip",)),
     "linux": ("-linux", (".tar.bz2", ".zip")),   # порядок = приоритет
     "mac": ("-mac", (".zip",)),
@@ -109,7 +109,7 @@ else:
     with zipfile.ZipFile(archive) as zf: zf.extractall(dest)
 ```
 
-То есть `--package linux` (`tar.bz2`) — ровно то, что раскладка ждёт; `.dmg` игнорируется намеренно (кроссплатформенно не распаковать, `app-zip` несёт то же содержимое). Ожидаются при этом **только платформы с объявленным депотом** в `platform.steam.depots`, так что ради linux-депота не нужно собирать win и mac. Это зафиксировано тестом на настоящих архивах: `tools/vn/tests/test_platform.py:78-102` кладёт win-`zip` **и** linux-`tar.bz2` и требует, чтобы встали оба депота с `errors == []`.
+То есть `--package linux` (`tar.bz2`) — ровно то, что раскладка ждёт; `.dmg` игнорируется намеренно (кроссплатформенно не распаковать, `app-zip` несёт то же содержимое). Ожидаются при этом **только платформы с объявленным депотом** в `platform.steam.depots`, так что ради linux-депота не нужно собирать win и mac. Это зафиксировано тестом на настоящих архивах: `tools/vn/tests/test_platform.py:96-121` кладёт win-`zip` **и** linux-`tar.bz2` и требует, чтобы встали оба депота с `errors == []`.
 
 **Что это значит для вас сегодня:** ручной шаг для linux-депота больше не нужен. Путь «выложить в тестовую ветку Steam и скачать на Deck» (§3.1) блокирует не формат архива, а отсутствие приложения в Steamworks: `platform.steam.appid: null` и ключа `depots` в `project.yaml` нет, поэтому `vn release steam` останавливается на первом шаге. Ручная раскладка остаётся годным обходом, если нужно подменить содержимое депота:
 
@@ -117,9 +117,15 @@ else:
 mkdir -p build/steam/content/public/linux
 tar xjf build/dist/0.1.5-public/vn-*-linux.tar.bz2 -C build/steam/content/public/linux
 # получится build/steam/content/public/linux/vn-0.1.5+<sha>-linux/vn.sh
+# ВНИМАНИЕ: при ручной раскладке обёртку vn-<версия>-linux/ надо снять самому —
+# vn release steam делает это за вас (см. ниже), а tar/unzip — нет.
 ```
 
-**Открытый вопрос — уровень вложенности, и он не про формат.** И `tar`, и `zipfile.extractall` сохраняют каталог-обёртку архива: `launcher/game/distribute.rpy:1581` делает `fl.prepend_directory(<base_name>-<пакет>)` для форматов `zip` и `tar.bz2` (`:1517-1518`, `:1535`). Шаблон VDF при этом объявляет `LocalPath "content/<flavor>/<platform>/*"` с `recursive 1` и `DepotPath "."` (`release.py:220-225`), значит в депот попадёт **эта обёртка**, а не содержимое игры напрямую. Прошёл ли такой депот хоть раз через реальный SteamPipe — **неизвестно: ни один прогон до загрузки не доходил**. Путь запуска в Steamworks придётся сверять с фактической раскладкой депота на первой же реальной выкладке, и это остаётся честной причиной не называть Steam-поставку пройденной.
+**Каталог-обёртку раскладка теперь снимает — вопрос закрыт.** `tar` и `zipfile.extractall` её сохраняют, потому что launcher её добавляет: у форматов `zip` и `tar.bz2` четвёртое поле `FORMATS` (`prepend`) равно `True` (`launcher/game/distribute.rpy:1513-1530`, применение — `:1580-1581`), а у `app-zip` — `False`. Поэтому после распаковки вызывается `_flatten_wrapper_dir` (`release.py:186-212`): единственный верхний каталог разворачивается на уровень выше, mac-бандл (`*.app`) не трогается, коллизия имён — `ReleaseError`, и платформа тогда **не** попадает в `staged` (депот с чужой раскладкой хуже отсутствующего).
+
+Следствие для Steamworks: **Launch Options задаются от корня депота и не содержат версии** — `vn.sh` для Linux, `vn.exe` для Windows. Смена версии игры их больше не меняет.
+
+Чего это всё ещё не доказывает: разворачивание проверено тремя тестами на **синтетических** архивах (`test_platform.py:112-157`), а не на артефакте живого `launcher distribute`, и через реальный SteamPipe депот ни разу не проходил. Первую выкладку по-прежнему сверяют глазами.
 
 ---
 
@@ -154,7 +160,7 @@ steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 
 Дальше, уже на Deck: Steam → библиотека → игра → шестерёнка → **Properties → Betas** → выбрать ветку `beta` → дождаться докачки → Play.
 
-Что нужно знать про ветку: `--branch` подставляется в `"SetLive"` VDF-шаблона (`release.py:168-206`) и публикует билд **в существующую** ветку. Ветку `beta` заводит человек в Steamworks (App Admin → Builds → Betas); в несуществующую ветку `SetLive` не публикует. Переключение default-ветки — тоже вручную в Steamworks, **после** прогона на живом Deck.
+Что нужно знать про ветку: `--branch` подставляется в `"SetLive"` VDF-шаблона (`release.py:168-234`) и публикует билд **в существующую** ветку. Ветку `beta` заводит человек в Steamworks (App Admin → Builds → Betas); в несуществующую ветку `SetLive` не публикует. Переключение default-ветки — тоже вручную в Steamworks, **после** прогона на живом Deck.
 
 Полезное, чего мы не используем: движок умеет спросить у Steam текущее имя беты — `achievement.steam.get_current_beta_name()` (`00steam.rpy:227`). Одна строка в `035_platform.rpy` дала бы «какую ветку я запустил» в `log.txt` и в крэш-отчёт. STATUS: NOT IMPLEMENTED.
 
@@ -251,7 +257,7 @@ ssh $DECK 'cd ~/Games/vn-*-linux && DISPLAY=:0 RENPY_VARIANT="steam_deck medium 
 
 ### 4.2 Где варианты используются в нашем проекте
 
-Прямых обращений к `renpy.variant()` вне фасада **нет** — проверяется grep'ом и гард-тестом `test_platform.py:129-139`:
+Прямых обращений к `renpy.variant()` вне фасада **нет** — проверяется grep'ом и гард-тестом `test_platform.py:183-193`:
 
 ```
 renpy.variant("steam_deck")        -> vn_platform.is_steam_deck()    035_platform.rpy:29-31
@@ -345,7 +351,7 @@ style vn_nav_button:
 
 Порог, на который опирался проект, зафиксирован в самом коде (`scale.rpy:17-18`): «interface 21 → 29, button 17 → 24, tiny 13 → 18 — интерфейс проходит порог читаемости Deck (~26-28 вирт. px строчных) и ТВ 10-foot». Число `1.4` живёт в одном месте — `gui.VN_UI_SCALE_LARGE` (`scale.rpy:19`).
 
-Игрок может перебить авто-выбор: сегмент «Авто / Крупный / Обычный» в настройках (`core_screens.rpy:329-342`) вызывает `vn.set_ui_scale(mode)` (`scale.rpy:52-57`), тот пишет `persistent.vn_ui_scale` и зовёт `gui.rebuild()` — все `define gui.*` пересчитываются в исходном порядке, стили перестраиваются, экран настроек переоценивается сам. Перезапуск игры не нужен. **Это второй способ проверить масштаб на Deck без Steam:** запустить как есть и переключить сегмент в «Крупный» руками.
+Игрок может перебить авто-выбор: сегмент «Авто / Крупный / Обычный» в настройках (`core_screens.rpy:335-348`) вызывает `vn.set_ui_scale(mode)` (`scale.rpy:52-57`), тот пишет `persistent.vn_ui_scale` и зовёт `gui.rebuild()` — все `define gui.*` пересчитываются в исходном порядке, стили перестраиваются, экран настроек переоценивается сам. Перезапуск игры не нужен. **Это второй способ проверить масштаб на Deck без Steam:** запустить как есть и переключить сегмент в «Крупный» руками.
 
 ---
 
@@ -364,24 +370,30 @@ grep '^\[vn\] platform:' log.txt
 
 ### 7.2 Управление (Steam Input + пад)
 
-Раскладка пада — **одно место**, `game/framework/20_ui/input.rpy:19-29`; дефолты движка (`$RENPY_SDK/renpy/common/00keymap.rpy:164-217`) не переопределяются. Что должно работать:
+Раскладка пада — **одно место**, `game/framework/20_ui/input.rpy:29-41`; дефолты движка (`$RENPY_SDK/renpy/common/00keymap.rpy:164-217`) не переопределяются, только дополняются. Что должно работать:
 
 | Кнопка | Ожидание | Откуда | Проверять в |
 |---|---|---|---|
-| **A** / **RT** | продвинуть реплику, нажать кнопку, активировать слайдер | `pad_a_press`, `pad_righttrigger_pos` → `dismiss`, `button_select`, `bar_activate` (`00keymap.rpy:182-183`) | say, любое меню |
-| **B** | game_menu; **в модалках** — отмена | `pad_b_press` → `game_menu` (`:184`); в модалке перехватывает `key "game_menu"` из `vn_modal_dialog` (`components.rpy:136`) | say → открылось меню; `confirm` → закрылось только окно |
+| **A** / **RT** | продвинуть реплику, нажать кнопку, активировать слайдер, **подтвердить текстовый ввод** | `pad_a_press`, `pad_righttrigger_pos` → `dismiss`, `button_select`, `bar_activate` (`00keymap.rpy:182-183`) + наше `input_enter` (`input.rpy:37-38`) | say, любое меню, поле ввода |
+| **B** | game_menu; **в модалках** — отмена | `pad_b_press` → `game_menu` (`:184`); в модалке перехватывает `key "game_menu"` из `vn_modal_dialog` (`components.rpy:173`) | say → открылось меню; `confirm` → закрылось только окно |
 | **X** | `button_alternate` | `:177` | ни к чему не привязано в наших экранах — нажатие не должно ничего ломать |
 | **Y** | скрыть интерфейс | `pad_y_press` → `hide_windows` (`:176`) | say: quick menu и текст исчезают, картинка остаётся |
 | **LB** / **LT** / **Back** | rollback (назад по репликам) | `:165-171` | say |
 | **RB** | rollforward | `:179-180` | say после rollback |
-| **LB** / **RB** | **дополнительно** листание вьюпорта (`viewport_pageup`/`pagedown`) | наше дополнение, `input.rpy:23-29` | история, галерея, список языков |
-| **LB** / **RB** в просмотрщике галереи | предыдущий/следующий элемент | `gallery.rpy:158-159` | просмотрщик |
-| **L3** (клик левого стика) | `toggle_skip` | наше, `input.rpy:20` | say |
-| **R3** (клик правого стика) | `toggle_afm` (авто-чтение) | наше, `input.rpy:21` | say |
+| **LB** / **RB** | **дополнительно** листание вьюпорта (`viewport_pageup`/`pagedown`) | наше дополнение, `input.rpy:33-36` | история, галерея, достижения, список языков, трейсбек крэш-экрана |
+| **LB** / **RB** в просмотрщике галереи | предыдущий/следующий элемент | `gallery.rpy:168-169` | просмотрщик |
+| **L3** (клик левого стика) | `toggle_skip` | наше, `input.rpy:30` | say |
+| **R3** (клик правого стика) | `toggle_afm` (авто-чтение) | наше, `input.rpy:31` | say |
 | **Start** / **Guide** | game_menu | `:173-174` | say |
 | **dpad** / стики | перемещение фокуса, движение слайдера, скролл | `:186-216` | все меню |
 
-Отдельно проверьте **grab-паттерн слайдеров**: A на слайдере захватывает его (`Bar.event`, `renpy/display/behavior.py:2549-2556`), затем dpad влево/вправо меняет значение, второе A отпускает (`:2614-2621`). Пока слайдер захвачен, dpad **не** уводит фокус. Признак захвата — только смена цвета (`hover_`-вариант), поэтому у `style vn_slider` обязательны `hover_*`/`selected_*` (`components.rpy:323-334`). Если захваченный слайдер визуально не отличается от обычного — на паде это читается как «не работает».
+Отдельно проверьте **grab-паттерн слайдеров**: A на слайдере захватывает его (`Bar.event`, `renpy/display/behavior.py:2549-2556`), затем dpad влево/вправо меняет значение, второе A отпускает (`:2614-2621`). Пока слайдер захвачен, dpad **не** уводит фокус. Признак захвата — только смена цвета (`hover_`-вариант), поэтому у `style vn_slider` обязательны `hover_*`/`selected_*` (`components.rpy:351-362`). Если захваченный слайдер визуально не отличается от обычного — на паде это читается как «не работает».
+
+**Почему `input_enter` подсажен к A и RT, а не к свободной кнопке.** Свободных не осталось: A/B/X/Y, LB/LT/Back = rollback, RB = rollforward, Start/Guide = game_menu, dpad и стики = фокус, L3/R3 мы заняли под skip/auto. У движка подтверждение ввода висит **только** на `Enter`/`KP_Enter` клавиатуры, поэтому первое же `renpy.input` на Deck стало бы тупиком: экранную клавиатуру движок покажет сам, а «ОК» нажать нечем. Конфликт мнимый — `input_enter` забирает только **живое** editable-поле (`renpy/display/behavior.py`, `Input.event`: `if not self.editable: return None`), а `screen input` кнопок не содержит. На клавиатуре у движка та же схема: `K_RETURN` — это и `dismiss`, и `input_enter`.
+
+**Оговорка (не дефект):** если однажды появится экран с полем ввода **и** кнопками одновременно, A подтвердит ввод, а не нажмёт кнопку. Единственное такое место сегодня — движковая консоль (dev-only).
+
+**Подсказки управления не должны содержать клавиатурной лексики.** «Esc» на Deck игроку не нажать, поэтому строка подсказки объявляется **парой ключей** — `<key>_kbd` и `<key>_pad`, — а выбирает между ними `vn_ui.hint(key)` (`components.rpy:142-153`), спрашивая `vn_platform.controller_first()` на каждый вызов. Сегодня так сделана одна подсказка (`ui.history.hint_kbd` / `..._pad`, экран истории); все новые обязаны следовать той же конвенции. Это второй потребитель `controller_first()` — после `gui.ui_scale`. Автоматической проверки «на каждый `vn_ui.hint("X")` есть оба ключа» пока нет — см. [42-big-picture.md](42-big-picture.md) §5.5.
 
 Два места, где Steam Input вмешивается и это надо увидеть своими глазами:
 
@@ -394,7 +406,7 @@ grep '^\[vn\] platform:' log.txt
 
 Вариант `touch` на Deck выставляется вместе с `steam_deck` (`00steam.rpy:1059`), и движок переводит `renpy.display.touch = True` (`renpy/main.py:342`), то есть hover-состояния перестают возникать от «наведения». Наш фасад его опрашивает (`has_touch()`), но **ни один экран решения по нему не принимает** — hit-area под палец нигде не увеличивается.
 
-Что проверять пальцем: say (тап продвигает текст), варианты выбора (ряд ≈ 65 виртуальных px = 43 физических — проходит), quick menu (`padding (13, 17)` + `tiny` 18 → ≈ 52 виртуальных px = 35 физических — на грани), кнопка удаления сейва `×` (`vn_slot_delete`, `components.rpy:307-310`: `padding (12, 6)` — самый мелкий кликабельный элемент в игре), вкладки галереи (`vn_gal_tab`: 6+19+6 ≈ 31 виртуальный px = 21 физический — **мелко для пальца**).
+Что проверять пальцем: say (тап продвигает текст), варианты выбора (ряд ≈ 65 виртуальных px = 43 физических — проходит), quick menu (`padding (13, 17)` + `tiny` 18 → ≈ 52 виртуальных px = 35 физических — на грани), кнопка удаления сейва `×` (`vn_slot_delete`, `components.rpy:335-338`: `padding (12, 6)` — самый мелкий кликабельный элемент в игре), вкладки галереи (`vn_gal_tab`: 6+19+6 ≈ 31 виртуальный px = 21 физический — **мелко для пальца**).
 
 STATUS: PARTIAL. Норма «≥ 48 px» соблюдена сознательно только в quick menu (`quick_menu.rpy:4`); сплошного аудита hit-area не было. Рычаг для исправления уже есть и не требует правки экранов — новый токен `gui.*` в `scale.rpy` по образцу §4.3.
 
@@ -402,7 +414,7 @@ STATUS: PARTIAL. Норма «≥ 48 px» соблюдена сознатель�
 
 Движок умеет штатную клавиатуру Deck и включает её **сам**: `keyboard_periodic()` вызывается из Steam-callbacks только при `renpy.variant("steam_deck")` (`00steam.rpy:704-705`), и когда движок сообщает о наличии текстового поля (`renpy.display.interface.text_rect`), вызывается `SteamUtils().ShowFloatingGamepadTextInput(...)` (`00steam.rpy:790-792`), плюс слои сдвигаются вверх переходом `_KeyboardShift`, чтобы поле не оказалось под клавиатурой. Закрытие — `DismissFloatingGamepadTextInput()` (`:803-804`).
 
-Проверять сегодня **нечего**: `renpy.input` в проекте не вызывается ни разу (grep по `game/` и `tools/vn/src/` — 0 попаданий). `screen input(prompt)` объявлен (`core_screens.rpy:59-66`) как контракт движка, но в него никто не заходит: сейв пишется `FileSave(slot)` без имени (`components.rpy:224`), поиска и полей ввода в UI нет.
+Проверять сегодня **нечего**: `renpy.input` в проекте не вызывается ни разу (grep по `game/` и `tools/vn/src/` — 0 попаданий). `screen input(prompt)` объявлен (`core_screens.rpy:59-66`) как контракт движка, но в него никто не заходит: сейв пишется `FileSave(slot)` без имени (`components.rpy:277`), поиска и полей ввода в UI нет.
 
 Практический вывод для будущего: первая же фича с текстовым вводом (имя героя, подпись сейва) на Deck заработает бесплатно, а **вне** Deck на паде — нет: OSK движка гейтится вариантом `steam_deck`, и в Big Picture на десктопе поле ввода останется без клавиатуры. Разбор и предлагаемое решение — [42-big-picture.md](42-big-picture.md) §5.
 
@@ -444,17 +456,17 @@ $ vn assets memory --scale 1
 
 > Осторожно при настройке Steam Auto-Cloud: тот же код для Windows даёт `%APPDATA%/RenPy/<save_directory>` (`renpy.py:194-196`), то есть Roaming. Формулировка `%LOCALAPPDATA%` в [39-platforms.md](39-platforms.md) §6 и `ci/steam/README.md` требует перепроверки против этого кода до заполнения Auto-Cloud-путей в Steamworks.
 
-**Что проверять.** Сохранение в слот (сетка 3×2, 4 страницы + «Авто» + «Быстрые» — `core_screens.rpy:238-251`), загрузка, страница квиксейвов (`FilePage("quick")`, `:245` — без этого пункта `QuickSave()` некуда было бы загрузить), удаление слота (свой `Confirm`, `components.rpy:258-261`), миниатюры слотов (`config.thumbnail_width/height` = `gui.slot_width`/`slot_thumb_height`, `core_screens.rpy:15-16`).
+**Что проверять.** Сохранение в слот (сетка 3×2, 4 страницы + «Авто» + «Быстрые» — `core_screens.rpy:244-257`), загрузка, страница квиксейвов (`FilePage("quick")`, `:245` — без этого пункта `QuickSave()` некуда было бы загрузить), удаление слота (свой `Confirm`, `components.rpy:276-277`), миниатюры слотов (`config.thumbnail_width/height` = `gui.slot_width`/`slot_thumb_height`, `core_screens.rpy:15-16`).
 
 **Suspend/resume.** Deck засыпает по кнопке питания, и это **не** мобильный сценарий: `check_suspend` реагирует на `APP_WILLENTERBACKGROUND` (`renpy/display/core.py:1934-1939`), который SDL на Linux-десктопе не присылает. Значит `mobile_save()` не срабатывает, игра просто замирает вместе с процессом. Защита — штатный автосейв: `config.has_autosave = True`, `autosave_slots = 10` (`game/options.rpy:8-9`), частота по умолчанию `autosave_frequency = 200` интеракций (`renpy/config.py:331`) плюс автосейв на выборе (`config.autosave_on_choice = True`, `:579`).
 
-Проверять так: сцена → sleep → wake → продолжить (звук должен вернуться, музыка не оборваться, кадр отрисоваться), затем sleep на **несколько часов** → wake, затем принудительное завершение через Steam при спящей игре → перезапуск → «Продолжить» из главного меню (`Continue(confirm=False)`, `core_screens.rpy:175-183`) должен поднять автосейв, а не отбросить в начало главы.
+Проверять так: сцена → sleep → wake → продолжить (звук должен вернуться, музыка не оборваться, кадр отрисоваться), затем sleep на **несколько часов** → wake, затем принудительное завершение через Steam при спящей игре → перезапуск → «Продолжить» из главного меню (`Continue(confirm=False)`, `core_screens.rpy:181-189`) должен поднять автосейв, а не отбросить в начало главы.
 
 ### 7.8 Оверлей Steam
 
 Оверлей — целиком движковый: `steam.overlay_needs_present` в `config.needs_redraw_callbacks` и позиция тостов `POSITION_TOP_RIGHT` на init (`00steam.rpy:1045-1047`). Проверяется только на пути А. Что смотреть: **STEAM+X** (или Guide) открывает оверлей поверх игры, игра при этом не крашится и не теряет звук; после закрытия кадр перерисовывается.
 
-Наш фасад умеет спросить, открыт ли оверлей (`vn_platform.overlay_enabled()`, `035_platform.rpy:43-48`), но **потребителей у метода нет ни одного** — это задел. Практическое следствие: наш тост `notify` (`core_screens.rpy:457-465`) может нарисоваться под оверлеем, и мы этого не подавляем.
+Наш фасад умеет спросить, открыт ли оверлей (`vn_platform.overlay_enabled()`, `035_platform.rpy:43-48`), но **потребителей у метода нет ни одного** — это задел. Практическое следствие: наш тост `notify` (`core_screens.rpy:463-471`) может нарисоваться под оверлеем, и мы этого не подавляем.
 
 ### 7.9 Скриншоты
 
@@ -475,7 +487,7 @@ $ vn assets memory --scale 1
 rm -rf ~/.renpy/vn-1755000000        # сотрёт И сейвы, и настройки, и открытую галерею
 ```
 
-Переключение вручную — сегмент «Оконный / Полный экран» в настройках (`core_screens.rpy:281-283`), плюс движковые `F11` / `Alt+Enter` / `f` (`00keymap.rpy:42`).
+Переключение вручную — сегмент «Оконный / Полный экран» в настройках (`core_screens.rpy:287-289`), плюс движковые `F11` / `Alt+Enter` / `f` (`00keymap.rpy:42`).
 
 ---
 
@@ -483,7 +495,7 @@ rm -rf ~/.renpy/vn-1755000000        # сотрёт И сейвы, и настр
 
 ```bash
 RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0
-RENPY_VARIANT="steam_deck medium touch" VN_AUTOPILOT_SCREENS=gallery,preferences,chapter_select \
+RENPY_VARIANT="steam_deck medium touch" VN_AUTOPILOT_SCREENS=gallery,achievements,preferences,chapter_select \
     vn test smoke --picks 0,0
 ls .vncache/smoke/
 ```
@@ -514,7 +526,9 @@ ls .vncache/smoke/
 | **производительность** | десктопный GPU, десктопный CPU |
 | **suspend/resume** | нет |
 
-И самое важное: **ни один CI-прогон не задаёт `RENPY_VARIANT`.** В `.github/workflows/nightly.yml:57-60` четыре прогона smoke, в `canary.yml:51` — один, все на десктопном профиле; `ci.yml:91` гоняет `vn test oversample --scale 2`. Значит регрессия «на Deck интерфейс стал мелким» или «панель сплющилась при масштабе 1.4» машиной не ловится вовсе. RECOMMENDED FUTURE STATE: добавить в `nightly.yml` пятый прогон с `RENPY_VARIANT="steam_deck medium touch"` и `VN_AUTOPILOT_SCREENS` — это одна строка YAML и один артефакт со скриншотами, гейта не даст, но даст диффабельные картинки.
+**Этот же прогон гоняет CI — джоба `controller-first`** (`.github/workflows/nightly.yml:85-152`). Матрица из двух профилей: `steam_deck medium touch` и `steam_big_picture`; `VN_AUTOPILOT_SCREENS=main_menu,preferences,gallery,chapter_select`; шоты уходят артефактом `controller-shots-<profile>-<run_id>` с `if: always()`. Гейта нет намеренно — поломка вёрстки видна на картинке, а не в коде выхода; джоба даёт человеку диффабельные скриншоты. Она в `nightly`, а не в `ci`, потому что прогон движка на профиль стоит минуты, а MR-пайплайн держим под 10 минут (G15); отсутствие `RENPY_VARIANT` в `ci.yml` проверяет `tools/vn/tests/test_ci_config.py`. Отдельной джобой, а не шагами внутри `smoke`, — потому что `_autopilot_run` чистит `.vncache/smoke` перед каждым прогоном: один прогон = один артефакт.
+
+Остальные прогоны по-прежнему десктопные: `nightly.yml:57-60` (четыре smoke), `canary.yml:51` (один), `ci.yml:91` (`vn test oversample --scale 2`). И джоба `controller-first` **не** закрывает список выше: пад, Steam, тач, letterbox и производительность остаются за человеком.
 
 ---
 
@@ -525,10 +539,10 @@ ls .vncache/smoke/
 | Изменить крупный масштаб (сейчас 1.4) | `game/framework/20_ui/scale.rpy:19` (`gui.VN_UI_SCALE_LARGE`) | сверить минимумы `2*Borders` в `game/generated/registry/ui_frames.gen.rpy`; `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` и просмотр `.vncache/smoke/` глазами |
 | Добавить платформенный токен (hit-area, отступ, кегль) | только `scale.rpy`, между `init -4` и `init offset = -3` | экран читает **токен**, не `renpy.variant`; проверить, что `gui.rpy` (`-2`) видит новый токен |
 | Добавить кнопку пада | только `game/framework/20_ui/input.rpy` | не переопределять занятое движком (`00keymap.rpy:164-217`); убедиться, что событие безвредно в игровом контексте |
-| Новый capability-запрос («это handheld?», «есть ли клавиатура?») | только `game/framework/00_core/035_platform.rpy` | гард-тест `tools/vn/tests/test_platform.py:129` остаётся зелёным |
-| Включить Steam, чтобы путь А заработал | `project.yaml: platform.steam.appid` + `depots`, `libsteam_api.so` в `$RENPY_SDK/lib/py3-linux-x86_64/` | `vn build`, затем `vn release steam --flavor public`; на первой реальной выкладке сверить каталог-обёртку депота с путём запуска в Steamworks (§2.3) |
-| Решить вопрос каталога-обёртки в депоте (§2.3) | либо срезать обёртку при распаковке в `steam_stage_content` (`tools/vn/src/vn/release.py:238-272`), либо учесть её в `LocalPath` шаблона `ci/steam/app_build.vdf.tmpl` | кейс в `test_platform.py` на фактическую структуру каталога депота + сверка с путём запуска на реальной выкладке |
-| Проверять controller-first вёрстку в CI | `.github/workflows/nightly.yml` — прогон с `RENPY_VARIANT` + `VN_AUTOPILOT_SCREENS`, артефакт со скриншотами | ничего не гейтить: скриншоты смотрит человек |
+| Новый capability-запрос («это handheld?», «есть ли клавиатура?») | только `game/framework/00_core/035_platform.rpy` | гард-тест `tools/vn/tests/test_platform.py:183` остаётся зелёным |
+| Включить Steam, чтобы путь А заработал | `project.yaml: platform.steam.appid` + `depots`, `libsteam_api.so` в `$RENPY_SDK/lib/py3-linux-x86_64/` | `vn build`, затем `vn release steam --flavor public` (или workflow `steam-upload` с секретами); Launch Options — `vn.sh` от корня депота, без имени каталога (§2.3) |
+| Добавить формат архива со своей обёрткой | `_flatten_wrapper_dir` (`tools/vn/src/vn/release.py:186-212`) — сверить `prepend` формата по `FORMATS` (`distribute.rpy:1513-1530`) | кейс в `test_platform.py` на фактическую структуру каталога депота + сверка с путём запуска на реальной выкладке |
+| Добавить профиль в ночную проверку вёрстки | `.github/workflows/nightly.yml`, `matrix.include` джобы `controller-first` (пара `profile` + `variant`) | набор вариантов копировать из `00steam.rpy:1048-1059` целиком: `RENPY_VARIANT` заменяет `config.variants`, а не дополняет. Ничего не гейтить: скриншоты смотрит человек |
 | Логировать ветку Steam | `035_platform.rpy` — `achievement.steam.get_current_beta_name()` (`00steam.rpy:227`) в `describe()` | контракт-тест в `test_engine_compat.py` (G18): API недокументированный |
 
 ---
@@ -552,7 +566,7 @@ ls .vncache/smoke/
 
 ```bash
 # Тулинг (нужно то же окружение, в котором стоит vn: tools/vn/.venv)
-python -m pytest tools/vn/tests -q                       # 254 passed
+python -m pytest tools/vn/tests -q                       # 278 passed
 python -m pytest tools/vn/tests/test_platform.py -q      # 10 passed
 
 # Память сцены в профиле Deck и в профиле 4K-монитора
@@ -572,7 +586,8 @@ vn release build --flavor public --package linux
 ls build/dist/0.1.5-public/                              # vn-0.1.5+<sha>-linux.tar.bz2 + build-info.json
 
 # Релизный гейт (платформенных проверок в нём нет, но краснеть он не должен)
-vn release validate --flavor public                      # 19 строк: 18 PASS + 1 WARN (озвучка), exit 0
+vn release validate --flavor patron                      # 21 строка: 20 PASS + 1 WARN (озвучка), exit 0
+#                                                        public — 20 строк, +WARN зрелости контента, тоже exit 0
 ```
 
 Эталон на 2026-08-18 (HEAD `db28ce6`): `vn assets memory --scale 2` → `память: OK`, рекомендуемый `render.image_cache_mb: 327` при заданных 1024; `vn release steam --flavor public` → `ошибка: platform.steam.appid не задан в project.yaml` (exit 1) — ожидаемое состояние репозитория без Steamworks-приложения.
@@ -583,10 +598,10 @@ vn release validate --flavor public                      # 19 строк: 18 PAS
 
 | | |
 |---|---|
-| **Читать перед изменением** | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) (норматив), `../../game/framework/00_core/035_platform.rpy` (весь, 89 строк), `../../game/framework/20_ui/scale.rpy` (весь, 57 строк), `../../game/framework/20_ui/input.rpy` (весь, 29 строк), `../../game/options.rpy:12-17`, `../../project.yaml:13-15,20-33,57-65`, `$RENPY_SDK/renpy/main.py:155-300` (`choose_variants`), `$RENPY_SDK/renpy/common/00steam.rpy:962-1060` (`steam_preinit`/`steam_init`/варианты), `$RENPY_SDK/renpy/common/00build.rpy:421-432` (форматы пакетов), `$RENPY_SDK/renpy/display/im.py:732-763` (`get_oversampled_image`), `../../tools/vn/src/vn/release.py:151-252`, `../../tools/vn/src/vn/cli.py:301-393,1571-1656` |
+| **Читать перед изменением** | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) (норматив), `../../game/framework/00_core/035_platform.rpy` (весь, 89 строк), `../../game/framework/20_ui/scale.rpy` (весь, 57 строк), `../../game/framework/20_ui/input.rpy` (весь, 41 строка), `../../game/framework/20_ui/components.rpy:142-153` (`vn_ui.hint`), `../../game/options.rpy:12-17`, `../../project.yaml:13-15,20-33,57-65`, `$RENPY_SDK/renpy/main.py:155-300` (`choose_variants`), `$RENPY_SDK/renpy/common/00steam.rpy:962-1060` (`steam_preinit`/`steam_init`/варианты), `$RENPY_SDK/renpy/common/00build.rpy:421-432` (форматы пакетов), `$RENPY_SDK/renpy/display/im.py:732-763` (`get_oversampled_image`), `../../tools/vn/src/vn/release.py:150-326`, `../../tools/vn/src/vn/cli.py:301-393,1571-1656` |
 | **Не трогать** | `game/generated/**` — генерат (`platform.gen.rpy`, `render.gen.rpy`, `version.gen.rpy`); `build/**` — артефакты (`.gitignore:20`); дефолтные пад-биндинги движка (`00keymap.rpy` в SDK); steam_api-библиотеки — их в репозитории нет и добавлять нельзя (лицензия Valve) |
-| **Зависимости (что ломается ниже по течению)** | `scale.rpy:19` → **все** интерфейсные кегли `gui.*` и минимумы `2*Borders` панелей ADR-0009. `scale.rpy:42` → три потребителя `gui.overscan_pad` (`quick_menu.rpy:17,19`, `gallery.rpy:134`, `build_overlay.rpy:15-16`). `035_platform.rpy` → `gui.ui_scale`, `config.default_fullscreen`, ownership-гейт, ачивки. `input.rpy` → раскладка пада во всех контекстах. `project.yaml: render.screen` → вся вёрстка (координаты и кегли заданы в этих пикселях) и расчёт letterbox. `release.py:_DIST_SUFFIX` (`:159-163`) → форматы архивов, которые понимает `vn release steam`, и `test_platform.py:78-102` |
-| **Валидация** | `python -m pytest tools/vn/tests -q` → 254 passed → `vn assets memory --scale 1` и `--scale 2` → `vn test oversample --scale 2` → `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` + просмотр `.vncache/smoke/` глазами → `vn release build --flavor public --package linux` → `vn release validate --flavor public` |
+| **Зависимости (что ломается ниже по течению)** | `scale.rpy:19` → **все** интерфейсные кегли `gui.*` и минимумы `2*Borders` панелей ADR-0009. `scale.rpy:42` → четыре потребителя `gui.overscan_pad` (`quick_menu.rpy:17,19`, `gallery.rpy:144`, `build_overlay.rpy:15-16`, `core_screens.rpy:91,122,126,511-512`). `035_platform.rpy` → `gui.ui_scale`, `config.default_fullscreen`, ownership-гейт, ачивки. `input.rpy` → раскладка пада во всех контекстах. `project.yaml: render.screen` → вся вёрстка (координаты и кегли заданы в этих пикселях) и расчёт letterbox. `release.py:_DIST_SUFFIX` (`:158-162`) → форматы архивов, которые понимает `vn release steam`; `_flatten_wrapper_dir` (`:186-212`) → раскладка депота и Launch Options в Steamworks; оба под `test_platform.py:96-157` |
+| **Валидация** | `python -m pytest tools/vn/tests -q` → 278 passed → `vn assets memory --scale 1` и `--scale 2` → `vn test oversample --scale 2` → `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` + просмотр `.vncache/smoke/` глазами → `vn release build --flavor patron --package linux` → `vn release validate --flavor patron` |
 | **Частые ошибки** | 1) Считать, что запуск на Deck сам даёт вариант `steam_deck` — его даёт только успешный `steamapi.InitFlat()`, то есть App ID + библиотека Valve. 2) Ждать от `--package linux` зипа: Ren'Py 8.5.3 даёт `tar.bz2` — раскладка депотов это понимает (§2.3), но всё, что делаете рядом руками, считайте от фактического формата. Путь А блокируют `appid`/`depots` и ручной аплоад, а не формат архива. 3) Объяснять «мыльные текстуры на Deck» поломкой конвейера — `draw_per_virt` < 1, `@2` не грузятся by design. 4) Проверять `config.default_fullscreen` на непустом persistent — он применяется только на первом запуске. 5) Задавать `RENPY_VARIANT="steam_deck"` без `medium touch` — список вариантов заменяется целиком. 6) Считать `vn test smoke` проверкой пада — событий `pad_*` в автопилоте нет. 7) Искать Steam-проверку в релизном гейте — её там нет ни одной. 8) Считать `gui.overscan_pad` относящимся к Deck — он гейтится `is_big_picture()`, а не `is_steam_deck()`, и на встроенном экране Deck обязан быть нулевым (проверить фактическое `bigpicture=` в `log.txt`, §4.1) |
 
 ---

@@ -1,5 +1,6 @@
-# Nightly QA (раздел 7): полный smoke по веткам и языкам, корпус сейвов, бюджеты.
-# Ловит то, что MR-пайплайн не гоняет ради бюджета < 10 минут (G15).
+# Nightly QA (раздел 7): полный smoke по веткам и языкам, корпус сейвов, бюджеты
+# и вёрстка controller-first профилей. Ловит то, что MR-пайплайн не гоняет ради
+# бюджета < 10 минут (G15).
 
 name: nightly
 
@@ -78,5 +79,74 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: smoke-shots-${{ github.run_id }}
+          path: .vncache/smoke/
+          retention-days: 7
+
+  controller-first:
+    # Вёрстка геймпадных окружений (Deck / ТВ-Big Picture): без этой джобы её не
+    # проверяет ни один прогон — остальные идут в десктопном профиле, и регрессия
+    # «интерфейс сплющился при масштабе 1.4» или «оверлей срезан кромкой» доехала бы
+    # до игрока. Гейта здесь нет намеренно: поломка видна на картинке, а не в коде
+    # выхода — джоба даёт человеку диффабельные скриншоты.
+    # Отдельная джоба, а не шаги в smoke: каждый прогон чистит .vncache/smoke
+    # (cli.py:_autopilot_run), поэтому один прогон = один артефакт = одна джоба;
+    # плюс параллельность не удлиняет ночь и красный smoke не прячет эти шоты.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # RENPY_VARIANT ЗАМЕНЯЕТ config.variants целиком (renpy/main.py:157-160),
+          # а не дополняет: набор копируется из того, что подставил бы сам движок
+          # при живой Steam-инициализации ($RENPY_SDK/renpy/common/00steam.rpy:1048-1059).
+          - profile: steam-deck
+            variant: steam_deck medium touch
+          - profile: big-picture
+            variant: steam_big_picture
+    steps:
+      - uses: actions/checkout@v4
+        # lfs: шрифты UI лежат в LFS; checkout БЕЗ этого
+        # кладёт указатели -> сборка падает FreetypeError у игрока
+        with: {lfs: true}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      # Лок ставится ПЕРВЫМ (G17): точные версии тулчейна, откат = git revert одного файла.
+      # Editable следом ничего не поднимет — его >=-диапазоны уже удовлетворены локом.
+      - run: pip install --quiet -r tools/vn.lock
+      - run: pip install --quiet -e "tools/vn[dev]"
+      # ffmpeg — видео-трек ассет-конвейера (ADR-0006): с сырцами в video_src без него сборка красная
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 ffmpeg > /dev/null
+
+      - name: Кэш Ren'Py SDK
+        uses: actions/cache@v4
+        with:
+          path: .sdk
+          key: renpy-sdk-${{ env.RENPY_VERSION }}-linux
+
+      - name: Установка SDK при холодном кэше
+        run: |
+          if [ ! -f "$RENPY_SDK/renpy.py" ]; then
+            mkdir -p .sdk
+            curl -sL -o .sdk/sdk.zip "https://www.renpy.org/dl/$RENPY_VERSION/renpy-$RENPY_VERSION-sdk.zip"
+            unzip -q .sdk/sdk.zip -d .sdk && rm .sdk/sdk.zip
+          fi
+          chmod +x "$RENPY_SDK/renpy.sh" || true
+
+      - name: Сборка
+        run: xvfb-run -a vn build
+
+      - name: Прогон в профиле ${{ matrix.profile }} + экраны меню
+        env:
+          RENPY_VARIANT: ${{ matrix.variant }}
+          # Экраны, которые прохождение сцен не открывает: именно на них видно
+          # масштаб интерфейса, рельсу навигации и отступ от кромки (gui.overscan_pad).
+          VN_AUTOPILOT_SCREENS: main_menu,preferences,gallery,chapter_select
+        run: xvfb-run -a vn test smoke --picks 0,0
+
+      - name: Скриншоты профиля ${{ matrix.profile }} (смотрит человек)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: controller-shots-${{ matrix.profile }}-${{ github.run_id }}
           path: .vncache/smoke/
           retention-days: 7

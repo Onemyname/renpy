@@ -111,10 +111,10 @@ vn play      # запуск через SDK; закрытие окна возвр
 
 Для долгой итерации вместо `vn play` берите `vn dev`: он поднимает игру и вотчер по `content/` + `assets_src/`, пересобирая при каждой правке (§6).
 
-### Шаг 7. `pytest` — 254 теста (1 мин)
+### Шаг 7. `pytest` — 278 тестов (1 мин)
 
 ```bash
-cd tools/vn && python -m pytest tests -q; cd -     # -> 254 passed
+cd tools/vn && python -m pytest tests -q; cd -     # -> 278 passed
 ```
 
 **Две тонкости, из-за которых у новичка «тесты не такие»:**
@@ -238,7 +238,7 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
 
 Строк на экране обычно **восемь**: #7 молчит, когда файла нет.
 
-Про #8 подробнее — проверка **по содержимому файла**, а не по `git lfs status`, поэтому работает даже там, где git-lfs не установлен вообще (`doctor.py:50-66`). Тот же самый `_lfs_pointer_fonts` переиспользован релизным гейтом (`release.py:452-461`), потому что чекаут без LFS однажды уже уехал в сборку 0.1.1.
+Про #8 подробнее — проверка **по содержимому файла**, а не по `git lfs status`, поэтому работает даже там, где git-lfs не установлен вообще (`doctor.py:50-66`). Тот же самый `_lfs_pointer_fonts` переиспользован релизным гейтом (`release.py:519-528`), потому что чекаут без LFS однажды уже уехал в сборку 0.1.1.
 
 Про #9b: без глав SDK — предупреждение («нужен для vn play»), с главами — жёсткий провал («без SDK сцены не компилируются (G24)»). В текущем дереве `content/chapters/ch01_awakening/` есть, значит **у вас это всегда hard fail**.
 
@@ -310,7 +310,7 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
 | `vn assets memory` | во что обходится худшая сцена и влезает ли она в кэш образов | после тяжёлого шота/фона | IMPLEMENTED (`cli.py:572-604`) |
 | `vn test oversample --scale 2` | **движком** подтверждает, что варианты `@2` реально подхватываются | после правки render-профиля | IMPLEMENTED (`cli.py:1628-1660`) |
 | `vn test smoke` | in-process автопилот: проходит игру, скриншоты в `.vncache/smoke/`, гейт cold-start против бюджета 30 с | перед PR с изменением флоу | IMPLEMENTED (`cli.py:1571-1626`) |
-| `python -m pytest tests -q` (из `tools/vn`) | 254 теста в 24 файлах, ~4 с | при правке `tools/vn/` | IMPLEMENTED |
+| `python -m pytest tests -q` (из `tools/vn`) | 278 тестов в 24 файлах, ~4 с | при правке `tools/vn/` | IMPLEMENTED |
 | `vn doctor` | самодиагностика | когда «вчера работало» | IMPLEMENTED |
 
 Что `vn dev` **не** отслеживает: `loc/`, `packs/`, `game/`, `tools/`, `project.yaml` — пути watch-а захардкожены как `root/assets_src` и `root/content` (`devloop.py:33-34`). Правку пака или PO-файла придётся пересобирать руками.
@@ -429,11 +429,11 @@ vn build                           # build: OK
 vn build --check                   # ничего не пишет
 vn content lint                    # lint: OK (0 предупреждений)
 vn loc keys --check                # все строки с id, ledger свеж
-vn loc report                      # de/en/pseudo — 130/130 (100%), fuzzy 0
+vn loc report                      # de/en/pseudo — 136/136 (100%), fuzzy 0
 vn voice validate --report         # ch01 [ru]: покрыто 14/14 (100%)
 vn assets memory                   # память: OK
 vn test oversample --scale 2       # oversample: OK
-(cd tools/vn && python -m pytest tests -q)   # 254 passed
+(cd tools/vn && python -m pytest tests -q)   # 278 passed
 vn play                            # игра стартует
 ```
 

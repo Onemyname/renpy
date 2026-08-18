@@ -9,7 +9,7 @@
 
 ```bash
 vn assets licenses                     # реестр лицензий vs декларации рендеров
-vn release validate --flavor public    # 20 проверок; #16 — лицензии ассетов
+vn release validate --flavor public    # 21 проверка; #17 — лицензии ассетов
 vn release validate --flavor patron
 vn pipeline models                     # статусы моделей (id, размер, путь, required, способ авторизации)
 grep -n "license\|commercial_use" tools/comfyui-models.yaml   # лицензии моделей видны ТОЛЬКО в YAML
@@ -20,7 +20,7 @@ python -m pytest tools/vn/tests/test_licenses.py -q
 |---|---|
 | Реестр лицензий покупных ассетов | [`content/licenses.yaml`](../../content/licenses.yaml) (`license_registry@1`) |
 | Схема реестра | [`tools/schemas/license_registry@1.schema.json`](../../tools/schemas/license_registry@1.schema.json) |
-| Гейт | [`tools/vn/src/vn/assets/licenses.py:53-109`](../../tools/vn/src/vn/assets/licenses.py), подключён в [`release.py:436-445`](../../tools/vn/src/vn/release.py) |
+| Гейт | [`tools/vn/src/vn/assets/licenses.py:53-109`](../../tools/vn/src/vn/assets/licenses.py), подключён в [`release.py:503-512`](../../tools/vn/src/vn/release.py) |
 | Уведомления, едущие с игрой | [`docs/licenses/THIRD-PARTY-NOTICES.md`](../licenses/THIRD-PARTY-NOTICES.md) |
 | Лицензии AI-моделей | [`tools/comfyui-models.yaml`](../../tools/comfyui-models.yaml), поля `license` / `commercial_use` / `nsfw_terms_url` |
 | Открытая правовая развилка | [ADR-0008](../adr/0008-ai-model-licensing-for-commercial-adult-content.md) — статус «предложено» |
@@ -38,7 +38,7 @@ python -m pytest tools/vn/tests/test_licenses.py -q
 | Секрет | Где задаётся | Кто читает | Статус |
 |---|---|---|---|
 | `CIVITAI_API_KEY` | User-окружение Windows (`setx`) | `pipeline.py:313-315` → заголовок `Authorization: Bearer` при скачивании NSFW-LoRA | IMPLEMENTED |
-| `--patron-token` | флаг `vn release build`, в CI — `secrets.PATRON_TOKEN` | `release.py:337-358` (`patron_tag`) → в `game/build_id.json` уходит **только 8-hex метка** (`release.py:384`) → `060_build_info.rpy:40` | IMPLEMENTED, секрет не покидает машину сборки (§3) |
+| `--patron-token` | флаг `vn release build`, в CI — `secrets.PATRON_TOKEN` | `release.py:374-425` (`patron_tag`) → в `game/build_id.json` уходит **только 8-hex метка** (`release.py:451`) → `060_build_info.rpy:40` | IMPLEMENTED, секрет не покидает машину сборки (§3) |
 | `GITHUB_TOKEN` | выдаётся раннером (`${{ github.token }}`) | шаг `gh release create` в `.github/workflows/release.yml` | IMPLEMENTED |
 
 **Проверено grep-ом:** захардкоженных ключей/паролей/токенов в `tools/`, `game/framework/`, `content/`, `ci/` нет. В `.github/workflows/` всего два обращения к секретам: `permissions: contents: write` (`release.yml:15-16`) и `PATRON_TOKEN: ${{ secrets.PATRON_TOKEN }}` (`release.yml:81`).
@@ -76,11 +76,11 @@ Ren'Py по умолчанию пакует **всё дерево проекта
 | `game/generated/qa/**` | `:25` | QA-генерат (каталога сейчас нет — правило на вырост) |
 | `game/generated/manifest.json` | `:26` | хэши входов сборки |
 | synthetic-языки (`pseudo`) | `:27-40` | псевдолокаль — QA-инструмент; исключается **по манифесту** `tl/<code>/language.json: synthetic`, без хардкода кодов |
-| NSFW-каталоги для SFW-флейвора | `:41-51` | глобы приходят из `game/build_id.json: exclude`, который считает `release.py:192-203` |
+| NSFW-каталоги для SFW-флейвора | `:41-51` | глобы приходят из `game/build_id.json: exclude`, который считает `release.py:441-452` |
 
 **Проверено по реальному артефакту.** В `build/dist/0.1.0-patron/vn-0.1.0+d020c37-win.zip` (1618 записей) корневых зон ровно четыре: `game/` (121), `lib/` (941), `renpy/` (554), `vn.exe` + `vn.py`. Записей с `/content/`, `/tools/`, `/assets_src/`, `/loc/`, `/docs/`, `/90_debug/` — **ноль**. В `game/tl/` — `de`, `en`, нет `pseudo`. `game/generated/manifest.json` отсутствует.
 
-**Грабля флейворов** ([`01-project-overview.md`](01-project-overview.md), [`30-packs-and-dlc.md`](30-packs-and-dlc.md)): исключение NSFW считается по **фактическим** каталогам `game/assets/<cat>/nsfw/` (`release.py:192-203`). Такого каталога сейчас нет ни одного, поэтому в обоих `build-info.json` лежит `"exclude": []`, а `VN_PACKS` перечисляет пак `nsfw` независимо от флейвора. Отсечение 18+ в `public`-сборке **сегодня опирается только на то, что NSFW-контента ещё не существует** — это не защита, это отсутствие данных.
+**Грабля флейворов** ([`01-project-overview.md`](01-project-overview.md), [`30-packs-and-dlc.md`](30-packs-and-dlc.md)): исключение NSFW считается по **фактическим** каталогам `game/assets/<cat>/nsfw/` (`release.py:441-452`). Такого каталога сейчас нет ни одного, поэтому в обоих `build-info.json` лежит `"exclude": []`, а `VN_PACKS` перечисляет пак `nsfw` независимо от флейвора. Отсечение 18+ в `public`-сборке **сегодня опирается только на то, что NSFW-контента ещё не существует** — это не защита, это отсутствие данных.
 
 ## 3. Метка получателя patron-сборки — IMPLEMENTED (ADR-0011)
 
@@ -91,11 +91,11 @@ Ren'Py по умолчанию пакует **всё дерево проекта
 **Как устроено сейчас.** `vn release build --patron-token <токен>` (`cli.py:1510-1511`) по-прежнему принимает токен, но наружу уходит односторонняя производная:
 
 ```python
-# tools/vn/src/vn/release.py:206-227
+# tools/vn/src/vn/release.py:455-476
 hashlib.blake2s(token.encode("utf-8"), digest_size=4, person=b"vnpatron").hexdigest()
 ```
 
-Восемь hex-символов кладутся в поле `patron_tag` документа `build_info@2` (`release.py:384`), рантайм читает готовую метку (`060_build_info.rpy:40`), вотермарка рисует `build_id · <patron_tag>` (`060_build_info.rpy:42-45`, экран `build_overlay.rpy:6-17`). Схема бампнута `build_info@1` → `@2`; старая осталась в реестре с пометкой «УСТАРЕЛА», чтобы читались архивные `build-info.json`.
+Восемь hex-символов кладутся в поле `patron_tag` документа `build_info@2` (`release.py:451`), рантайм читает готовую метку (`060_build_info.rpy:40`), вотермарка рисует `build_id · <patron_tag>` (`060_build_info.rpy:42-45`, экран `build_overlay.rpy:6-17`). Схема бампнута `build_info@1` → `@2`; старая осталась в реестре с пометкой «УСТАРЕЛА», чтобы читались архивные `build-info.json`.
 
 **Проверка сквозным прогоном** (ADR-0011, раздел «Последствия»): в собранной patron-сборке 1663 файла, токен не встречается **ни в одном**.
 
@@ -207,7 +207,7 @@ python -c "import hashlib,sys; print(hashlib.blake2s(sys.argv[1].encode(), diges
 
 **Дыра, которую надо знать:** пункт 4 — предупреждение, а не ошибка. Декларация без лицензии релиз **не блокирует**. Дисциплина «сначала запись в реестр, потом первый рендер» держится на человеке, а не на гейте.
 
-**Где подключено:** проверка №15 из 19 в релизном гейте (`release.py:436-445`). FAIL при нарушениях, WARN при незалицензированных декларациях, PASS с числом покрытых деклараций. Полная таблица гейта — [`29-build-and-release.md`](29-build-and-release.md).
+**Где подключено:** проверка №15 из 19 в релизном гейте (`release.py:503-512`). FAIL при нарушениях, WARN при незалицензированных декларациях, PASS с числом покрытых деклараций. Полная таблица гейта — [`29-build-and-release.md`](29-build-and-release.md).
 
 **Текущее состояние.** В реестре 3 записи: `g9_starter_essentials` (DAZ, `daz_standard`), `font_literata` и `font_inter` (обе `ofl`). Деклараций 0, поэтому вывод сегодня — `деклараций рендеров нет; в реестре 3 записей (content/licenses.yaml)`. Записи про шрифты — чистая бухгалтерия: на них никто не ссылается, гейт их не читает.
 
@@ -341,7 +341,7 @@ assets:
 
 - **Steam-поддержка Ren'Py — не часть SDK.** Ставится через лаунчер: «preferences» → «Install libraries» → «Install Steam Support», и **гейтится приёмом в Steam partner program** (https://www.renpy.org/doc/html/achievement.html). Это не добавляется в последний момент. Ren'Py 8.5 требует Steamworks SDK 1.62.
 - **`achievement.steam` равен `None`, если Steam не инициализировался** — вызов без guard уронит билд у любого, кто запустит игру вне Steam, включая ваши dev-прогоны. У нас этот guard один и в одном месте: `vn_platform.steam()` в `00_core/035_platform.rpy:19-23`; провайдер ачивок и ownership-провайдер подключаются только если он вернул не `None` (`:74`). Обращаться к `achievement.steam`/`_renpysteam` из любого другого файла `game/` запрещено гард-тестом `test_platform::test_platform_facade_is_single_steam_touchpoint`.
-- **App ID и номера депотов — публичные данные и лежат в git** (`project.yaml: platform.steam`); секретов Steamworks в репозитории нет. Секретны только логин/Steam Guard `steamcmd` (CI-секреты или интерактивный вход) — их не бывает ни в коде, ни в VDF-генерате (`release.py:168-206`). Отдельная лицензионная граница: steam_api-редистрибутивы Valve **нельзя коммитить** — место `$RENPY_SDK/lib/py3-*/` на build-машине.
+- **App ID и номера депотов — публичные данные и лежат в git** (`project.yaml: platform.steam`); секретов Steamworks в репозитории нет. Секретны только логин/Steam Guard `steamcmd` (CI-секреты или интерактивный вход) — их не бывает ни в коде, ни в VDF-генерате (`release.py:168-234`). Отдельная лицензионная граница: steam_api-редистрибутивы Valve **нельзя коммитить** — место `$RENPY_SDK/lib/py3-*/` на build-машине.
 - **Организационные сроки** (VNDev Wiki, https://vndev.wiki/Guide:Ren%27Py_visual_novels_on_Steam, обновление 25.11.2025): релиз невозможен раньше чем через 30 дней после покупки app credit или через две недели после аппрува страницы — что позже. Гайд отдельно разбирает случай внешне распространяемого nudity-патча.
 - **Пакет для магазинов** — «Windows, Mac, and Linux for Markets» из `build.package()` (https://www.renpy.org/doc/html/build.html); наш `vn release build` собирает `--package win|linux|mac`.
 
@@ -372,7 +372,7 @@ assets:
 vn doctor                              # 1. окружение здорово
 vn build --check                       # 2. генерат и ассеты свежи
 vn assets licenses                     # 3. лицензии ассетов: 0 ошибок, 0 «без license»
-vn release validate --flavor public    # 4. 20 проверок, exit 0
+vn release validate --flavor public    # 4. 21 проверка; сейчас 0 FAIL, 2 WARN, exit 0
 vn release validate --flavor patron    # 5. то же для платного флейвора
 vn loc report                          # 6. покрытие переводов ≥ порога loc.yaml
 python -m pytest tools/vn/tests -q     # 7. тесты тулинга зелёные
@@ -438,8 +438,8 @@ python -c "import zipfile,glob,collections; z=glob.glob('build/dist/*/*.zip')[0]
 
 | | |
 |---|---|
-| **Читать перед изменением** | `content/licenses.yaml`, `tools/schemas/license_registry@1.schema.json`, `tools/vn/src/vn/assets/licenses.py`, `tools/vn/src/vn/release.py:192-255,436-445` (`nsfw_exclude_globs`, `patron_tag`, `compute_build_info`, гейт лицензий), `tools/schemas/build_info@2.schema.json`, `docs/adr/0011-patron-tag-instead-of-token.md`, `game/options.rpy`, `tools/comfyui-models.yaml`, `docs/adr/0008-ai-model-licensing-for-commercial-adult-content.md`, `docs/licenses/THIRD-PARTY-NOTICES.md` |
+| **Читать перед изменением** | `content/licenses.yaml`, `tools/schemas/license_registry@1.schema.json`, `tools/vn/src/vn/assets/licenses.py`, `tools/vn/src/vn/release.py:220-287,436-445` (`nsfw_exclude_globs`, `patron_tag`, `compute_build_info`, гейт лицензий), `tools/schemas/build_info@2.schema.json`, `docs/adr/0011-patron-tag-instead-of-token.md`, `game/options.rpy`, `tools/comfyui-models.yaml`, `docs/adr/0008-ai-model-licensing-for-commercial-adult-content.md`, `docs/licenses/THIRD-PARTY-NOTICES.md` |
 | **Не трогать** | `game/build_id.json` (пишет `vn release build`, `.gitignore:8`), `<ComfyUI>/models/.vn-models.json` (lock загрузчика, вне репозитория), `game/generated/**` и `game/assets/**` (генерат), `game/fonts/*.ttf` (LFS) |
-| **Зависимости** | Правка `game/options.rpy` меняет состав **всех** дистрибутивов — проверять по собранному zip. Правка `license_registry@1.schema.json` ломает существующие записи реестра и валится в `licenses.py:62-67` до всех остальных проверок. Ужесточение `licenses.py:104-108` (warning → error) остановит релиз, если есть декларации без `license`. Правка `nsfw_exclude_globs` (`release.py:192-203`) меняет, что уедет в SFW-сборку |
+| **Зависимости** | Правка `game/options.rpy` меняет состав **всех** дистрибутивов — проверять по собранному zip. Правка `license_registry@1.schema.json` ломает существующие записи реестра и валится в `licenses.py:62-67` до всех остальных проверок. Ужесточение `licenses.py:104-108` (warning → error) остановит релиз, если есть декларации без `license`. Правка `nsfw_exclude_globs` (`release.py:441-452`) меняет, что уедет в SFW-сборку |
 | **Валидация** | `vn assets licenses` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests/test_licenses.py -q` → проверка zip командой из раздела «Проверка» |
 | **Частые ошибки** | 1) `purchased_at: 2026-08-08` без кавычек — YAML отдаёт date-объект и схема падает. 2) Добавление поля, которого нет в схеме: `additionalProperties: false`. 3) Вера в то, что `vn release validate` проверяет лицензии моделей — **нет**, он проверяет только реестр ассетов; лицензии моделей не гейтятся вообще (ADR-0008 не принят). 4) Вера в то, что декларация без `license` завалит релиз — это WARNING. 5) Правка `THIRD-PARTY-NOTICES.md` в `game/` — файл там временный, источник в `docs/licenses/`. 6) Писать, что patron-токен уезжает игроку: с ADR-0011 в `build_id.json` лежит `patron_tag` (схема `build_info@2`); токен открытым текстом остался только в архивных артефактах до 0.1.5. 7) Писать, что `tools/vn.lock` никто не читает — читают все 8 мест установки; незакрытым остался лишь пиннинг транзитивных зависимостей |

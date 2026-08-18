@@ -1,0 +1,131 @@
+# Выкладка в Steam (ADR-0014, процедура и донастройка — ci/steam/README.md).
+# Только ручной запуск: «эта сборка уходит игрокам» решает человек, а не тег —
+# на теге работает release.yml, он же остаётся источником артефактов для GitHub Release.
+# Логика — в vn (release build -> release steam), здесь только аплоад через steamcmd.
+#
+# ВНИМАНИЕ: пока platform.steam.appid в project.yaml = null, workflow осознанно
+# падает на шаге `vn release steam` с текстом «заполните App ID» — приложения в
+# Steamworks ещё нет, выкладывать некуда. Что нужно донастроить руками (App ID,
+# депоты, секреты, config.vdf для 2FA) — ci/steam/README.md.
+
+name: steam-upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      flavor:
+        description: Флейвор из project.yaml (public = SFW)
+        type: choice
+        options: [public, patron]
+        default: public
+      branch:
+        description: SetLive-ветка Steam; release-ветку переключает человек в Steamworks
+        default: beta
+
+# Секреты Steam не нужны никакому шагу, кроме аплоада, а токен GitHub здесь не пишет
+# ничего вовсе: релиз создаёт release.yml.
+permissions:
+  contents: read
+
+# Выкладки идут строго по одной, независимо от флейвора: аккаунт-билдер у Steam один,
+# а второй логин тем же аккаунтом выбивает первую сессию посреди аплоада.
+# cancel-in-progress: false намеренно: подождать в очереди лучше, чем убить steamcmd.
+concurrency:
+  group: steam-upload
+  cancel-in-progress: false
+
+env:
+  RENPY_VERSION: "8.5.3"
+  RENPY_SDK: ${{ github.workspace }}/.sdk/renpy-8.5.3-sdk
+  SDL_AUDIODRIVER: dummy
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # lfs: шрифты UI лежат в LFS; checkout БЕЗ этого
+        # кладёт указатели -> сборка падает FreetypeError у игрока
+        with: {lfs: true}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      # Лок ставится ПЕРВЫМ (G17): точные версии тулчейна, откат = git revert одного файла.
+      # Editable следом ничего не поднимет — его >=-диапазоны уже удовлетворены локом.
+      - run: pip install --quiet -r tools/vn.lock
+      - run: pip install --quiet -e "tools/vn[dev]"
+      # ffmpeg — видео-трек (ADR-0006): при наличии видео-сырцов без него сборка красная
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 ffmpeg > /dev/null
+
+      - name: Кэш Ren'Py SDK
+        uses: actions/cache@v4
+        with:
+          path: .sdk
+          key: renpy-sdk-${{ env.RENPY_VERSION }}-linux
+
+      - name: Установка SDK при холодном кэше
+        run: |
+          if [ ! -f "$RENPY_SDK/renpy.py" ]; then
+            mkdir -p .sdk
+            curl -sL -o .sdk/sdk.zip "https://www.renpy.org/dl/$RENPY_VERSION/renpy-$RENPY_VERSION-sdk.zip"
+            unzip -q .sdk/sdk.zip -d .sdk && rm .sdk/sdk.zip
+          fi
+          chmod +x "$RENPY_SDK/renpy.sh" || true
+
+      - name: Кэш .rpyc прошлых релизов (G6, только чтение)
+        # Restore, а не cache: statement-имена берутся из релизной линии (release.yml),
+        # и ручная Steam-выкладка не должна становиться их источником истины.
+        uses: actions/cache/restore@v4
+        with:
+          path: build/rpyc-cache
+          key: rpyc-${{ inputs.flavor }}-${{ github.ref_name }}
+          restore-keys: rpyc-${{ inputs.flavor }}-
+
+      - name: Релизный гейт + сборка флейвора (vn release build)
+        env:
+          # Трассировка утечек patron-сборок; для public игнорируется (watermark: false).
+          PATRON_TOKEN: ${{ secrets.PATRON_TOKEN }}
+        run: |
+          # Все три платформы: какие из них реально уедут, решают объявленные депоты
+          # (project.yaml: platform.steam.depots) — vn release steam берёт только их.
+          ARGS="--flavor ${{ inputs.flavor }} --package win --package linux --package mac --timeout 1800"
+          if [ "${{ inputs.flavor }}" = "patron" ] && [ -n "$PATRON_TOKEN" ]; then
+            ARGS="$ARGS --patron-token $PATRON_TOKEN"
+          fi
+          xvfb-run -a vn release build $ARGS
+
+      - name: Раскладка депотов + VDF для steamcmd (vn release steam)
+        run: vn release steam --flavor ${{ inputs.flavor }} --branch ${{ inputs.branch }}
+
+      - name: Аплоад через steamcmd (no-op без секретов)
+        env:
+          STEAM_USERNAME: ${{ secrets.STEAM_USERNAME }}
+          STEAM_CONFIG_VDF: ${{ secrets.STEAM_CONFIG_VDF }}
+        run: |
+          VDF="$PWD/build/steam/app_build_${{ inputs.flavor }}.vdf"
+          if [ -z "$STEAM_USERNAME" ] || [ -z "$STEAM_CONFIG_VDF" ]; then
+            echo "::notice::нет секретов STEAM_USERNAME/STEAM_CONFIG_VDF — VDF собран, выкладка НЕ выполнена (ci/steam/README.md)"
+            exit 0
+          fi
+          # config.vdf — сентри Steam Guard, полученный ОДИН раз вручную (README):
+          # без него steamcmd ждёт код 2FA с клавиатуры и джоба висит до таймаута.
+          # Секрет доезжает файлом, а не аргументом командной строки: аргументы видны
+          # в логе процесса, файл — нет. Base64 — потому что config.vdf бинарный.
+          mkdir -p ~/Steam/config
+          printf '%s' "$STEAM_CONFIG_VDF" | base64 -d > ~/Steam/config/config.vdf
+          # steamcmd Valve — 32-битный бинарь, на 64-битном раннере ему нужен lib32gcc-s1.
+          sudo apt-get install -y -qq lib32gcc-s1 > /dev/null
+          mkdir -p .steamcmd
+          curl -sL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+            | tar -xz -C .steamcmd
+          .steamcmd/steamcmd.sh +login "$STEAM_USERNAME" +run_app_build "$VDF" +quit
+
+      - name: VDF выкладки (что именно ушло бы в депоты)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # Только VDF: контент депотов — это те же дистрибутивы, что публикует release.yml,
+          # а секретов в VDF не бывает по построению (release.py: steam_app_build).
+          name: steam-vdf-${{ inputs.flavor }}-${{ github.run_id }}
+          path: build/steam/app_build_${{ inputs.flavor }}.vdf
+          retention-days: 7

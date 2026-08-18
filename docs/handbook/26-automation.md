@@ -3,7 +3,7 @@
 > **Статус подсистемы:** PARTIALLY IMPLEMENTED — всё, что происходит **после** появления пикселей на диске, автоматизировано целиком и одной командой (`vn build` → `vn release build`). Всё, что происходит **до** — рендер в DAZ, генерация в ComfyUI, приёмка кадра — на 100% ручные GUI-шаги: в репозитории ноль `.dsa`, ноль ComfyUI-workflow, ноль HTTP-клиентов к ComfyUI.
 > **Отвечает на вопрос:** «Что уже делает машина, что я до сих пор делаю руками, и что автоматизировать следующим».
 
-Граница автоматизации в этом проекте проходит ровно по `assets_src/`. Слева от неё — человек с мышкой и GPU. Справа — 20 групп/команд `vn` верхнего уровня (64 листовых, из них 10 — честные заглушки), 39 схем, 33 диагностики линта, 20-чековый релизный гейт и 7 определений CI-джоб в 4 workflow. Этот файл — карта обеих сторон и приоритизированный список того, что стоит перетащить слева направо. Критерий приоритета один: **ускоряет ли это производство контента**.
+Граница автоматизации в этом проекте проходит ровно по `assets_src/`. Слева от неё — человек с мышкой и GPU. Справа — 20 групп/команд `vn` верхнего уровня (64 листовых, из них 10 — честные заглушки), 39 схем, 33 диагностики линта, релизный гейт из 21 проверки и 9 определений CI-джоб в 5 workflow. Этот файл — карта обеих сторон и приоритизированный список того, что стоит перетащить слева направо. Критерий приоритета один: **ускоряет ли это производство контента**.
 
 ## Быстрый ответ
 
@@ -14,7 +14,7 @@ vn pipeline doctor              # окружение рендер-конвейе
 vn build                        # lint -> ассеты -> кодоген -> game/tl  (один вызов на всё)
 vn dev                          # то же в цикле: watch content/ + assets_src/ + запущенная игра
 vn test smoke --picks 0,0       # прогон игры автопилотом, скриншоты, бюджет холодного старта
-vn release build --flavor public  # сборка -> гейт (20 проверок) -> дистрибутив
+vn release build --flavor public  # сборка -> гейт (21 проверка) -> дистрибутив
 ```
 
 Не автоматизировано вообще ничего из этого: запуск DAZ Studio, рендер, запуск ComfyUI, генерация кадра, апскейл, ретушь, художественная приёмка. См. [DAZ](17-daz-studio.md), [Генерация изображений](20-image-generation.md), [Генерация видео](21-video-generation.md).
@@ -79,7 +79,7 @@ vn release build --flavor public  # сборка -> гейт (20 проверо�
 | Импорт переводов | `vn loc import`, автоматически в хвосте `vn build` | PO → `game/tl/<lang>/`. Правки в `game/tl/` руками запрещены — зона генерируемая и не в git | IMPLEMENTED — `cli.py:156-169` |
 | Псевдолокаль | `vn loc pseudo` | Пакет `pseudo` + импорт; экранирует `[` как `[[`, чтобы Ren'Py не принял его за интерполяцию | IMPLEMENTED |
 | Новый язык | `vn loc add <code>` | Создаёт `loc/po/<code>/` (ADR-0005), подставляет нативное имя из таблицы 43 кодов, сразу запускает extract | IMPLEMENTED |
-| Отчёт покрытия | `vn loc report` | `de/en/pseudo`: переведено/всего, fuzzy | PARTIAL — флагов `--gate`/`--format` нет; гейт по покрытию живёт **только** в релизной валидации — `release.py:408-434` |
+| Отчёт покрытия | `vn loc report` | `de/en/pseudo`: переведено/всего, fuzzy | PARTIAL — флагов `--gate`/`--format` нет; гейт по покрытию живёт **только** в релизной валидации — `release.py:475-501` |
 
 ## 1.5 Проверка и QA
 
@@ -87,14 +87,14 @@ vn release build --flavor public  # сборка -> гейт (20 проверо�
 
 | Процесс | Команда / триггер | Что делает | Статус |
 |---|---|---|---|
-| Юнит-тесты тулинга | `python -m pytest tools/vn/tests -q` | 254 теста в 24 файлах. На машине без `RENPY_SDK` и ffmpeg 18 из них скипаются | IMPLEMENTED — но CLI покрыт почти никак: из `cli.py` (1930 строк) тестами закрыта одна команда `pack build` (`test_release.py:141-192`, через `CliRunner`); `analyze.py`, `scaffold.py`, `psd.py`, `devloop.py` не импортирует ни один тест |
+| Юнит-тесты тулинга | `python -m pytest tools/vn/tests -q` | 278 тестов в 24 файлах. На машине без `RENPY_SDK` и ffmpeg 18 из них скипаются | IMPLEMENTED — но CLI покрыт почти никак: из `cli.py` (1930 строк) тестами закрыта одна команда `pack build` (`test_release.py:141-192`, через `CliRunner`); `analyze.py`, `scaffold.py`, `psd.py`, `devloop.py` не импортирует ни один тест |
 | Smoke-автопилот | `vn test smoke [--picks] [--lang] [--timeout]` | Пишет временный `game/generated/qa/autopilot.gen.rpy`, запускает движок с `VN_AUTOPILOT=1`, тикает раз в 0.6 с (скриншот + `dismiss`), выбирает пункты меню по индексам, пишет `RESULT.txt`/`state.json`/`gallery.json`/`picks.log` в `.vncache/smoke/`. Никакого синтетического ввода на рабочий стол — всё in-process | IMPLEMENTED — `cli.py:1285-1401`, рантайм `game/framework/00_core/030_flow.rpy:91-211` |
 | Бюджет холодного старта | внутри `vn test smoke` | Читает `startup.txt`, падает при превышении `budgets.cold_start_s` (30 с) | IMPLEMENTED — `cli.py:1386-1392`. В релизном гейте этой проверки **нет** |
 | Проверка сейв-фикстур | `vn save check` | Оффлайн: открывает каждый `ci/fixtures/saves/*.save` как zip, читает член `json`, требует целый `vn_save_schema` | IMPLEMENTED — `cli.py:1099-1124` |
 | Прогон сейв-корпуса | `vn save corpus [--add NAME]` | Восстанавливает «линию statement-имён» из `ci/fixtures/rpyc-line/` (52 `.rpyc` — единственные `.rpyc` в git), грузит каждую фикстуру в реальном движке со скретч-`--savedir`, миграции идут в `label after_load` | IMPLEMENTED — 2 фикстуры: `schema2-demo` (текущая схема) и `schema1-demo` (`vn_save_schema=1`, сцена `ch01_s010`). На второй прогон печатает «schema после загрузки: 2 (цель 2)», а в `log.txt` появляется `[vn] migration 0002` — миграция реально исполняется в игре — `cli.py:1130-1256` |
 | Бюджеты размеров (G19) | `vn build`, `vn build --check`, релизный гейт | `assets_total_mb 20000`, `generated_total_kb 65536`, `video_total_mb 8000`, `video_file_mb 512` — одна реализация на всех потребителей | IMPLEMENTED — `../../tools/vn/src/vn/release.py:29-56` |
 | Провенанс ассетов | `vn assets provenance record\|workflow\|verify` | Достаёт `model`/`loras`/`seed`/`steps`/`cfg`/`sampler`/промпты из PNG-чанков `tEXt` ComfyUI, складывает граф в хранилище по blake3, собирает цепочку `daz_render → comfyui`, проверяет хеши | IMPLEMENTED / UNEXERCISED — ноль `*.provenance.json` в репозитории — `../../tools/vn/src/vn/assets/provenance.py` |
-| Проверка лицензий ассетов | `vn assets licenses`, гейт релиза | Сверяет `license: [...]` в `*.render.yaml` с реестром `content/licenses.yaml`: неизвестный id → ERROR, `game_use: false` → ERROR, `nsfw_allowed: false` при выходе в `/nsfw/` → ERROR, отсутствие `license` → WARNING | IMPLEMENTED — `../../tools/vn/src/vn/assets/licenses.py:53-109`, включено в гейт `release.py:436-445` |
+| Проверка лицензий ассетов | `vn assets licenses`, гейт релиза | Сверяет `license: [...]` в `*.render.yaml` с реестром `content/licenses.yaml`: неизвестный id → ERROR, `game_use: false` → ERROR, `nsfw_allowed: false` при выходе в `/nsfw/` → ERROR, отсутствие `license` → WARNING | IMPLEMENTED — `../../tools/vn/src/vn/assets/licenses.py:53-109`, включено в гейт `release.py:503-512` |
 
 ## 1.6 Релиз и упаковка
 
@@ -102,32 +102,34 @@ vn release build --flavor public  # сборка -> гейт (20 проверо�
 
 | Процесс | Команда / триггер | Что делает | Статус |
 |---|---|---|---|
-| Релизный гейт | `vn release validate --flavor <f>`, внутри `vn release build` | **20 проверок** PASS/WARN/FAIL: схема `project.yaml`, существование флейвора, манифесты паков, lint, LFS-указатели шрифтов, свежесть ассетов, валидность видео, свежесть генерата, бюджеты G19, провенанс, DAZ/VaM/Sims4-декларации, покрытие переводов, лицензии, статус хранилища сырцов, версия release-manifest, git sha, наличие сейв-корпуса (сейчас PASS: «сейв-корпус: 2 фикстур», `release.py:475-479`). Своих правил у гейта нет — он агрегатор | IMPLEMENTED — `release.py:276-481` |
+| Релизный гейт | `vn release validate --flavor <f>`, внутри `vn release build` | **21 проверка** PASS/WARN/FAIL: схема `project.yaml`, существование флейвора, манифесты паков, **зрелость контента** (`early_content` против `status` глав), lint, LFS-указатели шрифтов, свежесть ассетов, валидность видео, свежесть генерата, бюджеты G19, провенанс, DAZ/VaM/Sims4-декларации, покрытие переводов, лицензии, статус хранилища сырцов, версия release-manifest, git sha, наличие сейв-корпуса (сейчас PASS: «сейв-корпус: 2 фикстур», `release.py:542-549`). Своих правил у гейта нет — он агрегатор | IMPLEMENTED — `release.py:313-551` |
 | Сборка дистрибутива | `vn package`, `vn release build --flavor` | `vn build` → перенос `.rpyc` прошлого релиза → `renpy compile` → `launcher distribute --dest build/dist/<version>[-flavor]` → снапшот нового `.rpyc`-кэша | IMPLEMENTED — `cli.py:279-370` |
 | Перенос `.rpyc` между релизами (G6) | автоматически внутри `vn package` | Копирует с перезаписью все `.rpyc` из `build/rpyc-cache/<макс. версия>/`; ноль восстановленных при непустом кэше = жёсткая остановка сборки | PARTIAL — каталог кэша ключуется **только версией**, не флейвором: локально public и patron затирают друг друга (`cli.py:358`); в CI это прикрыто ключами `actions/cache` |
-| Материализация флейвора | `vn release build --flavor` | Пишет `game/build_id.json` (`build_info@2`) на время дистрибуции, удаляет в `finally`. NSFW-глобы считаются по **реальным** каталогам `game/assets/<cat>/nsfw/`. Секрета в документе нет: `--patron-token` — вход, наружу уходит производная метка `patron_tag` (ADR-0011) | IMPLEMENTED — `release.py:230-273`, метка — `release.py:206-227`. Сейчас глобы пусты: каталогов `nsfw/` в `game/assets/` нет |
+| Материализация флейвора | `vn release build --flavor` | Пишет `game/build_id.json` (`build_info@2`) на время дистрибуции, удаляет в `finally`. NSFW-глобы считаются по **реальным** каталогам `game/assets/<cat>/nsfw/`. Секрета в документе нет: `--patron-token` — вход, наружу уходит производная метка `patron_tag` (ADR-0011) | IMPLEMENTED — `release.py:258-310`, метка — `release.py:455-476`. Сейчас глобы пусты: каталогов `nsfw/` в `game/assets/` нет |
 | Changelog из диффа реестров | `vn release changelog` | Снимок `content/chapters/` → дифф с `ci/release-manifest.json` → блок «Новые главы / Новые сцены / Удалены сцены» в начало `docs/CHANGELOG.md`; штамп `id_registry` (G7) | PARTIAL — не видит `packs/*/chapters/`; нет `--from`/`--audience`; из 5 записей CHANGELOG сгенерирована ровно одна — `release.py:124-181` |
 | Сборка пака | `vn pack build <id>` | Zip `build/packs/<id>.zip`: `manifest.yaml` + весь генерат глав пака | PARTIAL — охранник починен 2026-08-08 (`cli.py:1624-1626`): сцены считаются отдельно от манифеста, «главы объявлены, генерата нет» валит команду **до** создания zip; пак-контейнер без глав собирается штатно с предупреждением. Остаётся: в архиве только сцены и манифест (ни ассетов, ни `tl/`, ни персонажей, ни депот-раскладки), и проверка «хоть одна сцена» — на весь пак, а не по каждой объявленной главе |
 | Штамп реестра выпущенных id (G7) | внутри `vn release changelog` | Append-only объединение глав/сцен/персонажей/переменных со `status: release` | IMPLEMENTED но ИНЕРТЕН — `ch01` в статусе `draft`, поэтому `content/registry/id_registry.json` состоит из пустых массивов |
 
-## 1.7 CI: 4 workflow, 7 определений джоб
+## 1.7 CI: 5 workflow, 9 определений джоб
 
 `.github/workflows/` — это **настоящий** пайплайн проекта. Он нигде не описан в `docs/`, и в `CODEOWNERS` нет записи на `/.github/`.
 
-Джобы: `ci.yml` → `lint`, `build-test`; `nightly.yml` → `smoke`; `canary.yml` → `fresh-renpy`; `release.yml` → `build`, `dmg`, `publish`. Итого **7 определений**; на теге релизная `build` разворачивается матрицей `flavor: [public, patron]` (`release.yml:27-32`) в 2 прогона, то есть максимум **8 реальных прогонов**.
+Джобы: `ci.yml` → `lint`, `build-test`; `nightly.yml` → `smoke`, **`controller-first`**; `canary.yml` → `fresh-renpy`; `release.yml` → `build`, `dmg`, `publish`; **`steam-upload.yml` → `upload`**. Итого **9 определений**; матрицами разворачиваются две джобы — релизная `build` по `flavor: [public, patron]` (`release.yml:27-32`) и `controller-first` по двум геймпадным профилям, — так что реальных прогонов за ночь и на теге больше числа определений.
 
 | Workflow | Триггер | Джобы и что реально гоняется | Статус |
 |---|---|---|---|
 | `ci.yml` | push в `main`, любой PR | `lint`: `vn content lint` (`:32`). `build-test`: checkout `lfs: true` → SDK 8.5.3 из кэша → `vn build` (`:67`) → `vn loc keys --check` (`:70`) → `renpy.sh . lint` (`:73`) → `vn content compile --check` (`:76`) → `pytest` (`:79`) → артефакт `game/generated/` на 30 дней (`:81-86`, аварийный режим G4) | IMPLEMENTED / UNDOCUMENTED |
-| `nightly.yml` | cron `30 2 * * *` + dispatch | `vn build` → `vn loc import` → `vn loc report` (`:49-53`) → **4 smoke-прогона** (`:57-60`: `--picks 0,0`; `0,1 --lang en`; `1`; `0,0 --lang pseudo`) → `vn save check` + `vn save corpus` (`:64-65`) → `rm -rf game/generated` и обе релизные сборки dry-run (`:70-74`) → артефакт `.vncache/smoke/` (`:76-82`) | IMPLEMENTED / UNDOCUMENTED |
+| `nightly.yml` | cron `30 2 * * *` + dispatch | `smoke`: `vn build` → `vn loc import` → `vn loc report` (`:49-53`) → **4 smoke-прогона** (`:57-60`: `--picks 0,0`; `0,1 --lang en`; `1`; `0,0 --lang pseudo`) → `vn save check` + `vn save corpus` (`:64-65`) → `rm -rf game/generated` и обе релизные сборки dry-run (`:70-74`) → артефакт `.vncache/smoke/` (`:76-82`). `controller-first` (`:85-151`): матрица `steam_deck medium touch` / `steam_big_picture` → `vn build` → `vn test smoke --picks 0,0` с `VN_AUTOPILOT_SCREENS=main_menu,preferences,gallery,chapter_select` → артефакт `controller-shots-<profile>-<run_id>`. **Гейта у второй джобы нет намеренно:** поломка вёрстки видна на картинке, а не в коде выхода. **Внимание:** dry-run обоих флейворов сейчас проходит — гейт зрелости контента даёт WARN, пока в проекте нет ни одной главы `status: release`; покраснеет он с первой такой главой ([29 §5.1](29-build-and-release.md#maturity-gate-rule)) | IMPLEMENTED / UNDOCUMENTED |
 | `canary.yml` | cron `0 3 * * 1` + dispatch | Скачивает **свежайший** Ren'Py с renpy.org (`:35-44`), `vn build` → `renpy.sh . lint` → `pytest` → `vn test smoke --picks 0,0` (`:48-51`). Без `continue-on-error` — красный canary виден сразу | IMPLEMENTED / UNDOCUMENTED |
 | `release.yml` | push тега `v*` | `build` (матрица `public`/`patron`, `fail-fast: false`): гард «тег == `project.yaml: version`» → кэш `.rpyc` **на флейвор** (`:71-76`) → `vn release build --package win --package linux --package mac` (`:78-87`; `--patron-token $PATRON_TOKEN` только для patron). `dmg`: `hdiutil` на macOS-раннере из public mac-zip. `publish`: `gh release create` — **только public** + dmg | IMPLEMENTED / UNDOCUMENTED |
+| `steam-upload.yml` | **только** `workflow_dispatch` (входы `flavor`: public/patron, `branch`: по умолчанию `beta`) | `upload`: лок → editable → ffmpeg → SDK → **restore-only** кэш `.rpyc` (ручная выкладка не должна становиться источником релизной линии, G6) → `vn release build --package win/linux/mac` → `vn release steam --flavor --branch` → steamcmd `+login … +run_app_build`. Без секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` шаг аплоада — зелёный no-op с `::notice::`; при `appid: null` workflow падает раньше, на `vn release steam`. `concurrency: steam-upload` без cancel-in-progress: аккаунт-билдер один, а убивать steamcmd на середине хуже, чем ждать. Артефакт — только VDF | IMPLEMENTED (аплоад ни разу не выполнялся) |
 | `.gitlab-ci.yml` | (репозиторий на GitHub) | 3 джобы: `lint`, `build`, `test`. Нет релиза, флейворов, LFS, ffmpeg, `vn loc keys --check`, smoke, корпуса. Пиннованный тулчейн (`-r tools/vn.lock`, `:23` и `:37`) — есть, наравне с GitHub | STALE — `ci/README.md` до сих пор называет его «конфигом пайплайна» |
 
-**Два инварианта всех пайплайнов, закрытые 2026-08-08** (стережёт `tools/vn/tests/test_ci_config.py`, 7 тестов):
+**Инварианты всех пайплайнов** (стережёт `tools/vn/tests/test_ci_config.py`, 8 тестов):
 
-- **Пиннованный тулчейн (G17).** Во всех семи строках установки идёт `pip install --quiet -r tools/vn.lock` **перед** `pip install -e "tools/vn[dev]"` — `ci.yml:43,59`, `nightly.yml:29`, `canary.yml:30`, `release.yml:42`, `.gitlab-ci.yml:23,37`. По числу джоб мест восемь (шаблон `.with-sdk` разворачивается в `build` и `test`) — эту восьмёрку и ассертит тест (`test_ci_config.py:90`). Порядок — часть контракта: поставь editable первым, и пины станут декоративными.
-- **ffmpeg до `vn build`.** `ci.yml:49`, `nightly.yml:32`, `canary.yml:33`, `release.yml:45`. До этого ffmpeg был только в `ci.yml` и `release.yml`, а в `assets_src/video_src/` лежат сырцы — то есть ночной и canary-прогоны обязаны были краснеть на видео-ветке конвейера. GitLab из проверки исключён намеренно (конфиг вне паритета).
+- **Пиннованный тулчейн (G17).** Во всех девяти строках установки идёт `pip install --quiet -r tools/vn.lock` **перед** `pip install -e "tools/vn[dev]"` — `ci.yml:43,59`, `nightly.yml:30,115`, `canary.yml:30`, `release.yml:42`, `steam-upload.yml:55`, `.gitlab-ci.yml:23,37`. По числу джоб мест **десять**: 7 GitHub + 3 GitLab (шаблон `.with-sdk` разворачивается в `build` и `test`) — эту десятку и ассертит тест. Порядок — часть контракта: поставь editable первым, и пины станут декоративными.
+- **Вариантные прогоны — в `nightly`, а не в `ci`.** Прогон движка на геймпадный профиль стоит минуты, а MR-пайплайн держим под 10 минут (G15). Тест требует, чтобы матрица `controller-first` брала `RENPY_VARIANT` из матрицы, задавала непустой `VN_AUTOPILOT_SCREENS`, выгружала артефакт — и чтобы `RENPY_VARIANT` в `ci.yml` не встречался вовсе.
+- **ffmpeg до `vn build`.** `ci.yml:49`, `nightly.yml:33,118`, `canary.yml:33`, `release.yml:45`, `steam-upload.yml:58`. До этого ffmpeg был только в `ci.yml` и `release.yml`, а в `assets_src/video_src/` лежат сырцы — то есть ночной и canary-прогоны обязаны были краснеть на видео-ветке конвейера. GitLab из проверки исключён намеренно (конфиг вне паритета).
 
 ---
 
@@ -232,7 +234,7 @@ vn release build --flavor public  # сборка -> гейт (20 проверо�
 
 ### Паритет GitLab CI с GitHub Actions — либо честное удаление
 
-**Current state:** PARTIAL / STALE. `.gitlab-ci.yml` — 53 строки, 3 джобы (`lint`, `build`, `test`). Нет: релиза, флейворов, LFS (а именно потеря LFS дала однажды битую сборку со шрифтами-указателями), ffmpeg (первый же видео-сырец делает `vn build` красным), `vn loc keys --check`, smoke, сейв-корпуса, canary. GitHub при этом — 4 workflow, 7 определений джоб. `ci/README.md:6` до сих пор называет GitLab «конфигом пайплайна». `CODEOWNERS` покрывает `/.gitlab-ci.yml` и **не покрывает** `/.github/`.
+**Current state:** PARTIAL / STALE. `.gitlab-ci.yml` — 53 строки, 3 джобы (`lint`, `build`, `test`). Нет: релиза, флейворов, LFS (а именно потеря LFS дала однажды битую сборку со шрифтами-указателями), ffmpeg (первый же видео-сырец делает `vn build` красным), `vn loc keys --check`, smoke, сейв-корпуса, canary. GitHub при этом — 5 workflow, 9 определений джоб. `ci/README.md:6` до сих пор называет GitLab «конфигом пайплайна». `CODEOWNERS` покрывает `/.gitlab-ci.yml` и **не покрывает** `/.github/`.
 **Potential automation:** решение бинарное. Либо довести GitLab до паритета, либо удалить `.gitlab-ci.yml`, переписать `ci/README.md` под `.github/workflows/` и добавить `/.github/` в `CODEOWNERS`.
 **Priority:** **P2**
 **Expected benefit:** снимает ловушку: агент или новый человек читает `ci/README.md`, правит GitLab и получает зелёное на несуществующем пайплайне. Второй вариант (удаление) дешевле первого на порядок и даёт тот же эффект.
@@ -301,13 +303,23 @@ vn release build --flavor public  # сборка -> гейт (20 проверо�
 **Expected benefit:** нулевой при команде из одного человека: лок защищает от коллеги, которого нет. Становится обязательным ровно в день появления второго художника.
 **Implementation idea:** `storage.py:99-118`. Файловый бэкенд чинится одной строкой — `open(path, "x")` вместо `write_text`.
 
-### Фильтрация `VN_PACKS` по флейвору (ownership-провайдер — уже сделан)
+### ~~Фильтрация `VN_PACKS` по флейвору~~ — СДЕЛАНО
 
-**Current state:** ownership-провайдер **IMPLEMENTED** ([ADR-0014](../adr/0014-platform-services.md)): `pack_registry.set_ownership_provider` вызывается в `game/framework/00_core/035_platform.rpy:75` на `init 999` при живом Steam, маппинг — `steam_dlc_appid` в манифесте пака, `vn release steam` генерирует VDF и раскладку депотов ([39-platforms.md](39-platforms.md)). Осталась **другая** и более важная дыра: `VN_PACKS` компилятор наполняет **всеми** паками из `packs/` независимо от флейвора (`tools/vn/src/vn/content/scenes.py:287-295`), поэтому public-сборка считает пак `nsfw` установленным, а вне Steam ещё и купленным. Безобидно только потому, что `packs/nsfw/chapters/` содержит один `.gitkeep`.
-**Potential automation:** фильтрация `VN_PACKS` по списку `packs` флейвора на этапе компиляции (или чтение `vn_build.packs` в `_PackRegistry.installed()`).
-**Priority:** **P2** — это не автоматизация, а баг
-**Expected benefit:** нужна до первой NSFW-главы, иначе public-сборка покажет запертую дверь туда, куда её не должно вести.
-**Implementation idea:** `tools/vn/src/vn/content/scenes.py:287-295` + чтение `vn_build.packs`, которое уже пишется в `build_id.json` (`release.py:249`) и уже выставлено в рантайм (`060_build_info.rpy:10-40`), но не читается никем.
+**Current state:** **IMPLEMENTED** обоими концами. Ownership-провайдер подключён ([ADR-0014](../adr/0014-platform-services.md)): `pack_registry.set_ownership_provider` вызывается в `game/framework/00_core/035_platform.rpy:75` на `init 999` при живом Steam, маппинг — `steam_dlc_appid` в манифесте пака. А дыра «`VN_PACKS` перечисляет все паки, поэтому public-сборка считает `nsfw` установленным и купленным» закрыта **рантайм-ным** вариантом, а не фильтрацией компилятора: `_PackRegistry.installed()` (`030_flow.rpy:77-91`) сверяет `VN_PACKS` со списком поставки `vn_build.packs` из `build_id.json`. Смысл `VN_PACKS` при этом не изменился — это по-прежнему «все паки дерева», и так и должно быть: скрипты глав уезжают в дистрибутив всегда, гейт логический (G9).
+
+Почему выбран рантайм, а не компиляция: фильтровать `VN_PACKS` пришлось бы **на этапе сборки**, то есть генерат стал бы зависеть от флейвора — а он один на все флейворы (иначе `vn build --check` и кэш `.rpyc` разъедутся). Признак релизной сборки — сам факт `game/build_id.json` (`vn_build.is_release`): в dev-чекауте гейт открыт, иначе dev-прогон и smoke гейтились бы вслепую.
+
+**Что осталось:** живого прогона релизной сборки с непустым `packs/nsfw/chapters/` не было — контента там пока нет. Гейт покрыт юнит-тестами, которые исполняют реальные `init python`-блоки на заглушке `store` (`tools/vn/tests/test_release.py`).
+
+### ~~`early_content` не читает никто~~ — СДЕЛАНО как гейт релиза
+
+**Current state:** **IMPLEMENTED** на границе релиза, самоактивирующимся правилом. `early_content_checks` (`release.py:403-438`) — проверка №4 гейта: при `early_content: false` и хотя бы одной главе `status: release` глава `status: draft` = **FAIL**, `playtest` = WARN, незнакомый статус трактуется как draft (fail-closed). Строгость выведена из кода, а не из вкуса: для `draft` конвейер сам понижает граф-проверки до warnings, то есть ненаписанная ветка легальна и у игрока станет «сцена недоступна». Контент **не** вырезается (сейв игрока мог на него сослаться) — гейт просто не пропускает сборку.
+
+Проверка вынесена отдельной функцией, а не инлайном в `validate_release`, потому что полный гейт в тестах не прогнать (нужны SDK, ассеты, хранилище) — иначе она осталась бы непокрытой.
+
+**Почему WARN, а не FAIL до первой `release`-главы:** требование «в публичном флейворе только зрелые главы» до первой зрелой главы невыполнимо — гейт запретил бы собрать что угодно, включая демо, а невыполнимый гейт учит игнорировать гейты (`release.py:422-427`). Норма включается сама, без отдельного флага, с появлением первой главы `status: release`.
+
+**Что осталось (OPEN):** рантайм-потребителей у флага `vn_build.early_content` по-прежнему ноль — «плашка раннего доступа» или гейт из сцены пишутся с нуля. И решение к тому дню, когда строгость включится: ночной шаг «релизная сборка обоих флейворов» (`nightly.yml:71-75`), релиз по тегу и `steam-upload` покраснеют на первой же оставшейся `draft`-главе — довести главы, гонять `patron` либо объявить `early_content: true` у `public`.
 
 ## Сводная таблица приоритетов
 
@@ -321,7 +333,7 @@ vn release build --flavor public  # сборка -> гейт (20 проверо�
 | **P1** | Сборка секвенции кадров в видео | `tools/vn/src/vn/assets/pipeline.py` + `tools/vn/src/vn/assets/video.py` | Единственный разрыв цепочки рендер → Ren'Py для анимации |
 | **P1** | `vn char new` / `vn char validate` | `tools/vn/src/vn/content/scaffold.py`, `cli.py:958` | Просроченная заглушка фазы 1; персонаж — вторая по частоте единица работы |
 | **P1** | `vn test paths` | `cli.py:1404`, поверх `tools/vn/src/vn/content/graph.py` | Ручные `--picks` не масштабируются дальше нескольких глав |
-| **P2** | `vn content graph` для паков | `tools/vn/src/vn/content/graph.py:15` (+ тот же баг в `release.py:257`) | Десяток строк, функция уже написана |
+| **P2** | `vn content graph` для паков | `tools/vn/src/vn/content/graph.py:15` (+ тот же баг в `release.py:289`) | Десяток строк, функция уже написана |
 | **P2** | Эмиссия группы `overlays` | `tools/vn/src/vn/content/images.py:178-221` | Мёртвый вес в дистрибутиве превращается в выразительность |
 | **P2** | Side images | `tools/vn/src/vn/assets/pipeline.py:110-135`, `tools/vn/src/vn/content/images.py` | Документация обещает, код не даёт |
 | **P2** | High-watermark для say-id | `tools/vn/src/vn/loc/keys.py`, схема `ledger@2` | Убирает «старый перевод под новым текстом» (сейчас смягчено fuzzy) |
@@ -393,12 +405,12 @@ vn doctor                                  # 8 проверок окружени
 vn pipeline doctor                         # окружение рендера: ffmpeg/VP9, GPU, ComfyUI, модели, DAZ
 vn build                                   # lint -> ассеты -> 21 выход генерата -> game/tl
 vn build --check                           # CI-режим: ничего не пишет, краснеет на несвежем
-python -m pytest tools/vn/tests -q         # 254 теста
+python -m pytest tools/vn/tests -q         # 278 тестов
 
 # Автоматизация QA и релиза
 vn test smoke --picks 0,0                  # прогон игры, скриншоты, бюджет холодного старта
 vn save check && vn save corpus            # фикстуры сейвов + прогон в движке
-vn release validate --flavor public        # 20 проверок гейта, exit 0
+vn release validate --flavor public        # 21 проверка гейта; сейчас 0 FAIL, 2 WARN, exit 0
 
 # Побочные автоматизации, которые легко забыть
 vn assets cache --dry-run                  # сколько мусора накопил кэш трансформаций
@@ -416,8 +428,8 @@ vn test paths;  echo "exit=$?"
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/cli.py` (1930 строк — вся поверхность автоматизации), `../../tools/vn/src/vn/assets/pipeline.py:38-46` (таблица трансформаций), `../../tools/vn/src/vn/release.py:276-481` (релизный гейт), `../../tools/vn/src/vn/pipeline.py:290-581` (окружение рендера и модели), `../../.github/workflows/{ci,nightly,canary,release}.yml`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../adr/0008-ai-model-licensing-for-commercial-adult-content.md` (**не принят**), `../pipeline/phase-0.md` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/cli.py` (1930 строк — вся поверхность автоматизации), `../../tools/vn/src/vn/assets/pipeline.py:38-46` (таблица трансформаций), `../../tools/vn/src/vn/release.py:313-551` (релизный гейт), `../../tools/vn/src/vn/pipeline.py:290-581` (окружение рендера и модели), `../../.github/workflows/{ci,nightly,canary,release}.yml`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../adr/0008-ai-model-licensing-for-commercial-adult-content.md` (**не принят**), `../pipeline/phase-0.md` |
 | **Не трогать** | `game/generated/**`, `game/assets/**`, `game/tl/**`, `.vncache/**`, `build/**` — производные зоны, любая правка затирается сборкой. `ci/fixtures/rpyc-line/**` — единственные `.rpyc` в git, носитель линии statement-имён (G6): пересоздаётся только через `vn save corpus --add`. `content/**/*.scene.rpy` — авторская зона, не генерировать текст |
 | **Зависимости (что ломается ниже по течению)** | Новая трансформация без бампа версии в `TRANSFORMS` → кэш отдаёт устаревшие байты молча. Новый выход конвейера ассетов → его надо эмитить в `tools/vn/src/vn/content/images.py`, иначе Ren'Py его не увидит. Новая джоба CI → бюджет прогона `ci.yml`; тяжёлое идёт в `nightly.yml`. Изменение схемы → бамп `@N` в `tools/schemas/` + миграция существующих деклараций. Любая новая команда `vn` → exit-коды по контракту `cli.py:44-47` |
 | **Валидация** | `vn doctor` → `vn build` → `vn build --check` → `python -m pytest tools/vn/tests -q` → `vn test smoke --picks 0,0` → `vn save corpus` → `vn release validate --flavor public` |
-| **Частые ошибки** | 1) Считать `docs/ARCHITECTURE.md` описанием построенного: `--use-artifact`, `vn validate`, `vn test perf`, `rpyc-compat`, депоты Steam — NOT IMPLEMENTED (а `.rpa` — не долг, а норма §2.4: россыпь). 2) Править `.gitlab-ci.yml`, думая, что это пайплайн проекта: настоящий — `.github/workflows/`, 4 workflow, 7 определений джоб. 3) Автоматизировать рендер/генерацию раньше, чем появится первая `*.render.yaml` и первый workflow-JSON — сейчас в репозитории ноль тех и других. 4) Писать свой парсер `.rpy` вместо моста SDK (G24). 5) Ожидать, что `vn content graph` и `vn release changelog` видят главы паков — оба читают только `content/chapters/` (`graph.py:15`, `release.py:124`). 6) Считать `tools/vn.lock` неработающим — с 2026-08-08 он ставится первым во всех в 8 джобах установки тулчейна (7 строк в конфигах: GitLab-шаблон `.with-sdk` разворачивается в `build` и `test`), и новая зависимость без пина в нём приедет случайной версией. 7) Добавить джобу CI без `-r tools/vn.lock` до editable или без `ffmpeg` до `vn build` — покраснеет `tools/vn/tests/test_ci_config.py`. 8) Писать в `game/build_id.json` сам patron-токен — документ уезжает игроку целиком; наружу идёт только `patron_tag` (ADR-0011) |
+| **Частые ошибки** | 1) Считать `docs/ARCHITECTURE.md` описанием построенного: `--use-artifact`, `vn validate`, `vn test perf`, `rpyc-compat`, депоты Steam — NOT IMPLEMENTED (а `.rpa` — не долг, а норма §2.4: россыпь). 2) Править `.gitlab-ci.yml`, думая, что это пайплайн проекта: настоящий — `.github/workflows/`, 5 workflow, 9 определений джоб. 3) Автоматизировать рендер/генерацию раньше, чем появится первая `*.render.yaml` и первый workflow-JSON — сейчас в репозитории ноль тех и других. 4) Писать свой парсер `.rpy` вместо моста SDK (G24). 5) Ожидать, что `vn content graph` и `vn release changelog` видят главы паков — оба читают только `content/chapters/` (`graph.py:15`, `release.py:124`). 6) Считать `tools/vn.lock` неработающим — с 2026-08-08 он ставится первым во всех в 8 джобах установки тулчейна (7 строк в конфигах: GitLab-шаблон `.with-sdk` разворачивается в `build` и `test`), и новая зависимость без пина в нём приедет случайной версией. 7) Добавить джобу CI без `-r tools/vn.lock` до editable или без `ffmpeg` до `vn build` — покраснеет `tools/vn/tests/test_ci_config.py`. 8) Писать в `game/build_id.json` сам patron-токен — документ уезжает игроку целиком; наружу идёт только `patron_tag` (ADR-0011) |

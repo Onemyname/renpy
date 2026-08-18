@@ -62,10 +62,11 @@ init -999 python in vn:
     # ── Владение паками (G9/C14) ─────────────────────────────────────────────
     class _PackRegistry(object):
         """Гейт владения — ЛОГИЧЕСКИЙ (наличие .rpa ничем не защищено, G9).
-        Установленность — по VN_PACKS (генерат); владение — через провайдера:
-        Steam ownership-check подключается set_ownership_provider после
-        инициализации Steam (label splashscreen). Без провайдера установленный
-        пак считается купленным (dev/DRM-free поставка)."""
+        Установленность — пересечение генерата VN_PACKS и поставки сборки
+        (vn_build.packs); владение — через провайдера: Steam ownership-check
+        подключается set_ownership_provider после инициализации Steam
+        (label splashscreen). Без провайдера установленный пак считается
+        купленным (dev/DRM-free поставка)."""
 
         def __init__(self):
             self._provider = None
@@ -74,7 +75,20 @@ init -999 python in vn:
             self._provider = fn
 
         def installed(self, pack_id):
-            return pack_id == "core" or pack_id in getattr(renpy.store, "VN_PACKS", {})
+            if pack_id == "core":
+                return True
+            if pack_id not in getattr(renpy.store, "VN_PACKS", {}):
+                return False
+            # VN_PACKS перечисляет ВСЕ паки дерева, а уезжает в дистрибутив только
+            # список флейвора (build_info@2: vn_build.packs). Без этой сверки пак
+            # patron-флейвора считался бы в public-сборке установленным — а без
+            # Steam-провайдера (DRM-free поставка владение = установленность) ещё и
+            # купленным. В dev-чекауте build_id.json нет: разработчику видно всё
+            # установленное, иначе dev-прогон и smoke гейтились бы вслепую.
+            build = getattr(renpy.store, "vn_build", None)
+            if build is None or not build.is_release:
+                return True
+            return pack_id in build.packs
 
         def owned(self, pack_id):
             if pack_id == "core":

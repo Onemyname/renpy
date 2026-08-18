@@ -532,12 +532,12 @@ vn test smoke --lang pseudo --picks 0,0
 vn loc keys --check     # id проставлены, ledger свеж (главный гейт этого файла)
 vn build                # lint -> ассеты -> компиляция; ошибки контракта сцен здесь
 vn content graph        # развилки глазами (Mermaid); паки не сканируются
-vn loc report           # покрытие переводов: сейчас de/en/pseudo 130/130, fuzzy 0
+vn loc report           # покрытие переводов: сейчас de/en/pseudo 136/136, fuzzy 0
 vn test smoke --picks 0,0
 vn test smoke --picks 0,1          # вторая ветка; путь — .vncache/smoke/picks.log
 vn test smoke --lang pseudo --picks 0,0   # переполнения текста
 "$RENPY_SDK/renpy.exe" . lint
-python -m pytest tools/vn/tests -q         # 254 теста
+python -m pytest tools/vn/tests -q         # 278 тестов
 ```
 
 В bash-сессии `RENPY_SDK` не наследуется — экспортируйте вручную:

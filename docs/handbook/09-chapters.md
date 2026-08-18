@@ -46,7 +46,7 @@ vn test smoke --picks 0,1              # прогон конкретной ве�
 | 16 | Импорт переводов | PO | `game/tl/<lang>/dialogue_chNN.rpy` | `vn loc import` (входит в `vn build`) | `vn build --check` |
 | 17 | QA-прохождение веток | генерат | `.vncache/smoke/` (скриншоты, `RESULT.txt`, `picks.log`) | `vn test smoke --picks …` | exit 0 + `OK: vn_end_of_content` |
 | 18 | Перевод в `playtest` | `chapter.yaml` | `status: playtest` | редактор | `vn content lint` — граф-предупреждения становятся ошибками |
-| 19 | Релизный гейт | всё дерево | вердикт 20 проверок | `vn release validate --flavor public` | exit 0 |
+| 19 | Релизный гейт | всё дерево | вердикт 21 проверки | `vn release validate --flavor patron` | exit 0 (у `public` тоже exit 0: гейт зрелости даёт WARN, пока нет ни одной `release`-главы) |
 | 20 | Сборка | всё дерево | `build/dist/<version>-<flavor>/` | `vn release build --flavor public` | — |
 | 21 | Фиксация id и changelog | `status: release` | `docs/CHANGELOG.md`, `ci/release-manifest.json`, `content/registry/id_registry.json` | `vn release changelog` | — |
 
@@ -447,7 +447,7 @@ vn loc extract         # 2. обновить loc/po/<lang>/chNN.po (перево
 #    3. перевод: правка msgstr в loc/po/<lang>/chNN.po
 vn loc pseudo          # 3'. или синтетический язык для QA переполнений UI
 vn loc import          # 4. PO -> game/tl/<lang>/dialogue_chNN.rpy  (входит в vn build)
-vn loc report          # 5. покрытие: "en: 130/130 (100%), fuzzy: 0"
+vn loc report          # 5. покрытие: "en: 136/136 (100%), fuzzy: 0"
 ```
 
 Что важно знать именно при выпуске главы:
@@ -455,7 +455,7 @@ vn loc report          # 5. покрытие: "en: 130/130 (100%), fuzzy: 0"
 - **`vn build` НЕ вызывает `vn loc keys` и `vn loc extract`** — только `_loc_import` (`cli.py:151`). Прогонять `vn loc keys` после каждой правки текста — ваша обязанность; CI проверяет это через `vn loc keys --check` (`.github/workflows/ci.yml:69-70`).
 - `vn loc keys` **пишет прямо в ваш авторский `.rpy`** (дописывает ` id chNN_sNNN_NNNN` и вставляет `$ vn_menu = "chNN_sNNN_mNNN"` перед `menu:`). Изменённые файлы надо закоммитить. Требуется `RENPY_SDK` — разбор идёт парсером самого движка (G24).
 - Новая глава автоматически становится новым PO-доменом: `loc/po/<lang>/chNN.po` + шард `loc/ledger/chNN.json`.
-- `vn loc report` даёт **глобальный** процент по всем доменам сразу; порога он не применяет и всегда возвращает 0. Гейт 98 % живёт только в релизе (`release.py:408-435`, порог из `loc/loc.yaml: release_coverage_min`).
+- `vn loc report` даёт **глобальный** процент по всем доменам сразу; порога он не применяет и всегда возвращает 0. Гейт 98 % живёт только в релизе (`release.py:475-502`, порог из `loc/loc.yaml: release_coverage_min`).
 - **Грабля:** номера say-id переиспользуемы. Удалили последнюю реплику — её номер освободится для следующей новой (`keys.py:106`). Спасает то, что `vn loc extract` помечает такую запись `fuzzy` (текст-то другой), а `fuzzy` не доезжает до игры (`po.py:385-386`).
 - **Грабля:** хвостовой комментарий на строке say ломает вставку id — ошибка обнаруживается постфактум, файлы откатываются (`keys.py:209-212`). Не пишите `"реплика"  # коммент`.
 - Меню переводится «всё или ничего»: если хоть один пункт не переведён или fuzzy, всё меню откатывается на исходные подписи (`po.py:406-417`).
@@ -540,7 +540,7 @@ vn loc report          # 5. покрытие: "en: 130/130 (100%), fuzzy: 0"
 ### Релиз
 
 - [ ] `status` поднят до `playtest`, `vn content lint` всё ещё 0 ошибок (граф-проверки стали строгими)
-- [ ] `vn release validate --flavor public` — 0 FAIL (20 проверок)
+- [ ] `vn release validate --flavor public` — 0 FAIL (21 проверка; сегодня exit 0, зрелость контента даёт WARN — но с первой главой `status: release` она станет строгой, [29 §5.1](29-build-and-release.md#maturity-gate-rule))
 - [ ] `vn release validate --flavor patron` — 0 FAIL
 - [ ] `project.yaml: version` поднят на **minor** (новая глава = minor по политике `project.yaml:2`)
 - [ ] `status: release` выставлен в том же коммите, что и релиз
@@ -621,11 +621,11 @@ vn loc report                            # покрытие переводов
 vn test smoke --picks 0,0                # прогон ветки автопилотом
 vn test smoke --picks 0,1 --lang en
 vn save check && vn save corpus          # совместимость сейвов (2 фикстуры)
-vn release validate --flavor public      # 20 проверок релизного гейта
-python -m pytest tools/vn/tests -q       # 254 теста тулинга
+vn release validate --flavor public      # 21 проверка релизного гейта
+python -m pytest tools/vn/tests -q       # 278 тестов тулинга
 ```
 
-Ожидаемое сейчас: `vn content lint` → `lint: OK (0 предупреждений)`; `vn build` → `build: OK`; `vn release validate --flavor public` → 19 строк (18 PASS + 1 WARN), exit 0 (среди них — `PASS сейв-корпус: 2 фикстур`).
+Ожидаемое сейчас: `vn content lint` → `lint: OK (0 предупреждений)`; `vn build` → `build: OK`; `vn release validate --flavor patron` → 21 строка (20 PASS + 1 WARN), exit 0 (среди них — `PASS сейв-корпус: 2 фикстур`); у `--flavor public` — 20 строк, 0 FAIL и второй WARN по зрелости контента, exit 0.
 
 ---
 

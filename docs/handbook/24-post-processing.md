@@ -288,7 +288,7 @@ vn assets validate               # конвенции имён + свежест�
 vn build                         # генерат + бюджеты
 "$RENPY_SDK/renpy.exe" . lint    # битые ссылки на образы
 vn test smoke --picks 0,0        # -> .vncache/smoke/shot*.png — смотреть глазами
-python -m pytest tools/vn/tests -q          # 254 теста (psd.py среди них НЕ покрыт)
+python -m pytest tools/vn/tests -q          # 278 тестов (psd.py среди них НЕ покрыт)
 # ручные пруфы, которых нет в тулинге:
 python -c "from PIL import Image;import glob;[print(Image.open(p).size,p) for p in glob.glob('game/assets/spr/**/*.webp',recursive=True)]"
 magick identify -ping -format "%f %wx%h %m %[profile:icc]\n" game/assets/cg/**/*.webp

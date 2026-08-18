@@ -104,7 +104,7 @@ vn build
 head -c 64 game/fonts/Inter-Regular.ttf | xxd | head -2   # ожидается 00 01 00 00 / OTTO / true / ttcf
 ```
 **Решение:** `git lfs install && git lfs pull`.
-**Профилактика:** во всех четырёх workflow чекаут идёт с `with: {lfs: true}`; тот же детектор встроен в релизный гейт (`release.py:318-327`) — артефакт не уедет с указателями.
+**Профилактика:** во всех четырёх workflow чекаут идёт с `with: {lfs: true}`; тот же детектор встроен в релизный гейт (`release.py:355-364`) — артефакт не уедет с указателями.
 
 ### Не та версия Python
 
@@ -236,7 +236,7 @@ Ren'Py Version: Ren'Py 8.5.3.26051504
 ```
 **Вероятная причина:** ошибка на уровне скрипта/экранного языка. Класс ошибок «свойство не применимо к этому контейнеру»: `ypadding` валиден для `frame`/`window`, но не для `hbox`/`vbox` — вертикальный ритм в боксах задаётся `spacing`.
 **Диагностика:** `cat errors.txt` — там файл, строка, символ и точная формулировка движка.
-**Решение:** править указанный файл. В том конкретном случае вылечилось заменой на `spacing gui.sp_l - 6` (нынешний `game/framework/20_ui/screens/history.rpy:42`).
+**Решение:** править указанный файл. В том конкретном случае вылечилось заменой на `spacing gui.sp_l - 6` (нынешний `game/framework/20_ui/screens/history.rpy:44`).
 **Профилактика:** прогоняйте движковый линт — `"$RENPY_SDK/renpy.sh" . lint` (в CI это шаг `renpy lint по framework и генерату`, `ci.yml:72-73`). Он ловит такие вещи без запуска игры. Плюс `config.check_conflicting_properties = True` (`game/framework/00_core/001_boot.rpy:12`) ловит конфликтующие style-свойства на этапе анализа.
 
 ### Строки `[vn] snapshot: ch01.division пропущен (не-простой тип _Feature)` в `log.txt`
@@ -291,7 +291,7 @@ ls game/assets/bg/rooftop/
 
 **Симптомы:** контент скроллится колесом, но полосы не видно.
 **Вероятная причина:** в этом проекте полоса рисуется явными свойствами; без них у неё нет ни фона, ни бегунка.
-**Диагностика:** сравните со рабочим образцом — `game/framework/20_ui/screens/history.rpy:32-37`:
+**Диагностика:** сравните со рабочим образцом — `game/framework/20_ui/screens/history.rpy:34-39`:
 ```
 scrollbars "vertical"
 vscrollbar_unscrollable "hide"
@@ -306,7 +306,7 @@ vscrollbar_xsize 6
 
 **Симптомы:** соседние элементы уехали или исчезли; вьюпорт растянулся на всё доступное место.
 **Вероятная причина:** `viewport` без явных `xsize/ysize` забирает всё доступное пространство.
-**Диагностика:** посмотрите, заданы ли размеры. В проекте они всегда явные: history — `xsize 1100`, `ysize 830` (`history.rpy:27-28`), галерея — `ysize 800` (`gallery.rpy:53`).
+**Диагностика:** посмотрите, заданы ли размеры. В проекте они всегда явные: history — `xsize 1100`, `ysize 830` (`history.rpy:29-30`), галерея — `ysize 800` (`gallery.rpy:53`).
 **Решение:** задать `xsize`/`ysize` (или `xysize`).
 **Профилактика:** для проверки переполнений при длинных строках гоняйте псевдолокаль: `vn loc pseudo`, затем `vn test smoke --picks 0,0 --lang pseudo` (эта же комбинация есть в `nightly.yml:60`).
 
@@ -477,7 +477,7 @@ vn assets video inspect game/assets/mov/demo/ambient.webm   # meta + прове�
 ### На экране виден сырой ключ вроде `ui.gallery.locked`
 
 **Симптомы:** вместо текста показывается сам идентификатор.
-**Вероятная причина:** `vn_loc.t(key)` возвращает **сам ключ**, если его нет ни в `VN_STRINGS`, ни в переводе (`game/framework/00_core/040_localization.rpy:151-157`). То есть ключ на экране = ключа нет в `content/ui/strings.yaml` (сейчас там 95 строк) либо генерат не пересобран.
+**Вероятная причина:** `vn_loc.t(key)` возвращает **сам ключ**, если его нет ни в `VN_STRINGS`, ни в переводе (`game/framework/00_core/040_localization.rpy:151-157`). То есть ключ на экране = ключа нет в `content/ui/strings.yaml` (сейчас там 114 строк) либо генерат не пересобран.
 **Диагностика:**
 ```bash
 grep -n "ui.gallery.locked" content/ui/strings.yaml
@@ -505,8 +505,8 @@ grep -rn "VN_STRINGS" game/generated/registry/ | head
 ### Покрытие ниже гейта: релиз краснеет на переводах
 
 **Симптомы:** в `vn release validate --flavor …` строка `FAIL покрытие переводов: ниже порога 98% — en 91%`.
-**Вероятная причина:** порог `release_coverage_min: 0.98` в `loc/loc.yaml`; форсируется **только** в релизном гейте (`release.py:408-434`). Синтетические пакеты (`pseudo`) исключаются по флагу `synthetic` в `game/tl/<lang>/language.json`.
-**Диагностика:** `vn loc report` — `de: 130/130 (100%), fuzzy: 0` по каждому языку.
+**Вероятная причина:** порог `release_coverage_min: 0.98` в `loc/loc.yaml`; форсируется **только** в релизном гейте (`release.py:475-501`). Синтетические пакеты (`pseudo`) исключаются по флагу `synthetic` в `game/tl/<lang>/language.json`.
+**Диагностика:** `vn loc report` — `de: 136/136 (100%), fuzzy: 0` по каждому языку.
 **Решение:** дособрать переводы или временно убрать язык из поставки. Флагов `vn loc report --gate/--format` **не существует** (NOT IMPLEMENTED) — гейт живёт только в релизе.
 **Профилактика:** `vn loc report` в ежедневной проверке; `fuzzy` в поставку не идут — они молча выпадают из `game/tl` (`tools/vn/src/vn/loc/po.py:384-386`).
 
@@ -608,7 +608,40 @@ grep -n "migration" log.txt
 ### `ошибка: release validate --flavor <X>: есть FAIL`
 
 **Симптомы:** таблица строк `PASS/WARN/FAIL`, затем эта ошибка.
-**Вероятная причина:** гейт — агрегатор существующих проверок, **своих правил у него нет** (`release.py:407-629`). Всего в коде 20 проверок, но часть условная (лицензии печатаются только при наличии деклараций, покрытие переводов — только при заданном пороге, озвучка — только при непустом покрытии), поэтому на текущем дереве строк 16. Частые FAIL:
+**Вероятная причина:** гейт — агрегатор существующих проверок; своё правило у него ровно одно — «зрелость контента» (у неё нет другого владельца). Всего в коде **21** проверка (`release.py:525-750`), но часть условная (лицензии печатаются только при наличии деклараций, покрытие переводов — только при заданном пороге, озвучка — только при непустом покрытии), поэтому на текущем дереве строк **20** у `public` и **21** у `patron`.
+
+**На этом дереве FAIL нет ни у одного флейвора:** `vn release validate --flavor public` и `--flavor patron`
+дают exit 0. Если гейт всё-таки красный — ищите строку `FAIL` в таблице и смотрите её в списке ниже.
+
+**Про зрелость контента, если увидели её в жёлтом или в красном.** Проверка №4 самоактивирующаяся
+(`early_content_checks`, `release.py:403-438`), и сегодня она печатает **WARN**, а не FAIL:
+
+```
+WARN  зрелость контента: ни одна глава ещё не доведена до status=release (ch01) —
+      флейвор с early_content=false собирается, но гейт станет строгим с первой release-главой
+```
+
+Правило одним абзацем: при `early_content: true` (флейвор `patron`) — всегда PASS; при
+`early_content: false` строгость включается **не сразу**, а с момента, когда в проекте появится первая
+глава `status: release`. Пока такой главы нет (сейчас единственная `ch01_awakening` объявлена `draft`),
+требование «в публичном флейворе только зрелые главы» невыполнимо — гейт запретил бы собрать что
+угодно, включая демо, а невыполнимый гейт учит игнорировать гейты, — поэтому это предупреждение.
+**Что будет дальше:** в тот же прогон, где вы поднимете любую главу до `status: release`, все остальные
+незрелые главы станут блокерами — `draft` даст `FAIL early_content=false, а в сборке главы
+status=draft: chNN — доведите до release или собирайте флейвором с early_content=true` и exit 1,
+`playtest` — WARN, незнакомый статус трактуется как `draft` (fail-closed). Это не регрессия конфига,
+а спроектированный момент включения нормы, поэтому не удивляйтесь ему через месяц. **Три выхода тогда:**
+довести главы до `status: release`, собирать флейвором с `early_content: true` (`patron`), либо осознанно
+объявить `early_content: true` и у `public`. Контент ни в одной ветви не вырезается — главы уезжают
+в дистрибутив всегда (гейт логический, G9). Подробности — [29-build-and-release.md §5.1](29-build-and-release.md#maturity-gate-rule).
+
+**Следствие для CI:** ночной шаг «Релизная сборка обоих флейворов» (`nightly.yml:71-75` — `vn release
+build --flavor public` и `--flavor patron`) сейчас проходит: жёлтая строка зрелости его не валит.
+Покраснеет он в тот прогон, когда включится строгость (см. выше), — и вместе с ним релиз по тегу
+(`release.yml`, матрица `flavor: [public, patron]`) и ручной `steam-upload`, который начинается с той
+же релизной сборки.
+
+Остальные частые FAIL:
 
 | Строка гейта | Что означает |
 |---|---|
@@ -642,10 +675,10 @@ grep -n "migration" log.txt
 ### Дистрибутив тащит лишнее / не исключил NSFW
 
 **Симптомы:** в public-сборке лежат NSFW-ассеты; либо в `build-info.json` пустой `"exclude": []`.
-**Вероятная причина:** исключения считаются от **фактических каталогов**: для каждой категории в `game/assets/<cat>/` проверяется наличие подкаталога `nsfw/` (`release.py:192-203`). Сейчас категорий пять (`bg cg mov spr ui`) и ни в одной нет `nsfw/`, поэтому оба уже собранных `build/dist/0.1.0-{public,patron}/build-info.json` несут `"exclude": []` — это корректный результат, а не баг.
+**Вероятная причина:** исключения считаются от **фактических каталогов**: для каждой категории в `game/assets/<cat>/` проверяется наличие подкаталога `nsfw/` (`release.py:441-452`). Сейчас категорий пять (`bg cg mov spr ui`) и ни в одной нет `nsfw/`, поэтому оба уже собранных `build/dist/0.1.0-{public,patron}/build-info.json` несут `"exclude": []` — это корректный результат, а не баг.
 **Диагностика:** `ls game/assets/*/nsfw` и `cat build/dist/*/build-info.json`.
 **Решение:** класть взрослый контент строго в `nsfw/`-подпапку своей категории (`assets/cg/nsfw/**`, `assets/mov/nsfw/**`).
-**Профилактика:** знайте, что **не** гейтится: список `packs` флейвора ни на что не влияет (`VN_PACKS` перечисляет все паки), `early_content` пишется и нигде не читается, а `owned()` вне Steam всегда True (провайдер подключается в `00_core/035_platform.rpy:75` только при живом Steam — [39-platforms.md](39-platforms.md) §5). Работают только `nsfw`, `watermark` и `patron_tag` (`game/framework/00_core/060_build_info.rpy:40,42-45`, `20_ui/screens/build_overlay.rpy`). Поле называется именно `patron_tag`, а не `patron_token`: с ADR-0011 наружу уходит `blake2s(токен, digest_size=4, person=b"vnpatron")` — 8 hex-символов, — а сам токен в дистрибутив не попадает. Подробности — [30-packs-and-dlc.md](30-packs-and-dlc.md).
+**Профилактика:** знайте, что чем гейтится. `nsfw` — исключением ассетов из дистрибутива плюс рантайм-гейтами галереи/ачивок. `watermark`/`patron_tag` — оверлеем. `packs` — **рантайм-гейтом установленности**: `installed()` сверяет `VN_PACKS` (все паки дерева) со списком поставки `vn_build.packs` (`030_flow.rpy:77-91`), поэтому в `public`-сборке пак `nsfw` не считается ни установленным, ни купленным; в dev-чекауте гейт открыт — там нет `game/build_id.json`. `early_content` — **релизным гейтом зрелости контента**, самоактивирующимся: до первой главы `status: release` это WARN, после — строгость (см. выше); рантайм-потребителей у флага по-прежнему ноль. Отдельно от установленности живёт `owned()`: вне Steam он равен `installed()`, провайдер подключается в `00_core/035_platform.rpy:75` только при живом Steam ([39-platforms.md](39-platforms.md) §5). Поле называется именно `patron_tag`, а не `patron_token`: с ADR-0011 наружу уходит `blake2s(токен, digest_size=4, person=b"vnpatron")` — 8 hex-символов, — а сам токен в дистрибутив не попадает. Подробности — [30-packs-and-dlc.md](30-packs-and-dlc.md).
 
 ### `ошибка: pack build: у пака '<id>' объявлены главы (chNN), но в game/generated/scenes/ нет ни одной их скомпилированной сцены — сначала vn build`
 
@@ -853,7 +886,7 @@ D:/ComfyUI/venv/Scripts/python.exe -c "import torch; print(torch.__version__, to
 4. **`vn build --check`.** Ничего не пишет; ловит несвежесть ассетов и генерата, битую разметку переводов и бюджеты G19. Красный `version.gen.rpy` после смены HEAD — норма (git-sha в `config.version`).
 5. **Три файла в корне.** Не стартует → `errors.txt`. Стартует, но странно → `log.txt` (строки `[vn] …`). Упала → `traceback.txt`, плюс отчёт в `<savedir>/crash/` с breadcrumbs последних меток.
 6. **`vn test smoke --picks …`.** Воспроизвести путь автопилотом: `RESULT.txt`, `picks.log`, `startup.txt` и скриншоты в `.vncache/smoke/`. Синтетический ввод в окно игры слать нельзя — только этот путь.
-7. **`vn release validate --flavor public`.** Даже вне релиза: 20 проверок разом — быстрый способ понять, что именно в дереве не в порядке.
+7. **`vn release validate --flavor public`.** Даже вне релиза: 21 проверка разом — быстрый способ понять, что именно в дереве не в порядке. FAIL там сейчас нет (exit 0); два WARN штатные — зрелость контента (ни одной `release`-главы) и черновые дубли озвучки.
 8. **`vn pipeline doctor`.** Только если проблема в производстве картинок/видео: ffmpeg и VP9, GPU и драйвер, torch/CUDA, ComfyUI и модели, DAZ и библиотека, свободное место, SDK.
 
 Если после всех восьми шагов непонятно — это, скорее всего, баг тулинга: соберите вывод команды целиком, `git rev-parse --short HEAD` и содержимое трёх лог-файлов, и заводите issue. Аварийный обход на время разбирательства — взять `game/generated/` артефактом зелёной CI-джобы `build` (30 дней хранения) и распаковать локально.
@@ -898,12 +931,12 @@ vn build --check                       # check: генерат свеж
 vn assets validate                     # assets validate: OK
 vn assets video validate               # video validate: OK (N файлов)
 vn loc keys --check                    # все строки с id, ledger свеж
-vn loc report                          # de/en/pseudo — 130/130 (100%), fuzzy 0
-python -m pytest tools/vn/tests -q     # 254 passed
+vn loc report                          # de/en/pseudo — 136/136 (100%), fuzzy 0
+python -m pytest tools/vn/tests -q     # 278 passed
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (N скриншотов)
 vn save check && vn save corpus        # 2 фикстур: schema1-demo мигрирует 1 -> 2, schema2-demo уже на 2
-vn release validate --flavor public    # 19 строк: 18 PASS + 1 WARN, exit 0
-vn release validate --flavor patron
+vn release validate --flavor public    # 20 строк: 18 PASS + 2 WARN (зрелость контента, драфты озвучки), exit 0
+vn release validate --flavor patron    # 21 строка: 20 PASS + 1 WARN (драфты озвучки), exit 0
 vn pipeline doctor                     # exit 0; WARN по VaM и Sims 4 — норма
 ```
 
@@ -915,11 +948,11 @@ vn pipeline doctor                     # exit 0; WARN по VaM и Sims 4 — н�
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/cli.py` (все `_fail(` — тексты ошибок), `../../tools/vn/src/vn/doctor.py:69-153`, `../../tools/vn/src/vn/pipeline.py:455-581`, `../../tools/vn/src/vn/content/lint.py`, `../../tools/vn/src/vn/content/scenes.py:69-194`, `../../tools/vn/src/vn/assets/pipeline.py`, `../../tools/vn/src/vn/assets/video.py:200-249`, `../../tools/vn/src/vn/assets/storage.py`, `../../tools/vn/src/vn/loc/po.py:305-353`, `../../tools/vn/src/vn/release.py:206-227` (`patron_tag`, ADR-0011), `:276-481` (релизный гейт), `../pipeline/phase-0.md`, `../runbooks/pipeline-broken-at-night.md` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/cli.py` (все `_fail(` — тексты ошибок), `../../tools/vn/src/vn/doctor.py:69-153`, `../../tools/vn/src/vn/pipeline.py:455-581`, `../../tools/vn/src/vn/content/lint.py`, `../../tools/vn/src/vn/content/scenes.py:69-194`, `../../tools/vn/src/vn/assets/pipeline.py`, `../../tools/vn/src/vn/assets/video.py:200-249`, `../../tools/vn/src/vn/assets/storage.py`, `../../tools/vn/src/vn/loc/po.py:305-353`, `../../tools/vn/src/vn/release.py:455-476` (`patron_tag`, ADR-0011), `:403-438` (гейт зрелости контента), `:525-750` (релизный гейт), `../pipeline/phase-0.md`, `../runbooks/pipeline-broken-at-night.md` |
 | **Не трогать** | `game/generated/**`, `game/assets/**`, `game/tl/**`, `.vncache/**`, `build/**` — производные зоны; `log.txt`, `errors.txt`, `traceback.txt` — пишет движок, они в `.gitignore:15-17`; `ci/fixtures/rpyc-line/**` — единственные `.rpyc` в git, носитель линии statement-имён (G6), правится только через `vn save corpus --add` |
 | **Зависимости** | `RENPY_SDK` → build-bridge (`tools/vn/src/vn/content/analyze.py`) → `compile_content` → `game/generated/` → `vn play` / `vn test smoke` / `vn save corpus` / `vn package` / `vn release build`. `.vncache/assets-manifest.json` → удаление осиротевших ассетов **и** проверка свежести. `.vncache/analyze-*.json` → маскирует отсутствие SDK. `loc/ledger/chNN.json` → PO → `game/tl/` → язык в рантайме. `project.yaml: budgets` → и `vn build`, и релизный гейт |
 | **Валидация** | `vn doctor && vn content lint && vn build --check && vn loc keys --check && python -m pytest tools/vn/tests -q && vn test smoke --picks 0,0 && vn release validate --flavor public` |
-| **Частые ошибки** | 1) Чинить симптом в производной зоне вместо источника. 2) Забыть `export RENPY_SDK=…` в bash-вызове — `vn doctor` красный, `vn build` обманчиво зеленеет на тёплом кэше. 3) Принять красный `vn build --check` после смены HEAD за поломку — это git-sha в `config.version`. 4) Цитировать `docs/ARCHITECTURE.md` как описание существующего (`vn validate`, `--use-artifact`, `vn test perf` — их нет). 5) Считать корпус пустой формальностью: с 2026-08-08 фикстур две, и `schema1-demo` реально прогоняет миграцию в игре (`[vn] migration 0002` в `log.txt`) — зато обязательных классов фикстур из `ARCHITECTURE.md:3681` по-прежнему нет. 6) Считать флейвор гейтом для паков и `early_content` — работают только `nsfw`, `watermark`, `patron_tag` (не `patron_token`: токен наружу больше не уходит, ADR-0011). 7) Диагностировать `[vn] snapshot: … пропущен (не-простой тип _Feature)` как ошибку — это штатный шум `__future__`-объектов |
+| **Частые ошибки** | 1) Чинить симптом в производной зоне вместо источника. 2) Забыть `export RENPY_SDK=…` в bash-вызове — `vn doctor` красный, `vn build` обманчиво зеленеет на тёплом кэше. 3) Принять красный `vn build --check` после смены HEAD за поломку — это git-sha в `config.version`. 4) Цитировать `docs/ARCHITECTURE.md` как описание существующего (`vn validate`, `--use-artifact`, `vn test perf` — их нет). 5) Считать корпус пустой формальностью: с 2026-08-08 фикстур две, и `schema1-demo` реально прогоняет миграцию в игре (`[vn] migration 0002` в `log.txt`) — зато обязательных классов фикстур из `ARCHITECTURE.md:3681` по-прежнему нет. 6) Считать, что `packs` и `early_content` ничего не гейтят: `packs` гейтит установленность в рантайме, `early_content` — зрелость контента в релизном гейте (самоактивирующемся). Обратная ошибка тоже жива — писать «`public` не собирается по зрелости»: сегодня это WARN и exit 0. `patron_token` в рантайме больше нет — только `patron_tag` (ADR-0011). 7) Диагностировать `[vn] snapshot: … пропущен (не-простой тип _Feature)` как ошибку — это штатный шум `__future__`-объектов |
 
 ---
 

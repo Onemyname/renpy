@@ -315,7 +315,7 @@ Warnings (жёлтое, никогда не валят):
 
 1. **сборка** — по каждому вновь записанному файлу, с опциями из sidecar (`pipeline.py:365-375`);
 2. **`vn assets video validate [paths…]`** — без аргументов проверяет все `game/assets/mov/**.webm`; опции восстанавливаются из meta через `opts_from_meta` — оттуда берутся **только `loop` и `keep_audio`** (`video.py:275-286`);
-3. **релизный гейт** — `validate_all(root, file_budget_mb)` (`video.py:289-306`), проводка в `release.py:312-321`: errors → `FAIL "видео: N ошибок"`, warnings → `WARN`, иначе `PASS "видео: собранные лупы валидны"`.
+3. **релизный гейт** — `validate_all(root, file_budget_mb)` (`video.py:289-306`), проводка в `release.py:349-358`: errors → `FAIL "видео: N ошибок"`, warnings → `WARN`, иначе `PASS "видео: собранные лупы валидны"`.
 
 Полезный факт про вывод: настоящий ffprobe отдаёт `format_name = "matroska,webm"`, а `summarize` берёт `.split(",")[0]` (`video.py:161`) — значит **у корректного файла в выводе `inspect` будет `container: matroska`**, и это норма, а не поломка.
 
@@ -337,7 +337,7 @@ budgets:
 | Бюджет | Где проверяется | Кем |
 |---|---|---|
 | `video_file_mb` | **дважды**: внутри `validate_output` (`video.py:234-236`) и в `budget_failures` (`release.py:48-53`) | `vn build`, `vn assets video build/validate`, релизный гейт |
-| `video_total_mb` | **только** `budget_failures` (`release.py:43-47`) | `vn build` (`cli.py:146, 156` → `_check_budgets`) и релизный гейт (`release.py:493`) |
+| `video_total_mb` | **только** `budget_failures` (`release.py:43-47`) | `vn build` (`cli.py:146, 156` → `_check_budgets`) и релизный гейт (`release.py:563`) |
 
 То есть `vn assets video validate` про суммарный бюджет **не знает** — его ловит `vn build`. И держите в голове вложенность: `assets_total_mb` считает `game/assets` целиком, mov внутри. 300 МБ видео оставляют 200 МБ на всю статику.
 
@@ -381,7 +381,7 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True)
 
 ### 8.3 NSFW
 
-Конвенция ADR-0006: NSFW-видео живёт в `mov/nsfw/…` (сырец — `assets_src/video_src/nsfw/…`). SFW-флейворы исключают `game/assets/*/nsfw/**` на этапе distribute; глобы считаются по **реально существующим** каталогам (`release.py:191-202`). Каталога `game/assets/mov/nsfw/` сейчас нет, поэтому в обоих отгруженных `build-info.json` стоит `"exclude": []`.
+Конвенция ADR-0006: NSFW-видео живёт в `mov/nsfw/…` (сырец — `assets_src/video_src/nsfw/…`). SFW-флейворы исключают `game/assets/*/nsfw/**` на этапе distribute; глобы считаются по **реально существующим** каталогам (`release.py:441-452`). Каталога `game/assets/mov/nsfw/` сейчас нет, поэтому в обоих отгруженных `build-info.json` стоит `"exclude": []`.
 
 ## 9. Практические ориентиры и арифметика бюджета
 
@@ -498,7 +498,7 @@ vn assets video inspect game/assets/mov/demo/ambient.webm
 vn build                               # lint (sidecar!) -> ассеты -> генерат -> бюджеты; «build: OK»
 vn build --check                       # CI-режим: свежесть + бюджеты, ничего не пишет
 python -m pytest tools/vn/tests/test_video.py -q     # 9 тестов
-vn release validate --flavor public    # 20 проверок, среди них «видео: собранные лупы валидны»
+vn release validate --flavor public    # 21 проверка, среди них «видео: собранные лупы валидны»
 ```
 
 Эталон репозитория на 2026-08-08: ровно один луп — `game/assets/mov/demo/ambient.webm` (5683 Б) + его `.webm.meta.json` (526 Б), один сырец `assets_src/video_src/demo/ambient.mp4` (13559 Б) + `ambient.video.yaml` (31 Б).
@@ -520,6 +520,6 @@ vn release validate --flavor public    # 20 проверок, среди них 
 |---|---|
 | **Читать перед изменением** | `../../tools/vn/src/vn/assets/video.py` (весь, 326 строк), `../../tools/vn/src/vn/assets/pipeline.py:170-201` (discovery) и `:286-389` (кэш, энкод, валидация, meta), `../../tools/vn/src/vn/cli.py:573-647` (группа `vn assets video`), `../../tools/schemas/video_src@1.schema.json`, `../../tools/schemas/mov_meta@1.schema.json`, `../../tools/vn/src/vn/content/images.py:89-99`, `../../tools/vn/src/vn/release.py:28-53` и `:312-321`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md` §3.5–§4, `../conventions/naming.md` |
 | **Не трогать** | `game/assets/mov/**` (генерат, не в git — перезапишет `vn assets build`), `game/generated/registry/images.gen.rpy` (эмитит компилятор), `.vncache/assets-manifest.json` и `.vncache/video-tmp/**` (кэш и tmp; ручная правка манифеста ломает удаление осиротевших) |
-| **Зависимости (что ломается ниже по течению)** | `tools/vn/src/vn/content/images.py:89-99` строит `image mov …` **по факту собранных файлов** и читает `meta.loop`; `tools/vn/src/vn/content/compile.py:142-145, 200-203` резолвит галерейные `mov/`-ссылки; `release.py:28-53` считает `video_total_mb`/`video_file_mb`; `release.py:312-321` гоняет `validate_all`; `release.py:191-202` строит NSFW-глобы из существующих каталогов `mov/nsfw/**` |
+| **Зависимости (что ломается ниже по течению)** | `tools/vn/src/vn/content/images.py:89-99` строит `image mov …` **по факту собранных файлов** и читает `meta.loop`; `tools/vn/src/vn/content/compile.py:142-145, 200-203` резолвит галерейные `mov/`-ссылки; `release.py:28-53` считает `video_total_mb`/`video_file_mb`; `release.py:349-358` гоняет `validate_all`; `release.py:441-452` строит NSFW-глобы из существующих каталогов `mov/nsfw/**` |
 | **Валидация** | `vn pipeline doctor` → `vn assets video build` → `vn assets video validate` → `vn build` → `python -m pytest tools/vn/tests/test_video.py -q` → `vn release validate --flavor public` |
 | **Частые ошибки** | 1) Считать, что sidecar валидируется при `vn assets video build` — **нет**, `load_opts(sidecar)` вызывается без реестра (`pipeline.py:195`); валидирует только линт. 2) Менять `encode_args`, не бампнув `video2webm` в `TRANSFORMS` — кэш вернёт старые байты. 3) Опираться на `docs/ARCHITECTURE.md` (:345, :858, :963, :1074, :1143, :1179) — там **непостроенный** дизайн видео (2-pass, `hd`/`mobile`, loudnorm, side-mask, `vfx@1`, зона `assets_src/video/`); канон — ADR-0006 и код. 4) Ожидать альфу: `yuva420p` даёт warning и играет непрозрачным. 5) Считать `vn assets video validate` проверкой суммарного бюджета — `video_total_mb` живёт только в `release.budget_failures()`. 6) Искать ComfyUI-воркфлоу или API-клиент в репозитории — их нет ни одного |

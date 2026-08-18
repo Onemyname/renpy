@@ -1582,9 +1582,11 @@ def test_smoke(picks: str, lang: str, timeout_s: int):
             src_code = source_language(root).code
         except LocError:
             src_code = None
-        if lang == src_code:
+        if lang in (src_code, "@source"):
             # Исходный язык: tl/<code>/ не существует по определению — прогон
-            # с явным сбросом на language=None (маркер @source в автопилоте)
+            # с явным сбросом на language=None (маркер @source в автопилоте).
+            # Сам маркер тоже принимаем: он документирован в рантайме
+            # (030_flow.rpy: autopilot_boot), и отвергать его — ловушка.
             lang = "@source"
         elif not (root / "game" / "tl" / lang).is_dir():
             _fail(f"языка {lang!r} нет в game/tl/ — выполните vn loc import "

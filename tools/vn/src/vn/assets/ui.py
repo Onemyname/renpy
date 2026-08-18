@@ -10,16 +10,29 @@ git и перерисовывать на каждую правку палитр�
 центральная полоска шириной STRETCH тянется движком. Borders для Frame
 эмитятся вместе с образом (registry/ui_frames.gen.rpy), поэтому вёрстка не
 знает про пиксели — только про имя панели.
+
+Оверсэмпл-варианты (ADR-0012). Декларация задана в ВИРТУАЛЬНЫХ пикселях
+(render.screen), а физический экран может быть крупнее — на 4K одна и та же
+картинка растягивалась бы, размывая углы и 1px-обводку. Поэтому панель
+РИСУЕТСЯ заново в каждом отгружаемом масштабе: `_scaled_spec` умножает все
+пиксельные поля декларации на N, выход ложится рядом как `<id>@N.webp`.
+Источник векторный, поэтому апскейла (и пропуска варианта, как у растровых
+мастеров) здесь не бывает.
+
+Borders при этом остаются ВИРТУАЛЬНЫМИ, и образ ссылается на безсуффиксное имя:
+оверсэмпленную картинку движок «считает меньше в N раз для целей вёрстки»
+(doc/changelog.html, 8.2: «treated as if it was smaller by the oversampling
+factor ... for the purpose of layout»; renpy/display/im.py: Cache._make_render
+делит размер Render на oversample). Так что масштабировать Borders нельзя —
+это удвоило бы поля вёрстки на 4K.
 """
 
 from __future__ import annotations
 
 import io
 import json
-import math
 
 STRETCH = 4          # ширина тянущейся центральной полосы (чётная — без дрожания)
-SHADOW_STEPS = 14    # число слоёв аппроксимации мягкой тени
 
 
 def _hex_rgba(value: str) -> tuple[int, int, int, int]:
@@ -34,14 +47,37 @@ def _hex_rgba(value: str) -> tuple[int, int, int, int]:
     return tuple(int(s[i:i + 2], 16) for i in (0, 2, 4, 6))  # type: ignore[return-value]
 
 
-def panel_hash_source(spec: dict) -> bytes:
-    """Каноническое представление параметров — ключ кэша трансформации.
-    Правка радиуса/цвета инвалидирует ровно эту панель, а не всю ветку."""
-    return json.dumps(spec, sort_keys=True, ensure_ascii=False).encode("utf-8")
+def panel_hash_source(spec: dict, scale: int) -> bytes:
+    """Каноническое представление параметров ВАРИАНТА — ключ кэша трансформации.
+    Правка радиуса/цвета инвалидирует ровно эту панель, а не всю ветку; масштаб
+    входит в ключ, иначе @2 достался бы из кэша 1x (G13)."""
+    return json.dumps({"spec": spec, "scale": scale},
+                      sort_keys=True, ensure_ascii=False).encode("utf-8")
 
 
-def borders_of(spec: dict) -> tuple[int, int, int, int]:
-    """Borders для Frame: радиус + запас на тень/обводку со всех сторон."""
+def _scaled_spec(spec: dict, scale: int) -> dict:
+    """Декларация в масштабе варианта: пиксельные поля умножаются, цвета — нет.
+
+    Единственное место, которое знает, какая часть декларации геометрическая:
+    иначе новый параметр (ещё один отступ, вторая обводка) забыли бы умножить
+    в одном из мест, и @2 разошёлся бы с 1x не только резкостью."""
+    if scale == 1:
+        return spec
+    out = dict(spec)
+    out["radius"] = int(spec.get("radius", 0)) * scale
+    for key, fields in (("shadow", ("blur", "dy")), ("border", ("width",))):
+        block = spec.get(key)
+        if isinstance(block, dict):
+            out[key] = dict(block, **{f: int(block.get(f, 0)) * scale for f in fields})
+    return out
+
+
+def borders_of(spec: dict, scale: int = 1) -> tuple[int, int, int, int]:
+    """Borders для Frame: радиус + запас на тень/обводку со всех сторон.
+
+    По умолчанию — в виртуальных пикселях (их и эмитит Frame-образ). scale
+    нужен проверкам самой картинки: у варианта @N поля тоже в N раз шире."""
+    spec = _scaled_spec(spec, scale)
     inset = _inset(spec)
     r = int(spec.get("radius", 0)) + inset
     return (r, r, r, r)
@@ -56,13 +92,18 @@ def _inset(spec: dict) -> int:
     return max(blur + offset, border, 0)
 
 
-def render_panel(spec: dict) -> bytes:
-    """PNG-байты 9-patch панели по декларации (ui_panels@1)."""
+def render_panel(spec: dict, scale: int = 1) -> bytes:
+    """PNG-байты 9-patch панели по декларации (ui_panels@1) в масштабе варианта.
+
+    scale — множитель варианта @N: панель рисуется КРУПНЕЕ, а не растягивается,
+    поэтому на 4K скругление и обводка остаются острыми. Тянущаяся полоса
+    масштабируется вместе с полями, так что сторона @N ровно в N раз больше 1x."""
     from PIL import Image, ImageDraw, ImageFilter
 
+    spec = _scaled_spec(spec, scale)
     radius = int(spec.get("radius", 0))
     inset = _inset(spec)
-    side = 2 * (radius + inset) + STRETCH
+    side = 2 * (radius + inset) + STRETCH * scale
     box = (inset, inset, side - inset - 1, side - inset - 1)
 
     img = Image.new("RGBA", (side, side), (0, 0, 0, 0))
@@ -118,7 +159,11 @@ def render_panel(spec: dict) -> bytes:
 
 def emit_frames(panels: dict, header: str) -> str:
     """registry/ui_frames.gen.rpy: Frame-образы по именам панелей.
-    Вёрстка ссылается на vn_frame_<id>, не зная ни путей, ни пикселей."""
+
+    Вёрстка ссылается на vn_frame_<id>, не зная ни путей, ни пикселей. Путь —
+    безсуффиксный (референсный) вариант, Borders — виртуальные пиксели: крупный
+    вариант @N движок подставляет сам и сам считает его «меньше в N раз» для
+    вёрстки (ADR-0012), поэтому ни имя, ни Borders от масштаба не зависят."""
     out = [header, "init offset = 0\n"]
     if not panels:
         out.append("# UI-панели не объявлены (content/ui/panels.yaml).")
@@ -126,6 +171,8 @@ def emit_frames(panels: dict, header: str) -> str:
     out.append("# Скруглённые фоны/тени: Ren'Py не рисует их без картинки,")
     out.append("# поэтому панели генерируются конвейером из деклараций (ADR-0009).")
     out.append("# Минимальный размер = 2*Borders: элемент меньше — движок сожмёт фон.")
+    out.append("# Borders — в виртуальных пикселях: вариант <id>@N движок подберёт")
+    out.append("# сам под физический экран и учтёт оверсэмпл за нас (ADR-0012).")
     for pid, spec in sorted(panels.items()):
         l, t, r, b = borders_of(spec)
         tile = "True" if spec.get("tile") else "False"

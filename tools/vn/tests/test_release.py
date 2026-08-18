@@ -2,13 +2,18 @@
 бюджеты видео. Полный validate_release гоняется в CI/вручную (нужен SDK) —
 здесь юнит-уровень."""
 
+import io
 import json
 import shutil
+import sys
+import textwrap
+import types
 
 import pytest
 
 from vn.release import (BUILD_INFO_REL, ReleaseError, budget_failures,
-                        clear_build_info, compute_build_info, flavor_config,
+                        clear_build_info, compute_build_info,
+                        early_content_checks, flavor_config,
                         nsfw_exclude_globs, patron_tag, write_build_info)
 
 from conftest import REPO_ROOT
@@ -265,3 +270,179 @@ def test_options_rpy_ships_assets_loose_without_rpa(repo_root):
             assert target.strip() == "None", (
                 f"game/assets классифицирован в {target.strip()!r} — это упаковка "
                 "в архив, см. докстринг теста")
+
+
+CHAPTER_YAML = """\
+schema: chapter@1
+id: {cid}
+title_key: ui.ch.{cid}
+status: {status}
+entry_scene: s010
+scene_order: [s010]
+"""
+
+
+def _mk_chapter(root, cid, status, name="demo"):
+    ch = root / "content" / "chapters" / f"{cid}_{name}"
+    (ch / "scenes").mkdir(parents=True)
+    (ch / "chapter.yaml").write_text(CHAPTER_YAML.format(cid=cid, status=status),
+                                     encoding="utf-8")
+    (ch / "scenes" / "s010_intro.scene.yaml").write_text("schema: scene@1\n",
+                                                         encoding="utf-8")
+    return ch
+
+
+def test_early_content_gate_blocks_draft_chapters_in_public_build(tmp_path):
+    """early_content писался в build_info и никем не читался. Смысл ему даёт гейт:
+    незрелая глава всё равно уезжает в дистрибутив (скрипты грузятся всегда, G9),
+    и решение «публиковать ли её» обязано приниматься ДО сборки."""
+    import yaml
+
+    root = _mk_root(tmp_path)
+    project = yaml.safe_load(PROJECT)
+    _mk_chapter(root, "ch01", "release")
+    _mk_chapter(root, "ch02", "playtest")
+
+    # playtest проходит те же строгие проверки, что release: не блокер, но и молчать
+    # о неподписанном контенте гейт не должен.
+    checks = early_content_checks(root, flavor_config(project, "public"))
+    assert [state for state, _ in checks] == ["WARN"]
+    assert "ch02" in checks[0][1] and "ch01" not in checks[0][1]
+
+    # draft ослабляет граф-проверки конвейера до warnings — у игрока это «сцена
+    # недоступна» посреди публичной сборки, поэтому FAIL.
+    _mk_chapter(root, "ch03", "draft")
+    states = {state for state, _ in early_content_checks(root, flavor_config(project, "public"))}
+    assert states == {"FAIL", "WARN"}
+
+    # Ранний доступ объявлен — незрелые главы для флейвора штатны.
+    assert early_content_checks(root, flavor_config(project, "patron")) == [
+        ("PASS", "early_content=true: незрелые главы для этого флейвора штатны")]
+
+
+def test_early_content_gate_passes_on_fully_released_content(tmp_path):
+    import yaml
+
+    root = _mk_root(tmp_path)
+    cfg = flavor_config(yaml.safe_load(PROJECT), "public")
+    assert early_content_checks(root, cfg) == [
+        ("PASS", "зрелость контента: все главы сборки status=release")]   # глав нет вовсе
+    _mk_chapter(root, "ch01", "release")
+    assert [state for state, _ in early_content_checks(root, cfg)] == ["PASS"]
+
+
+def test_early_content_gate_is_warning_until_first_release_chapter(tmp_path):
+    """Пока ни одна глава не доведена до release, требование «в публичном флейворе
+    только зрелые главы» невыполнимо — гейт запретил бы собрать даже демо. Такой
+    гейт учит игнорировать гейты, поэтому до первой зрелой главы это WARN; норма
+    включается сама, без флага, как только release-глава появляется."""
+    import yaml
+
+    root = _mk_root(tmp_path)
+    cfg = flavor_config(yaml.safe_load(PROJECT), "public")
+    _mk_chapter(root, "ch01", "draft")
+
+    checks = early_content_checks(root, cfg)
+    assert [state for state, _ in checks] == ["WARN"]
+    assert "ch01" in checks[0][1] and "станет строгим" in checks[0][1]
+
+    # Появилась зрелая глава -> та же draft-глава становится блокером публикации.
+    _mk_chapter(root, "ch02", "release")
+    assert ("FAIL", ) == tuple(state for state, _ in early_content_checks(root, cfg))
+
+
+def test_gate_reads_early_content_declaration(repo_root):
+    """Регрессия на мёртвую декларацию: поле обязано читаться гейтом, а не только
+    писаться в build_info."""
+    import inspect
+
+    import vn.release as rel
+
+    assert "early_content_checks" in inspect.getsource(rel.validate_release)
+
+
+# ── Рантайм-гейт паков (G9): исполняем блоки init python из framework ─────────
+# Ren'Py в pytest недоступен, а гейт — рантайм-логика: грепом по исходнику его не
+# проверить. Блок исполняется как есть на заглушке store, поэтому тест ловит
+# фактическое поведение installed()/owned(), а не пересказ.
+
+FLOW_RPY_REL = "game/framework/00_core/030_flow.rpy"
+BUILD_INFO_RPY_REL = "game/framework/00_core/060_build_info.rpy"
+VN_PACKS = {"ep_beach": {"kind": "dlc"}, "nsfw": {"kind": "dlc"}}
+
+
+def _exec_init_block(monkeypatch, path, store_name, **store_attrs):
+    """Тело блока `init … python in <store_name>` из .rpy-файла на заглушке store."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = next(i for i, ln in enumerate(lines)
+                 if ln.startswith("init") and ln.rstrip().endswith(f"python in {store_name}:"))
+    body = []
+    for ln in lines[start + 1:]:
+        if ln.strip() and not ln.startswith("    "):
+            break                                  # блок кончился (dedent до нуля)
+        body.append(ln)
+    store = types.ModuleType("store")
+    for name, value in store_attrs.items():
+        setattr(store, name, value)
+    monkeypatch.setitem(sys.modules, "store", store)
+    ns: dict = {}
+    exec(compile(textwrap.dedent("\n".join(body)), str(path), "exec"), ns)
+    module = types.ModuleType(store_name)
+    for name, value in ns.items():
+        if not name.startswith("__"):
+            setattr(module, name, value)
+    return module
+
+
+def _vn_build_store(monkeypatch, info):
+    """Стор vn_build: info=None — dev-чекаут (build_id.json нет), dict — релиз."""
+    def open_file(name, encoding=None):
+        if info is None:
+            raise IOError(f"нет {name}")
+        return io.StringIO(json.dumps(info))
+
+    return _exec_init_block(monkeypatch, REPO_ROOT / BUILD_INFO_RPY_REL, "vn_build",
+                            renpy=types.SimpleNamespace(open_file=open_file))
+
+
+def _pack_registry(monkeypatch, vn_build):
+    store_ns = types.SimpleNamespace(VN_PACKS=VN_PACKS)
+    if vn_build is not None:
+        store_ns.vn_build = vn_build
+    return _exec_init_block(
+        monkeypatch, REPO_ROOT / FLOW_RPY_REL, "vn",
+        renpy=types.SimpleNamespace(store=store_ns),
+        vn_log=lambda msg: None, vn_registry=types.SimpleNamespace()).pack_registry
+
+
+def test_pack_gate_honours_flavor_pack_list(tmp_path, monkeypatch):
+    """Пак вне флейвора не установлен. VN_PACKS перечисляет ВСЕ паки дерева, и без
+    сверки со списком сборки public-билд считал бы nsfw-пак установленным — а без
+    Steam-провайдера (DRM-free: владение = установленность) ещё и купленным."""
+    info = compute_build_info(_mk_root(tmp_path), "public")
+    build = _vn_build_store(monkeypatch, info)
+    assert build.is_release is True and build.packs == ["ep_beach"]
+
+    reg = _pack_registry(monkeypatch, build)
+    assert reg.installed("ep_beach") and reg.owned("ep_beach")
+    assert not reg.installed("nsfw") and not reg.owned("nsfw")   # пак patron-флейвора
+    assert reg.installed("core") and reg.owned("core")           # ядро вне гейта
+    assert not reg.installed("ep_winter")                        # нет и в генерате
+
+
+def test_pack_gate_open_in_dev_checkout(tmp_path, monkeypatch):
+    """В dev-чекауте build_id.json нет: разработчику доступно всё установленное,
+    иначе dev-прогон и smoke гейтились бы вслепую."""
+    dev = _vn_build_store(monkeypatch, None)
+    assert dev.is_release is False and dev.flavor == "dev"
+    reg = _pack_registry(monkeypatch, dev)
+    assert all(reg.installed(pid) and reg.owned(pid) for pid in VN_PACKS)
+
+    # Стор vn_build создаётся позже стора vn (init -985 против -999): гейт,
+    # спрошенный до него, тоже не должен отбирать контент.
+    assert _pack_registry(monkeypatch, None).installed("nsfw")
+
+    # А вот пустой список паков — легитимный релизный флейвор, а не dev: признак
+    # dev это отсутствие build_id.json (is_release), а не пустота packs.
+    info = dict(compute_build_info(_mk_root(tmp_path), "public"), packs=[])
+    assert not _pack_registry(monkeypatch, _vn_build_store(monkeypatch, info)).installed("nsfw")

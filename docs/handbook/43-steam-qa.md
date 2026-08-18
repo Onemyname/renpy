@@ -1,6 +1,6 @@
 # 43. Предрелизная приёмка: Steam и Steam Deck
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — автоматизирован «холодный» слой (254 pytest-теста, движковый lint, smoke-автопилот в реальном движке, сейв-корпус с реальными миграциями, `vn test oversample`, релизный гейт из 20 проверок), но **всё Steam-специфичное проверяется только руками и только на живой машине**: ни `vn test smoke`, ни pytest не видят Steam-инициализации, оверлея, `dlc_installed` и событий геймпада. Сегодня недоступны две большие части чек-листа: **нет App ID** (`../../project.yaml:15` — `appid: null`) и **нет физического Steam Deck**.
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED — автоматизирован «холодный» слой (278 pytest-тестов, движковый lint, smoke-автопилот в реальном движке, сейв-корпус с реальными миграциями, `vn test oversample`, релизный гейт из 21 проверки) плюс ночная съёмка вёрстки в двух геймпадных профилях (`nightly.yml`, джоба `controller-first`), но **всё Steam-специфичное по-прежнему проверяется только руками и только на живой машине**: ни `vn test smoke`, ни pytest не видят Steam-инициализации, оверлея, `dlc_installed` и событий геймпада. Сегодня недоступны две большие части чек-листа: **нет App ID** (`../../project.yaml:15` — `appid: null`) и **нет физического Steam Deck**.
 > **Отвечает на вопрос:** «Что именно я обязан проверить перед тем, как переключить Steam-ветку в `default` — какой командой, что смотреть глазами и что считать провалом».
 
 Этот файл — рабочий чек-лист, а не теория. Как включается Steam и что откуда берётся — [40-steamworks.md](40-steamworks.md); архитектура платформенного слоя и controller-first приёмы — [39-platforms.md](39-platforms.md); уровни тестов вообще — [27-testing.md](27-testing.md).
@@ -13,7 +13,7 @@
 # ── Автоматизированный минимум (без Steam, ~2-4 минуты) ────────────────────
 vn doctor                                      # окружение, SDK-пин, шрифты из LFS
 vn content lint                                # схемы, граф, достижимость
-python -m pytest tools/vn/tests -q             # 254 теста тулинга
+python -m pytest tools/vn/tests -q             # 278 тестов тулинга
 vn build                                       # ассеты + генерат + бюджеты (в т.ч. памяти)
 bash "$RENPY_SDK/renpy.sh" . lint              # движковый lint
 vn test oversample --scale 2                   # 4K-варианты реально подхватываются
@@ -21,10 +21,16 @@ vn test smoke --picks 0,0                      # прогон игры авто�
 vn test smoke --picks 0,1 --lang en            # другая ветка, другой язык
 vn test smoke --picks 0,0 --lang pseudo        # псевдолокаль: обрезка текста
 vn save check && vn save corpus                # фикстуры сейвов + миграции
-vn release validate --flavor public            # релизный гейт (20 проверок)
+vn release validate --flavor public            # релизный гейт (21 проверка). Сейчас exit 0: гейт зрелости
+                                               # даёт WARN, пока ни одна глава не доведена до
+                                               # status=release; с первой release-главой станет строгим
 
 # ── Вёрстка controller-first без Deck (скриншоты смотреть ГЛАЗАМИ) ─────────
-RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0
+#     то же гоняет ночью джоба controller-first (nightly.yml) — можно взять её
+#     артефакт controller-shots-<profile>-<run_id> вместо локального прогона
+RENPY_VARIANT="steam_deck medium touch" \
+VN_AUTOPILOT_SCREENS=main_menu,preferences,gallery,achievements,chapter_select \
+    vn test smoke --picks 0,0
 RENPY_VARIANT="steam_big_picture" vn test smoke --picks 0,0
 ls .vncache/smoke/
 
@@ -136,7 +142,7 @@ vn save corpus --add pre_release_check   # прогон + сейв на тике
 vn save check                            # оффлайн: структура zip, json-заголовок, vn_save_schema
 ```
 
-Плюс руками: ручной слот, автосейв (`config.has_autosave = True`, `config.autosave_slots = 10`, `../../game/options.rpy:8-9`), quicksave из quick menu (`QuickSave()`, `../../game/framework/20_ui/screens/quick_menu.rpy:36`) и **страница quick в пейджере** (`FilePage("quick")`, `core_screens.rpy:245` — без неё квиксейв нельзя было загрузить вовсе).
+Плюс руками: ручной слот, автосейв (`config.has_autosave = True`, `config.autosave_slots = 10`, `../../game/options.rpy:8-9`), quicksave из quick menu (`QuickSave()`, `../../game/framework/20_ui/screens/quick_menu.rpy:36`) и **страница quick в пейджере** (`FilePage("quick")`, `core_screens.rpy:251` — без неё квиксейв нельзя было загрузить вовсе).
 
 **Провал:** слот не появляется в списке; `vn save check` не находит `vn_save_schema` в JSON-заголовке (его пишет `config.save_json_callbacks`, `../../game/framework/00_core/001_boot.rpy:31-36`); исключение при записи. Обратите внимание: движок **не глотает** ошибки записи — `MultiLocation.save` бросает исключение (`$RENPY_SDK/renpy/savelocation.py:508-520`), то есть игрок увидит наш экран краха, а не тихую потерю прогресса.
 
@@ -187,7 +193,7 @@ vn save corpus     # каждая фикстура ЗАГРУЖАЕТСЯ в р�
 
 ### 1.9 Фуллскрин и разрешение
 
-Важно понимать, чего в игре **нет**: списка разрешений. Виртуальная сетка фиксирована — `gui.init(1920, 1080)` (`../../game/gui.rpy:9`), движок растягивает её на любой монитор, а качество текстур выбирается автоподбором оверсэмпла по **физическому** экрану (ADR-0012). В настройках есть только сегмент «Оконный / Полный экран» (`core_screens.rpy:282-283`) и потолок качества «авто / экономно» (`:310-325`).
+Важно понимать, чего в игре **нет**: списка разрешений. Виртуальная сетка фиксирована — `gui.init(1920, 1080)` (`../../game/gui.rpy:9`), движок растягивает её на любой монитор, а качество текстур выбирается автоподбором оверсэмпла по **физическому** экрану (ADR-0012). В настройках есть только сегмент «Оконный / Полный экран» (`core_screens.rpy:288-289`) и потолок качества «авто / экономно» (`:310-325`).
 
 **Как проверять.**
 
@@ -210,7 +216,7 @@ vn release validate --flavor public   # строка «шрифты UI: 3/3 ма
 vn test smoke --picks 0,0 --lang pseudo
 ```
 
-Гейт шрифтов (`../../tools/vn/src/vn/release.py:452-461`) ловит самый дорогой класс аварии: чекаут без `git lfs` кладёт вместо `.ttf` текстовые указатели, и сборка падает `FreetypeError` на первом экране. Псевдолокаль удлиняет строки — на скриншотах видно, где текст вылезет за панель при переводе.
+Гейт шрифтов (`../../tools/vn/src/vn/release.py:519-528`) ловит самый дорогой класс аварии: чекаут без `git lfs` кладёт вместо `.ttf` текстовые указатели, и сборка падает `FreetypeError` на первом экране. Псевдолокаль удлиняет строки — на скриншотах видно, где текст вылезет за панель при переводе.
 
 **Провал:** в гейте `УКАЗАТЕЛИ LFS: …`; на pseudo-скриншотах обрезанные кнопки/заголовки; текст в say-окне не помещается; при крупном масштабе интерфейса (§2.2) кегли ломают 9-patch панели.
 
@@ -231,9 +237,9 @@ RENPY_VARIANT="steam_big_picture" vn test smoke --picks 0,0
 
 | Что | Ожидание | Где задано |
 |---|---|---|
-| dpad-навигация по меню | фокус перемещается, ряд докручивается вместе с «подглядыванием» соседа | `vn_ui.reveal`, `../../game/framework/20_ui/components.rpy:103-125` |
-| Первое нажатие A | попадает в **безопасную** кнопку, а не «в пустоту» | `focus_default` (`components.rpy:158-169`), потребители: `core_screens.rpy:454`, `unavailable.rpy:31`, `gallery.rpy:150` |
-| B / Esc в модалке | закрывает диалог | `vn_modal_dialog` со своим `key "game_menu"` (`components.rpy:134-139`) |
+| dpad-навигация по меню | фокус перемещается, ряд докручивается вместе с «подглядыванием» соседа | `vn_ui.reveal`, `../../game/framework/20_ui/components.rpy:118-140` |
+| Первое нажатие A | попадает в **безопасную** кнопку, а не «в пустоту» | `focus_default` (`components.rpy:186-197`), потребители: `core_screens.rpy:460`, `unavailable.rpy:31`, `gallery.rpy:150` |
+| B / Esc в модалке | закрывает диалог | `vn_modal_dialog` со своим `key "game_menu"` (`components.rpy:162-167`) |
 | Продвижение диалога | первый dpad **не залипает** на quick menu | `keyboard_focus False` (`quick_menu.rpy:43-48`) |
 | L3 / R3 | skip / auto | `../../game/framework/20_ui/input.rpy:19-20` |
 | LB / RB | листание длинных списков (история, галерея, языки) | `input.rpy:22-29` |
@@ -262,7 +268,7 @@ RENPY_VARIANT="steam_big_picture" vn test smoke --picks 0,0
 | Ассет-конвейер | несвежие и «сиротские» выходы, мастера в неизвестной зоне | `vn build`, `vn release validate` (строка «ассеты: свежи») |
 | Движок | реально загружаемые файлы: `vn test oversample` обходит **всё** `game/assets` через `renpy.loader.loadable` | `vn test oversample --scale 2` |
 
-Отдельный случай — **озвучка**: `vn.voice_path()` возвращает `""` для отсутствующего файла, а `voice`-оператор движка с falsy-именем — no-op (`../../game/framework/00_core/045_audio.rpy:26-45`). То есть недостающий дубль даёт **тишину, а не краш** — и это специально. Дыры в уже озвученной главе ловит релизный гейт: `holes → FAIL` (`release.py:567-582`).
+Отдельный случай — **озвучка**: `vn.voice_path()` возвращает `""` для отсутствующего файла, а `voice`-оператор движка с falsy-именем — no-op (`../../game/framework/00_core/045_audio.rpy:26-45`). То есть недостающий дубль даёт **тишину, а не краш** — и это специально. Дыры в уже озвученной главе ловит релизный гейт: `holes → FAIL` (`release.py:637-652`).
 
 **Провал:** `vn build` зелёный, а в прогоне `traceback.txt` с «Couldn't find file»; в галерее пустая ячейка вместо превью; видео без постер-кадра.
 
@@ -279,7 +285,7 @@ RENPY_VARIANT="steam_big_picture" vn test smoke --picks 0,0
 
 **Провал:** ачивка выдана локально, но не появилась в Steam (обычно — расхождение API Name или ачивка не опубликована в Steamworks); ачивка выдана дважды; NSFW-ачивка выдана в public-сборке (это провал `visible()`, `../../game/framework/00_core/080_achievements.rpy:31-41`).
 
-**Известный пробел, не провал:** UI достижений в игре отсутствует — в standalone игрок их не видит нигде.
+**Экран достижений в игре есть** (`20_ui/screens/achievements.rpy`, пункт рельсы рядом с «Галереей»), поэтому в standalone игрок видит прогресс. Что проверять на нём отдельно: счётчик «Получено N из M» считает только **видимые** ачивки (NSFW-ачивка в public-сборке не должна попасть ни в числитель, ни в знаменатель), а **скрытая неполученная** обязана рисоваться как «???» без описания. Второе в боевых декларациях не воспроизводится — обе объявленные ачивки видимы и к концу прогона получены; сегодня это снимается только временным пробником ([15-gallery.md](15-gallery.md) «Проверка»).
 
 ### 1.15 Производительность и cold start
 
@@ -308,7 +314,7 @@ vn test smoke --picks 0,0 --lang pseudo      # QA-локаль: длинные �
 vn release validate --flavor public          # строка «покрытие переводов: все языки ≥ 98%»
 ```
 
-Порог `release_coverage_min: 0.98` живёт в `../../loc/loc.yaml` и форсируется **только** релизным гейтом (`release.py:539-565`); `vn loc report` всегда `exit 0`. Synthetic-языки (pseudo) из дистрибутива исключаются по манифесту (`../../game/options.rpy:36-47`) и в пороге не участвуют — но **только если перед гейтом прогнали `vn build`**, иначе pseudo оценивается как боевой язык.
+Порог `release_coverage_min: 0.98` живёт в `../../loc/loc.yaml` и форсируется **только** релизным гейтом (`release.py:609-635`); `vn loc report` всегда `exit 0`. Synthetic-языки (pseudo) из дистрибутива исключаются по манифесту (`../../game/options.rpy:36-47`) и в пороге не участвуют — но **только если перед гейтом прогнали `vn build`**, иначе pseudo оценивается как боевой язык.
 
 **Провал:** гейт `покрытие переводов: ниже порога 98% — …`; смена языка не меняет текст (`vn test smoke --lang` специально падает, если каталога `game/tl/<lang>/` нет — `cli.py:1586-1591`); pseudo-локаль попала в дистрибутив (проверяется поиском `game/tl/pseudo` внутри архива).
 
@@ -328,7 +334,7 @@ vn release validate --flavor public          # строка «покрытие �
 
 ### 2.2 Масштаб интерфейса
 
-**Как проверять.** В настройках переключить «авто / крупный / обычный» (`core_screens.rpy:327-343`). Масштаб применяется **на лету**: `vn.set_ui_scale` пишет `persistent` и зовёт `gui.rebuild()` (`scale.rpy:52-57`).
+**Как проверять.** В настройках переключить «авто / крупный / обычный» (`core_screens.rpy:333-349`). Масштаб применяется **на лету**: `vn.set_ui_scale` пишет `persistent` и зовёт `gui.rebuild()` (`scale.rpy:52-57`).
 
 Ожидание: перезапуск не нужен; на Deck/Big Picture «авто» = крупный (1.4); панели `choice`/`chip` не сплющены.
 
@@ -338,13 +344,13 @@ vn release validate --flavor public          # строка «покрытие �
 
 **Как проверять** (частично): `RENPY_VARIANT="steam_deck medium touch"` даёт вариант `touch` — на скриншотах видно тач-профиль. Реальные касания — только на Deck или другом тач-устройстве.
 
-Ожидание: кликабельные зоны ≥ 48 px (соблюдается у quick menu за счёт `padding (13, 17)`, `quick_menu.rpy:4`, `:49`); тап продвигает диалог; свайп по длинным спискам работает штатным драгом viewport (`vn_scroll_props`, `components.rpy:89-98`).
+Ожидание: кликабельные зоны ≥ 48 px (соблюдается у quick menu за счёт `padding (13, 17)`, `quick_menu.rpy:4`, `:49`); тап продвигает диалог; свайп по длинным спискам работает штатным драгом viewport (`vn_scroll_props`, `components.rpy:104-113`).
 
 **Провал:** мелкие кнопки, в которые нельзя попасть пальцем; список не скроллится драгом. **Честная оговорка:** сплошного аудита hit-area не было — только quick menu.
 
 ### 2.4 Аудио
 
-**Как проверять.** Слайдеры «Музыка / Звук / Голос» в настройках (`core_screens.rpy:294-296`), прогон с озвучкой.
+**Как проверять.** Слайдеры «Музыка / Звук / Голос» в настройках (`core_screens.rpy:300-302`), прогон с озвучкой.
 
 Что важно знать про текущее состояние: **музыки и эмбиенса в игре сейчас нет вообще** — `../../content/audio/{bgm,amb,sfx}.yaml` содержат `tracks: {}`. Есть 14 opus-дублей озвучки (`game/assets/voice/ru/ch01/`), все со статусом `draft`. Каналы: `music` (штатный), `ambient` (наш, зациклённый, микшер `music`), `sound`, `voice`; дакинг под голос — штатный движковый (`config.emphasize_audio_*` = 0.6 / 0.5 c, `../../game/framework/00_core/045_audio.rpy:8-22`).
 
@@ -413,7 +419,8 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True, i
 | Пункт | Как проверить | Статус у нас |
 |---|---|---|
 | **Steam Timeline** показывает осмысленные фазы | пройти главу под Steam, посмотреть таймлайн записи | движок включён по умолчанию, но `save_name` не присваивается → фаз нет ([40-steamworks.md](40-steamworks.md) §5.6) |
-| **UI достижений** в игре | открыть экран достижений | **отсутствует** |
+| Прогресс отдельной ачивки на экране достижений | карточка показывает «10 из 30» | нет: поля `progress` нет ни в схеме, ни в эмиттере, ни в сторе ([15-gallery.md](15-gallery.md)) |
+| Уведомление о выданной ачивке в игре | `renpy.notify` при `grant` | нет: у галереи есть, у ачивок — нет |
 | Предложение купить DLC при `owned() == False` | зайти на закрытую главу | нет: карточка просто исчезает, `activate_overlay_to_store` не используется |
 | Прогресс-ачивки («10 из 30 CG») | ачивка показывает прогресс в оверлее | нет: регистрируем без `stat_max` |
 | Кнопка «синхронизировать достижения» | `achievement.Sync()` как action | нет |
@@ -430,16 +437,17 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True, i
 |---|---|---|
 | `vn doctor` | окружение, пин SDK (8.5.3), шрифты-указатели LFS, реестр схем | ничего про Steam и рантайм |
 | `vn content lint` | схемы, именование, граф сцен, достижимость, бинари мимо LFS | визуальные поломки, рантайм |
-| `python -m pytest tools/vn/tests -q` (254) | тулинг; `test_platform.py` (10) — эмиттер, VDF, раскладка депотов, гард-тест «Steam только в фасаде» | сам движок; `game/framework/**` питоном не тестируется |
+| `python -m pytest tools/vn/tests -q` (278) | тулинг; `test_platform.py` (13) — эмиттер, VDF, раскладка депотов + разворачивание каталога-обёртки, гард-тест «Steam только в фасаде»; `test_release.py` (18) — в т.ч. рантайм-гейт паков по флейвору и зрелость контента; `test_crash_handler.py` (6) — инварианты экрана краха; `test_achievements.py` (10) — экран достижений на уровне данных | сам движок; `game/framework/**` в рантайме питоном не исполняется |
 | `vn build` | ассеты, генерат, размерные бюджеты **и бюджет памяти сцены** (жёстко) | всё, что видно только глазами |
 | `renpy.sh . lint` | движковые проблемы скрипта и стилей | сплющенный 9-patch, обрезанный текст |
 | `vn test oversample --scale 2` | движок реально подставляет `@2`-варианты | что вариант выглядит хорошо |
 | `vn test smoke [--picks --lang]` | прогон в реальном движке, cold start, скриншоты, экраны меню | пад (`pad_*` не эмитируются), Steam, оверлей, `dlc_installed`, тач |
 | `vn save check` / `vn save corpus` | структуру слотов и **реальные миграции** в `after_load` | конфликты Cloud, перенос между ОС |
-| `vn release validate --flavor …` | 20 проверок: схема, флейвор, паки, lint, шрифты LFS, ассеты, видео, генерат, бюджеты, провенанс, DAZ/VaM/Sims4, переводы, озвучка, лицензии, хранилище, манифест, sha, сейв-корпус | **ни одной Steam-проверки** |
+| `vn release validate --flavor …` | 21 проверка: схема, флейвор, паки, **зрелость контента**, lint, шрифты LFS, ассеты, видео, генерат, бюджеты, провенанс, DAZ/VaM/Sims4, переводы, озвучка, лицензии, хранилище, манифест, sha, сейв-корпус | **ни одной Steam-проверки** |
 | `RENPY_VARIANT="steam_deck medium touch"` | вёрстку controller-first, масштаб, safe-area | ввод с пада, Steam API, тач-жесты |
 | CI: `ci.yml` (на каждый push) | lint → build → `loc keys --check` → движковый lint → `test oversample` → `compile --check` → pytest | Steam, Deck, ручные пункты |
-| CI: `nightly.yml` | smoke-матрица (4 прогона), `save check`, `save corpus`, релизная сборка обоих флейворов | то же |
+| CI: `nightly.yml` | джоба `smoke`: smoke-матрица (4 прогона), `save check`, `save corpus`, релизная сборка обоих флейворов. Джоба `controller-first`: прогон в двух геймпадных профилях (`steam_deck medium touch`, `steam_big_picture`) + шоты `main_menu,preferences,gallery,chapter_select` артефактом | Steam, Deck на железе, ручные пункты; пад-события не эмитируются и здесь. **Внимание:** релизная сборка обоих флейворов в этой джобе сейчас проходит: гейт зрелости контента даёт WARN, пока `release`-глав нет; покраснеет она с первой такой главой ([29 §5.1](29-build-and-release.md#maturity-gate-rule)) |
+| CI: `steam-upload.yml` (только ручной запуск) | что `release build` → `release steam` проходят целиком и VDF генерируется | сам аплоад: без секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` шаг — no-op, и при `appid: null` workflow падает раньше |
 
 Итог: **автоматика закрывает «игра собирается, запускается, проходится и грузит сейвы». Всё, что делает Steam-сборку Steam-сборкой, закрывается только руками.**
 
@@ -452,7 +460,7 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True, i
 | **Нет App ID** (`project.yaml:15` = `null`) | §1.1 запуск из клиента, §1.14 ачивки в Steam, §2.1 оверлей, DLC-владение, Timeline | приложение в Steamworks → `platform.steam.appid` → `vn build` |
 | **Нет `platform.steam.depots`** | всю выкладку: `vn release steam` падает вторым запуском (первый — на `appid`). Раскладка депотов при этом рабочая: форматы всех платформ, включая linux-`tar.bz2`, она понимает | номера депотов из Steamworks |
 | **Нет steam_api на build-машине** | любую Steam-сборку (получится standalone) | лаунчер SDK → Install Steam Support ([40-steamworks.md](40-steamworks.md) §5.2) |
-| **Каталог-обёртку депота никто не проверял на реальном SteamPipe** | правильный ли путь запуска увидит Steamworks: раскладка сохраняет `vn-<ver>-<пакет>/` внутри депота | первая реальная выкладка в бета-ветку + сверка пути запуска ([40-steamworks.md](40-steamworks.md) §4.3, [41-steam-deck.md](41-steam-deck.md) §2.3) |
+| **Раскладка депота не проходила через реальный SteamPipe** | что Steamworks увидит ровно ту структуру, на которую настроены Launch Options. Каталог-обёртку раскладка теперь **снимает** (`_flatten_wrapper_dir`), содержимое лежит в корне депота, Launch Options — `vn.exe`/`vn.sh` без версии; но проверено это тремя тестами на **синтетических** архивах, а не на артефакте живого `launcher distribute` | первая реальная выкладка в бета-ветку + сверка структуры депота и пути запуска ([40-steamworks.md](40-steamworks.md) §4.3.1, [41-steam-deck.md](41-steam-deck.md) §2.3) |
 | **Нет физического Steam Deck** | §1.11 живой пад и вёрстка на устройстве, §2.3 тач, §2.6 сон/пробуждение, реальный FPS | устройство или доброволец с Deck |
 | **Автопилот не эмитирует `pad_*`** | регрессии раскладки пада ловятся только руками | новый уровень `vn test` (в `cli.py` есть заглушки `replay/screens/paths`) |
 | **Нет прогона `owned() == False` в автоматике** | «карточка главы пропала у всех» — регрессия, невидимая для CI | ручной прогон в Steam с DLC и без |
@@ -488,8 +496,8 @@ vn release build --flavor patron --package win
 
 - **Не выкладывать в `default`-ветку, не прогнав на живом Steam Deck.** Это норма проекта (`../../ci/steam/README.md`), а не пожелание: smoke под `RENPY_VARIANT` проверяет вёрстку, но не пад, не оверлей и не Steam API.
 - **Не считать зелёный CI приёмкой.** CI не запускает Steam, не нажимает кнопки пада и не смотрит на скриншоты. Он гарантирует «собирается и проходится», не более.
-- **Не считать `vn release validate` Steam-проверкой** — в его 20 проверках нет ни одной строки про Steam.
-- **Не принимать «все PASS» за эталон гейта.** Сегодня штатный вывод для `public` — **19 строк, из них один WARN** (`озвучка: 14 черновых дублей (draft)`). `ok` становится `False` только на FAIL (`release.py:413-418`).
+- **Не считать `vn release validate` Steam-проверкой** — в его 21 проверке нет ни одной строки про Steam.
+- **Не принимать «все PASS» за эталон гейта.** Сегодня штатный вывод для `public` — **20 строк: 18 PASS и два WARN** (`озвучка: 14 черновых дублей (draft)` и `зрелость контента: ни одна глава ещё не доведена до status=release`), exit 0. `ok` становится `False` только на FAIL (`release.py:532-536`), поэтому WARN релиз не валит. `--flavor patron` — 21 строка, один WARN, тоже exit 0. Второй WARN — предупреждение на будущее: гейт зрелости самоактивирующийся и станет строгим с первой главой `status: release` ([29 §5.1](29-build-and-release.md#maturity-gate-rule)).
 - **Не проверять первый запуск на своём профиле** — `<savedir>` надо удалить целиком, иначе `persistent` от предыдущих прогонов маскирует ровно те баги, которые ищутся.
 - **Не гонять `vn test smoke` вместо ручного прохождения перед релизом.** Автопилот жмёт «дальше» каждые 0.6 с (`030_flow.rpy:_AUTOPILOT_RPY`, таймер в `cli.py:1505`) и не читает текст: опечатки, неверный порядок реплик и рассинхрон озвучки он не увидит.
 - **Не забывать `vn build` перед `vn release validate`** — без него pseudo-локаль оценивается как боевой язык и порог покрытия считается неверно.
@@ -534,7 +542,7 @@ steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 # 7. Руками: §1.1-1.2, §1.7-1.8, §1.11-1.12, §2.1-2.8 на живом Deck и на десктопе
 ```
 
-Эталон на 2026-08-18 (HEAD `db28ce6`): `pytest tools/vn/tests -q` → 254 passed; `test_platform.py` → 10 passed; `vn release validate --flavor public` → 19 строк, 18 PASS + 1 WARN (озвучка-драфты), `release validate: OK`; `vn assets memory` → `память: OK`, худшая сцена `ch01_s030` 28.5 из 89.5 Мпикс; `vn release steam --flavor public` → exit 1 (`appid` не задан) — ожидаемо.
+Эталон на 2026-08-18 (HEAD `e3c2842` + текущая итерация): `pytest tools/vn/tests -q` → 278 passed; `test_platform.py` → 13 passed; `vn release validate --flavor public` → 20 строк, 18 PASS + 2 WARN (озвучка-драфты и зрелость контента), 0 FAIL, exit 0; `vn release validate --flavor patron` → 21 строка, 20 PASS + 1 WARN, exit 0; `vn assets memory` → `память: OK`, худшая сцена `ch01_s030` 28.5 из 89.5 Мпикс; `vn release steam --flavor public` → exit 1 (`appid` не задан) — ожидаемо; `vn test oversample --scale 2` → проверено 22, поднято 21 (панели вошли в проверку).
 
 ---
 
@@ -542,7 +550,7 @@ steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 
 | | |
 |---|---|
-| **Читать перед изменением** | [40-steamworks.md](40-steamworks.md) (процесс Steam), [39-platforms.md](39-platforms.md) (фасад, controller-first), [27-testing.md](27-testing.md) (уровни тестов), `../../tools/vn/src/vn/cli.py:1487-1660` (автопилот, smoke, oversample), `../../tools/vn/src/vn/cli.py:1323-1480` (`save check`/`corpus`), `../../tools/vn/src/vn/release.py:407-629` (гейт), `../../game/framework/00_core/030_flow.rpy:91-211` (store `vn_qa`), `../../game/framework/00_core/020_state.rpy:83-107` (`after_load`), `../../ci/steam/README.md` |
+| **Читать перед изменением** | [40-steamworks.md](40-steamworks.md) (процесс Steam), [39-platforms.md](39-platforms.md) (фасад, controller-first), [27-testing.md](27-testing.md) (уровни тестов), `../../tools/vn/src/vn/cli.py:1487-1660` (автопилот, smoke, oversample), `../../tools/vn/src/vn/cli.py:1323-1480` (`save check`/`corpus`), `../../tools/vn/src/vn/release.py:474-699` (гейт), `../../game/framework/00_core/030_flow.rpy:91-211` (store `vn_qa`), `../../game/framework/00_core/020_state.rpy:83-107` (`after_load`), `../../ci/steam/README.md` |
 | **Не трогать** | `.vncache/**` — артефакты прогонов; `ci/fixtures/saves/**` и `ci/fixtures/rpyc-line/**` — фикстуры и линия statement-имён (G6): руками не редактируются, только `vn save corpus --add`; `game/generated/**` — генерат; `build/**` — артефакты сборки |
 | **Зависимости (что ломается ниже по течению)** | Правка `030_flow.rpy` (store `vn_qa`) → **все** прогоны `vn test smoke` и `vn save corpus`, то есть весь CI. Правка `input.rpy` → раскладка пада во всех контекстах. Правка `scale.rpy` → кегли и минимумы 9-patch панелей. Новая фикстура сейва → перезаписывается линия `.rpyc` (старые фикстуры могли быть сделаны на другой линии — команда об этом предупреждает). Правка бюджетов в `project.yaml` → жёсткие фейлы `vn build` и `vn test smoke` |
 | **Валидация** | Последовательность §«Проверка» целиком. Минимум перед push: `vn content lint` → `pytest tools/vn/tests -q` → `vn build --check` |

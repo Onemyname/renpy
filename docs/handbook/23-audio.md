@@ -35,12 +35,12 @@ ls assets_src/voice/ru/ch01/          # → wav-мастера демо-дубл
 | Запрет сырых путей в `play`-операторах (ARCHITECTURE.md:1181) | PARTIAL — строковый литерал в `play` статически не разрешается и просто пропускается проверкой; отдельного запрета нет | `scenes.py:126-131` |
 | `loudnorm` для bgm/amb/sfx (ARCHITECTURE.md:1181) | NOT IMPLEMENTED — `copy_audio` = побайтовое копирование; loudnorm есть только в голосовой ветке `voice_opus` | `pipeline.py:636` |
 | Трансформация `copy_audio` (`assets_src/audio_stems/…` → `game/assets/audio/…`) | IMPLEMENTED — зона источника совпадает с нормативной, ветка покрыта тестом `test_audio_stems_branch_copies_ogg` | `../../tools/vn/src/vn/assets/pipeline.py:415-430` |
-| Микшеры и слайдеры громкости music/sound/voice | IMPLEMENTED (штатные Ren'Py; канал `ambient` висит на микшере music) | `../../game/framework/20_ui/screens/core_screens.rpy:283-287` |
+| Микшеры и слайдеры громкости music/sound/voice | IMPLEMENTED (штатные Ren'Py; канал `ambient` висит на микшере music) | `../../game/framework/20_ui/screens/core_screens.rpy:289-293` |
 | `voice_tag` персонажа → `Character(..., voice_tag=…)` | IMPLEMENTED | `game/generated/registry/characters.gen.rpy:9` |
 | `vn voice manifest\|import\|validate` | IMPLEMENTED | `../../tools/vn/src/vn/cli.py:1226-1311`, `../../tools/vn/src/vn/voice.py` |
 | `vn voice tts` (TTS-черновики непокрытых реплик) | NOT IMPLEMENTED — стаб фазы 2, exit 3 | `cli.py:1278-1281` |
 | Схема `voice@1`, voice-манифесты, инжекция `voice vn.voice_path("<id>")`, транскод `voice_opus` | IMPLEMENTED (§8) | `../../tools/schemas/voice@1.schema.json`, `compile.py:985-1005`, `scenes.py:283-300`, `pipeline.py:432-466` |
-| Гейт озвучки в `vn release validate` (ошибки/дыры = FAIL, драфты = WARN) | IMPLEMENTED | `../../tools/vn/src/vn/release.py:464-478` |
+| Гейт озвучки в `vn release validate` (ошибки/дыры = FAIL, драфты = WARN) | IMPLEMENTED | `../../tools/vn/src/vn/release.py:531-548` |
 | Voice-паки как отдельные Steam-депоты | NOT IMPLEMENTED — `vn pack build` кладёт в архив только сцены и манифест | [30-packs-and-dlc.md](30-packs-and-dlc.md) |
 | Аудио в реестре лицензий `content/licenses.yaml` | IMPLEMENTED вручную / автоматика NOT IMPLEMENTED — гейт сверяет только `*.render.yaml` из `assets_src/{daz,vam,sims4}` | `../../tools/vn/src/vn/assets/licenses.py:23-27,72-76` |
 
@@ -182,7 +182,7 @@ Opus заметно компактнее Vorbis при том же качест�
 
 **Точка лупа в нашем конвейере:** `loop_start` из `audio@1` эмитится штатным префиксом — `define audio.<id> = "<loop N>assets/audio/…"` (`compile.py:383-386`), движок сам зацикливает с указанной секунды. Поле `loop` (boolean) по-прежнему не читается — каналы `music`/`ambient` зациклены по умолчанию. Если материал позволяет, всё равно предпочитайте луп, срезанный в самом файле по нулевому пересечению: `<loop N>` не спасает от щелчка на стыке, если волна в точках стыка не совпадает.
 
-Каналы и микшеры: штатные `music` / `sound` / `voice` плюс наш канал `ambient` (`045_audio.rpy:13` — `register_channel("ambient", mixer="music", loop=True, tight=True)`: громкость эмбиенса регулируется слайдером музыки, `tight` даёт бесшовный кроссфейд при смене файла). Дакинг под голос — штатный `config.emphasize_audio_*` (`045_audio.rpy:18-20`): пока звучит канал `voice`, остальные каналы приглушаются до 0.6 за 0.5 с; без озвучки конфиг безвреден. Три слайдера в настройках (`core_screens.rpy:283-287`, строки `ui.prefs.volume{,_music,_sound,_voice}` в `content/ui/strings.yaml`) — слайдер «Голос» управляет микшером озвучки (§8).
+Каналы и микшеры: штатные `music` / `sound` / `voice` плюс наш канал `ambient` (`045_audio.rpy:13` — `register_channel("ambient", mixer="music", loop=True, tight=True)`: громкость эмбиенса регулируется слайдером музыки, `tight` даёт бесшовный кроссфейд при смене файла). Дакинг под голос — штатный `config.emphasize_audio_*` (`045_audio.rpy:18-20`): пока звучит канал `voice`, остальные каналы приглушаются до 0.6 за 0.5 с; без озвучки конфиг безвреден. Три слайдера в настройках (`core_screens.rpy:289-293`, строки `ui.prefs.volume{,_music,_sound,_voice}` в `content/ui/strings.yaml`) — слайдер «Голос» управляет микшером озвучки (§8).
 
 ## 6. Нормализация громкости — делать до `assets_src/`
 
@@ -296,7 +296,7 @@ vn voice validate --report                        # манифесты<->ledger<
 vn voice tts                                      # TTS-черновики: ЗАГЛУШКА фазы 2, exit 3 (cli.py:1278-1281)
 ```
 
-**Валидация и гейт.** `vn voice validate` (`voice.py:133-187`) ловит: line_id вне ledger главы, манифест без мастера, мастер-сироту без строки манифеста, путь вне конвенции. В `vn release validate` (`release.py:464-478`): структурные ошибки и **дыры покрытия в озвученных главах = FAIL** (реплика без дубля посреди озвученной главы слышна игроку как обрыв), **драфты = WARN**.
+**Валидация и гейт.** `vn voice validate` (`voice.py:133-187`) ловит: line_id вне ledger главы, манифест без мастера, мастер-сироту без строки манифеста, путь вне конвенции. В `vn release validate` (`release.py:531-548`): структурные ошибки и **дыры покрытия в озвученных главах = FAIL** (реплика без дубля посреди озвученной главы слышна игроку как обрыв), **драфты = WARN**.
 
 **Что осталось NOT IMPLEMENTED:** `vn voice tts` (черновики для непокрытых реплик — фаза 2) и поставка `voice/<lang>/` отдельными voice-паками/Steam-депотами (сегодня opus-файлы едут в основном дистрибутиве; `vn pack build` ассеты не пакует — [30-packs-and-dlc.md](30-packs-and-dlc.md)). Рантайм к пакам уже готов: отсутствующий файл — no-op.
 

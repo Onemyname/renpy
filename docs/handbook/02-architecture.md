@@ -208,7 +208,7 @@ flowchart TB
 |---|---|---|---|
 | Движок | пиннованный SDK `renpy_sdk: "8.5.3"` (`project.yaml:5`) | читать исходники и `doc/*.html` как источник истины; **не править** | ревью; апгрейд — отдельным PR с прогоном `canary.yml` (G18) |
 | Недокументированные API движка | **только** `00_core/engine_compat/000_compat.rpy` | любые допущения о внутренностях Ren'Py, каждое с контракт-тестом | `tools/vn/tests/test_engine_compat.py` + weekly canary (G18) |
-| Платформа | **только** `00_core/035_platform.rpy` | `_renpysteam`, `steamapi`, capability-запросы | гард-тест `test_platform.py:129` — падает на любом другом файле `game/**/*.rpy` (ADR-0014) |
+| Платформа | **только** `00_core/035_platform.rpy` | `_renpysteam`, `steamapi`, capability-запросы | гард-тест `test_platform.py:183` — падает на любом другом файле `game/**/*.rpy` (ADR-0014) |
 | Остальной framework | `00_core/**`, `20_ui/**`, `90_debug/**` | только документированные API движка; ни одного `chNN`-идентификатора в исполняемом коде ядра | `grep -rn "ch[0-9][0-9]" game/framework/ --include='*.rpy'` (норма: 2 комментария) |
 | Генерат | `game/generated/**` | ничего: правки перезаписываются побайтово | `vn build --check` |
 
@@ -312,7 +312,7 @@ store `vn` на `init -999` (`030_flow.rpy:4`), остальные **допол�
 | `-999` | Ядро: boot, `vn_registry`, `vn_state`, **создание** store `vn`, `vn_qa` | `001_boot.rpy:5`, `010_registry.rpy:4`, `020_state.rpy:12`, `030_flow.rpy:4,91` |
 | `-998` | **Дополнения фасада `vn.*`**: `voice_path`, `quality_cap`/`set_quality_cap`, `ui_scale_pref`/`set_ui_scale` | `045_audio.rpy:24`, `095_quality.rpy:20`, `20_ui/scale.rpy:46` |
 | `-995` | Реестр языков `vn_lang`, лукап строк `vn_loc` | `040_localization.rpy:15,137` |
-| `-990` | store `vn_ui` (хелперы вёрстки: `reveal` и т.п.) | `20_ui/components.rpy:100` |
+| `-990` | store `vn_ui` (хелперы вёрстки: `reveal` и т.п.) | `20_ui/components.rpy:115` |
 | `-985` | `vn_build` — метаданные флейвора | `060_build_info.rpy:10` |
 | `-980` | Named stores генерата + `vn_ach` + `vn_gal` | `state/defaults.gen.rpy:12,15`, `080_achievements.rpy:12`, `090_gallery.rpy:20` |
 | `-970` | `SNAPSHOT_VARS` / `SNAPSHOT_STORES` | `state/snapshot.gen.rpy:10` |
@@ -541,7 +541,7 @@ store `vn` на `init -999` (`030_flow.rpy:4`), остальные **допол�
 vn content lint                        # 33 диагностики + сверка раскладки каталогов
 vn build --check                       # CI-режим: свежесть генерата, ассетов, бюджеты (два класса)
 vn content graph                       # mermaid-граф сцен (только content/, паки не видны)
-cd tools/vn && .venv/bin/python -m pytest -q   # 254 passed; про cwd — 27-testing.md §2
+cd tools/vn && .venv/bin/python -m pytest -q   # 278 passed; про cwd — 27-testing.md §2
 find game/generated -name '*.gen.rpy' | wc -l              # ожидание: 21
 grep -rn "^init " game/framework/ game/generated/ | sort   # ручная сверка init-шкалы с § 5
 grep -rn "ch[0-9][0-9]" game/framework/ --include='*.rpy'  # должны остаться только 2 комментария

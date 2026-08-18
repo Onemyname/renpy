@@ -75,22 +75,30 @@ def test_steam_app_build_requires_depots(tmp_path, repo_root):
         steam_app_build(root, "public")
 
 
+def _mk_dist(dist, wrapped=False):
+    """Артефакты distribute: win-zip и linux-tar.bz2. wrapped — с каталогом-обёрткой
+    по имени артефакта, как их реально отдаёт launcher (prepend для zip/tar.bz2)."""
+    import tarfile
+
+    dist.mkdir(parents=True, exist_ok=True)
+    win = "vn-0.0.1-win/" if wrapped else ""
+    linux = "vn-0.0.1-linux/" if wrapped else ""
+    with zipfile.ZipFile(dist / "vn-0.0.1-win.zip", "w") as zf:
+        zf.writestr(f"{win}vn.exe", b"bin")
+        zf.writestr(f"{win}game/script.rpyc", b"gen")
+    payload = dist / "vn.sh"
+    payload.write_bytes(b"#!/bin/sh\n")
+    with tarfile.open(dist / "vn-0.0.1-linux.tar.bz2", "w:bz2") as tf:
+        tf.add(payload, arcname=f"{linux}vn.sh")
+    payload.unlink()
+
+
 def test_steam_stage_content_unpacks_dist(tmp_path, repo_root):
     """Форматы distribute различаются по платформам: win — zip, linux — tar.bz2
     (SDK 00build.rpy). Раскладка обязана понимать оба, иначе Linux-депот молча
     не доезжает, а команда падает после корректной сборки."""
-    import tarfile
-
     root = _steam_root(tmp_path, repo_root)
-    dist = root / "build" / "dist" / "0.0.1-public"
-    dist.mkdir(parents=True)
-    with zipfile.ZipFile(dist / "vn-0.0.1-win.zip", "w") as zf:
-        zf.writestr("vn.exe", b"bin")
-    payload = dist / "vn.sh"
-    payload.write_bytes(b"#!/bin/sh\n")
-    with tarfile.open(dist / "vn-0.0.1-linux.tar.bz2", "w:bz2") as tf:
-        tf.add(payload, arcname="vn.sh")
-    payload.unlink()
+    _mk_dist(root / "build" / "dist" / "0.0.1-public")
 
     staged, errors = steam_stage_content(root, "public")
     assert sorted(staged) == ["linux", "windows"], errors
@@ -99,6 +107,52 @@ def test_steam_stage_content_unpacks_dist(tmp_path, repo_root):
     assert (content / "linux" / "vn.sh").is_file()
     # mac-депот не объявлен в project.yaml -> его артефакт и не требуется
     assert errors == []
+
+
+def test_steam_stage_content_strips_wrapper_dir(tmp_path, repo_root):
+    """Депот обязан нести игру В КОРНЕ: путь запуска в Steamworks задаётся от корня
+    депота, а артефакты distribute завёрнуты в каталог с именем и ВЕРСИЕЙ сборки —
+    без разворачивания его пришлось бы править руками после каждого бампа."""
+    root = _steam_root(tmp_path, repo_root)
+    _mk_dist(root / "build" / "dist" / "0.0.1-public", wrapped=True)
+
+    staged, errors = steam_stage_content(root, "public")
+    assert sorted(staged) == ["linux", "windows"], errors
+    content = root / "build" / "steam" / "content" / "public"
+    assert (content / "windows" / "vn.exe").is_file()
+    assert (content / "windows" / "game" / "script.rpyc").is_file()
+    assert not (content / "windows" / "vn-0.0.1-win").exists()
+    # tar.bz2 завёрнут так же — разворачивается тем же правилом
+    assert [p.name for p in sorted((content / "linux").iterdir())] == ["vn.sh"]
+
+
+def test_steam_stage_content_keeps_mac_app_bundle(tmp_path, repo_root):
+    """app-zip идёт БЕЗ обёртки: в корне лежит сам VN.app — единственный верхний
+    каталог, и поднятие его Contents/ в корень депота сломало бы приложение."""
+    root = _steam_root(tmp_path, repo_root, depots={"mac": 483})
+    dist = root / "build" / "dist" / "0.0.1-public"
+    dist.mkdir(parents=True)
+    with zipfile.ZipFile(dist / "vn-0.0.1-mac.zip", "w") as zf:
+        zf.writestr("VN.app/Contents/MacOS/VN", b"bin")
+
+    staged, errors = steam_stage_content(root, "public")
+    assert staged == ["mac"], errors
+    assert (root / "build" / "steam" / "content" / "public" / "mac"
+            / "VN.app" / "Contents" / "MacOS" / "VN").is_file()
+
+
+def test_steam_stage_content_refuses_ambiguous_wrapper(tmp_path, repo_root):
+    """Внутри обёртки занято её же имя: поднять содержимое без потери файла нельзя,
+    и депот с чужой раскладкой хуже отсутствующего — честная ошибка."""
+    root = _steam_root(tmp_path, repo_root, depots={"windows": 481})
+    dist = root / "build" / "dist" / "0.0.1-public"
+    dist.mkdir(parents=True)
+    with zipfile.ZipFile(dist / "vn-0.0.1-win.zip", "w") as zf:
+        zf.writestr("vn-0.0.1-win/vn-0.0.1-win/vn.exe", b"bin")
+
+    staged, errors = steam_stage_content(root, "public")
+    assert staged == []
+    assert any("vn-0.0.1-win" in e and "windows" in e for e in errors)
 
 
 def test_steam_stage_content_reports_missing_declared_platform(tmp_path, repo_root):

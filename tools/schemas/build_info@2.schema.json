@@ -11,9 +11,12 @@
     "build_id": {"type": "string", "minLength": 1},
     "sha": {"type": "string", "minLength": 1},
     "built_at": {"type": "string", "format": "date-time"},
-    "packs": {"type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"}},
+    "packs": {
+      "type": "array", "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"},
+      "description": "Паки поставки этого флейвора. Рантайм гейтит по нему: vn.pack_registry.installed() считает установленным только пак из списка (VN_PACKS перечисляет ВСЕ паки дерева). Пустой список — легитимная сборка без паков, а не dev: dev определяется отсутствием файла"
+    },
     "nsfw": {"type": "boolean"},
-    "early_content": {"type": "boolean"},
+    "early_content": {"type": "boolean", "description": "Ранний доступ: рантайм-флаг для контент-кода. Сборку с false релизный гейт не пропускает при главах status != release"},
     "watermark": {"type": "boolean"},
     "patron_tag": {
       "type": ["string", "null"], "pattern": "^[0-9a-f]{8}$",

@@ -109,6 +109,12 @@ screen navigation():
                     # флейвором/владением — гейт в vn_gal, не здесь.
                     if vn_gal.categories():
                         textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_nav_button" default_focus (gui.focus_rail if _here == "gallery" else 0)
+                    # Достижения (achievements@1): как и галерея, доступны из
+                    # обоих контекстов (прогресс в persistent). Пункт исчезает,
+                    # если ачивок нет или все скрыты флейвором/владением — гейт
+                    # в vn_ach.visible_ids(), не здесь.
+                    if vn_ach.visible_ids():
+                        textbutton vn_loc.t("ui.nav.achievements") action ShowMenu("achievements") style "vn_nav_button" default_focus (gui.focus_rail if _here == "achievements" else 0)
                     if not main_menu:
                         textbutton vn_loc.t("ui.nav.history") action ShowMenu("history") style "vn_nav_button" default_focus (gui.focus_rail if _here == "history" else 0)
             vbox:

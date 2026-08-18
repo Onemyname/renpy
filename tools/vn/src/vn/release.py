@@ -183,6 +183,34 @@ def _extract_archive(archive: Path, dest: Path) -> None:
         zf.extractall(dest)
 
 
+def _flatten_wrapper_dir(dest: Path) -> None:
+    """Убрать каталог-обёртку распакованного артефакта: депот несёт игру В КОРНЕ.
+
+    launcher distribute для zip/tar.bz2 добавляет верхний каталог с именем
+    артефакта (SDK distribute.rpy: FORMATS[...] prepend=True -> vn-0.1.5-win/…),
+    и без разворачивания путь запуска в Steamworks пришлось бы задавать через
+    имя каталога, то есть править руками после каждого бампа версии.
+
+    Разворачивается только однозначный случай: ровно один верхний каталог и
+    ничего рядом. Mac-бандл (app-zip идёт БЕЗ обёртки, в корне лежит сам
+    VN.app/) не трогаем — поднятие его Contents/ в корень сломало бы приложение.
+    """
+    entries = list(dest.iterdir())
+    if len(entries) != 1 or not entries[0].is_dir():
+        return
+    wrapper = entries[0]
+    if wrapper.name.endswith(".app"):
+        return
+    for item in sorted(wrapper.iterdir()):
+        target = dest / item.name
+        if target.exists():
+            raise ReleaseError(
+                f"каталог-обёртка {wrapper.name} несёт {item.name} — имя занято, "
+                f"содержимое депота не поднять в корень без потери файлов")
+        item.rename(target)
+    wrapper.rmdir()
+
+
 def steam_config(project: dict) -> dict:
     """platform.steam из project.yaml; appid обязателен для поставки."""
     cfg = (project.get("platform") or {}).get("steam") or {}
@@ -238,6 +266,10 @@ def steam_stage_content(root: Path, flavor: str, platforms: tuple[str, ...] | No
                         ) -> tuple[list[str], list[str]]:
     """Распаковать артефакты distribute в раскладку депотов build/steam/content/.
 
+    Содержимое каждого депота кладётся в КОРЕНЬ своего каталога (каталог-обёртку
+    артефакта разворачивает _flatten_wrapper_dir) — путь запуска в Steamworks
+    задаётся от корня депота и не должен зависеть от имени артефакта.
+
     platforms — какие платформы ожидать (по умолчанию те, у которых объявлен
     депот): собирать под все три ради одного депота незачем, а «нет артефакта»
     для неотгружаемой платформы — не ошибка, а шум.
@@ -267,6 +299,11 @@ def steam_stage_content(root: Path, flavor: str, platforms: tuple[str, ...] | No
             shutil.rmtree(dest)
         dest.mkdir(parents=True, exist_ok=True)
         _extract_archive(archive, dest)
+        try:
+            _flatten_wrapper_dir(dest)
+        except ReleaseError as e:
+            errors.append(f"{platform}: {e}")
+            continue        # депот с чужой раскладкой хуже отсутствующего
         staged.append(platform)
     return staged, errors
 
@@ -354,6 +391,51 @@ def flavor_config(project: dict, name: str) -> dict:
         raise ReleaseError(f"флейвор {name!r} не описан в project.yaml "
                            f"(есть: {', '.join(sorted(flavors)) or 'ни одного'})")
     return flavors[name]
+
+
+# Строгость гейта по статусу главы (G15). draft ослабляет граф-проверки конвейера
+# до warnings: ненаписанная ветка в такой главе легальна и у игрока станет «сцена
+# недоступна» — публичной сборке это не подходит. playtest проходит ровно те же
+# строгие проверки, что release, и отличается только подписью выпускающего.
+_MATURITY_STATE = {"draft": "FAIL", "playtest": "WARN"}
+
+
+def early_content_checks(root: Path, cfg: dict) -> list[tuple[str, str]]:
+    """Зрелость контента для флейвора: [(PASS|WARN|FAIL, строка)] в форме гейта.
+
+    early_content — не декоративная запись: скрипты глав уезжают в дистрибутив
+    всегда (гейт логический, G9) и открываются из реестра, а тихо выкинуть главу
+    из сборки нельзя — сейв игрока мог уже на неё сослаться. Поэтому «раннего
+    контента в этом флейворе нет» проверяется здесь, до сборки, а не исполняется
+    вырезанием контента. Незнакомый статус трактуется как draft (fail-closed)."""
+    if cfg.get("early_content", False):
+        return [("PASS", "early_content=true: незрелые главы для этого флейвора штатны")]
+    by_status: dict[str, list[str]] = {}
+    released = 0
+    for ch_id, info in sorted(snapshot_content(root).items()):
+        if info["status"] == "release":
+            released += 1
+        else:
+            by_status.setdefault(info["status"], []).append(ch_id)
+    if not by_status:
+        return [("PASS", "зрелость контента: все главы сборки status=release")]
+    # Пока в проекте нет НИ ОДНОЙ release-главы, требование «в публичном
+    # флейворе только зрелые главы» невыполнимо: гейт запретил бы собрать
+    # что угодно, включая демо. Невыполнимый гейт учит игнорировать гейты,
+    # поэтому до первой зрелой главы это предупреждение, а не отказ. С момента
+    # появления первой release-главы норма включается сама — специально
+    # заводить флаг и помнить о нём не нужно.
+    if not released:
+        return [("WARN",
+                 "зрелость контента: ни одна глава ещё не доведена до "
+                 f"status=release ({', '.join(sorted(sum(by_status.values(), [])))}) — "
+                 f"флейвор с early_content=false собирается, но гейт станет "
+                 f"строгим с первой release-главой")]
+    return [(_MATURITY_STATE.get(status, "FAIL"),
+             f"early_content=false, а в сборке главы status={status}: "
+             f"{', '.join(ids)} — доведите до release или собирайте флейвором "
+             f"с early_content=true")
+            for status, ids in sorted(by_status.items())]
 
 
 def nsfw_exclude_globs(root: Path) -> list[str]:
@@ -474,6 +556,9 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
         add("PASS" if mf.is_file() else "FAIL",
             f"пак {pid}: " + ("manifest.yaml на месте" if mf.is_file()
                               else f"нет packs/{pid}/manifest.yaml"))
+
+    for state, msg in early_content_checks(root, cfg):
+        add(state, msg)
 
     from .content.lint import lint
 

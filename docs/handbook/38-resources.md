@@ -123,7 +123,7 @@ echo $RENPY_SDK           # bash-сессии агента НЕ наследую
 | `Pillow` | 12.3.0 | 12.3.0 | PNG→WebP, миниатюры, генерация UI-панелей (`tools/vn/src/vn/assets/ui.py`) | IMPLEMENTED |
 | `psd-tools` | 1.18.0 | 1.18.0 | нарезка PSD в `assets_src/png/**` (`tools/vn/src/vn/assets/psd.py`) | **IMPLEMENTED / UNEXERCISED** — в репозитории ноль `.psd`, ноль тестов, `.vncache/psd_png/` не создавался |
 | `polib` | 1.2.0 | 1.2.0 | PO round-trip локализации (`tools/vn/src/vn/loc/po.py`) | IMPLEMENTED |
-| `pytest` | 9.1.1 | 9.1.1 | 254 теста в 24 файлах `tools/vn/tests/` | IMPLEMENTED |
+| `pytest` | 9.1.1 | 9.1.1 | 278 тестов в 24 файлах `tools/vn/tests/` | IMPLEMENTED |
 
 Полезно знать про **Pillow**: WebP-`quality` по умолчанию **80** (у `cwebp` и ImageMagick — 75), `alpha_quality` — 100, `method` 0–6 (по умолчанию 4); `Image.open()` **ленив** — для QA нужен `.load()`/`.verify()`, иначе обрезанный файл пройдёт молча; Pillow **не** делает цветоуправление при открытии — `info['icc_profile']` это просто bytes.
 Документация: https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html — таблица параметров сохранения по форматам (единственная страница, которая нужна для нашего конвейера). Релизы смотреть на https://github.com/python-pillow/Pillow/releases: внутренний `CHANGES.rst` остановлен на 11.0.0 и отсылает туда же.
@@ -231,7 +231,7 @@ vn pipeline models --only <id>     # ⚠ тоже СКАЧИВАЕТ, а не «
 
 **Конфигурация:** детекция в `pipeline.py:86-124` — `%APPDATA%\DAZ 3D\InstallManager`, стандартные пути `DAZ 3D/DAZStudio*/DAZStudio.exe`, реестр, фоллбек `C:\Program Files\DAZ 3D\DAZStudio<v> 64-bit\DAZStudio.exe`.
 
-**Где используется:** только диагностика и валидация деклараций. `vn assets daz validate` проверяет `assets_src/daz/**/*.render.yaml` по схеме `daz_render@1`; `tools/vn/src/vn/assets/licenses.py` сверяет поле `license` каждой декларации с реестром `content/licenses.yaml` (`license_registry@1`), и релизный гейт отказывается собирать билд с ассетом `game_use: false` или с nsfw-выходом из ассета `nsfw_allowed: false` (`release.py:436-445`, правила — `assets/licenses.py:94-103`). **В репозитории сегодня ноль `*.render.yaml`, ноль `.duf`, ноль `*.provenance.json`** — вся эта машинерия написана и ни разу не запускалась на реальных данных.
+**Где используется:** только диагностика и валидация деклараций. `vn assets daz validate` проверяет `assets_src/daz/**/*.render.yaml` по схеме `daz_render@1`; `tools/vn/src/vn/assets/licenses.py` сверяет поле `license` каждой декларации с реестром `content/licenses.yaml` (`license_registry@1`), и релизный гейт отказывается собирать билд с ассетом `game_use: false` или с nsfw-выходом из ассета `nsfw_allowed: false` (`release.py:503-512`, правила — `assets/licenses.py:94-103`). **В репозитории сегодня ноль `*.render.yaml`, ноль `.duf`, ноль `*.provenance.json`** — вся эта машинерия написана и ни разу не запускалась на реальных данных.
 
 **Что DAZ умеет и что у нас НЕ подключено:** headless-рендер (`-headless`, `-noPrompt`, `-scriptArg`, `-scriptArgsFile`), DzScript-автоматизация, `DzRenderMgr::doRender()`, сборка кадровых последовательностей — **NOT IMPLEMENTED**: ни одного `.dsa` в репозитории, ни одного вызова DAZ из `vn`.
 
@@ -486,7 +486,7 @@ https://www.ea.com/legal/user-agreement · https://help.ea.com/en/articles/secur
 | `../runbooks/pipeline-broken-at-night.md` | 24 строки | «сломалось ночью перед релизом» | в аварии |
 | `../CHANGELOG.md` | 96 строк | пользовательские изменения по версиям | при подготовке релиза |
 | `../licenses/THIRD-PARTY-NOTICES.md` | 53 строки | уведомления, которые едут вместе с игрой | при добавлении любой зависимости/шрифта/модели |
-| `../../ci/README.md` | 7 строк | что делает CI | ⚠️ **устарел**: называет `.gitlab-ci.yml` «пайплайном», хотя настоящий CI — 4 workflow в `.github/workflows/` |
+| `../../ci/README.md` | 7 строк | что делает CI | ⚠️ **устарел**: называет `.gitlab-ci.yml` «пайплайном», хотя настоящий CI — 5 workflow в `.github/workflows/` |
 | `../../packs/README.md` | 7 строк | как устроен пак: одно дерево, зеркалящее `content/` + `manifest.yaml` | при заведении DLC; помечен «фаза 3», хотя `vn pack validate/build` уже есть |
 | `../../game/fonts/README.md` | 22 строки | какие шрифты класть, откуда и под какой лицензией (OFL 1.1) | при смене шрифтов |
 | `../../README.md` | 129 строк | точка входа в репозиторий | первым делом |
@@ -524,10 +524,10 @@ https://www.ea.com/legal/user-agreement · https://help.ea.com/en/articles/secur
 | Тема | Код | Документ |
 |---|---|---|
 | Content Compiler | IMPLEMENTED (`tools/vn/src/vn/content/compile.py`) | вне хендбука — нет (одна строка в онбординге tools-инженера); в хендбуке — [08-content-pipeline.md](08-content-pipeline.md) |
-| Достижения | IMPLEMENTED (бэкенд `080_achievements.rpy`), экрана достижений в игре нет | ADR нет; в ARCHITECTURE.md — одно упоминание как источника для loc-экстракции. Хендбук: [15-gallery.md](15-gallery.md) (подсистема) и [40-steamworks.md](40-steamworks.md) §6 (путь ачивки до Steamworks) |
+| Достижения | IMPLEMENTED целиком: бэкенд `080_achievements.rpy` + экран `20_ui/screens/achievements.rpy` + пункт рельсы | ADR нет; в ARCHITECTURE.md — одно упоминание как источника для loc-экстракции. Хендбук: [15-gallery.md](15-gallery.md) (подсистема) и [40-steamworks.md](40-steamworks.md) §6 (путь ачивки до Steamworks) |
 | Генерируемые UI-панели | IMPLEMENTED | только ADR-0009; в ARCHITECTURE.md — **ноль** упоминаний |
 | Весь внешний 3D-конвейер (DAZ/VaM/Sims4/ComfyUI) | частично | только ADR-0006/0007; в ARCHITECTURE.md — **ноль** упоминаний DAZ, Comfy, Virt-a-Mate, Sims |
-| GitHub Actions (4 workflow, 7 определений джоб) | IMPLEMENTED | нет ни документа, ни строки в CODEOWNERS |
+| GitHub Actions (5 workflow, 9 определений джоб; `steam-upload` — только ручной запуск) | IMPLEMENTED | нет ни документа, ни строки в CODEOWNERS |
 | `docs/adr/engine-assumptions.md` | — | ARCHITECTURE.md:4137 требует этот файл; **его не существует**, допущения рассыпаны по ADR-0003 и ADR-0005 |
 
 Этот хендбук существует ровно для того, чтобы закрыть эти разрывы. Перед тем как писать новый документ, проверьте, не ваш ли это файл из карты в `README.md` хендбука.
@@ -578,8 +578,8 @@ ffmpeg -version | head -1                     # 8.1.2-full_build-www.gyan.dev
 
 # Что этот файл описывает как работающее — работает
 vn build                                      # build: OK
-python -m pytest tools/vn/tests -q            # 254 passed
-vn release validate --flavor public           # 19 строк: 18 PASS + 1 WARN, exit 0
+python -m pytest tools/vn/tests -q            # 278 passed
+vn release validate --flavor patron           # 21 строка: 20 PASS + 1 WARN, exit 0 (у public — 20 строк, 2 WARN, exit 0)
 vn pipeline models                            # статус 10 записей манифеста
 ```
 

@@ -1,6 +1,6 @@
 # 14. Локализация
 
-> **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 130/130; на те же say-id опирается озвучка (`voice@1`, см. [23-audio.md](23-audio.md) §8). **Но:** номера say-id переиспользуемы после удаления реплики (нет high-watermark), RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам.
+> **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 136/136; на те же say-id опирается озвучка (`voice@1`, см. [23-audio.md](23-audio.md) §8). **Но:** номера say-id переиспользуемы после удаления реплики (нет high-watermark), RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам.
 > **Отвечает на вопрос:** «Как добавить язык, как перевести новую строку, как не сломать переводы правкой сцены и что проверит релизный гейт».
 
 Локализация — единственная подсистема, которая пишет **в авторские исходники** (`vn loc keys` дописывает `id` прямо в `content/**/scenes/*.scene.rpy`) и полностью генерирует зону `game/tl/` (gitignored, `.gitignore:4`). Тулинг: `tools/vn/src/vn/loc/keys.py` (249 строк) и `tools/vn/src/vn/loc/po.py` (610 строк), CLI-группа `tools/vn/src/vn/cli.py:962-1086`. Рантайм: `game/framework/00_core/040_localization.rpy` (named stores `vn_lang` и `vn_loc`). Норматив — `../ARCHITECTURE.md` §5 (строки 2448-2916), архитектурное решение — `../adr/0005-language-packages-and-runtime-registry.md`.
@@ -55,7 +55,7 @@ flowchart TD
 |---|---|---|---|---|
 | Реплики (say) | say-id в `.scene.rpy` → `loc/ledger/chNN.json` | `chNN_sNNN_NNNN` | `translate <lang> <say_id>:` в `game/tl/<lang>/dialogue_chNN.rpy` (`po.py:387-389`) | сам движок Ren'Py |
 | Пункты меню | `$ vn_menu = "..."` → ledger `menus` | `chNN_sNNN_mNNN[i]` | `VN_MENUS_TL[lang][menu_id] = [...]` на `init 600` (`po.py:439`) | `vn_loc.choice_text()` (`040_localization.rpy:143-149`), потребитель — `game/framework/20_ui/screens/choice.rpy:47` |
-| UI/мета-строки | `content/ui/strings.yaml` (`strings@1`, 95 ключей) | `string:<key>` | `VN_STRINGS_TL[lang][key]` на `init 600` (`po.py:440`) | `vn_loc.t(key)` (`040_localization.rpy:151-157`) |
+| UI/мета-строки | `content/ui/strings.yaml` (`strings@1`, 114 ключей) | `string:<key>` | `VN_STRINGS_TL[lang][key]` на `init 600` (`po.py:440`) | `vn_loc.t(key)` (`040_localization.rpy:151-157`) |
 | Имена персонажей | `content/characters/<id>/character.yaml` | `char:<id>` | `translate <lang> strings:` `old`/`new` (`po.py:422-426`) | движок через `_()` в `Character` |
 
 Почему меню и UI **не** через `translate strings`: тексты вроде «Да»/«Нет»/«Соврать» неизбежно повторяются между сценами, а `translate strings` матчится по тексту — коллизия. Идентичность здесь ключевая, а не текстовая (ADR-0005 §4, уточнение к `../ARCHITECTURE.md` §5.4). `translate strings` остался ровно для имён персонажей.
@@ -122,7 +122,7 @@ vn loc import                 # или просто vn build
 
 Появится `game/tl/de/{dialogue_ch01.rpy, dialogue_ch90.rpy, common.rpy, language.json}`. `common.rpy` пишется **всегда** — он содержит гарантированный `translate <code> python:`, потому что `renpy.known_languages()` видит только языки, у которых есть хотя бы один translate-стейтмент (`po.py:464-484`). `dialogue_chNN.rpy` — только если в главе есть хотя бы одна доставленная строка (`po.py:392-398`).
 
-Ноль правок кода, ноль правок конфигов: язык сам появляется в `screen language_picker()` (`game/framework/20_ui/screens/core_screens.rpy:343-372`).
+Ноль правок кода, ноль правок конфигов: язык сам появляется в `screen language_picker()` (`game/framework/20_ui/screens/core_screens.rpy:349-378`).
 
 **Удалить язык:** `rm -rf loc/po/de` + `vn loc import`. Очистка удаляет только своё: `.rpy`, чья первая строка ровно равна `GEN_HEADER` (`po.py:489-494`), `language.json` с `generator == "vn loc import"` (`po.py:497-501`), осиротевшие `.rpyc` (`po.py:478-481`), затем пустые каталоги (`po.py:483-485`). **Модовый/ручной перевод, положенный в `game/tl/` мимо конвейера, не трогается** — это сознательный контракт.
 
@@ -244,7 +244,7 @@ msgstr "[[{#file_time}%d.%m.%Y %H:%M~~~~~~~~~~]"
 - `validate_translations` пропускает synthetic (`po.py:344-345`) — обрамляющие скобки намеренные;
 - в настройках виден только при `config.developer` (`040_localization.rpy:78-83`);
 - **из дистрибутива исключается по манифесту, без хардкода кодов** — `game/options.rpy:27-40` читает `game/tl/<code>/language.json` и делает `build.classify("game/tl/%s/**" % _code, None)` для `synthetic: true`;
-- релизный гейт покрытия его пропускает (`release.py:394-399`).
+- релизный гейт покрытия его пропускает (`release.py:461-466`).
 
 `pseudo_rtl` из `../ARCHITECTURE.md`:2822 — **NOT IMPLEMENTED**.
 
@@ -296,17 +296,17 @@ def t(key):
 `vn loc report` (`po.py:555-566`, печать `cli.py:1073-1086`) выводит по строке на язык:
 
 ```
-de: 130/130 (100%), fuzzy: 0
-en: 130/130 (100%), fuzzy: 0
-pseudo: 130/130 (100%), fuzzy: 0
+de: 136/136 (100%), fuzzy: 0
+en: 136/136 (100%), fuzzy: 0
+pseudo: 136/136 (100%), fuzzy: 0
 ```
 
 Математика: `total` — **глобальный, одинаковый для всех языков** (домены `ch01`=16, `ch90`=3, `common`=96); `translated` считает только не-fuzzy; `fuzzy` отдельно; `missing` не считается и не печатается. **Exit code всегда 0** — команда информационная (в `.github/workflows/nightly.yml:49` она именно такая).
 
-Настоящий гейт — внутри `vn release validate/build`, `release.py:380-406`, **единственный потребитель** `release_coverage_min: 0.98` из `loc/loc.yaml`:
+Настоящий гейт — внутри `vn release validate/build`, `release.py:447-473`, **единственный потребитель** `release_coverage_min: 0.98` из `loc/loc.yaml`:
 
 1. берёт `loc_report(root).coverage`;
-2. пропускает язык, если `game/tl/<lang>/language.json` говорит `synthetic: true` (`release.py:394-399`);
+2. пропускает язык, если `game/tl/<lang>/language.json` говорит `synthetic: true` (`release.py:461-466`);
 3. `pct = translated / total`; ниже порога → `FAIL` «покрытие переводов: ниже порога 98% — <lang> NN%».
 
 **Слепое пятно:** «synthetic» определяется чтением `game/tl/`, а не `loc/po/`. Если `vn loc import` не прогонялся, `pseudo` оценивается как обычный язык. Сегодня он всё равно даёт 100 % и проходит, но полагаться на это нельзя — гоняйте `vn build` перед `vn release validate`.
@@ -319,7 +319,7 @@ pseudo: 130/130 (100%), fuzzy: 0
 
 1. Добавьте ключ в `content/ui/strings.yaml` (схема `strings@1`, ключи по `^[a-z0-9_.]+$`, значения — непустые строки). Держите префиксы: `ui.*` — интерфейс, `meta.*` — заголовки глав/локаций/паков, `ach.*` — достижения, `gal.*` — галерея.
 2. В экране пишите **только** `vn_loc.t("ui.nav.start")` — литерал в `.rpy` не попадёт в PO-экстракцию и останется непереведённым (это записано прямо в шапке `content/ui/strings.yaml`).
-3. Для движковых подтверждений оборачивайте: `Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False))` — примеры `game/framework/20_ui/screens/core_screens.rpy:12,111,114,183` и `game/framework/20_ui/components.rpy:139,176`.
+3. Для движковых подтверждений оборачивайте: `Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False))` — примеры `game/framework/20_ui/screens/core_screens.rpy:12,111,120,189` и `game/framework/20_ui/components.rpy:167,176`.
 4. `vn build` → ключ уезжает в `VN_STRINGS` внутри `game/generated/registry/menus.gen.rpy`.
 5. `vn loc extract` → строка появляется в `loc/po/<code>/common.po` у всех языков.
 6. `vn loc pseudo` → проверьте на псевдолокали, что строка удлинилась и панель не разъехалась.
@@ -344,7 +344,7 @@ fonts:
   interface_semibold: fonts/NotoSansJP-Bold.ttf   # gui.interface_semibold_font
 ```
 
-Все роли опциональны; незаданные остаются на базовых из `gui.rpy`. Старый плоский `font:` — алиас `fonts.text`. Отсутствие файла — **warning, не ошибка**: переопределение роли не эмитится, рантайм остаётся на базовом шрифте (`po.py:471-477`); в списке языков есть guard `renpy.loadable` (`core_screens.rpy:370`). Цепочек фолбэка (`FontGroup`) нет — см. NOT IMPLEMENTED ниже.
+Все роли опциональны; незаданные остаются на базовых из `gui.rpy`. Старый плоский `font:` — алиас `fonts.text`. Отсутствие файла — **warning, не ошибка**: переопределение роли не эмитится, рантайм остаётся на базовом шрифте (`po.py:471-477`); в списке языков есть guard `renpy.loadable` (`core_screens.rpy:376`). Цепочек фолбэка (`FontGroup`) нет — см. NOT IMPLEMENTED ниже.
 
 ### Чеклист: перед релизом
 
@@ -352,7 +352,7 @@ fonts:
 vn loc keys --check          # id на месте, ledger свеж
 vn build                     # включает loc import; упадёт на битой разметке перевода
 vn loc report                # глазами: нет ли просевшего языка и fuzzy
-vn release validate --flavor public    # среди 20 проверок — гейт покрытия 98%
+vn release validate --flavor public    # среди 21 проверки — гейт покрытия 98%
 ```
 
 ### Расширять с осторожностью
@@ -407,12 +407,12 @@ vn release validate --flavor public    # среди 20 проверок — ге
 
 ```bash
 vn loc keys --check     # все say/menu с id, ledger свеж (CI: .github/workflows/ci.yml:64)
-vn loc report           # ожидаем de/en/pseudo — 130/130 (100%), fuzzy 0
+vn loc report           # ожидаем de/en/pseudo — 136/136 (100%), fuzzy 0
 vn build --check        # + валидация разметки переводов, без записи
 vn build                # полный прогон, регенерирует game/tl/
-vn release validate --flavor public    # 20 проверок, включая покрытие ≥ 98%
+vn release validate --flavor public    # 21 проверка, включая покрытие ≥ 98%
 python -m pytest tools/vn/tests/test_loc.py -q    # 25 тестов локализации
-python -m pytest tools/vn/tests -q                # 254 теста целиком
+python -m pytest tools/vn/tests -q                # 278 тестов целиком
 ```
 
 Ручная проверка в игре: запустить, переключить язык в настройках, убедиться что меняются **и диалоги, и интерфейс**. На `pseudo` (виден только при `config.developer`) вся видимая строка должна быть акцентирована и обрамлена `[...]`; не изменившийся текст = литерал мимо `vn_loc.t()`.
@@ -425,7 +425,7 @@ python -m pytest tools/vn/tests -q                # 254 теста целико�
 |---|---|
 | **Читать перед изменением** | `tools/vn/src/vn/loc/keys.py`, `tools/vn/src/vn/loc/po.py`, `tools/vn/src/vn/cli.py:962-1086`, `game/framework/00_core/040_localization.rpy`, `docs/adr/0005-language-packages-and-runtime-registry.md`, `tools/schemas/{loc@2,ledger@1,language@1,strings@1}.schema.json` |
 | **Не трогать** | `game/tl/**` (генерат `vn loc import`, gitignored), `loc/ledger/*.json` (зеркало сцен, пересобирается), `game/generated/registry/menus.gen.rpy` (генерат компилятора). Правки здесь бесполезны — перезапишет сборка |
-| **Зависимости** | `content/ui/strings.yaml` → `VN_STRINGS` в `menus.gen.rpy` → `vn_loc.t()` во всех экранах `game/framework/20_ui/`; `loc/ledger/` → PO → `game/tl/` → движок; `loc/loc.yaml source` → `VN_SOURCE_LANG` → `vn_lang._source()` → `vn test smoke --lang`; покрытие → `release.py:380-406` → exit-код `vn release validate` |
+| **Зависимости** | `content/ui/strings.yaml` → `VN_STRINGS` в `menus.gen.rpy` → `vn_loc.t()` во всех экранах `game/framework/20_ui/`; `loc/ledger/` → PO → `game/tl/` → движок; `loc/loc.yaml source` → `VN_SOURCE_LANG` → `vn_lang._source()` → `vn test smoke --lang`; покрытие → `release.py:447-473` → exit-код `vn release validate` |
 | **Валидация** | `vn loc keys --check` → `vn build --check` → `vn loc report` → `python -m pytest tools/vn/tests/test_loc.py -q` |
 | **Частые ошибки** | 1) Правка `game/tl/` вместо `loc/po/` — исчезнет на следующем `vn build`. 2) Литерал в экране вместо `vn_loc.t(key)` — строка не попадёт в PO и не переведётся. 3) Голый `[` в тексте — интерполяция, падение у игрока; эскейп `[[`. 4) Попытка перевести UI через `translate strings` — отменено ADR-0005 §4, работает только для имён персонажей. 5) Опора на `config.change_language_callbacks` — мёртв в Ren'Py 8.5, нужен `config.language_callbacks[lang]`. 6) Пересказ `../ARCHITECTURE.md` §5 как факта: `--gate`, POT/msgmerge, RTL, high-watermark ledger — там описаны, но не реализованы |
 

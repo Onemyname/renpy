@@ -21,6 +21,10 @@ init -985 python in vn_build:
     # Метка получателя для трассировки утечек — производная от токена, а не он сам:
     # этот файл целиком уезжает игроку (build_info@2, см. release.patron_tag).
     patron_tag = None
+    # Релизная сборка или dev-чекаут — по САМОМУ ФАКТУ файла, а не по имени флейвора
+    # и не по пустоте packs: флейвор без паков легитимен, и гейт паков обязан в нём
+    # гейтить (pack_registry.installed), а не принимать его за dev.
+    is_release = False
 
     _info = {}
     try:
@@ -30,6 +34,7 @@ init -985 python in vn_build:
         pass    # файла нет (dev) или битый — работаем дефолтами, не падаем на старте
 
     if _info:
+        is_release = True
         flavor = _info.get("flavor", "dev")
         build_id = _info.get("build_id", "dev")
         version = _info.get("version")

@@ -209,7 +209,10 @@ def test_pipeline_builds_panels_and_reacts_only_to_own_change(tmp_path):
 
     res = build_assets(root)
     assert res.errors == []
-    assert sorted(res.built) == ["ui/a.webp", "ui/b.webp"]
+    # Референсный вариант — без суффикса (иначе движок не включит автоподбор),
+    # крупный — рядом с @2 (ADR-0012).
+    assert sorted(res.built) == ["ui/a.webp", "ui/a@2.webp",
+                                 "ui/b.webp", "ui/b@2.webp"]
     assert (root / "game/assets/ui/a.webp").is_file()
 
     # Правка ОДНОЙ панели не должна перерисовывать соседнюю (хэш по параметрам)
@@ -218,15 +221,86 @@ def test_pipeline_builds_panels_and_reacts_only_to_own_change(tmp_path):
         "  a:\n    radius: 8\n    fill: \"#111111ff\"\n"
         "  b:\n    radius: 4\n    fill: \"#333333ff\"\n", encoding="utf-8")
     res2 = build_assets(root)
-    assert res2.built == ["ui/b.webp"]
-    assert "ui/a.webp" in res2.fresh
+    assert res2.built == ["ui/b.webp", "ui/b@2.webp"]
+    assert {"ui/a.webp", "ui/a@2.webp"} <= set(res2.fresh)
 
-    # Удаление панели чистит выход (orphan-очистка по манифесту)
+    # Удаление панели чистит ВСЕ её варианты (orphan-очистка по манифесту)
     decl.write_text(
         "schema: ui_panels@1\npanels:\n"
         "  a:\n    radius: 8\n    fill: \"#111111ff\"\n", encoding="utf-8")
     res3 = build_assets(root)
-    assert res3.deleted == ["ui/b.webp"]
+    assert res3.deleted == ["ui/b.webp", "ui/b@2.webp"]
+
+
+def test_every_declared_panel_ships_reference_and_oversampled(tmp_path, repo_root):
+    """Боевая декларация целиком: у каждой панели обязаны быть и референсный
+    (безсуффиксный) выход, и крупный вариант ровно вдвое. Сборка гоняется в
+    копии — трогать game/assets боевого репозитория тест не имеет права.
+
+    Размер здесь проверяется на ФАЙЛАХ, а не на рисовалке: если бы масштаб не
+    входил в ключ кэша (panel_hash_source), @2 приехал бы байт-в-байт из блоба
+    1x — файл был бы, а картинка в нём была бы мелкой."""
+    import shutil
+
+    from vn.repo import load_yaml
+
+    root = tmp_path / "repo"
+    (root / "content" / "ui").mkdir(parents=True)
+    src = repo_root / "content" / "ui" / "panels.yaml"
+    shutil.copyfile(src, root / "content" / "ui" / "panels.yaml")
+
+    res = build_assets(root)
+    assert res.errors == []
+    out = root / "game" / "assets" / "ui"
+    for pid in load_yaml(src)["panels"]:
+        ref, big = out / f"{pid}.webp", out / f"{pid}@2.webp"
+        assert ref.is_file() and big.is_file(), f"панель {pid}: собран не весь набор"
+        with Image.open(ref) as a, Image.open(big) as b:
+            assert b.size == tuple(2 * v for v in a.size), f"панель {pid}: @2 не вдвое"
+
+
+@pytest.mark.parametrize("scale", [1, 2])
+def test_panel_variant_geometry_scales_exactly(repo_root, scale):
+    """Вариант @N — та же панель, НАРИСОВАННАЯ в N раз крупнее: сторона и
+    Borders умножаются ровно на N, поэтому 1px-обводка на 4K остаётся обводкой,
+    а не мыльным градиентом.
+
+    И на каждом масштабе обязано выполняться условие движка: сумма Borders
+    меньше стороны (imagelike.py, Frame.render: xborder = min(bw, sw - 2, dw)) —
+    иначе Ren'Py сам урежет поля, и скругление съедет."""
+    from vn.repo import load_yaml
+
+    panels = load_yaml(repo_root / "content" / "ui" / "panels.yaml")["panels"]
+    for pid, spec in sorted(panels.items()):
+        left, top, right, bottom = uimod.borders_of(spec, scale)
+        assert (left, top, right, bottom) == tuple(
+            v * scale for v in uimod.borders_of(spec)), \
+            f"панель {pid}: Borders не в масштабе"
+        with Image.open(io.BytesIO(uimod.render_panel(spec, scale))) as im, \
+                Image.open(io.BytesIO(uimod.render_panel(spec))) as ref:
+            assert im.size == (2 * left + uimod.STRETCH * scale,) * 2
+            assert im.size == tuple(v * scale for v in ref.size), \
+                f"панель {pid}: сторона @{scale} не в масштабе"
+            assert left + right <= im.size[0] - 2, f"панель {pid}: Borders шире картинки"
+            assert top + bottom <= im.size[1] - 2, f"панель {pid}: Borders выше картинки"
+
+
+def test_panel_variants_follow_render_profile(tmp_path, monkeypatch):
+    """Набор масштабов панелей — ДАННЫЕ render-профиля (класс ui, ADR-0012), а не
+    константа конвейера: «поднять UI до 4K» обязано быть правкой профиля, а не
+    кода. Профиль подменяется в дефолтах — синтетический корень своего не имеет."""
+    from vn.assets import render_config
+
+    monkeypatch.setitem(render_config.DEFAULTS["classes"]["ui"], "variants", [1, 2, 4])
+    root = tmp_path / "repo"
+    (root / "content" / "ui").mkdir(parents=True)
+    (root / "content" / "ui" / "panels.yaml").write_text(
+        "schema: ui_panels@1\npanels:\n"
+        "  a:\n    radius: 8\n    fill: \"#111111ff\"\n", encoding="utf-8")
+
+    res = build_assets(root)
+    assert res.errors == []
+    assert sorted(res.built) == ["ui/a.webp", "ui/a@2.webp", "ui/a@4.webp"]
 
 
 def test_repo_panels_declaration_is_valid(repo_root):

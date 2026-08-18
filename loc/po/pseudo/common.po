@@ -100,6 +100,26 @@ msgid "Контент 18+"
 msgstr "[[Кǫнтęнт 18+~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.ach.empty"
+msgid "Достижений в этой сборке нет."
+msgstr "[[Дǫстįжęнįй в этǫй сбǫркę нęт.~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.hidden"
+msgid "Скрытое достижение"
+msgstr "[[Скрытǫę дǫстįжęнįę~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.locked"
+msgid "Не получено"
+msgstr "[[Нę пǫлųчęнǫ~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.progress"
+msgid "Получено [_done] из [_total]"
+msgstr "[[Пǫлųчęнǫ [_done] įз [_total]~~~~~~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.chapters.dlc"
 msgid "DLC"
 msgstr "[[DLC~~]"
@@ -358,14 +378,24 @@ msgid "Реплики появятся по мере игры."
 msgstr "[[Рęплįкį пǫявятся пǫ мęрę įгры.~~~~~~~~~~~~]"
 
 #. UI/мета-строка
-msgctxt "string:ui.history.hint"
+msgctxt "string:ui.history.hint_kbd"
 msgid "Esc — закрыть"
 msgstr "[[Êsc — зąкрыть~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.hint_pad"
+msgid "Кнопка B — закрыть"
+msgstr "[[Кнǫпкą B — зąкрыть~~~~~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.main.version"
 msgid "версия [config.version]"
 msgstr "[[вęрсįя [config.version]~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.achievements"
+msgid "Достижения"
+msgstr "[[Дǫстįжęнįя~~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.nav.chapters"

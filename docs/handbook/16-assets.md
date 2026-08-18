@@ -48,7 +48,7 @@ vn assets cache --dry-run        # сколько мусора накопил к
 | `img_cg` | `assets_src/art/cg/<...>/<name>.<ext>` | `cg/<...>/<name>[@N].webp` + `<name>.thumb.webp` | `quality` класса `cg` (90 / 50), альфа запрещена | `2` | `pipeline.py:351-368` |
 | `img_shot` | `assets_src/art/shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>].<ext>` (ADR-0013) | `shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>][@N].webp` | `quality` класса `shot` (90 / 50); `env` — без альфы и задаёт холст, остальные слои — с альфой и на том же холсте | `1` | `pipeline.py:370-412` |
 | `img_thumb` | тот же файл растрового класса с `thumb: true` (`bg`, `cg`), вторая задача | `<...>/<name>.thumb.webp` | `max_side` и `quality` из `render.thumb` (512 / 80), `Image.thumbnail(..., LANCZOS)` | `2` | `_image_jobs:250-259`, `_thumb_ext:263-267`, `_transform:631-635` |
-| `ui_panel` | **не файл**, а декларация: каждая панель из `content/ui/panels.yaml` | `ui/<panel_id>.webp` | WebP `lossless=True, quality=100`, `method=4` (full) / `0` (draft) | `1` | `pipeline.py:471-483`, `_transform_ui_panel:641-656` |
+| `ui_panel` | **не файл**, а декларация: каждая панель из `content/ui/panels.yaml` × каждый масштаб класса `ui` | `ui/<panel_id>[@N].webp` | WebP `lossless=True, quality=100`, `method=4` (full) / `0` (draft) | `1` | `pipeline.py:471-483`, `_transform_ui_panel:641-656` |
 | `copy_audio` | `assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg` | `audio/<kind>/<id>.ogg` | побайтовое копирование (`src.read_bytes()`) | `1` | `pipeline.py:414-430`, `_transform:636-637` |
 | `voice_opus` | `assets_src/voice/<lang>/<chNN>/<line_id>.(wav\|flac\|ogg\|opus)` | `voice/<lang>/<chNN>/<line_id>.opus` | ffmpeg: Opus 96k, громкость к −19 LUFS (`voice.py:290-306`) | `1` | `pipeline.py:432-466`, `pipeline.py:771` |
 | `video2webm` | `assets_src/video_src/<group>/…/<name>.{mp4,mov,mkv,webm,m4v,avi}` (+ опц. `<name>.video.yaml`) | `mov/<group>/…/<name>[@N].webm` | VP9 1-pass, см. §2.2 | `2` | `_video_jobs:533-599`, `video.py:101-120` |
@@ -127,11 +127,11 @@ ffmpeg -y -hide_banner -loglevel error -i <src>
 | Фон локации | `assets_src/png/backgrounds/<location>/<variant>.png` | `bg/<location>/<variant>.webp` | `pipeline.py:137-144` |
 | CG-стилл | `assets_src/png/cg/<...>/<name>.png` | `cg/<...>/<name>.webp` + `cg/<...>/<name>.thumb.webp` | `pipeline.py:148-157` |
 | Видео-луп | `assets_src/video_src/<group>/…/<name>.<ext>` | `mov/<group>/…/<name>.webm` + `.webm.meta.json` | `pipeline.py:172-203` |
-| UI-панель | запись в `content/ui/panels.yaml` | `ui/<panel_id>.webp` | `pipeline.py:205-216` |
+| UI-панель | запись в `content/ui/panels.yaml` | `ui/<panel_id>[@N].webp` (сегодня `@1` + `@2`) | `pipeline.py:205-216` |
 | Аудио | `assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg` | `audio/<kind>/<id>.ogg` | `pipeline.py:159-170` |
 | PSD | `assets_src/psd/characters/<key>/<key>_<pose>.psd` | staging `.vncache/psd_png/characters/<key>/<pose>/` | `psd.py:25`, `:98` |
 | Декларация рендера | `assets_src/{daz,vam,sims4}/**/<name>.render.yaml` | — (декларация) | `licenses.py:23-27` |
-| NSFW | подпапка `nsfw/` **внутри категории**: `cg/nsfw/…`, `mov/nsfw/…`, `assets_src/video_src/nsfw/…` | тот же префикс в выходе | `licenses.py:48-50`, `release.py:191-202` |
+| NSFW | подпапка `nsfw/` **внутри категории**: `cg/nsfw/…`, `mov/nsfw/…`, `assets_src/video_src/nsfw/…` | тот же префикс в выходе | `licenses.py:48-50`, `release.py:441-452` |
 
 Файл спрайт-слоя по `naming.md:18`:
 `^assets/spr/<char>/(<pose>/(base|outfits/*|faces/*|overlays/*)|side/*)@2\.webp$`.
@@ -155,7 +155,7 @@ blob = root/".vncache"/"assets"/key[:2]/key
 | Транформация | `src_hash` считается от | Последствие |
 |---|---|---|
 | `video2webm` | `blake3(байты видео + b"\x00" + байты сайдкара)` (`pipeline.py:299-303`) | правка `<name>.video.yaml` инвалидирует выход |
-| `ui_panel` | `blake3(json.dumps(spec, sort_keys=True))` **одной панели** (`pipeline.py:304-308`, `ui.py:37-40`) | правка одной панели не перерисовывает остальные; но правка косметического поля `doc:` тоже инвалидирует блоб |
+| `ui_panel` | `blake3(json.dumps({spec, scale}, sort_keys=True))` **одной панели в одном масштабе** (`pipeline.py:304-308`, `ui.py: panel_hash_source`) — масштаб входит в ключ, иначе `@2` приехал бы байт-в-байт из блоба 1× | правка одной панели не перерисовывает остальные; но правка косметического поля `doc:` тоже инвалидирует блоб |
 
 **Раскладка на диске:** `.vncache/assets/<2 hex>/<64 hex>` — двухсимвольный fan-out, имя файла = полный blake3. Сейчас: 53 блоба, 500,7 КБ; манифест перечисляет 55 выходов. Разница в два — это видео: у трансформации `video2webm` один блоб даёт три выхода (`.webm`, сайдкар `.webm.meta.json` по `mov_meta@1` и постер-кадр `.poster.webp`, `pipeline.py:726-735`).
 
@@ -270,7 +270,7 @@ vn assets status                                         # версии, лок�
 | `push` | путь обязан быть внутри `assets_src/` («сырцы живут только в assets_src/ (G2)»); `*.manifest.json` пропускаются; хранилище **закрепляется** первым манифестом (файл не мигрирует между хранилищами повторным push); совпал хэш → `fresh`, версия не растёт; иначе `version = prev+1`, иммутабельный ключ `<rel>/v<N>` | `storage.py:156-211` |
 | `pull` | идёт по всем `assets_src/**/*.manifest.json` (фильтр `--scope`); локальный файл совпал по хэшу → `fresh`, скачивания нет; иначе `backend.get`, **перехэширование скачанного** и ошибка при несовпадении, затем атомарная запись | `storage.py:214-243` |
 | `lock` | `--release` снять свой, `--force` снять чужой | `storage.py:246-267` |
-| `status` | по манифесту: `нет локально` / `ИЗМЕНЁН локально (не запушен)` / `ok` + держатель лока; вшит в релизный гейт (`release.py:419-426`) | `storage.py:270-290` |
+| `status` | по манифесту: `нет локально` / `ИЗМЕНЁН локально (не запушен)` / `ok` + держатель лока; вшит в релизный гейт (`release.py:486-493`) | `storage.py:270-290` |
 
 ### 8.3 Лок обязателен для push (G14)
 
@@ -351,7 +351,7 @@ vn assets provenance verify [--scope png/cg]
 
 NSFW определяется строкой: `"/nsfw/" in f"/{output}"` (`licenses.py:48-50`). Проверяются `assets_src/{daz,vam,sims4}/**/*.render.yaml`, у которых `schema` совпадает с `daz_render@1|vam_render@1|sims4_render@1`.
 
-Гейт: `release.py:408-417` — errors → `FAIL`, warnings → `WARN`, иначе `PASS`. Сейчас деклараций ноль, вывод: «деклараций рендеров нет; в реестре 3 записей».
+Гейт: `release.py:475-484` — errors → `FAIL`, warnings → `WARN`, иначе `PASS`. Сейчас деклараций ноль, вывод: «деклараций рендеров нет; в реестре 3 записей».
 
 Дисциплина из шапки самого реестра: **покупка ассета → запись здесь → только потом первый рендер с ним.** Ретрофит стоит ручной пробивки SKU по сотням деклараций. Юридический контекст (DAZ Standard vs Interactive, adult-запреты Published Artists, OFL) — [Безопасность и право](33-security-and-legal.md).
 
@@ -385,11 +385,15 @@ NSFW определяется строкой: `"/nsfw/" in f"/{output}"` (`licen
 
 ## 12. UI-панели
 
-Кратко: панель **объявляется** в `content/ui/panels.yaml`, рисуется конвейером в `game/assets/ui/<id>.webp` (lossless WebP), а Content Compiler эмитит `define vn_frame_<id> = Frame(..., Borders(...))` в `game/generated/registry/ui_frames.gen.rpy`. Вёрстка знает только имя. Шесть панелей сейчас: `choice`, `choice_hover`, `choice_chosen`, `panel`, `slot`, `toast`.
+Кратко: панель **объявляется** в `content/ui/panels.yaml`, рисуется конвейером в `game/assets/ui/<id>[@N].webp` (lossless WebP), а Content Compiler эмитит `define vn_frame_<id> = Frame(..., Borders(...))` в `game/generated/registry/ui_frames.gen.rpy`. Вёрстка знает только имя. **Восемь** панелей сейчас: `choice`, `choice_hover`, `choice_chosen`, `chip`, `chip_active`, `panel`, `slot`, `toast` — и каждая отгружается **двумя** файлами: `<id>.webp` и `<id>@2.webp`.
 
-Ключевое, что относится к ассетам: `ui_panel` — единственная трансформация, у которой источник не файл, а словарь параметров, и ключ кэша считается **по одной панели** (`pipeline.py:304-308`). Побочный эффект: правка комментария `doc:` инвалидирует блоб и вызывает перерисовку (байты выхода те же, `dest` не переписывается).
+Ключевое, что относится к ассетам: `ui_panel` — единственная трансформация, у которой источник не файл, а словарь параметров, и ключ кэша считается **по одной панели и одному масштабу** (`pipeline.py:304-308`, `assets/ui.py: panel_hash_source`). Побочный эффект: правка комментария `doc:` инвалидирует блоб и вызывает перерисовку (байты выхода те же, `dest` не переписывается).
 
-Геометрия, правило `2*Borders`, полный список ключей панели и две живые нарушающие вёрстки — в [UI-слой](06-frontend.md) и `../adr/0009-generated-ui-panels.md`. ADR-0009 в `ARCHITECTURE.md` **не отражён вовсе** (grep на `ui_panel|panels.yaml|vn_frame` → 0 попаданий): IMPLEMENTED / UNDOCUMENTED.
+**Оверсэмпл-варианты — с этой итерации (ADR-0012).** У класса `ui` в render-профиле появился набор масштабов (`variants: [1, 2]`, `render_config.py: DEFAULTS`), и `_discover` заводит по одному job на каждый масштаб. Мастера у класса нет, поэтому апскейла и «пропуска варианта» здесь не бывает: панель просто **рисуется заново** крупнее — `_scaled_spec` умножает `radius`, `border.width`, `shadow.blur`, `shadow.dy` и тянущуюся полосу, цвета не трогает. Сторона `@2` ровно вдвое больше 1×, а `Borders` в эмитируемом `Frame` остаются **виртуальными** и имя образа — безсуффиксным: движок сам подставит крупный вариант и сам сочтёт его «меньше в N раз для целей вёрстки». Проверяется `vn test oversample --scale 2` (панели вошли в проверку: 22 ассета, 21 поднят).
+
+**Настраивается пока только в коде.** Класс `ui` есть в `DEFAULTS`, но `project.yaml` его не примет: `render.classes.propertyNames.pattern` в `tools/schemas/project@1.schema.json` перечисляет `^(spr|bg|cg|mov|shot)$`. Сборка корректна (боевой профиль набор не переопределяет), но «поднять UI до 4K профилем» сегодня нельзя — **STATUS: OPEN**, правка на одну строку паттерна плюс описание классов.
+
+Геометрия, правило `2*Borders` и полный список ключей панели — в [UI-слой](06-frontend.md) и `../adr/0009-generated-ui-panels.md`; нарушений в вёрстке сейчас нет. ADR-0009 в `ARCHITECTURE.md` **не отражён вовсе** (grep на `ui_panel|panels.yaml|vn_frame` → 0 попаданий): IMPLEMENTED / UNDOCUMENTED.
 
 ## 13. Как добавить ассет — рецепты
 
@@ -548,10 +552,10 @@ vn content lint                     # в т.ч. порог ADR-0004
 python -m pytest tools/vn/tests/test_assets.py tools/vn/tests/test_ui_panels.py \
   tools/vn/tests/test_video.py tools/vn/tests/test_storage.py \
   tools/vn/tests/test_provenance.py tools/vn/tests/test_licenses.py -q   # 46 тестов
-vn release validate --flavor public  # 20 проверок, включая лицензии, провенанс, видео, бюджеты
+vn release validate --flavor public  # 21 проверка, включая лицензии, провенанс, видео, бюджеты
 ```
 
-Эталонное состояние репозитория на 2026-08-18 (HEAD `db28ce6`): `assets_src/` — 28 бинарных файлов / 964,0 КБ (14 из них — черновые дубли озвучки `voice/ru/ch01/*.wav`); `game/assets/` — 55 файлов / 501,6 КБ; `.vncache/assets/` — 53 блоба / 500,7 КБ; манифест — 55 выходов.
+Эталонное состояние репозитория на 2026-08-18 (HEAD `e3c2842` + текущая итерация): `assets_src/` — 28 бинарных файлов / 964,0 КБ (14 из них — черновые дубли озвучки `voice/ru/ch01/*.wav`); `game/assets/` — 63 файла / 514,4 КБ (8 из них — оверсэмпл-варианты панелей `@2`); `.vncache/assets/` — 69 блобов / 519,6 КБ; манифест — 63 выхода.
 
 ## Для AI-агента
 
@@ -559,6 +563,6 @@ vn release validate --flavor public  # 20 проверок, включая ли�
 |---|---|
 | **Читать перед изменением** | `../../tools/vn/src/vn/assets/pipeline.py` (весь: 1045 строк, discovery+кэш+манифест+GC), `../../tools/vn/src/vn/assets/video.py`, `../../tools/vn/src/vn/assets/ui.py`, `../../tools/vn/src/vn/assets/psd.py`, `../../tools/vn/src/vn/assets/storage.py`, `../../tools/vn/src/vn/assets/provenance.py`, `../../tools/vn/src/vn/assets/licenses.py`, `../../tools/vn/src/vn/cli.py:511-955` (группа `vn assets`), `../conventions/naming.md`, `../adr/0004-local-png-sources-in-git.md`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../adr/0009-generated-ui-panels.md` |
 | **Не трогать** | `game/assets/**` (производная зона, `.gitignore:3`), `game/generated/**` (`.gitignore:2`), `.vncache/**` — кэш, манифест сборки, staging PSD (`.gitignore:21`). Любая правка там будет затёрта; правка `.vncache/assets-manifest.json` вручную ломает удаление осиротевших |
-| **Зависимости (что ломается ниже по течению)** | `tools/vn/src/vn/content/images.py` строит `image bg/cg/mov` и `layeredimage` **по факту собранных файлов** — пропавший выход даёт ошибку компилятора или битую ссылку в рантайме; `tools/vn/src/vn/content/compile.py:139-227` резолвит `*.thumb.webp` для галереи; `tools/vn/src/vn/assets/ui.py:119-137` эмитит `vn_frame_*`; `release.py:29-53` считает бюджеты (`assets_total_mb 20000`, `video_total_mb 8000`, `video_file_mb 512` — ADR-0012); `release.py:191-202` строит NSFW-глобы из реальных каталогов; `release.py:408-426` — гейты лицензий и статуса хранилища |
-| **Валидация** | `vn assets build` → `vn assets validate` → `vn build --check` → `vn content lint` → `python -m pytest tools/vn/tests -q` (254 теста) → `vn release validate --flavor public` |
+| **Зависимости (что ломается ниже по течению)** | `tools/vn/src/vn/content/images.py` строит `image bg/cg/mov` и `layeredimage` **по факту собранных файлов** — пропавший выход даёт ошибку компилятора или битую ссылку в рантайме; `tools/vn/src/vn/content/compile.py:139-227` резолвит `*.thumb.webp` для галереи; `tools/vn/src/vn/assets/ui.py:119-137` эмитит `vn_frame_*`; `release.py:29-53` считает бюджеты (`assets_total_mb 20000`, `video_total_mb 8000`, `video_file_mb 512` — ADR-0012); `release.py:441-452` строит NSFW-глобы из реальных каталогов; `release.py:475-493` — гейты лицензий и статуса хранилища |
+| **Валидация** | `vn assets build` → `vn assets validate` → `vn build --check` → `vn content lint` → `python -m pytest tools/vn/tests -q` (278 тестов) → `vn release validate --flavor public` |
 | **Частые ошибки** | 1) Менять параметр трансформации, не бампнув её версию в `TRANSFORMS` (`pipeline.py:38-46`) — кэш отдаст старые байты как свежие. 2) Считать, что `game/assets/` можно получить из git или через `vn bootstrap` без тулчейна — remote-fetch **NOT IMPLEMENTED**, bootstrap собирает локально. 3) Опираться на `docs/ARCHITECTURE.md` как на описание построенного: `game/assets/registry.json` (:1085), `assets_src/video/` (:858), side-mask alpha (:1143), VP9 2-pass и профили `hd`/`mobile` (:1179), `vfx@1` (:1074), зоны `.rpa`/атласов/AVIF (§2.2) — всё NOT IMPLEMENTED. 4) Ожидать, что `vn assets build` эмитит Ren'Py-`define` — это делает компилятор. 5) Класть звук мимо `assets_src/audio_stems/{bgm,amb,sfx}/` — иначе трансформация `copy_audio` его не увидит и промолчит (§2, §13.6) |

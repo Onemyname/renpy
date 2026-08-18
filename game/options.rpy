@@ -4,7 +4,7 @@
 # Имя игры — бренд-константа (заголовок окна ОС): сознательно НЕ переводится.
 # Захочется переводить — через translate strings, define вычисляется один раз.
 define config.name = "VN"
-define config.save_directory = "vn-1755000000"
+define config.save_directory = "vn-1755000000"   # НЕ переименовывать: потеря сейвов (ci/steam/README.md)
 define config.has_autosave = True
 define config.autosave_slots = 10
 define config.window_icon = None

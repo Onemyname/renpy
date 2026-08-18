@@ -73,6 +73,21 @@ screen vn_panel(title=None):
 style vn_panel is frame
 style vn_panel_title is label_text
 
+## ── Экраны-коллекции (галерея, достижения): счётчик и пустое состояние ───────
+##    Одна пара стилей на все коллекции: счётчик «сколько из сколько» и текст
+##    «здесь пока ничего нет» выглядят одинаково по определению, а копии в
+##    каждом экране разъезжались бы при первой правке кегля.
+
+style vn_counter:
+    font gui.interface_semibold_font
+    size gui.label_text_size
+    color gui.accent_color
+
+style vn_empty_note:
+    font gui.interface_text_font
+    size gui.text_size
+    color gui.faint_color
+
 ## ── vn_scroll: единый скролл-приём (controller-first, аудит ui.md §1) ────────
 ##    Проблема: движок не докручивает viewport к клавиатурному фокусу, а кнопки
 ##    за границей клипа выпадают из фокус-листа (focus_nearest пропускает
@@ -123,6 +138,19 @@ init -990 python in vn_ui:
         value = min(max(adj.value, bottom - page), max(top, 0))
         if value != adj.value:
             adj.change(max(0, min(value, rng)))
+
+    def hint(key):
+        """Подсказка управления по ПАРЕ ключей: «<key>_pad» на controller-first
+        окружении (Deck/Big Picture — мыши и клавиатуры там может не быть вовсе),
+        иначе «<key>_kbd». Две строки, а не подстановка имени кнопки в одну:
+        пад-глифов картинками у нас нет, кнопка называется словом, и падеж/
+        порядок слов в переводе решает переводчик, а не вёрстка.
+        Оба суффикса явные — забытый ключ виден сразу (vn_loc.t вернёт сам ключ),
+        а не подменяется тихим дефолтом. Платформу знает только vn_platform
+        (ADR-0014), и спрашиваем её на каждый вызов: экраны переоцениваются, а
+        Big Picture/Deck-вариант может появиться и в середине сессии."""
+        suffix = "_pad" if renpy.store.vn_platform.controller_first() else "_kbd"
+        return renpy.store.vn_loc.t(key + suffix)
 
     def menu_screen():
         """Имя экрана меню, открытого сейчас (все они делят tag "menu"), или

@@ -171,7 +171,7 @@ config.save_json_callbacks.append(_vn_save_json)
 
 `vn_scene` пишет `vn.checkpoint()` на входе в каждую сцену — это якорь «где игрок был», а не механизм восстановления позиции: позицию восстанавливает сам движок по statement-именам `.rpyc` (см. [27-testing.md](27-testing.md) про линию имён).
 
-**Грабля движка:** Ren'Py 8 подписывает сейвы per-machine токеном; чужой сейв на другой машине открывается через модальный confirm. Для корпуса это обходится тем, что фикстура кладётся в изолированный `--savedir`, а автопилот подтверждает модалку таймером (`core_screens.rpy:403-404`).
+**Грабля движка:** Ren'Py 8 подписывает сейвы per-machine токеном; чужой сейв на другой машине открывается через модальный confirm. Для корпуса это обходится тем, что фикстура кладётся в изолированный `--savedir`, а автопилот подтверждает модалку таймером (`core_screens.rpy:409-410`).
 
 ---
 
@@ -436,7 +436,7 @@ label <old>:
 
 Дефолты (`:14-23`): `flavor="dev"`, `build_id="dev"`, `version=None`, `packs=[]`, `nsfw=True`, `early_content=True`, `watermark=False`, `patron_tag=None`. Затем блок читает `game/build_id.json` через `renpy.open_file` и перекрывает поля (`:32-40`); отсутствие или битый файл — молча дефолты (`:26-30`), игра на старте не падает.
 
-**Ключевой факт: `game/build_id.json` в чекауте отсутствует.** Файл пишет `vn release build` только на время `distribute` и удаляет после (`tools/vn/src/vn/release.py:230-273` — `compute_build_info` / `write_build_info` / `clear_build_info`). Значит:
+**Ключевой факт: `game/build_id.json` в чекауте отсутствует.** Файл пишет `vn release build` только на время `distribute` и удаляет после (`tools/vn/src/vn/release.py:258-310` — `compute_build_info` / `write_build_info` / `clear_build_info`). Значит:
 
 * локально игра всегда идёт как `flavor=dev`;
 * `nsfw=True` и `early_content=True` → весь контент виден;
@@ -445,11 +445,11 @@ label <old>:
 
 Правило для контент-кода: спрашивайте `vn_build.nsfw` / `vn_build.early_content` / `vn.pack_registry.owned(...)`, **никогда не имя флейвора** — новый флейвор должен добавляться правкой `project.yaml`, а не кода игры.
 
-`vn_build.early_content` — **NOT IMPLEMENTED как гейт**: значение пишется, экспонируется и не читается ничем в `game/`. `nsfw`, `watermark`, `patron_tag` — IMPLEMENTED. Детали флейворов — [29-build-and-release.md](29-build-and-release.md).
+`vn_build.early_content` — **NOT IMPLEMENTED как рантайм-гейт**: значение пишется, экспонируется и не читается ничем в `game/`. Гейтит оно на границе релиза, а не в игре: проверка «зрелость контента» в `vn release validate` (`early_content_checks`, `release.py:403-438`) — самоактивирующаяся, до первой главы `status: release` это WARN, после — `draft` = FAIL. `nsfw`, `watermark`, `patron_tag` — IMPLEMENTED и в рантайме. Детали флейворов — [29-build-and-release.md](29-build-and-release.md) §5.1.
 
 ### `patron_tag` вместо `patron_token` (ADR-0011) — IMPLEMENTED
 
-`game/build_id.json` целиком уезжает игроку, поэтому класть в него секрет нельзя. Поле `patron_token` заменено на **`patron_tag`** — невосстановимую производную от токена получателя: `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex (`tools/vn/src/vn/release.py:206-227` `patron_tag()`). Схема бампнута `build_info@1` → **`build_info@2`** (`compute_build_info`, `release.py:230-255`); `build_info@1` оставлена в реестре схем с пометкой «устарела» — чтобы читать уже выпущенные артефакты.
+`game/build_id.json` целиком уезжает игроку, поэтому класть в него секрет нельзя. Поле `patron_token` заменено на **`patron_tag`** — невосстановимую производную от токена получателя: `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex (`tools/vn/src/vn/release.py:455-476` `patron_tag()`). Схема бампнута `build_info@1` → **`build_info@2`** (`compute_build_info`, `release.py:479-506`); `build_info@1` оставлена в реестре схем с пометкой «устарела» — чтобы читать уже выпущенные артефакты.
 
 Рантайм читает именно `patron_tag` (`060_build_info.rpy:23,40`), а вотермарка собирается как `build_id + " · " + patron_tag` (`vn_build.label()`, `:42-45`). Проверено сквозняком: в реальной patron-сборке из 1663 файлов дистрибутива токен не встречается ни в одном.
 
@@ -539,7 +539,7 @@ def vn_log(msg):
 vn content lint                  # переменные сцен против Variable Registry, store==id главы, G7
 vn build                         # полная сборка; падает на разрыве цепочки миграций
 vn build --check                 # ничего не пишет; exit 1 = генерат протух относительно источников
-python -m pytest tools/vn/tests -q          # 254 теста; test_saves.py — эмиссия миграций и снапшота
+python -m pytest tools/vn/tests -q          # 278 тестов; test_saves.py — эмиссия миграций и снапшота
 vn save check                    # JSON-заголовки 2 фикстур: schema/версия/сцена, без unpickle
 vn save corpus                   # обе фикстуры грузятся в реальной игре, after_load гоняет миграции
 vn test smoke                    # автопилот проходит главу; .vncache/smoke/state.json = финальный снапшот

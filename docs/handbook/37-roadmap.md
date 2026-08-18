@@ -20,8 +20,12 @@ P0-1  Закрыть ADR-0008 (развилка A/B/C) — единственн�
 P0-2  Пройти пилот контента насквозь: DAZ → ComfyUI → provenance → video_src → сцена
 P0-3  Довести аудио до звука в игре: тракт починен, но content/audio/*.yaml пусты, .ogg в репозитории ноль
 P0-6  Разобраться с .gitlab-ci.yml — два конфига, документирован неработающий
-P1-11 Гейт packs/early_content по флейвору — станет реальным риском с первым NSFW-контентом
+P1-14 Статус ch01: пока глава объявлена draft, релизный гейт валит флейвор public (и ночной dry-run)
 ```
+
+**Закрыто этой итерацией** (пункты остались в файле со статусом СДЕЛАНО и перечисленным остатком):
+P1-11 (гейт `packs` и `early_content` по флейвору), UI достижений, оверсэмпл UI-панелей `@2`,
+доступность крэш-экрана с пада, подтверждение текстового ввода с пада, вариантные прогоны в CI.
 
 **Закрыто 2026-08-08** (пункты остались в файле со статусом СДЕЛАНО и перечисленным остатком —
 не удаляйте их, пока остаток не закрыт): P0-4 (ffmpeg в `nightly.yml` и `canary.yml`),
@@ -97,8 +101,15 @@ ls ci/fixtures/saves/                                                 # сейч
 | **P1** | High-watermark для say-id | Номера переиспользуются после удаления реплики: ledger перестраивается целиком. Новая реплика может унаследовать перевод удалённой | `tools/vn/src/vn/loc/keys.py:86-127`, `ARCHITECTURE.md:2505`, `:2781` | дни |
 | **P1** | `vn content graph` видит паки | Граф строится только по `content/chapters/`; `ch90_beach` из `packs/ep_beach` невидим, межпаковые `exits` выглядят висячими | `tools/vn/src/vn/content/graph.py:15` | часы |
 | **P1** | Флейвор в ключе `rpyc-cache` | Кэш `.rpyc` ключуется только версией: `public` и `patron` одной версии затирают друг друга локально. G6 (перенос имён стейтментов) может взять чужие `.rpyc` | `tools/vn/src/vn/cli.py:358` | часы |
-| **P1** | Гейт `packs` и `early_content` по флейвору | `VN_PACKS` перечисляет все паки независимо от флейвора; `public`-билд считает пак `nsfw` установленным и «owned». Сегодня пак пуст — риск станет реальным с первым NSFW-контентом | `tools/vn/src/vn/content/scenes.py:295`, `game/framework/00_core/030_flow.rpy:77`, `project.yaml:12-22` | дни |
+| ~~P1~~ **СДЕЛАНО (эта итерация)** | Гейт `packs` и `early_content` по флейвору | Было: `VN_PACKS` перечисляет все паки, `public`-билд считал пак `nsfw` установленным и «owned»; `early_content` не читал никто. Стало: `installed()` сверяет `VN_PACKS` со списком поставки `vn_build.packs` (`030_flow.rpy:77-91`), признак релиза — факт `game/build_id.json` (`vn_build.is_release`); `early_content` гейтит зрелость контента в релизной проверке №4 (`early_content_checks`, `release.py:403-438`). Гейт зрелости самоактивирующийся: до первой главы `status: release` это WARN (оба флейвора собираются, exit 0), после — `draft` = FAIL. Остаток: рантайм-потребителей у флага `early_content` по-прежнему ноль | — |
 | **P1** | `vn test replay` / `vn test paths` | Заглушки фазы 2. Сейчас нет способа перепройти найденный баг детерминированно и нет отчёта о непокрытых ветках | `tools/vn/src/vn/cli.py:1404-1405` | недели |
+| **P2** | Ни одна глава не доведена до `status: release` | Гейт зрелости контента (проверка №4) самоактивирующийся: пока в проекте нет ни одной `release`-главы, он даёт **WARN**, и `--flavor public` собирается (exit 0). Строгость включится сама в тот прогон, где первая глава станет `release`: все оставшиеся `draft` станут FAIL, вместе с ними покраснеют ночная релизная сборка, релиз по тегу и `steam-upload`. Решение — продуктовое, и принимать его надо **до** релиза первой главы, а не после | `content/chapters/ch01_awakening/chapter.yaml:4`, `project.yaml:66-76`, `tools/vn/src/vn/release.py:403-438` | часы (решение), недели (довести главу) |
+| **P2** | Класс `ui` render-профиля не настраивается из `project.yaml` | Набор масштабов панелей (`variants: [1, 2]`) живёт только в `DEFAULTS`: `render.classes.propertyNames.pattern` перечисляет `^(spr\|bg\|cg\|mov\|shot)$` и класс `ui` отвергает. Сборка корректна, но «поднять UI до 4K профилем» нельзя | `tools/schemas/project@1.schema.json:89`, `tools/vn/src/vn/assets/render_config.py` | часы |
+| **P2** | Субпиксельные бордеры UI на Steam Deck | Оверсэмпл `@2` эту проблему **не** решает: `im.py: get_oversampled_image` выходит при `draw_per_virt <= 1.0`, а на Deck он ≈ 0.667 — там артефакт **минификации**. Лечится либо более толстой обводкой в декларации, либо рендером UI в физическом разрешении (`config.physical_width/height`); второе — тема ADR | `content/ui/panels.yaml`, `game/framework/20_ui/scale.rpy` | дни + ADR |
+| **P2** | Нет теста «у каждой `vn_ui.hint("X")` есть ключи `X_kbd` и `X_pad`» | Забытый суффикс не падает: `vn_loc.t` вернёт сам ключ, и игрок увидит `ui.history.hint_pad` на экране. Механизм парных подсказок введён, страховки к нему нет | `tools/vn/tests/test_platform.py`, `content/ui/strings.yaml` | часы |
+| **P3** | `vn_ach.visible_ids()` / `progress()` лежат в файле экрана | Обе функции объявлены в `init -970 python in vn_ach` внутри `20_ui/screens/achievements.rpy`, а не в `00_core/080_achievements.rpy`. Работает (named store дополняется), но нарушает разделение «данные в 00_core, вёрстка в 20_ui» | `game/framework/20_ui/screens/achievements.rpy`, `game/framework/00_core/080_achievements.rpy` | часы |
+| **P3** | Ни «Галереи», ни «Достижений» нет в колонке главного меню | Оба доступны только через рельсу игрового меню. Решение сознательное (единообразие), но игрок, который ещё не начал игру, их не видит | `game/framework/20_ui/screens/core_screens.rpy:206-212` | часы (решение дизайна) |
+| **P3** | Постоянной QA-декларации скрытой ачивки нет | Состояния «???» и «Не получено» на экране достижений в боевых декларациях не воспроизводятся: обе ачивки видимы и к концу прогона получены. Сегодня снимаются только временным пробником | `content/achievements/`, `.github/workflows/nightly.yml` (набор `VN_AUTOPILOT_SCREENS`) | часы |
 | **P1** | CODEOWNERS с реальными владельцами + непокрытые зоны | Все хэндлы — плейсхолдеры; не покрыты `/content/{gallery,achievements,ui}`, `/packs/`, `/assets_src/`, `/.github/`. Ревью-гейт формально существует и фактически не работает | `CODEOWNERS:1-3` | часы |
 | ~~P1~~ **СДЕЛАНО 2026-08-08** | Два нарушения `2*Borders` в галерее | Было: `vn_gal_tab` и `vn_gal_ctl_button` брали панели `choice*` с минимумом 60 и 54 px при фактической высоте ≈31 и ≈29 px. Стало: в `content/ui/panels.yaml` заведены `chip` и `chip_active` (radius 8, Borders 11, минимум 22×22), оба стиля переведены на них; панелей стало 8 | `content/ui/panels.yaml`, `game/framework/20_ui/screens/gallery.rpy:161-168,221-225`, `tools/vn/tests/test_ui_panels.py:244-304` | — |
 | ~~P1~~ **СДЕЛАНО частично 2026-08-08** | Убрать два мёртвых участка кода | Было: `config.exception_handler` из `001_boot.rpy` молча затирался в `070_crash.rpy` (и имел неверную сигнатуру); охранник «пустой пак» в `vn pack build` был недостижим. Стало: обработчик один (`070_crash.rpy:82`) и пишет `[vn] unhandled exception: …` в `log.txt`; охранник считает сцены отдельно от манифеста и падает до создания zip. Остаток: охранник проверяет «хоть одна сцена на весь пак», а не по каждой объявленной главе | `game/framework/00_core/001_boot.rpy:42-49`, `070_crash.rpy:44-52,82`, `tools/vn/src/vn/cli.py:1620-1637`, `tools/vn/tests/test_crash_handler.py`, `tools/vn/tests/test_release.py:149-174` | часы (остаток) |
@@ -111,12 +122,13 @@ ls ci/fixtures/saves/                                                 # сейч
 | **P2** | Контакт-листы рендеров (`vn assets sheet`) | Нет способа отсмотреть пачку рендеров одним листом — художник открывает файлы по одному. Команда упомянута в `ARCHITECTURE.md`, отсутствует в CLI | нет кода; `tools/vn/src/vn/assets/pipeline.py` (превью-трансформация `img_thumb` уже есть) | дни |
 | **P2** | Нормализация громкости (loudnorm) для музыки/SFX | `ARCHITECTURE.md:1179` требует Opus 128k + `loudnorm`; в коде видео `-an` по умолчанию, а `copy_audio` копирует `.ogg` байт-в-байт — громкость музыки/SFX не трогается, разнобой правится вручную. Голос уже нормализуется (`voice_opus`: Opus 96k, −19 LUFS), `loop_start`/`volume` из `audio@1` эмитятся; мёртвым осталось только поле `loop` | `tools/vn/src/vn/assets/video.py:101-120`, `tools/vn/src/vn/assets/pipeline.py:636`, `tools/vn/src/vn/voice.py:289-308` | дни |
 | **P2** | Альфа-видео (`side_mask`) | `yuva420p` проходит валидацию с предупреждением, но маску никто не генерирует и `Movie()` не получает `side_mask=True` → такой файл отрисуется неправильно. Тупик, замаскированный под поддержку | `tools/vn/src/vn/assets/video.py:217-219`, `ARCHITECTURE.md:1143` | дни |
-| **P2** | ~~`vn release steam`~~, ~~ownership provider~~ — **закрыто** [ADR-0014](../adr/0014-platform-services.md) | Платформенный слой реализован: `vn release steam` рендерит VDF и раскладывает депоты Windows/mac (на Linux — открытый дефект, ниже), ownership-провайдер подключён (`035_platform.rpy:75`), controller-first UI и авто-масштаб под Deck/Big Picture работают. Осталось только то, что ниже | [39-platforms.md](39-platforms.md), `tools/vn/src/vn/release.py:151-252`, `game/framework/00_core/035_platform.rpy` | — |
+| **P2** | ~~`vn release steam`~~, ~~ownership provider~~ — **закрыто** [ADR-0014](../adr/0014-platform-services.md) | Платформенный слой реализован: `vn release steam` рендерит VDF и раскладывает депоты Windows/mac (на Linux — открытый дефект, ниже), ownership-провайдер подключён (`035_platform.rpy:75`), controller-first UI и авто-масштаб под Deck/Big Picture работают. Осталось только то, что ниже | [39-platforms.md](39-platforms.md), `tools/vn/src/vn/release.py:151-284`, `game/framework/00_core/035_platform.rpy` | — |
 | **P2** | Автоматический Steam-аплоад + каналы dev/beta/release | `steamcmd` запускается руками (credentials вне репозитория), джобы `steam-publish` нет. Плюс `project@1` требует `^\d+\.\d+\.\d+$`, что делает теги `vX.Y.Z-rcN` невозможными — бета-канала нет ни в схеме, ни в CI | `.github/workflows/release.yml:47-54`, `tools/schemas/project@1.schema.json` | недели |
 | **P2** | Депот пака как отдельного товара | `vn release steam` знает депоты платформ игры, но не паков; `vn pack build` кладёт в zip только манифест и сцены — ассеты и `tl/` в депот DLC не едут | `tools/vn/src/vn/cli.py:1887-1926` (`vn pack build`), `project.yaml: platform.steam.depots` | недели |
 | **P3** | Android/APK | Ни ветки `--package android`, ни размер-бюджетов по каналам (AAB / universal APK < 2 ГБ), ни провайдера Play Billing. Release-рантайм для этого уже чист (ноль сети, ноль subprocess, loader-ввод) — работа в упаковке, а не в игре | [39-platforms.md](39-platforms.md) §2.1, `ARCHITECTURE.md:1189` | месяцы |
 | **P2** | `theme.yaml`: один источник UI-токенов | Радиусы объявлены дважды: `gui.radius_button/radius_panel` (осиротевшие, комментарий прямо говорит «задекларированы для theme.yaml») и `content/ui/panels.yaml` (реально используемые). `ARCHITECTURE.md:3811` описывает `ui/themes/*.yaml`, которых нет | `game/gui.rpy:71-73`, `content/ui/panels.yaml`, `ARCHITECTURE.md:3424,3811` | недели |
-| **P2** | UI достижений | Бэкенд, декларации и локализованные строки есть; ни один экран их не рисует. Игрок не видит того, что уже работает | `game/framework/00_core/080_achievements.rpy`, `game/framework/20_ui/` (ноль вхождений `achievement`) | дни |
+| ~~P2~~ **СДЕЛАНО (эта итерация)** | UI достижений | Было: бэкенд, декларации и локализованные строки есть, ни один экран их не рисует. Стало: экран `achievements` (`20_ui/screens/achievements.rpy`) + пункт рельсы с data-гейтом; спойлер-правило «скрытая неполученная = `???`», счётчик по видимым. Остатки, вынесены отдельными пунктами: прогресса отдельной ачивки нет, уведомления о выдаче нет, `visible_ids()`/`progress()` физически лежат в файле экрана, а не в `080_achievements.rpy` | — |
+| **P3** | Прогресс отдельной ачивки и уведомление о выдаче | Экран показывает «получено / не получено», но не «10 из 30 CG»; при выдаче игрок не видит ничего (у галереи `renpy.notify` есть). Поля `progress` нет ни в схеме, ни в эмиттере, ни в сторе | `tools/schemas/achievements@1.schema.json`, `tools/vn/src/vn/content/compile.py` (`_emit_achievements`), `game/framework/00_core/080_achievements.rpy` | дни |
 | **P3** | `vn char sheet` | Заглушка фазы 2; лист персонажа сегодня собирается глазами по дереву `assets_src/png/characters/` | `tools/vn/src/vn/cli.py:958` | дни |
 | **P3** | TTS-черновики озвучки (`vn voice tts`) | Единственная заглушка домена `vn voice`: остальной контур (схема `voice@1`, `manifest/import/validate`, транскод `voice_opus`, инжекция voice-операторов, гейт) реализован — [23-audio.md](23-audio.md) §8. Не блокирует ничего: черновики можно генерировать внешним TTS и заносить `vn voice import --draft` | `tools/vn/src/vn/cli.py:1278-1281` | дни |
 | **P3** | Live2D / Spine | Фаза 3; каталоги `assets_src/live2d/` и `assets_src/spine_export/` заведены пустыми. Направление проекта — DAZ-реализм, а не анимированные 2D-персонажи | `assets_src/live2d/`, `assets_src/spine_export/`, `ARCHITECTURE.md` §4.8 | месяцы |
@@ -156,7 +168,7 @@ LightX2V ×2 — Apache-2.0; RealESRGAN — BSD-3, все с `commercial_use: al
 | Механизм | Статус |
 |---|---|
 | Поля `commercial_use` / `nsfw_terms_url` в `comfyui_models@1` | IMPLEMENTED — заполнены у всех 10 позиций `tools/comfyui-models.yaml` |
-| Реестр лицензий ассетов `license_registry@1` + гейт `game_use`/`nsfw_allowed` | IMPLEMENTED — `tools/vn/src/vn/assets/licenses.py`, включён в `release.py:408-417` |
+| Реестр лицензий ассетов `license_registry@1` + гейт `game_use`/`nsfw_allowed` | IMPLEMENTED — `tools/vn/src/vn/assets/licenses.py`, включён в `release.py:475-484` |
 | Авто-гейт «модель с `commercial_use != allowed` не в релизном контенте» | NOT IMPLEMENTED — ADR прямо откладывает до выбора варианта |
 | Видимость правового статуса в CLI | PARTIALLY IMPLEMENTED — ADR обещает «виден через `vn pipeline models`», но команда печатает только id, размер, путь, `required` и способ авторизации (`cli.py:1449-1457`); `license`/`commercial_use` видны только в самом YAML |
 
@@ -457,15 +469,45 @@ runbook стал исполнимым.
 Перенос имён стейтментов (G6) — механизм, от которого зависит совместимость сейвов между
 релизами; брать для него `.rpyc` чужого флейвора небезопасно.
 
-### P1-11. Гейт `packs` и `early_content` по флейвору — NOT IMPLEMENTED
+### P1-11. Гейт `packs` и `early_content` по флейвору — СДЕЛАНО (эта итерация)
 
-`project.yaml:12-22` объявляет `flavors.public.packs = [ep_beach]` и
-`flavors.patron.packs = [ep_beach, nsfw]`. Список пишется в `game/build_id.json` и **не читается
-ничем**: `pack_registry.installed()` смотрит в `VN_PACKS` (`030_flow.rpy:77`), а генерат
-перечисляет все паки из `packs/` (`tools/vn/src/vn/content/scenes.py:295`; в текущем генерате —
-`{'ep_beach': …, 'nsfw': …}`). То же с `early_content`: вычисляется, экспонируется, не читается.
-Сегодня `packs/nsfw/` содержит только `manifest.yaml` и `chapters/.gitkeep`, поэтому риск
-теоретический — и станет реальным ровно с первым NSFW-контентом.
+**`packs` — рантайм-гейт установленности.** Было: список писался в `game/build_id.json` и не читался
+ничем, `pack_registry.installed()` смотрел только в `VN_PACKS`, а генерат перечисляет все паки из
+`packs/`. Стало (`030_flow.rpy:77-91`):
+
+```renpy
+installed(pack_id) = pack_id == "core"
+                     or (pack_id in VN_PACKS
+                         and (not vn_build.is_release or pack_id in vn_build.packs))
+```
+
+Выбран рантайм-вариант, а не фильтрация `VN_PACKS` в компиляторе: генерат один на все флейворы, и
+привязать его к флейвору значило бы разъехаться с `vn build --check` и кэшем `.rpyc`. Признак релиза —
+**факт файла** `game/build_id.json` (производный флаг `vn_build.is_release`, `060_build_info.rpy:24-38`),
+а не пустота `packs`: флейвор без паков легитимен, и гейт обязан гейтить именно в нём. В dev-чекауте
+гейт открыт — иначе dev-прогон и smoke гейтились бы вслепую.
+
+**`early_content` — гейт релиза, самоактивирующийся.** Стало проверкой №4 релизного гейта
+(`early_content_checks`, `release.py:403-438`). При `early_content: true` — PASS. При
+`early_content: false` строгость (`draft` = **FAIL**, `playtest` = WARN, незнакомый статус = draft,
+fail-closed) включается **с первой главой `status: release`**; пока таких глав нет — одна строка
+**WARN**, и флейвор собирается. Причина смягчения (`release.py:422-427`): требование «в публичном
+флейворе только зрелые главы» до первой зрелой главы невыполнимо — гейт запретил бы собрать что
+угодно, включая демо, а невыполнимый гейт учит игнорировать гейты. Сама строгость выведена из кода
+конвейера, а не из вкуса: для `draft` граф-проверки понижены до warnings, то есть ненаписанная ветка
+легальна и у игрока станет «сцена недоступна». Контент не вырезается (сейв игрока мог на него
+сослаться) — гейт просто не пропускает сборку. Флага для смягчения не заводили специально: лишний
+флаг нужно помнить и потом снимать.
+
+**Остатки — OPEN:**
+
+- рантайм-потребителей у `vn_build.early_content` по-прежнему ноль (плашка «ранний доступ», гейт из
+  сцены — писать с нуля);
+- ночной шаг «релизная сборка обоих флейворов» (`nightly.yml:71-75`) сегодня проходит: гейт зрелости
+  даёт WARN. Он покраснеет в тот прогон, где первая глава станет `status: release`, — и вместе с ним
+  релиз по тегу и `steam-upload`. Решение (довести остальные главы, гонять `patron`, объявить
+  `early_content: true` у `public`) принимает владелец релизного процесса, и лучше до того дня;
+- живого прогона релизной сборки с непустым `packs/nsfw/chapters/` не было — контента там нет.
 
 ### P1-12. `vn test replay` / `vn test paths` — NOT IMPLEMENTED (заглушки фазы 2)
 
@@ -497,14 +539,14 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 
 | Стиль | Строки | Реальная высота | Панель теперь | Минимум |
 |---|---|---|---|---|
-| `vn_gal_tab` | `161-168` | ≈ 31 px | `hover_background vn_frame_chip`, `selected_background vn_frame_chip_active` | 22 px |
-| `vn_gal_ctl_button` | `221-225` | ≈ 29 px | `background vn_frame_chip`, `hover_background vn_frame_chip_active` | 22 px |
+| `vn_gal_tab` | `179-186` | ≈ 31 px | `hover_background vn_frame_chip`, `selected_background vn_frame_chip_active` | 22 px |
+| `vn_gal_ctl_button` | `231-236` | ≈ 29 px | `background vn_frame_chip`, `hover_background vn_frame_chip_active` | 22 px |
 
 Панелей в `content/ui/panels.yaml` стало **8** (было 6). Дыра в тестах тоже закрыта: раньше
 проверялись только декларации панелей с id на `choice` и никогда — потребители; теперь
-`test_ui_panels.py:244-283` разбирает стили всех экранов и сверяет реальный размер элемента
-с минимумом его панели, а `:284-304` отдельно стережёт, что вкладка и кнопка просмотрщика
-галереи остались чипами. См. [06-frontend.md](06-frontend.md), [15-gallery.md](15-gallery.md).
+`test_ui_panels.py:325-367` разбирает стили всех экранов и сверяет реальный размер элемента
+с минимумом его панели (на двух масштабах `ui_scale`), а `:394-417` отдельно стережёт, что вкладка
+и кнопка просмотрщика галереи остались чипами. См. [06-frontend.md](06-frontend.md), [15-gallery.md](15-gallery.md).
 
 ### P1-15. Два мёртвых участка кода — СДЕЛАНО ЧАСТИЧНО 2026-08-08
 
@@ -542,12 +584,12 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 | **Контакт-листы рендеров** | NOT IMPLEMENTED — `vn assets sheet` упомянута в `ARCHITECTURE.md`, отсутствует | Открывать файлы по одному | Когда в главе десятки CG |
 | **Loudnorm для музыки/SFX** | NOT IMPLEMENTED — `tools/vn/src/vn/assets/video.py` кодирует с `-an`, `copy_audio` копирует байт в байт (голос при этом нормализуется веткой `voice_opus`; `loop_start`/`volume` эмитятся, мёртвым осталось поле `loop`) | Ручное выравнивание в редакторе | Сразу после первого трека (остаток P0-3) |
 | **Альфа-видео (`side_mask`)** | NOT IMPLEMENTED — `video.py:217-219` только предупреждает на `yuva420p` | Видео без прозрачности | Когда понадобится анимированный элемент поверх фона |
-| **`vn release steam`** | PARTIALLY IMPLEMENTED (ADR-0014) — VDF из `ci/steam/app_build.vdf.tmpl` + раскладка депотов (`release.py:153-289`) работает на всех платформах, включая linux-`tar.bz2`; открыто **не в коде**: приложения в Steamworks нет (`appid: null`, ключа `depots` нет → команда падает на первом шаге), аплоад ручной (`steamcmd`, в CI нет), steam_api-редистрибутивов на build-машине нет, реальной выкладки не было — и вопрос каталога-обёртки в депоте остаётся открытым ([40-steamworks.md](40-steamworks.md) §4.3) | `tools/vn/src/vn/release.py:238-272`, `ci/steam/README.md` | дни (внешние шаги Valve) |
-| **Автоаплоад в Steam + каналы** | NOT IMPLEMENTED — `steamcmd` руками, джобы `steam-publish` нет; `project@1` `^\d+\.\d+\.\d+$` делает теги `-rcN` невозможными (`release.yml:47-54`) | Один `steamcmd +run_app_build` из README `ci/steam/` | Когда релизов в Steam станет больше одного в месяц |
+| **`vn release steam`** | PARTIALLY IMPLEMENTED (ADR-0014) — VDF из `ci/steam/app_build.vdf.tmpl` + раскладка депотов (`release.py:150-326`) работает на всех платформах, включая linux-`tar.bz2`; открыто **не в коде**: приложения в Steamworks нет (`appid: null`, ключа `depots` нет → команда падает на первом шаге), аплоад ручной (`steamcmd`, в CI нет), steam_api-редистрибутивов на build-машине нет, реальной выкладки не было — и вопрос каталога-обёртки в депоте остаётся открытым ([40-steamworks.md](40-steamworks.md) §4.3) | `tools/vn/src/vn/release.py:266-309`, `ci/steam/README.md` | дни (внешние шаги Valve) |
+| **Автоаплоад в Steam + каналы** | PARTIALLY IMPLEMENTED — workflow `steam-upload` (ручной запуск, входы `flavor`/`branch`, секреты `STEAM_USERNAME`/`STEAM_CONFIG_VDF`) гоняет `release build` → `release steam` → `steamcmd`; аплоад ни разу не выполнялся (нет App ID и секретов). Каналов dev/beta/release как сущностей конвейера нет; `project@1` `^\d+\.\d+\.\d+$` делает теги `-rcN` невозможными (`release.yml:47-54`) | Один `steamcmd +run_app_build` из README `ci/steam/` | Когда релизов в Steam станет больше одного в месяц |
 | **Ownership provider** | IMPLEMENTED (ADR-0014) — провайдер ставится в `035_platform.rpy:75` при живом Steam; маппинг — `steam_dlc_appid` в манифесте пака | Вне Steam установленный пак считается купленным (осознанно, G9) | — |
 | **Android/APK** | NOT IMPLEMENTED — нет ветки сборки, размер-бюджетов по каналам, провайдера Play Billing | Только desktop-каналы | Когда появится продуктовое решение о мобильной версии |
 | **`theme.yaml`: один источник токенов** | NOT IMPLEMENTED — `ARCHITECTURE.md:3424,3811` описывает `ui/themes/*.yaml`; в коде радиусы объявлены дважды (`gui.rpy:71-73` — осиротевшие, `content/ui/panels.yaml` — рабочие) | Токены в `game/gui.rpy` + геометрия панелей в `panels.yaml` | Когда появится вторая тема или DLC-тема |
-| **UI достижений** | IMPLEMENTED (бэкенд) / NO UI — `080_achievements.rpy` есть, экрана нет (ноль вхождений `achievement` в `game/framework/20_ui/`) | Достижения выдаются и не показываются | Перед первым публичным релизом: это готовая ценность, которую игрок не видит |
+| **UI достижений** | **IMPLEMENTED** — `080_achievements.rpy` + экран `20_ui/screens/achievements.rpy` + пункт рельсы. Остатки: нет прогресса отдельной ачивки, нет уведомления о выдаче, `visible_ids()`/`progress()` физически объявлены в файле экрана | Игрок видит прогресс в игре | Публичным релизом: это готовая ценность, которую игрок не видит |
 
 ---
 
@@ -592,10 +634,10 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 
 1. Остаток **P1**: автоматизация рендера (P1-4, P1-5) — здесь она даст максимум, потому что
    после пилота уже известно, что именно автоматизировать; `overlays` (P1-3);
-   high-watermark (P1-8); флейворные гейты (P1-10, P1-11); `vn test replay|paths` (P1-12);
-   гигиена — P1-13 CODEOWNERS и транзитивные пины лока (остаток P1-7); P1-6 закрыт.
-2. Из **P2** — то, что упирается в объём контента: контакт-листы, loudnorm для музыки/SFX,
-   UI достижений.
+   high-watermark (P1-8); флейвор в ключе `rpyc-cache` (P1-10); `vn test replay|paths` (P1-12);
+   гигиена — P1-13 CODEOWNERS и транзитивные пины лока (остаток P1-7); P1-6 и P1-11 закрыты.
+2. Из **P2** — то, что упирается в объём контента: контакт-листы, loudnorm для музыки/SFX.
+   UI достижений закрыт; остались его хвосты — прогресс отдельной ачивки и уведомление о выдаче.
 3. Пересмотреть этот файл целиком: после 3–5 глав производственная боль будет измеримой,
    и приоритеты можно будет ставить по фактам, а не по коду.
 
@@ -613,7 +655,7 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 | Размер генерата | `generated_total_kb 65536` при 21 выходе на одну главу; выходы масштабируются линейно по сценам | P3 инкрементальная компиляция, контроль бюджета в `vn build` |
 | Видео-бюджет | `video_total_mb 8000` при `video_file_mb 512` — это ~15 предельных лупов на игру | P3 двухпроходный VP9 и профили `hd`/`mobile` |
 | Второй человек в проекте | Локи без TTL и без атомарности, CODEOWNERS из плейсхолдеров, ручной аварийный путь без `--use-artifact` | P1-13, P2 локи, P2 `--use-artifact` |
-| Продажи в Steam / DLC | Базовое закрыто ADR-0014 (ownership-провайдер, депоты платформ, controller-first UI). Осталось: аплоад руками, каналов dev/beta/release нет, теги `-rcN` запрещены схемой, депота пака как товара нет | P2 автоаплоад + каналы, P2 депот пака |
+| Продажи в Steam / DLC | Базовое закрыто ADR-0014 (ownership-провайдер, депоты платформ без каталога-обёртки, controller-first UI, гейт установленности по флейвору, ручной workflow `steam-upload`). Осталось: аплоад ни разу не выполнялся, каналов dev/beta/release нет, теги `-rcN` запрещены схемой, депота пака как товара нет | P2 автоаплоад + каналы, P2 депот пака |
 | Локализация за пределами трёх языков | say-id переиспользуются; нет POT/msgmerge, глоссария, per-domain отчёта | P1-8 high-watermark, затем инструменты из `ARCHITECTURE.md` §5 по мере необходимости |
 
 ---
@@ -623,7 +665,7 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 - **Не реализовывать `ARCHITECTURE.md` подряд.** Документ — целевой контракт на 4182 строки
   и горизонт 5–10 лет. Реализация «по порядку разделов» гарантированно уведёт в атласы UI,
   телеметрию и Mod SDK раньше, чем в живой звук. Критерий один: производственная боль.
-- **Не оптимизировать `vn build`.** 0,3 с на прогретом кэше, 254 теста за секунды. Инкрементальная
+- **Не оптимизировать `vn build`.** 0,3 с на прогретом кэше, 278 тестов за секунды. Инкрементальная
   компиляция по `manifest["inputs"]` — красивая задача с нулевой отдачей сегодня (P3).
 - **Не разворачивать S3 до пилота.** Пока в `assets_src/` 11 бинарных файлов на 129 КБ, S3
   добавит операционную сложность и ничего не решит. ADR-0004 сознательно легализовал PNG в git
@@ -666,7 +708,7 @@ radius 8 и почти прижатая тень, отсюда `Borders = 8 + (2
 |---|---|---|---|
 | **0 — фундамент** (:4072) | monorepo и зоны, CODEOWNERS, `.gitattributes`/`.gitignore`, `project.yaml`, реестр схем с правилом `schema: <name>@<int>`, скелет CLI `vn`, lockfile, ADR-процесс | Всё: зоны, 39 схем (`schemas.py:13-51`), CLI из 20 групп/команд, `tools/vn.lock` (читается всеми 7 установками CI с 2026-08-08), 14 ADR. DoD «пустой проект собирается и CI зелёный» выполнен | CODEOWNERS из плейсхолдеров (P1-13); в локе не закреплены транзитивные зависимости — остаток P1-7 |
 | **1 — вертикальный срез** (:4081) | Content Compiler с парсером Ren'Py (G24); asset pipeline (PSD, WebP, аудио, кэш по хэшу, `assets watch` draft); layeredimage-эмиттер + golden-тесты; `vn bootstrap` + CI «clone → ≤ 5 мин»; базовый CI; онбординг-инсталлер по ролям + `vn doctor` | Компилятор (21 выход, парсер через SDK — `tools/vn/src/vn/content/analyze.py:37-70`); ассет-конвейер из 7 трансформаций с кэшем; layeredimage-эмиттер; `vn doctor` (8 PASS); CI на GitHub (7 определений job'ов). DoD «сценарист добавляет сцену без программиста» — да (`vn scene new`); «новая глава появляется в меню без ручной регистрации» — да | `vn char new|validate` — заглушка **фазы 1** (P1-1); PSD-путь не обкатан и без тестов (P0-2); аудио-тракт жив, но без единого трека и `.ogg` (остаток P0-3); `vn bootstrap` собирает локально, remote-fetch G4 отсутствует; джобы «clone → ≤ 5 мин» нет; `--role` у bootstrap нет; DoD «художник меняет эмоцию за ≤ 15 с» **не замерялся**: спрайты в `assets_src/png/characters/mira/a/**` есть, но это плейсхолдеры, а PSD-путь (§P0-2) на реальном арте не обкатан |
-| **2 — производство и релиз** (:4096) | локализация; сейвы с корпусом фикстур и `vn save check\|migrate\|corpus`; релизный конвейер (перенос `.rpyc`, каналы dev/beta/release, автоверсионирование, changelog, Steam-депоты); QA (автопилот под xvfb, чит-меню, детерминированный режим, перф-бюджеты); видео/WebM; атласы UI; звуковой конвейер | Локализация целиком (`loc keys/add/extract/import/pseudo/report`, 3 языка 130/130); `vn save check\|corpus` (2 фикстуры, миграция реально проигрывается) + линия `.rpyc` в git (52 файла); `vn package` с переносом `.rpyc` (G6); `vn release validate` (20 проверок) и `release build`; smoke-автопилот под xvfb + чит-меню Shift+J; видео/WebM (ADR-0006) | `vn save migrate` — заглушка фазы 3; каналов dev/beta/release нет (P2), Steam-поставка реализована ADR-0014, кроме автоаплоада — раскладка депотов работает для всех платформ, но приложения в Steamworks нет и живой выкладки не было ([40-steamworks.md](40-steamworks.md) §4.3); `changelog` без `--from/--audience` и слеп к пакам; `vn test replay|paths` — заглушки (P1-12); перф-бюджеты кроме `cold_start_s` отсутствуют (P3); атласы UI — нет; звуковой конвейер: `loop_start`/`volume` эмитятся, озвучка (`voice@1` + `vn voice` + `voice_opus`) работает, но музыка/SFX — только копирование `.ogg` без loudnorm (остаток P0-3, P2 loudnorm) |
+| **2 — производство и релиз** (:4096) | локализация; сейвы с корпусом фикстур и `vn save check\|migrate\|corpus`; релизный конвейер (перенос `.rpyc`, каналы dev/beta/release, автоверсионирование, changelog, Steam-депоты); QA (автопилот под xvfb, чит-меню, детерминированный режим, перф-бюджеты); видео/WebM; атласы UI; звуковой конвейер | Локализация целиком (`loc keys/add/extract/import/pseudo/report`, 3 языка 136/136); `vn save check\|corpus` (2 фикстуры, миграция реально проигрывается) + линия `.rpyc` в git (52 файла); `vn package` с переносом `.rpyc` (G6); `vn release validate` (21 проверка) и `release build`; smoke-автопилот под xvfb + чит-меню Shift+J; видео/WebM (ADR-0006) | `vn save migrate` — заглушка фазы 3; каналов dev/beta/release нет (P2), Steam-поставка реализована ADR-0014, кроме автоаплоада — раскладка депотов работает для всех платформ, но приложения в Steamworks нет и живой выкладки не было ([40-steamworks.md](40-steamworks.md) §4.3); `changelog` без `--from/--audience` и слеп к пакам; `vn test replay|paths` — заглушки (P1-12); перф-бюджеты кроме `cold_start_s` отсутствуют (P3); атласы UI — нет; звуковой конвейер: `loop_start`/`volume` эмитятся, озвучка (`voice@1` + `vn voice` + `voice_opus`) работает, но музыка/SFX — только копирование `.ogg` без loudnorm (остаток P0-3, P2 loudnorm) |
 | **3 — рост** (:4106) | Live2D/Spine с prebaked-fallback; DLC (паки, `api_level`, матрица совместимости, voice-депоты); скриншот-тесты; телеметрия opt-in; моды/Workshop и Mod SDK последними | `vn pack validate|build` и `pack_manifest@1` с `api_level` уже есть; галерея (ADR-0010) и генерируемые UI-панели (ADR-0009) — тоже сделаны раньше срока | Live2D/Spine (P3); матрица совместимости DLC; voice-депоты (P3); `vn test screens` — заглушка фазы 3; телеметрия; `anchors.yaml` пуст (P2) |
 | **8.5 — кто поддерживает** (:4114) | ≥ 2 владельца на инструмент; runbook аварий; онбординг-документ tools-инженера как обязательный артефакт фазы 1 | Runbook есть (`docs/runbooks/pipeline-broken-at-night.md`); `docs/onboarding/tools-engineer.md` есть | Владельцы — плейсхолдеры (P1-13); карта модулей в `tools-engineer.md` покрывает 11 из ~28 модулей; шаг runbook «откат через `git revert tools/vn.lock`» стал исполнимым 2026-08-08 (P1-7), но сам runbook всё ещё описывает GitLab-пайплайн; `vn build --use-artifact` отсутствует (P2) |
 
@@ -796,5 +838,5 @@ vn doctor && vn build --check && python -m pytest tools/vn/tests -q && \
 | **Читать перед изменением** | [`../ARCHITECTURE.md`](../ARCHITECTURE.md) §8 (строки 4068-4122 — фазовый план), [`../adr/0008-ai-model-licensing-for-commercial-adult-content.md`](../adr/0008-ai-model-licensing-for-commercial-adult-content.md) (единственный непринятый ADR), [`../runbooks/pipeline-broken-at-night.md`](../runbooks/pipeline-broken-at-night.md), [`../../CODEOWNERS`](../../CODEOWNERS), `../../README.md:43`, профильный файл хендбука по затрагиваемой подсистеме |
 | **Не трогать** | Код проекта из этого файла не меняется — roadmap только описывает. Правка пункта не является разрешением править `tools/vn/`, `game/framework/` или `docs/ARCHITECTURE.md`. Изменение нормы раздела 0 `ARCHITECTURE.md` — только новым ADR |
 | **Зависимости (что ломается ниже по течению)** | Статусы механизмов дублируются в 01–36: при закрытии пункта обновляется профильный файл, иначе хендбук начнёт противоречить сам себе. Ссылки вида `файл:строка` уезжают вместе с кодом — после каждого закрытого пункта их надо перепроверять `sed -n '<N>p' <файл>`, а не переносить на глаз. Ссылки на несуществующие файлы хендбука (17–38) станут битыми, если файлы не будут созданы |
-| **Валидация** | `vn doctor` → `vn build --check` → `python -m pytest tools/vn/tests -q` (254 теста) → `vn release validate --flavor public` (20 проверок, из них `PASS сейв-корпус: 2 фикстур`). Плюс блок «Проверка» выше — он перепроверяет фактуру самого roadmap |
+| **Валидация** | `vn doctor` → `vn build --check` → `python -m pytest tools/vn/tests -q` (278 тестов) → `vn release validate --flavor patron` (21 проверка, из них `PASS сейв-корпус: 2 фикстур`). Плюс блок «Проверка» выше — он перепроверяет фактуру самого roadmap |
 | **Частые ошибки** | 1) Считать `docs/ARCHITECTURE.md` описанием построенного — это целевой документ; проверенные статусы — здесь и в профильных файлах. 2) Повышать приоритет пункта «потому что это техдолг» — критерий один: скорость и качество производства VN. 3) Добавлять пункт без пути в репозитории и команды проверки. 4) Ссылаться на `.gitlab-ci.yml` как на пайплайн проекта — реально работает `.github/workflows/` (P0-6). 5) Ставить сроки: оценки здесь — порядок величины, не обязательство. 6) Считать пункт, помеченный `СДЕЛАНО частично`, полностью закрытым: у P0-3, P0-5, P1-7 и P1-15 остаток назван явно и не закрыт |

@@ -144,7 +144,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | `loc extract` | — | Обновить PO всех языков из ledger/strings/персонажей (`cli.py:1019-1032`) | IMPL |
 | `loc import` | — | PO → `game/tl/<lang>/`; ручные правки `tl` запрещены (`cli.py:1035-1051`) | IMPL |
 | `loc pseudo` | — | Псевдолокаль `pseudo` + импорт (`cli.py:1054-1069`) | IMPL |
-| `loc report` | — | Покрытие по языкам и число fuzzy (`cli.py:1072-1086`) | IMPL — но **без** `--gate/--format`: гейтинг живёт только в релизном гейте (`release.py:408-434`) |
+| `loc report` | — | Покрытие по языкам и число fuzzy (`cli.py:1072-1086`) | IMPL — но **без** `--gate/--format`: гейтинг живёт только в релизном гейте (`release.py:475-501`) |
 
 Подробно — [Локализация](14-localization.md).
 
@@ -157,7 +157,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | `voice tts` | — | TTS-черновики непокрытых реплик | STUB — фаза 2 (`cli.py:1278-1281`) |
 | `voice validate` | `--report` | Манифесты ↔ ledger ↔ мастера: сироты в обе стороны, драфты, дыры покрытия; `--report` — сводка по главам и языкам (`cli.py:1284-1311`) | IMPL |
 
-Ядро — `tools/vn/src/vn/voice.py`; жёсткими драфты (WARN) и дыры покрытия (FAIL) становятся в релизном гейте (`release.py:464-478`). Подробно — [Аудио](23-audio.md) §8.
+Ядро — `tools/vn/src/vn/voice.py`; жёсткими драфты (WARN) и дыры покрытия (FAIL) становятся в релизном гейте (`release.py:531-548`). Подробно — [Аудио](23-audio.md) §8.
 
 ### 2.8 `vn save` (`cli.py:1093-1096`)
 
@@ -190,13 +190,13 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
 | `release changelog` | — | Обновляет `docs/CHANGELOG.md` и `ci/release-manifest.json` по диффу реестров, штампует `id_registry` (G7) (`cli.py:1471-1489`) | PART — нет `--from/--audience`; главы из `packs/*/chapters/` не видит |
-| `release validate` | `--flavor` (**required**) | Предрелизный гейт: 20 проверок PASS/WARN/FAIL (`cli.py:1492-1505`) | IMPL |
+| `release validate` | `--flavor` (**required**) | Предрелизный гейт: 21 проверка PASS/WARN/FAIL (`cli.py:1492-1505`) | IMPL |
 | `release build` | `--flavor` (**required**), `--patron-token`, `--package` (multiple), `--timeout` (def 900) | `vn build` → гейт → `game/build_id.json` → `vn package` с суффиксом `-<flavor>` → `build-info.json`; `build_id.json` и скопированный `THIRD-PARTY-NOTICES.md` снимаются в `finally` (`cli.py:1508-1562`) | IMPL — `--patron-token` это **вход**: наружу уходит только производная метка `patron_tag` (ADR-0011, см. ниже) |
-| `release steam` | `--flavor` (**required**), `--branch` | Steam-поставка ([ADR-0014](../adr/0014-platform-services.md)): рендерит `build/steam/app_build_<flavor>.vdf` из `ci/steam/app_build.vdf.tmpl` и распаковывает архивы distribute в `build/steam/content/<flavor>/<platform>/` — zip для windows/mac, `tar.bz2` для linux, только для платформ с объявленным депотом; предупреждает про отсутствующие steam_api-библиотеки (`cli.py:1819-1852`, `release.py:151-289`) | PARTIAL — раскладка депотов и VDF работают ([40](40-steamworks.md) §4.3), но это **не аплоад** (`steamcmd` запускает человек, credentials вне репозитория), а в этом чекауте команда останавливается на первом шаге: `platform.steam.appid: null` и ключа `depots` в `project.yaml` нет |
+| `release steam` | `--flavor` (**required**), `--branch` | Steam-поставка ([ADR-0014](../adr/0014-platform-services.md)): рендерит `build/steam/app_build_<flavor>.vdf` из `ci/steam/app_build.vdf.tmpl` и распаковывает архивы distribute в `build/steam/content/<flavor>/<platform>/` — zip для windows/mac, `tar.bz2` для linux, только для платформ с объявленным депотом; предупреждает про отсутствующие steam_api-библиотеки (`cli.py:1819-1852`, `release.py:151-326`) | PARTIAL — раскладка депотов и VDF работают ([40](40-steamworks.md) §4.3), но это **не аплоад** (`steamcmd` запускает человек, credentials вне репозитория), а в этом чекауте команда останавливается на первом шаге: `platform.steam.appid: null` и ключа `depots` в `project.yaml` нет |
 
 Сборка идёт **до** гейта осознанно: в свежем чекауте генерата нет вовсе, и проверка «генерат свеж» валила бы каждый релиз (комментарий `cli.py:1526-1528`). См. [Сборка и релиз](29-build-and-release.md).
 
-**`--patron-token` ≠ то, что уедет игроку (ADR-0011, 2026-08-08).** `game/build_id.json` целиком лежит внутри дистрибутива — он нужен рантайму (`060_build_info.rpy`) и ни одно правило `build.classify` его не исключает. Поэтому до `build_info@2` в поле `patron_token` уезжал сам секрет (в CI — `secrets.PATRON_TOKEN`). Теперь `compute_build_info` (`release.py:230-255`) кладёт в документ поле `patron_tag` = `release.patron_tag(token)` (`release.py:206-227`) — `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex. Вотермарка = `build_id + " · " + patron_tag` (`060_build_info.rpy:42-45`). Схема бампнута `build_info@1` → `build_info@2`; `build_info@1` осталась в реестре с пометкой «устарела» — чтобы читались `build-info.json` сборок до 0.1.5. Проверено сквозным прогоном: в patron-дистрибутиве 1663 файла, токен не встречается ни в одном.
+**`--patron-token` ≠ то, что уедет игроку (ADR-0011, 2026-08-08).** `game/build_id.json` целиком лежит внутри дистрибутива — он нужен рантайму (`060_build_info.rpy`) и ни одно правило `build.classify` его не исключает. Поэтому до `build_info@2` в поле `patron_token` уезжал сам секрет (в CI — `secrets.PATRON_TOKEN`). Теперь `compute_build_info` (`release.py:479-506`) кладёт в документ поле `patron_tag` = `release.patron_tag(token)` (`release.py:455-476`) — `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex. Вотермарка = `build_id + " · " + patron_tag` (`060_build_info.rpy:42-45`). Схема бампнута `build_info@1` → `build_info@2`; `build_info@1` осталась в реестре с пометкой «устарела» — чтобы читались `build-info.json` сборок до 0.1.5. Проверено сквозным прогоном: в patron-дистрибутиве 1663 файла, токен не встречается ни в одном.
 
 **Требование к процессу:** токен-метка получателя обязана быть случайной (`secrets.token_hex(16)` и подобное). Короткий низкоэнтропийный токен подбирается перебором по 8-символьной метке — это единственное, что метка не защищает.
 
@@ -389,7 +389,7 @@ tools/vn/                   34 .py-файла / 11 122 строки (wc -l по 
     schemas.py    51        SchemaRegistry: загрузка tools/schemas/*.schema.json + validate()
     pipeline.py  581        vn pipeline doctor|models: внешнее окружение (ffmpeg/GPU/ComfyUI/DAZ)
     release.py   629        бюджеты, changelog, флейворы, build_info@2 + patron_tag,
-                            Steam-поставка (ADR-0014), гейт (20 проверок)
+                            Steam-поставка (ADR-0014), гейт (21 проверка)
     voice.py     326        голосовой контур C5: манифесты, CSV-лист, import_takes, покрытие
     content/
       compile.py 1211       Content Compiler: 21 выход + manifest.json
@@ -416,7 +416,7 @@ tools/vn/                   34 .py-файла / 11 122 строки (wc -l по 
     loc/
       po.py       610       PO round-trip, пакеты языков, псевдолокаль, отчёт покрытия
       keys.py     249       say-id и маркеры меню, ledger
-  tests/                    24 файла test_*.py + conftest.py + helpers.py, 254 теста
+  tests/                    24 файла test_*.py + conftest.py + helpers.py, 278 тестов
 ```
 
 **Конвенция сокращений в хендбуке.** Ссылки вида `tools/vn/src/vn/content/lint.py:20-53`, `tools/vn/src/vn/loc/po.py:44`, `tools/vn/src/vn/assets/pipeline.py:38-46` — это **сокращение относительно `tools/vn/src/vn/`**, а не путь от корня репозитория. Каталоги `content/` и `loc/` в корне — совсем другие зоны (YAML-декларации и обмен с переводчиками), Python-файлов там нет. Полная форма первого сегмента: `tools/vn/src/vn/content/lint.py`, `tools/vn/src/vn/loc/po.py`, `tools/vn/src/vn/assets/pipeline.py`.
@@ -452,7 +452,7 @@ SDK ищется **только** через переменную окружен
 
 ### 7.4 Реестр схем
 
-`SchemaRegistry` (`schemas.py:16-51`) строится **на каждый вызов заново** — синглтона нет; 12 мест в `tools/vn/src/vn/` создают собственный экземпляр (`doctor.py:99`, `tools/vn/src/vn/content/lint.py:114`, `tools/vn/src/vn/content/compile.py:591`, `release.py:261,292`, `cli.py:1580`, `pipeline.py:264`, шесть модулей в `assets/` — включая `assets/pipeline.py:450`, где с 2026-08-08 валидируется манифест сборки). Внутри экземпляра валидаторы `Draft202012Validator` мемоизируются по schema-id (`schemas.py:22, 43-46`). Правила именования и `const`-проверка — в [Контентный конвейер §8](08-content-pipeline.md).
+`SchemaRegistry` (`schemas.py:16-51`) строится **на каждый вызов заново** — синглтона нет; 12 мест в `tools/vn/src/vn/` создают собственный экземпляр (`doctor.py:99`, `tools/vn/src/vn/content/lint.py:114`, `tools/vn/src/vn/content/compile.py:591`, `release.py:293,292`, `cli.py:1580`, `pipeline.py:264`, шесть модулей в `assets/` — включая `assets/pipeline.py:450`, где с 2026-08-08 валидируется манифест сборки). Внутри экземпляра валидаторы `Draft202012Validator` мемоизируются по schema-id (`schemas.py:22, 43-46`). Правила именования и `const`-проверка — в [Контентный конвейер §8](08-content-pipeline.md).
 
 В `tools/schemas/` **39 схем** (было 34 до 2026-08-08): добавлены `assets_manifest@1` — под манифест `.vncache/assets-manifest.json`, и `build_info@2` — замена `build_info@1` по ADR-0011. `build_info@1` из реестра не удалена: она нужна, чтобы читались артефакты сборок до 0.1.5.
 
@@ -576,7 +576,7 @@ _stub_group("bar", "Домен bar (раздел N).", {"new": 1, "check": 2})  
 - **на реальном репозитории** — `test_schemas.py` берёт `repo_root` и валидирует все стартовые декларации;
 - **на синтетическом скелете** — `test_compile.py:29` (`skeleton_no_chapters`) собирает в `tmp_path` минимальный репозиторий (копирует `project.yaml`, `.vnstorage.yaml`, `tools/schemas/`, `content/` без глав и локаций) — так тест не требует Ren'Py SDK.
 
-Запуск: `python -m pytest tools/vn/tests -q` (254 теста). См. [Тестирование](27-testing.md).
+Запуск: `python -m pytest tools/vn/tests -q` (278 тестов). См. [Тестирование](27-testing.md).
 
 Третий шаблон появился 2026-08-08 — **тест над CLI**: `test_release.py:141-146` (`_run_pack_build`) даёт `click.testing.CliRunner` + `monkeypatch.chdir(root)` (чтобы `_root()` нашёл синтетический корень) и проверяет код возврата и текст вывода команды. Так стоит закрывать команды, у которых логика неотделима от обвязки.
 
@@ -651,7 +651,7 @@ vn build                           # build: OK
 vn build --check                   # check: генерат свеж   ← то же гоняет CI
 
 # 4. Тесты тулинга
-python -m pytest tools/vn/tests -q # 254 passed
+python -m pytest tools/vn/tests -q # 278 passed
 
 # 5. Контракт кодов возврата (после правок в cli.py)
 vn char new;    echo $?            # 3  — заглушка фазы 1
@@ -674,5 +674,5 @@ vn --help && vn assets --help && vn assets video --help
 | **Читать перед изменением** | `../../tools/vn/src/vn/cli.py` (обвязка всех команд), `../../tools/vn/src/vn/repo.py` (поиск корня), `../../tools/vn/src/vn/doctor.py` (обнаружение SDK), `../../tools/vn/pyproject.toml` (зависимости, entry point), целевой модуль домена в `../../tools/vn/src/vn/<домен>/` |
 | **Не трогать** | `game/generated/`, `game/assets/`, `game/tl/`, `.vncache/`, `build/` — производные зоны, перезапишет сборка. `../ARCHITECTURE.md` — целевой документ, не описание построенного: не «приводить код в соответствие» с ним без задачи |
 | **Зависимости** | Правка `cli.py` ломает CI (`.github/workflows/{ci,nightly,canary,release}.yml`, `.gitlab-ci.yml` вызывают команды `vn` по именам), хуки и любые скрипты. Переименование команды/флага — breaking change. Новая зависимость в `pyproject.toml` **обязана** получить пин в `tools/vn.lock`: лок ставится первым во всех пайплайнах, и незапиненный пакет приедет из PyPI произвольной версии. Новая джоба CI обязана ставить лок до editable и `ffmpeg` до `vn build` — оба инварианта стережёт `tools/vn/tests/test_ci_config.py` |
-| **Валидация** | `python -m pytest tools/vn/tests -q` → 254 passed · `vn build --check` → `check: генерат свеж` · `vn doctor` → exit 0 · `vn --help` и `vn <группа> --help` без исключений |
+| **Валидация** | `python -m pytest tools/vn/tests -q` → 278 passed · `vn build --check` → `check: генерат свеж` · `vn doctor` → exit 0 · `vn --help` и `vn <группа> --help` без исключений |
 | **Частые ошибки** | 1) Логика написана прямо в `cli.py` — попадает в почти непокрытую тестами зону (закрыт только `pack build`). 2) Импорт модуля поднят на уровень `cli.py` — старт CLI дорожает для всех команд. 3) Заглушка сделана как `pass` вместо `_stub(N)` — команда молча «успешна». 4) Ошибка выброшена исключением вместо `_fail()` — нарушен контракт «exit 1 всегда с сообщением». 5) Флаг взят из `ARCHITECTURE.md` (`--use-artifact`, `vn validate`, `--gate`) — таких команд нет. 6) Предположение, что `RENPY_SDK` унаследован bash-сессией — его надо экспортировать вручную. 7) Схема добавлена без совпадения `properties.schema.const` с именем файла или без `additionalProperties: false` — падает `SchemaRegistry` и `test_registry_loads`. 8) Утверждение, что `tools/vn.lock` никем не читается — устарело с 2026-08-08 (§8) |

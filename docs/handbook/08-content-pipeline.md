@@ -136,7 +136,7 @@ packs/ep_beach/chapters/ch90_beach/scenes/s010_shore.scene.{yaml,rpy}
 | `vn dev` (watcher) | `cli.py:243-262` | правка `assets_src/` → assets draft + compile; правка `content/` → только compile |
 | `vn release build` | `cli.py:1529-1530` | `vn build` выполняется **до** релизного гейта |
 
-Полный список вызовов `compile_content` — этот и есть: `cli.py:116` (build), `cli.py:216` (bootstrap), `cli.py:247,257` (dev), `cli.py:407` (content compile), `cli.py:541` (assets validate), `release.py:354` (релизный гейт). Проверяется одной командой: `grep -rn "compile_content" tools/vn/src/vn/`.
+Полный список вызовов `compile_content` — этот и есть: `cli.py:116` (build), `cli.py:216` (bootstrap), `cli.py:247,257` (dev), `cli.py:407` (content compile), `cli.py:541` (assets validate), `release.py:391` (релизный гейт). Проверяется одной командой: `grep -rn "compile_content" tools/vn/src/vn/`.
 
 **`vn pack build` компилятор НЕ вызывает.** `pack_build` (`cli.py:1602-1639`) только зипует **уже существующий** генерат: `manifest.yaml` пака плюс файлы из `game/generated/scenes/<ch>/`. Прогоняйте `vn build` перед `vn pack build` руками. (`cli.py:1576` — это импорт внутри **`vn pack validate`**, а не `pack build`.)
 
@@ -493,7 +493,7 @@ vn build                      # ожидается: build: OK
 vn build --check              # ожидается: check: генерат свеж
 
 # Тесты тулинга
-python -m pytest tools/vn/tests -q          # 254 теста
+python -m pytest tools/vn/tests -q          # 278 тестов
 python -m pytest tools/vn/tests/test_compile.py tools/vn/tests/test_lint.py \
                 tools/vn/tests/test_schemas.py tools/vn/tests/test_scene_pipeline.py \
                 tools/vn/tests/test_verify_regressions.py -q

@@ -198,7 +198,7 @@ Exit 1 при любой ошибке, иначе 0.
 
 ### Релизный гейт
 
-`../../tools/vn/src/vn/release.py:517-525` вызывает тот же валидатор с `write_provenance=False`. Ветвление симметрично DAZ (`release.py:506-514`) и Sims 4 (`:528-537`): `errors → FAIL`, иначе `warnings → WARN`, иначе `else → PASS`. Поэтому при нуле деклараций гейт печатает три строки:
+`../../tools/vn/src/vn/release.py:587-595` вызывает тот же валидатор с `write_provenance=False`. Ветвление симметрично DAZ (`release.py:576-584`) и Sims 4 (`:528-537`): `errors → FAIL`, иначе `warnings → WARN`, иначе `else → PASS`. Поэтому при нуле деклараций гейт печатает три строки:
 
 ```
  PASS  DAZ-декларации: 0 проверено
@@ -309,14 +309,14 @@ vn release validate --flavor public
 python -m pytest tools/vn/tests/test_provenance.py -q   # включая test_vam_validate_and_chain
 ```
 
-Эталон на 2026-08-18 (HEAD `db28ce6`): `assets_src/vam/` содержит только `.gitkeep` (0 байт); `vn pipeline doctor` даёт `WARN Virt-a-Mate: не установлен (опционально)`; `vn release validate --flavor public` — 19 строк (18 PASS + 1 WARN про черновые дубли озвучки), exit 0, и **строка про VaM в них есть всегда** — `PASS VaM-декларации: 0 проверено` (безусловная `else`-ветка, `release.py:517-526`).
+Эталон на 2026-08-18 (HEAD `db28ce6`): `assets_src/vam/` содержит только `.gitkeep` (0 байт); `vn pipeline doctor` даёт `WARN Virt-a-Mate: не установлен (опционально)`; `vn release validate --flavor public` — 20 строк (18 PASS + 2 WARN: черновые дубли озвучки и зрелость контента), exit 0, и **строка про VaM в них есть всегда** — `PASS VaM-декларации: 0 проверено` (безусловная `else`-ветка, `release.py:587-596`).
 
 ## Для AI-агента
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/assets/vam.py` (весь, 24 строки) и общий валидатор `../../tools/vn/src/vn/assets/sources.py` (весь, 286 строк), `../../tools/schemas/vam_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/cli.py:781-808`, `../../tools/vn/src/vn/pipeline.py:143-193` (`_steam_libraries`/`vam_path`) и `:544-548` (doctor), `../../tools/vn/src/vn/release.py:517-525`, `../../tools/install-vam.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md` (§2a), `../pipeline/phase-0.md:107-130` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/assets/vam.py` (весь, 24 строки) и общий валидатор `../../tools/vn/src/vn/assets/sources.py` (весь, 286 строк), `../../tools/schemas/vam_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/cli.py:781-808`, `../../tools/vn/src/vn/pipeline.py:143-193` (`_steam_libraries`/`vam_path`) и `:544-548` (doctor), `../../tools/vn/src/vn/release.py:587-595`, `../../tools/install-vam.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md` (§2a), `../pipeline/phase-0.md:107-130` |
 | **Не трогать** | `assets_src/vam/.gitkeep` (маркер зоны), `game/assets/**` и `game/generated/**` (производные), `<output>.provenance.json` — сайдкары пишет `vn assets vam validate`, ручная правка ломает `provenance verify` по хэшу |
-| **Зависимости (что ломается ниже по течению)** | Декларация → `provenance@1`-сайдкар → `vn assets provenance verify` → релизный гейт (`release.py:496-504`); `license` → `tools/vn/src/vn/assets/licenses.py:53-109` → гейт (`release.py:584-592`); `output` в `art/cg/**` → `img_cg` + `img_thumb` → `image cg …` от компилятора; `output` в `video_src/**` → `video2webm` + `mov_meta@1` |
+| **Зависимости (что ломается ниже по течению)** | Декларация → `provenance@1`-сайдкар → `vn assets provenance verify` → релизный гейт (`release.py:566-574`); `license` → `tools/vn/src/vn/assets/licenses.py:53-109` → гейт (`release.py:654-662`); `output` в `art/cg/**` → `img_cg` + `img_thumb` → `image cg …` от компилятора; `output` в `video_src/**` → `video2webm` + `mov_meta@1` |
 | **Валидация** | `vn assets vam validate` → `vn assets provenance verify` → `vn assets licenses` → `vn content lint` → `vn build` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests/test_provenance.py -q` |
 | **Частые ошибки** | 1) Считать, что тулинг умеет запускать VaM: `vam_path()` только печатает путь, автоматизации захвата нет вообще. 2) Добавлять поле в `capture` — `additionalProperties: false`, любая «своя» пара ключ-значение = твёрдая ошибка схемы; расширение = новая версия схемы. 3) Ссылаться на `.var` в `scene` — паттерн принимает только `json/vac/vap`. 4) Ждать FAIL там, где код даёт WARN: незахваченный выход, декларация без `license`, отсутствие VaM в doctor. 5) Искать VaM в `docs/ARCHITECTURE.md` — там **ноль** упоминаний, норма живёт в ADR-0006/0007 и `docs/pipeline/phase-0.md`. 6) Класть сцены/`.var` в git — ADR-0004 порог 50 МБ красит линт и CI |

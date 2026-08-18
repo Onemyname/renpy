@@ -85,8 +85,8 @@
         },
         "classes": {
           "type": "object",
-          "description": "Классы ассетов: spr (спрайты), bg (фоны), cg (стиллы), shot (слои послойных шотов, shots@1), mov (видео)",
-          "propertyNames": {"pattern": "^(spr|bg|cg|mov|shot)$"},
+          "description": "Классы ассетов: spr (спрайты), bg (фоны), cg (стиллы), shot (слои послойных шотов, shots@1), mov (видео), ui (9-patch панели, ADR-0009: мастера нет, настраивается только набор масштабов)",
+          "propertyNames": {"pattern": "^(spr|bg|cg|mov|shot|ui)$"},
           "additionalProperties": {
             "type": "object",
             "properties": {
@@ -150,10 +150,10 @@
             "packs": {
               "type": "array",
               "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,31}$"},
-              "description": "Паки, чьи депот-артефакты входят в поставку флейвора (скрипты грузятся всегда — гейт логический, G9)"
+              "description": "Паки, чьи депот-артефакты входят в поставку флейвора (скрипты грузятся всегда — гейт логический, G9). Список уезжает в build_info@2 и питает рантайм-гейт vn.pack_registry.installed(): пак вне этого списка в сборке не установлен"
             },
             "nsfw": {"type": "boolean", "description": "false = поддеревья assets/*/nsfw/** исключаются из дистрибутива"},
-            "early_content": {"type": "boolean", "description": "Ранний доступ: рантайм-гейт vn_build.early_content"},
+            "early_content": {"type": "boolean", "description": "Ранний доступ: незрелые главы для флейвора штатны. false = релизный гейт не пропускает главы status != release (draft — FAIL, playtest — WARN); плюс рантайм-флаг vn_build.early_content для контент-кода"},
             "watermark": {"type": "boolean", "description": "Полупрозрачный build-id поверх игры (трассировка утечек patron-сборок)"}
           },
           "required": ["packs", "nsfw"],

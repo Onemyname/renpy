@@ -61,7 +61,7 @@
     vn build                             # lint -> ассеты -> компилятор -> loc import -> бюджеты
     vn content lint                      # 33 диагностики, 5-10 c
     vn play  |  vn dev                   # запуск | запуск + watch content/ и assets_src/
-    python -m pytest tools/vn/tests -q   # 254 теста, ~5-9 c
+    python -m pytest tools/vn/tests -q   # 278 тестов, ~5-9 c
 Обязательный хвост ЛЮБОЙ правки:
     vn content lint && vn build && python -m pytest tools/vn/tests -q
 Трогал рантайм/сейвы/локализацию — добавь: vn test smoke --picks 0,0 && vn save corpus
@@ -151,7 +151,7 @@
 | Не менять архитектуру попутно | Норма раздела 0 меняется ADR-ом отдельным коммитом, а не строчкой внутри фичи |
 | Данные — в YAML + схему | Новая сущность = `content/<зона>/*.yaml` + `tools/schemas/<name>@1.schema.json` + правило в `tools/vn/src/vn/content/lint.py` + тест. Хардкод в `.rpy` не переводится, не валидируется и не мигрируется |
 | UI — через `vn_*` и `gui.*` | Литерал в экране не попадёт в PO-экстракцию (`content/ui/strings.yaml:3-4`); число вместо токена ломает панели (ADR-0009) |
-| Обновить тесты | `tools/vn/tests/` — 24 файла `test_*.py` + `conftest.py`, 254 теста. Новое правило линтера без теста в `test_lint.py` — незакрытая правка |
+| Обновить тесты | `tools/vn/tests/` — 24 файла `test_*.py` + `conftest.py`, 278 тестов. Новое правило линтера без теста в `test_lint.py` — незакрытая правка |
 | Обновить документацию | Назвать, какой файл хендбука затронут, и поправить его. Если изменился статус механизма — поправить пометку |
 
 ### 2.3. После
@@ -161,7 +161,7 @@
 vn content lint                          # 33 диагностики
 vn build                                 # lint -> ассеты -> компилятор -> loc import -> бюджеты
 vn content compile --check               # «check: генерат свеж»
-python -m pytest tools/vn/tests -q       # 254 passed
+python -m pytest tools/vn/tests -q       # 278 passed
 
 # 2. Дополнительно по зоне правки
 vn loc keys --check                      # трогал реплики/меню в *.scene.rpy
@@ -251,7 +251,7 @@ git status --short                       # game/generated|assets|tl быть н�
 | Добавить тест | `tools/vn/tests/test_*.py` | [27-testing.md](27-testing.md) | `tests/conftest.py` |
 | Добавить проверку в CI | сначала команда в `vn`, потом шаг в `.github/workflows/ci.yml` | [04-development-workflow.md](04-development-workflow.md) §4 | `.github/workflows/` |
 | Изменить бюджет размера/старта | `project.yaml: budgets` | [32-performance-and-scalability.md](32-performance-and-scalability.md) | `release.py:29-54` |
-| Изменить/добавить флейвор | `project.yaml: flavors` | [29-build-and-release.md](29-build-and-release.md) | `release.py:230-267`, `00_core/060_build_info.rpy` (флейвор читается как `build_info@2`, метка получателя — `patron_tag`, ADR-0011) |
+| Изменить/добавить флейвор | `project.yaml: flavors` | [29-build-and-release.md](29-build-and-release.md) | `release.py:258-299`, `00_core/060_build_info.rpy` (флейвор читается как `build_info@2`, метка получателя — `patron_tag`, ADR-0011) |
 | Переименовать сцену / переменную | `content/renames.yaml` (новый id, старый не переиспользовать) | [02-architecture.md](02-architecture.md) §8 | `tools/vn/src/vn/content/compile.py` |
 | Изменить норму G/C | новый ADR по `../adr/template.md` | [02-architecture.md](02-architecture.md) §6 | `docs/adr/` |
 | Понять, почему падает игра | `vn test smoke`, dev-меню, `log.txt` | [28-debugging.md](28-debugging.md) | `00_core/070_crash.rpy` |
@@ -274,7 +274,7 @@ git status --short                       # game/generated|assets|tl быть н�
 | `docs/ARCHITECTURE.md` | **Намерение, не реализация.** Целевой документ на 4182 строки; бо́льшая часть — будущие фазы |
 | `README.md:43` («Статус: фаза 0») | Устарело: реализованы компилятор, локализация, галерея, флейворы, сейв-корпус, smoke |
 | `docs/onboarding/localizer.md` («появится в фазе 2») | Устарело: весь `vn loc *` работает |
-| `ci/README.md` («`.gitlab-ci.yml` — конфиг пайплайна») | Устарело: живой CI — `.github/workflows/` (4 workflow, 7 определений джоб) |
+| `ci/README.md` («`.gitlab-ci.yml` — конфиг пайплайна») | Устарело: живой CI — `.github/workflows/` (5 workflow, 9 определений джоб) |
 | `docs/runbooks/pipeline-broken-at-night.md` про откат через `git revert tools/vn.lock` | **Исполнимо с 2026-08-08:** лок ставится перед editable-установкой во всех в 8 джобах установки тулчейна (7 строк в конфигах: GitLab-шаблон `.with-sdk` разворачивается в `build` и `test`). Остаток: транзитивные зависимости в локе не закреплены (`pygments`) |
 
 ### Как отличить намерение от реализации
@@ -315,7 +315,7 @@ grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
 | `content/registry/id_registry.json` | Все массивы пусты: `stamp_id_registry` пишет только главы со `status: release`, а `ch01` — `draft`. Страховка G7 инертна |
 | `vn.beat()` | Реализован в `00_core/030_flow.rpy`, не эмитится компилятором и не вызывается контентом |
 | `vn_qa.choice()` | `pass`-заглушка (`030_flow.rpy:98-101`), при том что C1 требует эмиссии первым стейтментом каждой ветки |
-| `flavors.<id>.packs`, `flavors.<id>.early_content` | Записаны в `project.yaml`, экспортируются в билд, **не читаются ничем** в `game/` |
+| ~~`flavors.<id>.packs`, `flavors.<id>.early_content`~~ | **Больше не мертвы:** `packs` читает рантайм-гейт установленности `pack_registry.installed()` (`030_flow.rpy:77-91`), `early_content` — проверка зрелости контента в релизном гейте (`early_content_checks`, `tools/vn/src/vn/release.py:403-438`; самоактивирующаяся — WARN до первой главы `status: release`, строгая после). Остаток честный: `vn_build.early_content` в `game/` по-прежнему не читает никто |
 | ~~`pack_registry.owned()`~~ | **Больше не мёртв (ADR-0014):** провайдер владения подключается в `game/framework/00_core/035_platform.rpy:75` (`init 999`) при живом Steam, маппинг — `steam_dlc_appid` в манифесте пака. Остаток честный: вне Steam (standalone, dev-прогоны) и для пака без маппинга `owned()` по-прежнему `True` — [39-platforms.md](39-platforms.md) §5 |
 | ~~`tools/vn.lock`~~ | **Больше не мёртв (2026-08-08):** `pip install --quiet -r tools/vn.lock` идёт перед editable-установкой во всех в 8 джобах установки тулчейна (7 строк в конфигах: GitLab-шаблон `.with-sdk` разворачивается в `build` и `test`); G17 закрыт для 18 пиннованных пакетов. Остаток — транзитивные зависимости не закреплены (`pygments`), и тест `test_ci_config.py` стережёт именно порядок «лок раньше editable» |
 | ~~`assets_manifest@1`~~ | **Больше не мёртв (2026-08-08):** `tools/schemas/assets_manifest@1.schema.json` заведена, и манифест валидируется ею при каждой записи (`pipeline.py:441-450`) — нарушение G16 закрыто |
@@ -344,7 +344,7 @@ grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
 |---|---|
 | `vn content lint` | OK, 3 предупреждения (перечислены ниже) |
 | `vn build` | `build: OK`; generated: 2 записано, 17 без изменений |
-| `python -m pytest tools/vn/tests -q` | 254 passed |
+| `python -m pytest tools/vn/tests -q` | 278 passed |
 | `vn test smoke --picks 0,0` | НЕ ЗАПУСКАЛОСЬ: нет RENPY_SDK в этой сессии |
 
 ## Затронутые нормы
@@ -360,7 +360,7 @@ ADR не требуется: раздел 0 ARCHITECTURE.md не менялся.
 
 Требования к содержанию:
 
-- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `254 passed`.
+- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `278 passed`.
 - **Не запускавшаяся проверка называется прямо** («НЕ ЗАПУСКАЛОСЬ: причина»), а не опускается. Типичная причина в этом репозитории — отсутствие `RENPY_SDK` в bash-сессии агента.
 - **Предупреждения линтера перечисляются**, даже если exit 0: `vn content lint` печатает warnings, которые в главе со `status: release` станут ошибками (G15).
 - **Затронутые нормы называются номерами** — это язык ревью в этом проекте.
@@ -445,7 +445,7 @@ git diff --stat                                  # объём правки со�
 vn content lint
 vn build
 vn content compile --check
-python -m pytest tools/vn/tests -q               # 254 passed
+python -m pytest tools/vn/tests -q               # 278 passed
 
 # 4. По зоне правки
 vn loc keys --check                              # реплики/меню

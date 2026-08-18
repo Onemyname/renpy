@@ -311,11 +311,6 @@ msgid "Реплики появятся по мере игры."
 msgstr "Dialogzeilen erscheinen im Spielverlauf."
 
 #. UI/мета-строка
-msgctxt "string:ui.history.hint"
-msgid "Esc — закрыть"
-msgstr "Esc — schließen"
-
-#. UI/мета-строка
 msgctxt "string:ui.nav.continue"
 msgid "Продолжить"
 msgstr "Fortsetzen"
@@ -571,6 +566,45 @@ msgstr "Normal"
 msgctxt "string:ui.prefs.ui_scale"
 msgid "Масштаб интерфейса"
 msgstr "Interface-Größe"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.empty"
+msgid "Достижений в этой сборке нет."
+msgstr "Diese Version enthält keine Erfolge."
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.hidden"
+msgid "Скрытое достижение"
+msgstr "Verborgener Erfolg"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.locked"
+msgid "Не получено"
+msgstr "Nicht erhalten"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.progress"
+msgid "Получено [_done] из [_total]"
+msgstr "[_done] von [_total] erhalten"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.hint_kbd"
+msgid "Esc — закрыть"
+msgstr "Esc — schließen"
+
+#. UI/мета-строка
+msgctxt "string:ui.history.hint_pad"
+msgid "Кнопка B — закрыть"
+msgstr "Taste B — schließen"
+
+#. UI/мета-строка
+msgctxt "string:ui.nav.achievements"
+msgid "Достижения"
+msgstr "Erfolge"
+
+#~ msgctxt "string:ui.history.hint"
+#~ msgid "Esc — закрыть"
+#~ msgstr "Esc — schließen"
 
 #~ msgctxt "string:ui.flow.return_to_menu"
 #~ msgid "Возврат в главное меню."

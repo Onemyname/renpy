@@ -1,9 +1,9 @@
 # 15. Галерея и достижения
 
-> **Статус подсистемы:** Галерея — **IMPLEMENTED** (декларации → компилятор → рантайм-стор → экран, ADR-0010), *но* `docs/ARCHITECTURE.md` до сих пор описывает заменённый дизайн на движковом классе `Gallery`. Достижения — **IMPLEMENTED (backend) / NO UI / UNDOCUMENTED**: выдаются и хранятся, но игроку их негде посмотреть.
+> **Статус подсистемы:** Галерея — **IMPLEMENTED** (декларации → компилятор → рантайм-стор → экран, ADR-0010), *но* `docs/ARCHITECTURE.md` до сих пор описывает заменённый дизайн на движковом классе `Gallery`. Достижения — **IMPLEMENTED** целиком: с этой итерации у них есть свой экран (`20_ui/screens/achievements.rpy`) и пункт рельсы рядом с «Галереей». Отдельного ADR у достижений по-прежнему нет, в `docs/ARCHITECTURE.md` они упомянуты одной строкой — **UNDOCUMENTED в нормативе**.
 > **Отвечает на вопрос:** «Как добавить CG/видео/бонус в галерею и как сделать, чтобы оно открывалось в нужный момент — без правки кода экранов?»
 
-Галерея — data-driven подсистема: элемент = стабильный id + ссылка на **уже существующий** ассет + условие разблокировки. Декларация живёт в `content/gallery/*.yaml`, компилятор `_emit_gallery` превращает её в `game/generated/registry/gallery.gen.rpy`, рантайм-стор `vn_gal` (`game/framework/00_core/090_gallery.rpy`) отвечает на вопросы «видно?», «открыто?», «сколько из скольких», а экран `game/framework/20_ui/screens/gallery.rpy` только рисует то, что стор вернул. Достижения устроены зеркально: `content/achievements/*.yaml` → `achievements.gen.rpy` → стор `vn_ach` (`080_achievements.rpy`) — и на этом обрываются, потому что экрана достижений не существует.
+Галерея — data-driven подсистема: элемент = стабильный id + ссылка на **уже существующий** ассет + условие разблокировки. Декларация живёт в `content/gallery/*.yaml`, компилятор `_emit_gallery` превращает её в `game/generated/registry/gallery.gen.rpy`, рантайм-стор `vn_gal` (`game/framework/00_core/090_gallery.rpy`) отвечает на вопросы «видно?», «открыто?», «сколько из скольких», а экран `game/framework/20_ui/screens/gallery.rpy` только рисует то, что стор вернул. Достижения устроены зеркально и теперь симметричны до конца: `content/achievements/*.yaml` → `achievements.gen.rpy` → стор `vn_ach` (`080_achievements.rpy`) → экран `20_ui/screens/achievements.rpy`.
 
 ## Быстрый ответ
 
@@ -152,38 +152,42 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 
 | Часть | Строки | Устройство |
 |---|---|---|
-| `screen gallery()` | :21 | `tag menu`, поверх `use vn_game_menu(vn_loc.t("ui.nav.gallery"))` — тот же каркас, что у save/load/preferences |
-| Прогресс | :37 | `text "[_done] / [_total]"` из `vn_gal.progress()` |
+| `screen gallery()` | :21 | `tag menu`, поверх `use vn_game_menu(vn_loc.t("ui.nav.gallery"))` — тот же каркас, что у save/load/preferences/achievements |
+| Прогресс | :37 | `text "[_done] / [_total]"` из `vn_gal.progress()`, стиль `vn_counter` — общий с экраном достижений (`components.rpy:81`) |
 | Вкладки | :40-45 | `textbutton "<title>  <done>/<total>"` на категорию, `action SetVariable("vn_gal_category", _cid)`, `selected (_cid == _cur)` |
-| Пустое состояние | :47-48 | `ui.gallery.empty`, если `categories()` пуст |
-| Сетка | :50-63 | `vpgrid cols 3`, `ysize 800`, `scrollbars "vertical"` — с обязательными `vscrollbar_base_bar` / `vscrollbar_thumb` (без них Ren'Py полосу не рисует) |
-| `screen vn_gal_cell` | :68 | Ячейка `472×266`. Открытая: `add (spec["thumb"] or spec["asset"]) fit "cover"` + плашка `#0a0a0cd9` под подпись + бейдж `vn_gal_play` для `kind == "movie"`. Закрытая: `Solid(gui.panel_bg_deep)` + «?» + `ui.gallery.locked`, **контент не показывается никогда** |
-| `screen gallery_viewer(item_id)` | :91 | `modal True`, `zorder 60`, `default variant = 0` |
-| Видео в просмотрщике | :107 | `add Movie(play=_spec["asset"], loop=True) fit "contain"` — displayable существует ровно пока показан экран; `Hide` останавливает воспроизведение и освобождает ресурс |
-| Картинка / зум | :111 | `fit ("cover" if vn_gal_zoom else "contain")` — `contain` не растягивает при любых пропорциях |
-| Управление | :124-141 | prev / вариант / зум / next / назад. prev-next ходят только по **открытым** элементам той же категории (`unlocked_ids`) |
-| Клавиатура | :144-148 | `K_LEFT` / `K_RIGHT` листают, `K_ESCAPE` и `game_menu` закрывают |
-| Бейдж видео | :152 | `image vn_gal_play = Transform(Solid(gui.text_color), xysize=(26,26), rotate=45, alpha=0.85)` — без бинарных ассетов |
+| Пустое состояние | :47-48 | `ui.gallery.empty` стилем `vn_empty_note` (общий, `components.rpy:86`), если `categories()` пуст |
+| Сетка | :55-65 | `vpgrid cols 3` + `properties vn_scroll_props`, `ysize gui.scroll_height` — пресет несёт и обязательные визуалы полосы (без них Ren'Py рисует зону **пустой**) |
+| `screen vn_gal_cell` | :73 | Ячейка `472×266`. Открытая: `add (spec["thumb"] or spec["asset"]) fit "cover"` + плашка `#0a0a0cd9` под подпись + бейдж `vn_gal_play` для `kind == "movie"`. Закрытая: `Solid(gui.panel_bg_deep)` + «?» + `ui.gallery.locked`, **контент не показывается никогда**. Стиль у обоих состояний **один** (`vn_gal_cell`, :82) — см. ниже |
+| `screen gallery_viewer(item_id)` | :105 | `modal True`, `zorder 60`, `default variant = 0` |
+| Видео в просмотрщике | :121 | `add Movie(play=_spec["asset"], loop=True) fit "contain"` — displayable существует ровно пока показан экран; `Hide` останавливает воспроизведение и освобождает ресурс |
+| Картинка / зум | :125 | `fit ("cover" if vn_gal_zoom else "contain")` — `contain` не растягивает при любых пропорциях |
+| Управление | :138-158 | prev / вариант / зум / next / назад. prev-next ходят только по **открытым** элементам той же категории (`unlocked_ids`) |
+| Клавиатура и пад | :166-171 | `K_LEFT` / `K_RIGHT` листают, LB/RB — то же с пада, `K_ESCAPE` и `game_menu` закрывают |
+| Бейдж видео | :175 | `image vn_gal_play = Transform(Solid(gui.text_color), xysize=(26,26), rotate=45, alpha=0.85)` — без бинарных ассетов |
 
-Пункт навигации условный: `if vn_gal.categories(): textbutton ui.nav.gallery` (`20_ui/screens/core_screens.rpy:97-98`) — гейт живёт в сторе, не в вёрстке. Галерея доступна и из главного меню, и из игрового.
+Пункт навигации условный: `if vn_gal.categories(): textbutton ui.nav.gallery` (`20_ui/screens/core_screens.rpy:110-111`) — гейт живёт в сторе, не в вёрстке. Галерея доступна и из главного меню, и из игрового — точнее, из **рельсы** в обоих контекстах; в колонке `screen main_menu` её нет.
+
+**Подсветка фокуса у закрытой ячейки — та же, что у открытой.** Раньше у закрытой был свой стиль `vn_gal_cell_locked`, единственным содержимым которого было `hover_background vn_frame_slot`, то есть **отключение** подсветки. На проходе dpad по ряду закрытых игрок терял курсор из вида (закрытые остаются в фокус-цепочке осознанно — [42-big-picture.md](42-big-picture.md) §5.9). Стиль удалён; «закрытость» держится содержимым (знак вопроса вместо превью и подпись «Закрыто»), спойлера в этом нет. Если дизайн однажды захочет отличать «закрытая под фокусом» от «открытая под фокусом», понадобится **новая панель** в `content/ui/panels.yaml`, а не возврат стиля-заглушки.
+
+Заодно ушли локальные `vn_gal_progress` / `vn_gal_empty` — их заменили общие `vn_counter` / `vn_empty_note` из `components.rpy`, которыми пользуется и экран достижений. **Упоминания `vn_gal_cell_locked`, `vn_gal_progress`, `vn_gal_empty` в любых документах устарели.**
 
 **Мелкие кнопки галереи стоят на чипах (`2*Borders`, ADR-0009) — дефект закрыт, IMPLEMENTED.** Вкладка и кнопка просмотрщика — это 29-31 px высоты, а панели `choice*` требуют 54-60 px: раньше обе брали их и получали сплющенный фон. Теперь в `content/ui/panels.yaml` объявлена своя пара рамок `chip` / `chip_active` (`radius: 8`, `Borders(11)`, минимум 22×22) — панелей в декларации стало **8** (было 6), нарушений `2*Borders` в вёрстке не осталось:
 
 | Стиль | Строки | Фактическая высота | Рамка (минимум) |
 |---|---|---|---|
-| `vn_gal_tab` | :161-168 | padding (16, 6) + строка 19 px = **31 px** | `hover_background vn_frame_chip`, `selected_background vn_frame_chip_active` → **22 px** |
-| `vn_gal_ctl_button` | :221-225 | padding (16, 6) + строка 17 px = **29 px** | `background vn_frame_chip`, `hover_background vn_frame_chip_active` → **22 px** |
+| `vn_gal_tab` | :179-186 | padding (16, 6) + строка 19 px = **31 px** | `hover_background vn_frame_chip`, `selected_background vn_frame_chip_active` → **22 px** |
+| `vn_gal_ctl_button` | :231-236 | padding (16, 6) + строка 17 px = **29 px** | `background vn_frame_chip`, `hover_background vn_frame_chip_active` → **22 px** |
 
-Ячейка сетки (`vn_gal_cell`, :182-186) фиксирована `xysize (472, 266)` — ей `slot` и `choice_hover` подходят без оговорок.
+Ячейка сетки (`style vn_gal_cell`, :195-199) фиксирована `xysize (472, 266)` — ей `slot` и `choice_hover` подходят без оговорок.
 
-Минимумы печатает эмиттер в комментариях `game/generated/registry/ui_frames.gen.rpy:12-19`. Регресс стерегут два теста в `tools/vn/tests/test_ui_panels.py`: `test_every_frame_consumer_is_not_smaller_than_2x_borders` (`:244`) разбирает все `style`-блоки `game/**/*.rpy` и сверяет высоту с `2*Borders`, так что новая мелкая кнопка на `choice*` уронит прогон; `test_gallery_chips_fit_their_small_buttons` (`:284`) отдельно следит, чтобы чипы не растолстели, а вкладка и кнопка просмотрщика не вернулись на `choice*`. Заводя ещё один компактный элемент, берите `chip`/`chip_active`. Подробности — [06-frontend.md](06-frontend.md).
+Минимумы печатает эмиттер в комментариях `game/generated/registry/ui_frames.gen.rpy:12-19`. Регресс стерегут два теста в `tools/vn/tests/test_ui_panels.py`: `test_every_frame_consumer_is_not_smaller_than_2x_borders` (`:325`) разбирает все `style`-блоки `game/**/*.rpy` и сверяет высоту с `2*Borders` на двух масштабах, так что новая мелкая кнопка на `choice*` уронит прогон; `test_gallery_chips_fit_their_small_buttons` (`:394`) отдельно следит, чтобы чипы не растолстели, а вкладка и кнопка просмотрщика не вернулись на `choice*`. Карточка достижения проходит те же минимумы: `vn_frame_slot` требует 22×22 при её 704×168. Заводя ещё один компактный элемент, берите `chip`/`chip_active`. Подробности — [06-frontend.md](06-frontend.md).
 
 ## NSFW-гейт и паки
 
 Два независимых механизма, и путать их дорого:
 
 1. **Скрытие записи в UI** — `vn_gal.visible()` (`090_gallery.rpy:42`): при `spec["nsfw"]` или `category["nsfw"]` и `vn_build.nsfw == False` элемент не виден, не считается в прогрессе и **не разблокируется** (`unlock` и `is_unlocked` начинаются с проверки `visible`).
-2. **Исключение файлов из дистрибутива** — `nsfw_exclude_globs` (`tools/vn/src/vn/release.py:192-203`): глобы строятся от **фактических каталогов** `game/assets/<категория>/nsfw/**`. Флаг `nsfw: true` в YAML на это никак не влияет.
+2. **Исключение файлов из дистрибутива** — `nsfw_exclude_globs` (`tools/vn/src/vn/release.py:441-452`): глобы строятся от **фактических каталогов** `game/assets/<категория>/nsfw/**`. Флаг `nsfw: true` в YAML на это никак не влияет.
 
 Значит: NSFW-кадр обязан лежать в `assets_src/png/cg/nsfw/**` → `game/assets/cg/nsfw/**`, иначе в `public`-сборке запись спрячется, а сам файл уедет в дистрибутив. Сейчас каталогов `nsfw/` в проекте нет, поэтому оба выпущенных `build/dist/0.1.0-*/build-info.json` несут `"exclude": []`.
 
@@ -216,7 +220,7 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 
 Юнит-тесты подсистемы: `tools/vn/tests/test_gallery.py` (13 тестов), включая проверку боевой декларации на схему и наличие всех её `title_key`/`desc_key` в `strings.yaml` (:145-157).
 
-## Достижения (`achievements@1`) — IMPLEMENTED (backend) / NO UI / UNDOCUMENTED
+## Достижения (`achievements@1`) — IMPLEMENTED
 
 Декларация: `content/achievements/core.achievements.yaml`, схема `tools/schemas/achievements@1.schema.json`. Поля элемента: `name_key` (обяз.), `desc_key`, `hidden`, `nsfw`, `pack`, `trigger` (обяз., ровно один из `scene` / `beat` / `var`+`equals`).
 
@@ -227,16 +231,55 @@ met_mira:        trigger: {var: ch01.met_mira, equals: true}
 reached_rooftop: trigger: {scene: ch01_s030}
 ```
 
-Стор `vn_ach` (`080_achievements.rpy`): `set_provider(fn)` :17 (Steam-подобный бэкенд — **вызывающих нет**), `visible(id)` :31 (NSFW + пак), `has(id)` :43, `grant(id)` :46 (идемпотентно; неизвестный id → `vn_log`, не краш; исключение провайдера ловится и логируется), `check(scene_id=None, beat_id=None)` :70, `all_ids()` :89. Хранилище — `persistent.vn_achievements = {id: True}` (:92).
+Стор `vn_ach` (`080_achievements.rpy`): `set_provider(fn)` :17 (Steam-бэкенд — подключается в `035_platform.rpy:80-88` при живой Steam-инициализации), `visible(id)` :31 (NSFW + пак), `has(id)` :43, `grant(id)` :46 (идемпотентно; неизвестный id → `vn_log`, не краш; исключение провайдера ловится и логируется), `check(scene_id=None, beat_id=None)` :70, `all_ids()` :89. Хранилище — `persistent.vn_achievements = {id: True}` (:92).
 
-Что честно **отсутствует**:
+К фасаду добавились два производных для UI: **`visible_ids()`** (видимые игроку id в стабильном порядке) и **`progress()`** → `(получено, всего)` по видимым. Оба нужны в двух местах — экрану и пункту рельсы, — поэтому живут в сторе, а не в вёрстке.
 
-- **Экрана достижений нет.** Ни один файл в `game/framework/20_ui/screens/` не упоминает достижения. Строки `ach.met_mira.name` / `.desc` и `ach.reached_rooftop.*` лежат в `content/ui/strings.yaml:15-18`, переводятся, но потребителя не имеют. Ачивки выдаются и хранятся — игрок их не видит.
-- **Steam-синхронизации нет.** `set_provider` ждёт вызова, которого никто не делает.
-- **Поле `hidden` не читается** ничем (задел под спойлерные ачивки).
-- **Документации нет.** В `docs/ARCHITECTURE.md` слово `achievements.yaml` встречается ровно один раз (строка 2720) и только как источник для loc-экстракции; ни раздела, ни ADR. Итоговый статус подсистемы: **IMPLEMENTED / UNDOCUMENTED**.
+> **Открытый пункт (место объявления).** Физически `visible_ids()` / `progress()` объявлены в `init -970 python in vn_ach` внутри `20_ui/screens/achievements.rpy`, а не в `00_core/080_achievements.rpy`. Это работает (named store дополняется), но нарушает разделение «данные в 00_core, вёрстка в 20_ui». **Recommended solution:** перенести обе функции в `080_achievements.rpy` рядом с `all_ids()`; правка механическая, экран и рельса от неё не меняются.
+
+### Экран достижений (`20_ui/screens/achievements.rpy`) — IMPLEMENTED
+
+Рукописный файл, зеркало галереи. Добавление ачивки в `content/achievements/*.yaml` правок вёрстки **не требует**: экран не знает ни одного id, названия или описания.
+
+| Часть | Строки | Устройство |
+|---|---|---|
+| `screen achievements()` | :38 | `tag menu`, поверх `use vn_game_menu(vn_loc.t("ui.nav.achievements"))` — тот же каркас, что у галереи |
+| Счётчик | :49 | `ui.ach.progress` («Получено [_done] из [_total]») стилем `vn_counter`; **имена `_done`/`_total` — часть контракта со строкой**, переименование ловит тест |
+| Пустое состояние | :52-54 | `ui.ach.empty` стилем `vn_empty_note` — флейвор/владение могут скрыть все ачивки до единой, и пустой экран без объяснения читался бы как поломка |
+| Сетка | :63-71 | `vpgrid cols 2` + `properties vn_scroll_props`, `ysize gui.scroll_height`, `arrowkeys True`, `default_focus gui.focus_content` |
+| `screen vn_ach_card` | :79 | Карточка `gui.ach_card_width × gui.ach_card_height` (704×168) на панели `vn_frame_slot`: название (акцент = получено, приглушённое = нет), описание, строка «Не получено» |
+
+**Спойлер-правило — один гейт на весь экран** (`:86`): `_spoiler = spec["hidden"] and not _got`. Дальше в вёрстке настоящих ключей реестра нет вовсе, поэтому у скрытой неполученной ачивки название рисуется как `???`, а описание подменяется общей строкой `ui.ach.hidden` — раскрыть текст нечем: ни выделением, ни скриншотом, ни автопилотом QA. Тест сверяет, что гейт **один** и покрывает и `name_key`, и `desc_key`.
+
+**Знаменатель счётчика — только `visible()`.** Невидимые ачивки (NSFW в SFW-флейворе, чужой пак — G9) не показываются и не входят в «из M»: игрок не должен пересчитывать «а сколько их на самом деле» и видеть намёк на непроданный контент. Следствие: 100 % достижимы в каждом флейворе.
+
+**Фокус берёт сам вьюпорт, `reveal` не применяется** — и это осознанно: у карточки достижения нет действия (просмотрщика у ачивок не существует), а `vn_ui.reveal` вешается на `hovered` фокусируемой кнопки. Чтобы его применить, пришлось бы сделать все карточки кнопками с `NullAction()`, то есть заглушками. Разбор приёма и escape-hatch по краю adjustment — [42-big-picture.md](42-big-picture.md) §5.1 п.6.
+
+Пункт навигации условный: `if vn_ach.visible_ids(): textbutton ui.nav.achievements` (`core_screens.rpy:116-117`) — гейт живёт в сторе, не в вёрстке. Как и «Галерея», доступен из **обоих** контекстов (прогресс в `persistent`).
+
+Геометрия карточки — токены `gui.ach_card_width` / `gui.ach_card_height` (`game/gui.rpy:95-96`). Высота — бюджет на четыре строки в крупном профиле `ui_scale 1.4`: 36+27+27+23 плюс три зазора `sp_xs` и padding даёт 157 px при 168. Карточка не клипует содержимое, поэтому запас держится осознанно и проверяется псевдолокализацией (`vn loc pseudo` удлиняет строки на 40 %).
+
+### Что у достижений отсутствует (честно)
+
+- **Прогресса отдельной ачивки нет** («открыто 10 из 30 CG»). Поля `progress` нет ни в `achievements@1.schema.json`, ни в `_emit_achievements`, ни в `vn_ach` — рисовать его на экране было бы дохлым кодом. **STATUS: OPEN. Affected files:** `tools/schemas/achievements@1.schema.json`, `tools/vn/src/vn/content/compile.py` (`_emit_achievements`), `game/framework/00_core/080_achievements.rpy`, затем карточка. **Recommended solution:** сначала схема + эмиттер + счётчик в сторе, вёрстка последней. Движковая сторона готова: `achievement.register(..., stat_max=, stat_modulo=)` ([40-steamworks.md](40-steamworks.md) §6.6).
+- **Уведомления о выдаче нет.** У галереи есть `renpy.notify` («открыт новый материал»), у ачивок — нет вовсе. Под Steam оверлей покажет своё; в standalone игрок узнаёт только зайдя на экран.
+- **Поле `hidden` теперь читается** — экраном (спойлер-гейт). Раньше было заделом.
+- **Steam-синхронизация подключена**, но проверить её нельзя: приложения в Steamworks нет ([40-steamworks.md](40-steamworks.md) §6.5).
+- **Норматива нет.** В `docs/ARCHITECTURE.md` слово `achievements.yaml` встречается ровно один раз (строка 2720) и только как источник для loc-экстракции; ни раздела, ни ADR. Итог: подсистема **IMPLEMENTED / UNDOCUMENTED в нормативе**, канон — этот файл и код.
+- **Ни «Галереи», ни «Достижений» нет в колонке `screen main_menu`** — оба доступны только через рельсу игрового меню. Решение сознательное (единообразие с галереей), но для игрока, который ещё не начал игру, они невидимы. **STATUS: OPEN (дизайнерское решение), Affected files:** `core_screens.rpy:206-212`.
 
 В отличие от галереи, якоря достижений проверяются на существование в основном теле компилятора (`compile.py:786-823`), включая пак-владельца, и различают «сцены нет вовсе» (error) и «главы нет в этой сборке» (warning — частичная/пак-сборка).
+
+### Тесты достижений (`tools/vn/tests/test_achievements.py`, 10)
+
+Уровень данных и исходника — Ren'Py в pytest нет, поэтому рантайм не исполняется:
+
+- экран существует и достижим из рельсы, причём **с data-гейтом**, а не безусловно;
+- в экране нет ни одного id ачивки, ни ключа строки ачивки, ни её текста — только обращения к реестру;
+- реестр эмитит **все** поля, которые экран читает: имена `spec["…"]` парсятся из экрана и сверяются с выводом `_emit_achievements` на боевой декларации;
+- спойлер-гейт один и покрывает и `name_key`, и `desc_key` (сравнение по логическим инструкциям, а не по физическим строкам);
+- все `vn_loc.t(...)`-ключи экрана объявлены в `strings.yaml`;
+- имена подстановок `ui.ach.progress` совпадают с локалями экрана **и сохранены во всех переводах** (иначе игрок увидел бы сами скобки).
 
 ## ADR-0010: что решили и где расходится с ARCHITECTURE.md
 
@@ -290,10 +333,11 @@ reached_rooftop: trigger: {scene: ch01_s030}
 | Задача | Что делать |
 |---|---|
 | Новая категория | Блок в `categories:` + `title_key` в `strings.yaml`. UI не трогать: вкладки рисуются циклом по `vn_gal.categories()` |
-| Новый тип контента (`kind`) | Расширить `enum` в `tools/schemas/gallery@1.schema.json:39-42`, добавить ветку в `_gallery_asset_paths` (расширение) и ветвление в `gallery.rpy:80,105,136`. Экран ветвится по `kind`, а не переписывается |
+| Новый тип контента (`kind`) | Расширить `enum` в `tools/schemas/gallery@1.schema.json:39-42`, добавить ветку в `_gallery_asset_paths` (расширение) и ветвление в `gallery.rpy:86,105,136`. Экран ветвится по `kind`, а не переписывается |
 | Разблокировка «за просмотр момента» | `unlock: {beat: <name>}` **плюс** руками `$ vn.beat("<name>")` в теле сцены — иначе якорь мёртв |
 | Фильтр по персонажу | Данные уже есть (`characters`), потребителя нет — писать новый (`items()` + вкладку/выпадашку) |
-| Экран достижений | Всё готово со стороны данных: `vn_ach.all_ids()`, `visible()`, `has()`, `VN_ACHIEVEMENTS[id]["name_key"/"desc_key"/"hidden"]`. Нужен файл в `game/framework/20_ui/screens/`, пункт навигации рядом с галереей (`core_screens.rpy:97-98`) и `Frame`-фон из `ui_frames.gen.rpy` — соблюдая `2*Borders` |
+| Прогресс отдельной ачивки | **OPEN.** Порядок правок: `achievements@1.schema.json` → `_emit_achievements` → счётчик в `vn_ach` → карточка. Движковая сторона готова (`achievement.register(..., stat_max=)`) |
+| Уведомление о выданной ачивке | `renpy.notify` по образцу галереи; точка вызова — `vn_ach.grant`. Отдельная строка в `strings.yaml` |
 | Steam-ачивки | **Уже подключено (ADR-0014)**: `035_platform.rpy:80-88` регистрирует все `vn_ach.all_ids()` в движковом `achievement`, ставит `vn_ach.set_provider(achievement.grant)` и догоняет выданное офлайн. Контент-код не трогается (ADR-0010 §Последствия); менять нечего — только заводить те же id в Steamworks |
 
 ## Чего НЕ делать
@@ -314,8 +358,9 @@ reached_rooftop: trigger: {scene: ch01_s030}
 ```bash
 vn content lint                 # схема gallery@1 / achievements@1
 vn build                        # семантика: ассеты, превью, категории, якоря, ключи строк
-python -m pytest tools/vn/tests/test_gallery.py -q     # 13 тестов подсистемы
-python -m pytest tools/vn/tests -q                     # весь набор: 254 теста
+python -m pytest tools/vn/tests/test_gallery.py -q       # 13 тестов галереи
+python -m pytest tools/vn/tests/test_achievements.py -q  # 10 тестов достижений
+python -m pytest tools/vn/tests -q                       # весь набор: 278 тестов
 
 vn test smoke --picks 0,0
 cat .vncache/smoke/gallery.json                        # {"unlocked":4,"total":5,"ids":[...]}
@@ -324,18 +369,20 @@ cat .vncache/smoke/gallery.json                        # {"unlocked":4,"total":5
 Скриншот самого экрана галереи снимается только при заданной переменной окружения — **`vn test smoke` её не выставляет** (передаются лишь `VN_AUTOPILOT_PICKS` и `VN_AUTOPILOT_LANG`, `tools/vn/src/vn/cli.py:1370`). Чтобы получить `.vncache/smoke/screen_gallery.png`, переменную задают вручную перед прогоном:
 
 ```bash
-VN_AUTOPILOT_SCREENS=gallery vn test smoke --picks 0,0     # bash
-$env:VN_AUTOPILOT_SCREENS="gallery"; vn test smoke --picks 0,0   # PowerShell
+VN_AUTOPILOT_SCREENS=gallery,achievements vn test smoke --picks 0,0     # bash
+$env:VN_AUTOPILOT_SCREENS="gallery,achievements"; vn test smoke --picks 0,0   # PowerShell
 ```
 
-Обработчик — `vn_qa.autopilot_screens()` (`030_flow.rpy:166-184`), вызывается из `label vn_end_of_content` **до** выхода, когда разблокировки уже произошли. В `.github/workflows/nightly.yml:57-60` четыре прогона smoke, но `VN_AUTOPILOT_SCREENS` не выставлен ни в одном — статус проверки вёрстки галереи в CI: **NOT IMPLEMENTED** (артефакт `gallery.json` при этом пишется всегда, `030_flow.rpy:201-210`). См. [27-testing.md](27-testing.md).
+Обработчик — `vn_qa.autopilot_screens()` (`030_flow.rpy:166-184`), вызывается из `label vn_end_of_content` **до** выхода, когда разблокировки уже произошли. В джобе `smoke` (`.github/workflows/nightly.yml:57-60`) четыре прогона без `VN_AUTOPILOT_SCREENS`, зато джоба **`controller-first`** (`:138-144`) снимает `main_menu,preferences,gallery,chapter_select` в двух геймпадных профилях — то есть вёрстка галереи в CI теперь снимается, а достижений пока нет: их имя в набор джобы не входит. Артефакт `gallery.json` пишется всегда (`030_flow.rpy:201-210`). См. [27-testing.md](27-testing.md).
+
+**Состояния «скрыто» и «не получено» в боевых декларациях не воспроизводятся** — обе объявленные ачивки видимы и к концу прогона получены. Снять эти состояния сегодня можно только временным пробником, который потом удаляют. **STATUS: OPEN. Recommended solution:** завести постоянную QA-декларацию скрытой ачивки с триггером, который автопилот не проходит, — чтобы `screen_achievements.png` показывал и «???», и «Не получено».
 
 ## Для AI-агента
 
 | | |
 |---|---|
-| **Читать перед изменением** | `content/gallery/core.gallery.yaml`, `tools/schemas/gallery@1.schema.json`, `docs/adr/0010-gallery-extras.md`, `game/framework/00_core/090_gallery.rpy`, `tools/vn/src/vn/content/compile.py:139-290` |
+| **Читать перед изменением** | `content/gallery/core.gallery.yaml`, `content/achievements/core.achievements.yaml`, `tools/schemas/{gallery@1,achievements@1}.schema.json`, `docs/adr/0010-gallery-extras.md`, `game/framework/00_core/{090_gallery.rpy,080_achievements.rpy}`, `game/framework/20_ui/screens/{gallery.rpy,achievements.rpy}`, `tools/vn/src/vn/content/compile.py:139-290` |
 | **Не трогать** | `game/generated/registry/gallery.gen.rpy`, `game/generated/registry/achievements.gen.rpy`, `game/assets/**`, `.vncache/**` — производные зоны, перезапишет `vn build` |
 | **Зависимости** | Запись галереи требует собранного ассета (`vn assets build`), существующего якоря (сцена/глава/переменная), объявленной категории и ключей в `content/ui/strings.yaml`. Ниже по течению: `vn loc extract/import` (новые строки), `vn test smoke` (`gallery.json`), релизный гейт `vn release validate` (покрытие переводов) |
-| **Валидация** | `vn content lint` → `vn build` → `python -m pytest tools/vn/tests/test_gallery.py -q` → `vn test smoke --picks 0,0` + `.vncache/smoke/gallery.json` |
-| **Частые ошибки** | 1) Стор называется `vn_gal`, не `vn_gallery`. 2) `docs/ARCHITECTURE.md` описывает **заменённый** дизайн на движковом `Gallery` + `_seen_images`; канон — ADR-0010 и код, `game/generated/screens/gallery.gen.rpy` не существует. 3) `unlock: {beat: ...}` бесполезен без ручного `$ vn.beat(...)` в сцене — компилятор его не эмитит. 4) `seen_image` запрещён для `kind: movie` (ошибка компиляции) и ломается при переименовании ассета (тихо). 5) `nsfw: true` прячет запись, но не исключает файл из дистрибутива. 6) Опечатка в `pack:` у элемента галереи не диагностируется — элемент просто исчезает |
+| **Валидация** | `vn content lint` → `vn build` → `python -m pytest tools/vn/tests/test_gallery.py tools/vn/tests/test_achievements.py -q` → `VN_AUTOPILOT_SCREENS=gallery,achievements vn test smoke --picks 0,0` + `.vncache/smoke/gallery.json` + просмотр `screen_*.png` глазами |
+| **Частые ошибки** | 1) Стор называется `vn_gal`, не `vn_gallery`. 2) `docs/ARCHITECTURE.md` описывает **заменённый** дизайн на движковом `Gallery` + `_seen_images`; канон — ADR-0010 и код, `game/generated/screens/gallery.gen.rpy` не существует. 3) `unlock: {beat: ...}` бесполезен без ручного `$ vn.beat(...)` в сцене — компилятор его не эмитит. 4) `seen_image` запрещён для `kind: movie` (ошибка компиляции) и ломается при переименовании ассета (тихо). 5) `nsfw: true` прячет запись, но не исключает файл из дистрибутива. 6) Опечатка в `pack:` у элемента галереи не диагностируется — элемент просто исчезает. 7) Писать «экрана достижений нет» — он есть с этой итерации; и не писать, что у ачивок есть прогресс-бар — его нет. 8) Ссылаться на `vn_gal_cell_locked`, `vn_gal_progress`, `vn_gal_empty` — стилей больше не существует |

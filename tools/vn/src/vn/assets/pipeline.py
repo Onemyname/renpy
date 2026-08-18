@@ -34,6 +34,8 @@ project.yaml: render (render_config.py). Здесь только исполне�
   game/assets/audio/{bgm,amb,sfx}/<id>.ogg
   game/assets/voice/<lang>/<chNN>/<line_id>.opus
   game/assets/mov/<group>/<name>[@N].webm (+ .webm.meta.json — mov_meta@1)
+  game/assets/ui/<id>[@N].webp           # 9-patch панели: мастера нет, источник —
+                                         # content/ui/panels.yaml (ADR-0009)
 """
 
 from __future__ import annotations
@@ -474,13 +476,19 @@ def _discover(root: Path, rep: AssetBuildResult,
         from ..repo import load_yaml
 
         doc = load_yaml(panels_decl)
+        ui_cls = cfg.cls("ui")
         for pid, spec in sorted((doc.get("panels") or {}).items()):
             if not SLUG_RE.match(pid):
                 rep.errors.append(f"content/ui/panels.yaml: панель {pid!r} вне "
                                   f"конвенции ^[a-z][a-z0-9_]*$")
                 continue
-            jobs.append(Job(panels_decl, "ui_panel", f"ui/{pid}.webp", {},
-                            extra={"spec": spec}))
+            # Каждый отгружаемый масштаб рисуется отдельно (ADR-0012): растянутая
+            # на 4K картинка мылит углы и 1px-обводку. Пропуска варианта, как у
+            # растровых мастеров, тут не бывает — рисовать можно в любом размере.
+            for scale in ui_cls.scales:
+                jobs.append(Job(panels_decl, "ui_panel",
+                                f"ui/{pid}{ui_cls.suffix_for(scale)}.webp", {},
+                                extra={"spec": spec, "scale": scale}))
 
     return jobs, consumed
 
@@ -638,15 +646,16 @@ def _transform(job: Job, profile: str, cfg: RenderConfig) -> bytes:
     raise AssetError(f"неизвестная трансформация {t!r}")
 
 
-def _transform_ui_panel(spec: dict, profile: str) -> bytes:
-    """UI-панель: рисуется из декларации (источник — не файл, а параметры)."""
+def _transform_ui_panel(spec: dict, scale: int, profile: str) -> bytes:
+    """UI-панель: рисуется из декларации (источник — не файл, а параметры).
+    scale — масштаб оверсэмпл-варианта: панель рисуется крупнее, не тянется."""
     import io
 
     from PIL import Image
 
     from . import ui as uimod
 
-    png = uimod.render_panel(spec)
+    png = uimod.render_panel(spec, scale)
     with Image.open(io.BytesIO(png)) as im:
         buf = io.BytesIO()
         # lossless: 9-patch тянется движком, артефакты сжатия поехали бы по краям
@@ -717,7 +726,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
             src_bytes = src_bytes + b"\x00" + (sidecar.read_bytes() if sidecar else b"")
         elif job.transform == "ui_panel" and job.extra:
             from . import ui as uimod
-            src_bytes = uimod.panel_hash_source(job.extra["spec"])
+            src_bytes = uimod.panel_hash_source(job.extra["spec"], job.extra["scale"])
         src_hash = _b3_bytes(
             src_bytes + b"\x00" + cfg.params_digest(job.transform, extra_params))
 
@@ -767,7 +776,8 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
                 if job.transform == "video2webm":
                     data = videomod.encode_video(job.src, job.extra["opts"], profile, video_tmp)
                 elif job.transform == "ui_panel":
-                    data = _transform_ui_panel(job.extra["spec"], profile)
+                    data = _transform_ui_panel(
+                        job.extra["spec"], job.extra["scale"], profile)
                 elif job.transform == "voice_opus":
                     data = encode_opus(job.src, root / ".vncache" / "voice-tmp")
                 else:

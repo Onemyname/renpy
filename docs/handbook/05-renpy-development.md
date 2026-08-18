@@ -289,7 +289,7 @@ build.classify("game/generated/manifest.json", None)
 | Грабля | Почему так | Что делать |
 |---|---|---|
 | `config.change_language_callbacks` **мёртв** в 8.5 («Removed.» в `config.py`) | движок его больше не зовёт | подписываться через `config.language_callbacks[lang]` — так и сделано в `040_localization.rpy:47-51`, `_hook()` регистрируется на `None` и на каждый найденный код |
-| `viewport` со `scrollbars "vertical"` не рисует полосу | у полосы нет дефолтного изображения | задавать `vscrollbar_base_bar` / `vscrollbar_thumb` / `vscrollbar_xsize` — образец: `20_ui/screens/gallery.rpy:58-61`, `core_screens.rpy:361-364`, `history.rpy:34-37` |
+| `viewport` со `scrollbars "vertical"` не рисует полосу | у полосы нет дефолтного изображения | задавать `vscrollbar_base_bar` / `vscrollbar_thumb` / `vscrollbar_xsize` — образец: `20_ui/screens/gallery.rpy:58-61`, `core_screens.rpy:367-370`, `history.rpy:36-39` |
 | `viewport` без `xsize/ysize` съедает всё доступное место | у viewport нет естественного размера | фиксировать размер явно (`gallery.rpy` — `ysize 800`; `history.rpy` — `1100×830`) |
 | в контексте `label main_menu` overlay-экраны и таймеры не тикают | контекст главного меню отличается от игрового | автопилот поэтому и устроен так: `label main_menu` из `_AUTOPILOT_RPY` (`cli.py:1271-1276`) делает **один** вызов `vn_qa.autopilot_boot()` и сразу `return` — управление уходит в `label start`, и только там начинает тикать overlay-таймер `vn_autopilot` (`cli.py:1280-1281`) |
 | голый `[` в тексте = интерполяция | синтаксис подстановки Ren'Py | экранировать `[[`; псевдолокаль это делает автоматически (`tools/vn/src/vn/loc/po.py:539-542`), а проверка парности скобок снимает эскейпы до анализа (`po.py:308-317`) |
@@ -355,12 +355,12 @@ vn content lint                        # декларации, граф, layout 
 vn content compile --check             # генерат актуален? (тут ловится контракт .rpy)
 vn build                               # полный проход: lint -> assets -> compile -> loc import
 vn build --check                       # ничего не пишет; падает, если генерат отстал
-python -m pytest tools/vn/tests -q     # 254 теста, в т.ч. контракт-тесты engine_compat
+python -m pytest tools/vn/tests -q     # 278 тестов, в т.ч. контракт-тесты engine_compat
 vn play                                # запуск руками
 vn test smoke                          # in-process автопилот: прогон сцен + бюджет cold start
 vn save corpus                         # 2 фикстуры сейвов загружаются и мигрируют
                                        #   (schema1-demo реально гоняет миграцию 0002)
-vn release validate --flavor public    # релизный гейт, 20 проверок
+vn release validate --flavor public    # релизный гейт, 21 проверка
 ```
 
 Правили `00_core/**` или `20_ui/**` — минимум: `vn build && vn test smoke`. Правили что-то, связанное со стеком вызовов, сейвами или миграциями — плюс `python -m pytest tools/vn/tests -q && vn save corpus`.

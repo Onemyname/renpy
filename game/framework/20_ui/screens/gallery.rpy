@@ -34,7 +34,7 @@ screen gallery():
             # ── Прогресс и вкладки: и то и другое считается из реестра ────────
             hbox:
                 spacing gui.sp_l
-                text "[_done] / [_total]" style "vn_gal_progress" yalign 0.5
+                text "[_done] / [_total]" style "vn_counter" yalign 0.5
                 hbox:
                     spacing gui.sp_xs
                     for _cid, _cspec in _cats:
@@ -45,7 +45,7 @@ screen gallery():
                             selected (_cid == _cur)
 
             if not _cats:
-                text vn_loc.t("ui.gallery.empty") style "vn_gal_empty"
+                text vn_loc.t("ui.gallery.empty") style "vn_empty_note"
             else:
                 # Пад/клавиатура (аудит ui.md P0 №2): ряды за фолдом ysize
                 # недостижимы фокусом — ячейки докручивают сетку через
@@ -73,7 +73,13 @@ screen gallery():
 screen vn_gal_cell(item_id, spec, row=None, rows=None, focus_default=False):
     $ _open = vn_gal.is_unlocked(item_id)
     button:
-        style ("vn_gal_cell" if _open else "vn_gal_cell_locked")
+        # Стиль ОДИН на оба состояния, и это принципиально: у закрытой ячейки был
+        # свой стиль ровно ради hover_background = обычному фону, то есть ради
+        # ОТСУТСТВИЯ подсветки — и на dpad-проходе по ряду закрытых игрок терял
+        # курсор из вида (закрытые остаются в фокус-цепочке, см. выше).
+        # «Закрытость» держится содержимым (знак вопроса вместо превью и подпись
+        # «Закрыто»), а не отключённым фокусом.
+        style "vn_gal_cell"
         action (Show("gallery_viewer", item_id=item_id) if _open else NullAction())
         default_focus (gui.focus_content if focus_default else 0)
         if row is not None:
@@ -170,11 +176,6 @@ image vn_gal_play = Transform(Solid(gui.text_color), xysize=(26, 26), rotate=45,
                               alpha=0.85)
 
 
-style vn_gal_progress:
-    font gui.interface_semibold_font
-    size gui.label_text_size
-    color gui.accent_color
-
 style vn_gal_tab:
     # Вкладка — 6+19+6 = 31 px. Панели choice* требуют 54-60 px, то есть
     # больше самой вкладки: фон сжался бы в пилюлю (ADR-0009, 2*Borders).
@@ -191,19 +192,11 @@ style vn_gal_tab_text:
     hover_color gui.text_color
     selected_color gui.accent_color
 
-style vn_gal_empty:
-    font gui.interface_text_font
-    size gui.text_size
-    color gui.faint_color
-
 style vn_gal_cell:
     xysize (472, 266)
     padding (0, 0)
     background vn_frame_slot
     hover_background vn_frame_choice_hover
-
-style vn_gal_cell_locked is vn_gal_cell:
-    hover_background vn_frame_slot
 
 style vn_gal_caption:
     font gui.interface_semibold_font

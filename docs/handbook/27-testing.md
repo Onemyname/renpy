@@ -1,10 +1,10 @@
 # 27. Тестирование: уровни проверок, smoke-автопилот, сейв-корпус, чеклисты
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — 254 pytest-теста, автопилот в реальном движке и сейв-корпус работают и гоняются в GitHub Actions; сейв-корпус проверяет **реальную миграцию** (2 фикстуры, вторая на старой схеме). **Но** `cli.py` (1930 строк) покрыт одной командой из 64 (`pack build`), а `vn test replay|screens|paths` — заглушки. Отдельная свежая проблема: команда прогона из README/CI (`python -m pytest tools/vn/tests -q` **из корня**) на этом чекауте даёт `1 failed` — см. §2.
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED — 278 pytest-тестов, автопилот в реальном движке и сейв-корпус работают и гоняются в GitHub Actions; сейв-корпус проверяет **реальную миграцию** (2 фикстуры, вторая на старой схеме). **Но** `cli.py` (1930 строк) покрыт одной командой из 64 (`pack build`), а `vn test replay|screens|paths` — заглушки. Отдельная свежая проблема: команда прогона из README/CI (`python -m pytest tools/vn/tests -q` **из корня**) на этом чекауте даёт `1 failed` — см. §2.
 > **Отвечает на вопрос:** «Что запустить, чтобы убедиться, что я не сломал игру — в каком порядке, что каждая команда ловит и чего не ловит».
 > **Сверено прогонами:** 2026-08-18, HEAD `db28ce6`, SDK 8.5.3, ffmpeg 7.x в PATH.
 
-Тестов у проекта два сорта: обычный pytest над Python-тулингом (`tools/vn/tests/`, **24 файла** `test_*.py` + `conftest.py` + `helpers.py`) и прогон **настоящей игры** автопилотом внутри её собственного процесса (`vn test smoke`, `vn test oversample`, `vn save corpus`). Рантайм Ren'Py питоном не тестируется — до `game/framework/**` не дотягивается ни один pytest (его проверяют только прогоны движка), исключения статические: `test_crash_handler.py`, `test_platform.py:129` и `test_ui_panels.py:251,295,320` читают исходники `game/**` регексом. Чеклисты (§9) — главный практический раздел этого файла.
+Тестов у проекта два сорта: обычный pytest над Python-тулингом (`tools/vn/tests/`, **24 файла** `test_*.py` + `conftest.py` + `helpers.py`) и прогон **настоящей игры** автопилотом внутри её собственного процесса (`vn test smoke`, `vn test oversample`, `vn save corpus`). Рантайм Ren'Py питоном не тестируется — до `game/framework/**` не дотягивается ни один pytest (его проверяют только прогоны движка), исключения статические: `test_crash_handler.py`, `test_platform.py:183` и `test_ui_panels.py:325,295,320` читают исходники `game/**` регексом. Чеклисты (§9) — главный практический раздел этого файла.
 
 ## Быстрый ответ
 
@@ -12,13 +12,14 @@
 
 ```bash
 vn content lint                          # 1. ~1 с, SDK не нужен: схемы, именование, граф, достижимость
-cd tools/vn && .venv/bin/python -m pytest -q && cd -   # 2. 254 passed (про cwd — §2!)
+cd tools/vn && .venv/bin/python -m pytest -q && cd -   # 2. 278 passed (про cwd — §2!)
 vn build --check                         # 3. свежесть генерата и ассетов, разметка PO, два бюджета
 bash "$RENPY_SDK/renpy.sh" . lint        # 4. движковый lint (Windows: "$RENPY_SDK/renpy.exe" . lint)
 vn test oversample --scale 2             # 5. движок реально подхватывает @2-варианты (ADR-0012)
 vn test smoke --picks 0,0                # 6. автопрохождение в реальном движке (~10-20 с)
 vn save check && vn save corpus          # 7. 2 фикстуры сейвов + реально исполняемая миграция
-vn release validate --flavor public      # 8. релизный гейт: 20 проверок в коде, 19 строк на экране
+vn release validate --flavor public      # 8. релизный гейт: 21 проверка в коде, 20 строк на экране
+                                         #    (сейчас 0 FAIL, exit 0; WARN зрелости — пока нет release-глав)
 ```
 
 Уровни 4-8 требуют `RENPY_SDK`. **Грабля:** в bash-сессиях агента переменная не наследуется — экспортируйте вручную (путь свой):
@@ -30,11 +31,12 @@ vn release validate --flavor public      # 8. релизный гейт: 20 пр
 
 ## 1. Инвентарь тестов — IMPLEMENTED
 
-**24 файла `test_*.py` + `conftest.py` + `helpers.py`.** Функций `def test_*` — **253**
-(`grep -h '^def test_' tools/vn/tests/*.py | wc -l`), собирается **254**: расхождение даёт
-единственный параметризованный тест `test_every_frame_consumer_is_not_smaller_than_2x_borders`
-(`@pytest.mark.parametrize("ui_scale", [1.0, 1.4])`). Все тесты лежат плоско в одной директории,
-тестовых классов нет.
+**24 файла `test_*.py` + `conftest.py` + `helpers.py`.** Функций `def test_*` — **276**
+(`grep -h '^def test_' tools/vn/tests/*.py | wc -l`), собирается **278**: расхождение дают
+два параметризованных теста в `test_ui_panels.py` —
+`test_panel_variant_geometry_scales_exactly` (`scale` 1/2) и
+`test_every_frame_consumer_is_not_smaller_than_2x_borders` (`ui_scale` 1.0/1.4). Все тесты лежат
+плоско в одной директории, тестовых классов нет.
 
 `tools/vn/tests/helpers.py` — общая обвязка синтетических корней: `mk_root()` / `write_project()`
 кладут **свой** render-профиль с экраном 64×48 вместо боевых 4K-мастеров, `img()` пишет мастер
@@ -52,23 +54,23 @@ vn release validate --flavor public      # 8. релизный гейт: 20 пр
 | `test_gallery.py` | 13 | `_emit_gallery` (ADR-0010): форма реестра, разрешение превью, отсутствующий ассет, неизвестная категория, несоответствие kind/asset, существование якоря, дубликаты id | Заглушка `_Rep` с одним полем `.warnings`; `_mk_assets()` пишет однобайтовые файлы-пустышки. Компиляция реального реестра — `pytest.skip` без SDK (`:181`) |
 | `test_verify_regressions.py` | 11 | Регрессии находок фазы 0: устойчивость lint к схемно-невалидным `exits`, отсутствующие входы компилятора, «`--check` ничего не пишет», shim-размотка, префикс `vn_` в persistent, схема gen-манифеста, `_lfs_pointer_fonts` | Свой `_copy_skeleton`. Магическая константа `14` заменена на `len(BASE_OUTPUTS)` из `test_compile.py` (`:84`) — но именно этот межмодульный импорт и делает прогон зависимым от cwd (§2) |
 | `test_assets.py` | 27 | `build_assets`: трансформации, кэш и восстановление `from_cache`, orphan-очистка, нарушения именования, `sprite_tree`, `emit_images`, `build_graph`; **`:52`** — ветка звука читает `assets_src/audio_stems/`; **`:69`** — манифест сборки проходит схему `assets_manifest@1` из реестра (G16) | `_png()` через Pillow; цвета намеренно разные, чтобы дедуп по content-hash не маскировал результат |
-| `test_ui_panels.py` | 10 (11 прогонов) | `vn.assets.ui` (ADR-0009): парсинг hex/RGBA, геометрия `borders_of` (radius + blur + dy), 9-patch и альфа, градиент, `emit_frames`, инкрементальность по панели, orphan. Три **гард-теста по живому репозиторию**: `:232` — декларация валидна и панели `choice*` не выше 60 px; `:251` — ни один потребитель `vn_frame_*` не меньше `2*Borders`, **параметризован `ui_scale` 1.0 и 1.4**; `:295` — интерфейсные кегли `gui.*` растут с `gui.ui_scale`, диалоговые не растут, ни один токен не уменьшается; `:320` — вкладки и кнопки галереи сидят на `chip`/`chip_active`, а не на `choice` | Pillow читает пиксели рендера; `_load_gui_tokens` парсит `game/gui.rpy` и `eval`-ит выражения токенов, `_load_styles` — все `style` в `game/**/*.rpy`. Панелей в `content/ui/panels.yaml` — **8** (`choice`, `choice_hover`, `choice_chosen`, `chip`, `chip_active`, `panel`, `slot`, `toast`) |
-| `test_ci_config.py` | 7 | Инварианты конфигов CI по YAML: набор workflow найден (`:66`); `-r tools/vn.lock` стоит **до** editable-установки во всех 8 местах (`:73`, G17); `ffmpeg` ставится до любого `vn build`/`vn release build` (`:93`); видео-сырцы в `assets_src/video_src` на месте (`:110`, иначе требование ffmpeg вырождается); `ci.yml` триггерится на **любой** ветке, а не только `main` (`:116`); push-триггер `ci.yml` **не** ловит теги, иначе дублировал бы `release.yml` (`:129`); у `ci.yml` нет `pull_request`, пока push нефильтрован (`:139`) | Свои парсеры `_github_jobs()`/`_gitlab_jobs()`: у GitLab разворачивается `extends` и `before_script` |
-| `test_crash_handler.py` | 2 | Регрессия «мёртвый обработчик»: `config.exception_handler` присваивается **ровно один раз** и именно в `070_crash.rpy`; обработчик пишет строку `[vn] unhandled exception:` и возвращает `False` | Статический: рантайм Ren'Py в pytest недоступен, поэтому регекс по `game/framework/**/*.rpy` |
+| `test_ui_panels.py` | 13 (15 прогонов) | `vn.assets.ui` (ADR-0009): парсинг hex/RGBA, геометрия `borders_of` (radius + blur + dy), 9-patch и альфа, градиент, `emit_frames`, инкрементальность по панели, orphan. Три **гард-теста по живому репозиторию**: `:232` — декларация валидна и панели `choice*` не выше 60 px; `:251` — ни один потребитель `vn_frame_*` не меньше `2*Borders`, **параметризован `ui_scale` 1.0 и 1.4**; `:295` — интерфейсные кегли `gui.*` растут с `gui.ui_scale`, диалоговые не растут, ни один токен не уменьшается; `:320` — вкладки и кнопки галереи сидят на `chip`/`chip_active`, а не на `choice` | Pillow читает пиксели рендера; `_load_gui_tokens` парсит `game/gui.rpy` и `eval`-ит выражения токенов, `_load_styles` — все `style` в `game/**/*.rpy`. Панелей в `content/ui/panels.yaml` — **8** (`choice`, `choice_hover`, `choice_chosen`, `chip`, `chip_active`, `panel`, `slot`, `toast`) |
+| `test_ci_config.py` | 8 | Инварианты конфигов CI по YAML: набор workflow найден (`:66`); `-r tools/vn.lock` стоит **до** editable-установки во всех 8 местах (`:73`, G17); `ffmpeg` ставится до любого `vn build`/`vn release build` (`:93`); видео-сырцы в `assets_src/video_src` на месте (`:110`, иначе требование ffmpeg вырождается); `ci.yml` триггерится на **любой** ветке, а не только `main` (`:116`); push-триггер `ci.yml` **не** ловит теги, иначе дублировал бы `release.yml` (`:129`); у `ci.yml` нет `pull_request`, пока push нефильтрован (`:139`) | Свои парсеры `_github_jobs()`/`_gitlab_jobs()`: у GitLab разворачивается `extends` и `before_script` |
+| `test_crash_handler.py` | 6 | Регрессия «мёртвый обработчик»: `config.exception_handler` присваивается **ровно один раз** и именно в `070_crash.rpy`; обработчик пишет строку `[vn] unhandled exception:` и возвращает `False` | Статический: рантайм Ren'Py в pytest недоступен, поэтому регекс по `game/framework/**/*.rpy` |
 | `test_licenses.py` | 7 | `vn.assets.licenses`: загрузка реестра, блок `game_use: false`, гейт `nsfw_allowed`, warning про непокрытые декларации | Инлайн-константа `REGISTRY` на 3 ассета + проверка живого `content/licenses.yaml` |
 | `test_video.py` | 9 | `vn.assets.video` и видеоветка `build_assets`: энкод VP9, `mov_meta@1`, детект шва лупа, инвалидация по sidecar `*.video.yaml`, нейминг, orphan, бюджеты/кодек | **Весь модуль `skipif` без ffmpeg/ffprobe** (`:13-16`). Сырцы синтезируются `ffmpeg -f lavfi`: `color=` — идеальный луп, `testsrc` — рваный |
-| `test_release.py` | 13 | `vn.release`: конфиг флейвора, NSFW-глобы исключения, `build_info@2` write/validate/clear, видео-бюджеты, гейт LFS-указателей шрифтов; **`:79`** — `patron_tag` короткая, стабильная и **не равна токену** (ADR-0011); **`:149-192`** — три теста `vn pack build` через `CliRunner`; **`:233`** — `built_asset_ids` игнорирует производные (`@2`, `.thumb`, постеры); **`:250`** — гард-тест россыпи: `build.archive` в `game/options.rpy` запрещён (норма §2.4, `.rpa` — только mobile фазы 3 через ADR) | Инлайн `PROJECT`; `_run_pack_build()` (`:141-146`) = `CliRunner` + `monkeypatch.chdir`. `validate_release` **по-прежнему никогда не исполняется**: тесты гейта (`:195-230`) ассертят только `inspect.getsource(...)` |
+| `test_release.py` | 19 | `vn.release`: конфиг флейвора, NSFW-глобы исключения, `build_info@2` write/validate/clear, видео-бюджеты, гейт LFS-указателей шрифтов; **`:79`** — `patron_tag` короткая, стабильная и **не равна токену** (ADR-0011); **`:149-192`** — три теста `vn pack build` через `CliRunner`; **`:233`** — `built_asset_ids` игнорирует производные (`@2`, `.thumb`, постеры); **`:250`** — гард-тест россыпи: `build.archive` в `game/options.rpy` запрещён (норма §2.4, `.rpa` — только mobile фазы 3 через ADR) | Инлайн `PROJECT`; `_run_pack_build()` (`:141-146`) = `CliRunner` + `monkeypatch.chdir`. `validate_release` **по-прежнему никогда не исполняется**: тесты гейта (`:195-230`) ассертят только `inspect.getsource(...)` |
 | `test_saves.py` | 6 | Сейв-часть компилятора (G5): дыра в цепочке миграций, незарезервированный номер, несовпадение схемы, встраивание исходников `_emit_migrations`, пары стора в `_emit_snapshot`, рантайм-эквивалентное исполнение миграции | `_mk_migrations()` пишет `content/migrations/registry.yaml` + нумерованные `.py`; `_src_factory` подделывает колбэк хеша входов |
 | `test_storage.py` | 5 | `vn.assets.storage` (G14/G21): push требует лока, round-trip lock→push→pull с иммутабельными версиями, чужой лок и `--force`, состояния `status`, честная заглушка s3 | `.vnstorage.yaml` в `tmp_path` с файловым бэкендом |
 | `test_compile.py` | 7 | `compile_content`: набор выходов пустого проекта, идемпотентность, точечная очистка осиротевших `.rpy`+`.rpyc`, `CompileError` при главах без `RENPY_SDK` | `BASE_OUTPUTS` — замороженный набор из **16** имён (`:11-28`, включая `render.gen.rpy` по ADR-0012 и `platform.gen.rpy` по ADR-0014); ровно эти 16 остаются от 21 выхода, когда в проекте нет ни одной главы. `monkeypatch.delenv("RENPY_SDK")` |
-| `test_achievements.py` | 4 | `_emit_achievements` (`achievements@1`): значения по умолчанию, пустой реестр, правило `oneOf` (ровно один триггер), валидность живой декларации | Фабрика `_doc(**achievements)`; `pytest.skip`, если деклараций нет |
+| `test_achievements.py` | 10 | `_emit_achievements` (`achievements@1`): значения по умолчанию, пустой реестр, правило `oneOf` (ровно один триггер), валидность живой декларации | Фабрика `_doc(**achievements)`; `pytest.skip`, если деклараций нет |
 | `test_voice.py` | 13 | Голосовой контур (§4.9/C5): `vn.voice` — валидация манифестов против ledger (сироты в обе стороны, чужая глава), CSV-лист `manifest`, атомарный `import_takes`, маппинг дыр покрытия в FAIL релизного гейта, инжекция voice-операторов `_inject_voice`, транскод `voice_opus` и отбраковка путей вне конвенции | Транскод-тест скипается без ffmpeg (`:189`) |
 | `test_shots.py` | 11 | Послойные шоты (shots@1, ADR-0013): сборка слоёв с вариантами, обязательность `env` и альфы, единый холст, эмиссия `layeredimage` (ошибка на несобранный вариант, warning на orphan-слой), атрибуты в индексе образов, учёт худшего шота моделью памяти, отказ компилятора на битой декларации | Tiny-профиль: экран 64×48, мастера 128×96 (`@2`) |
 | `test_memory.py` | 5 | Модель памяти образов (ADR-0012): формулы движка дословно (лимит `mb*1024*1024//4`, стоимость `bbox*1.34`, bbox по альфе), worst-case сцены, ошибка при превышении бюджета, соответствие `render.gen.rpy` проекту | Сверено с `renpy/display/im.py` |
 | `test_sources.py` | 8 | Единый контракт внешних источников (DAZ / VaM / Sims 4): скаффолд ↔ валидатор, id ↔ выход, заявленное разрешение ↔ файл, сквозная цепочка DAZ → Wan → игра, VaM `.var`-пакеты и кинематик-секвенции до сцены и галереи | Секвенция-тест требует ffmpeg (`:193`) |
 | `test_schemas.py` | 3 | `SchemaRegistry`: имя файла ↔ `const`, `additionalProperties: false` у каждой схемы, валидность стартовых деклараций, ошибка на неизвестной схеме | Ассерты «не меньше»: `len(reg.schemas) >= 15`, `seen >= 10` |
 | `test_engine_compat.py` | 5 | Контракт-тесты G18 против пиннованного SDK: существование `renpy.call_stack_depth`/`get_return_stack`, voice-стейтмент, `config.emphasize_audio_*`, **штатный Steam-стек** (`test_steam_engine_contract:62` — тихий no-op без steam_api, варианты `steam_deck`/`steam_big_picture`, `SteamBackend`, `dlc_installed`, `steam_init()` на `init -1499`; ADR-0014); равенство `VN_API_LEVEL` (тулинг) и `API_LEVEL` в `030_flow.rpy:9` | Маркер `requires_sdk` (`:11-14`) на четырёх из пяти. Тест про API_LEVEL SDK **не** требует — он регексом читает файл фреймворка |
-| `test_platform.py` | 10 | Платформенный слой (ADR-0014): эмиттер `platform.gen.rpy` (Steam выключен без `appid`, карта `VN_STEAM_DLC` только из паков с `steam_dlc_appid`), рендер VDF из шаблона (`appid`/`SetLive`/депоты, warning на незаданный депот), обязательность `appid` и `depots`, раскладка депотов из **реальных** архивов distribute (win-`zip` и linux-`tar.bz2` в одном кейсе, `:78-102`) и честные ошибки — без дистрибутива и при объявленном депоте без артефакта (`:104-111`), статус steam_api-библиотек; **`:129`** — гард-тест «слово Steam живёт только в `035_platform.rpy`» | `_steam_root()` строит синтетический репозиторий и копирует **живой** `ci/steam/app_build.vdf.tmpl`; SDK не нужен ни одному тесту |
+| `test_platform.py` | 13 | Платформенный слой (ADR-0014): эмиттер `platform.gen.rpy` (Steam выключен без `appid`, карта `VN_STEAM_DLC` только из паков с `steam_dlc_appid`), рендер VDF из шаблона (`appid`/`SetLive`/депоты, warning на незаданный депот), обязательность `appid` и `depots`, раскладка депотов из **реальных** архивов distribute (win-`zip` и linux-`tar.bz2` в одном кейсе, `:78-102`) и честные ошибки — без дистрибутива и при объявленном депоте без артефакта (`:104-111`), статус steam_api-библиотек; **`:129`** — гард-тест «слово Steam живёт только в `035_platform.rpy`» | `_steam_root()` строит синтетический репозиторий и копирует **живой** `ci/steam/app_build.vdf.tmpl`; SDK не нужен ни одному тесту |
 
 `tools/vn/tests/conftest.py` — вся общая обвязка, 13 строк:
 
@@ -90,7 +92,7 @@ def repo_root() -> Path:
 ### 2.1. Рабочая команда — из `tools/vn`, а не из корня
 
 ```bash
-cd tools/vn && .venv/bin/python -m pytest -q                  # 254 passed
+cd tools/vn && .venv/bin/python -m pytest -q                  # 278 passed
 cd tools/vn && .venv/bin/python -m pytest -q tests/test_lint.py   # один файл
 cd tools/vn && .venv/bin/python -m pytest -q -k gallery       # по имени
 ```
@@ -115,8 +117,8 @@ pytest в режиме `prepend` кладёт в `sys.path` **сам катал�
 
 | Команда | Результат |
 |---|---|
-| `cd tools/vn && python -m pytest -q` | 254 passed |
-| `PYTHONPATH=tools/vn python -m pytest tools/vn/tests -q` (из корня) | 254 passed |
+| `cd tools/vn && python -m pytest -q` | 278 passed |
+| `PYTHONPATH=tools/vn python -m pytest tools/vn/tests -q` (из корня) | 278 passed |
 | `python -m pytest tools/vn/tests -q` (из корня) | **1 failed, 253 passed** |
 
 Правильное исправление — не менять команду, а снять зависимость: `BASE_OUTPUTS` логичнее вынести в
@@ -143,9 +145,9 @@ pytest в режиме `prepend` кладёт в `sys.path` **сам катал�
 
 | Окружение | Результат |
 |---|---|
-| SDK + ffmpeg | `254 passed` |
-| без `RENPY_SDK`, ffmpeg есть | `246 passed, 7 skipped` |
-| без `RENPY_SDK` и без ffmpeg | `234 passed, 18 skipped, **1 failed**` |
+| SDK + ffmpeg | `278 passed` |
+| без `RENPY_SDK`, ffmpeg есть | `271 passed, 7 skipped` |
+| без `RENPY_SDK` и без ffmpeg | `259 passed, 18 skipped, **1 failed**` |
 
 **7 тестов под `RENPY_SDK`:** четыре контракт-теста `test_engine_compat.py` (`:26`, `:34`, `:56`,
 `:63` — последний `test_steam_engine_contract`, ADR-0014) и по одному e2e в
@@ -171,8 +173,8 @@ E   assert False
 `pipeline.py`.
 
 **Вывод для чеклистов:** зелёный прогон без SDK и ffmpeg не означает, что путь через движок цел. Все
-гард-тесты по файлам репозитория (`test_ci_config.py`, `test_crash_handler.py`, `test_platform.py:129`,
-`test_ui_panels.py:232,251,295,320`, `test_engine_compat.py:91`) окружения не требуют — они гоняются
+гард-тесты по файлам репозитория (`test_ci_config.py`, `test_crash_handler.py`, `test_platform.py:183`,
+`test_ui_panels.py:306,325,369,394`, `test_engine_compat.py:91`) окружения не требуют — они гоняются
 везде.
 
 ---
@@ -182,22 +184,26 @@ E   assert False
 | № | Команда | Время | Нужен SDK | Ловит | НЕ ловит |
 |---|---|---|---|---|---|
 | 1 | `vn content lint` | ~1 с | нет | 33 диагностики: схемы деклараций, именование, обязательные файлы, пары `scene.yaml`+`scene.rpy`, граф сцен, недостижимость и тупики (серьёзность по `status`, G15), исчезновение выпущенных id, LFS-покрытие сырцов | ничего внутри `.rpy`, ничего в рантайме, свежесть генерата, бюджет памяти сцены |
-| 2 | pytest (254) | секунды | частично | логику модулей `vn.*`; инварианты конфигов CI; гард-тесты по файлам репозитория (обработчик краха, Steam-фасад, `build.archive`, токены `gui.*`, `API_LEVEL`) | `cli.py` кроме `pack build`, `analyze.py`, `scaffold.py`, `psd.py`, `devloop.py`, поведение `game/framework/**` в рантайме |
+| 2 | pytest (278) | секунды | частично | логику модулей `vn.*`; инварианты конфигов CI (включая «вариантные прогоны — в nightly»); гард-тесты по файлам репозитория (обработчик краха, Steam-фасад, экран достижений, `build.archive`, токены `gui.*`, `API_LEVEL`); рантайм-гейт паков — **исполнением** блоков `init python` из `.rpy` на заглушке `store` | `cli.py` кроме `pack build`, `analyze.py`, `scaffold.py`, `psd.py`, `devloop.py`, поведение `game/framework/**` в рантайме |
 | 3 | `vn build --check` | секунды | да, если есть главы | несвежий генерат (побайтово), несвежие ассеты, ошибки разметки PO, **бюджеты G19 и бюджет памяти сцены** (два разных fail-режима, `cli.py:176-203`) | падения в рантайме, вёрстку экранов, побитые байты выходов в `game/assets` (сверяется `src_hash`, не выход) |
 | 4 | `renpy.sh . lint` | ~10 с | да | движковые проблемы: неопределённые образы/метки, синтаксис `.rpy` во **всём** `game/` | логику ветвления, вёрстку, производительность |
 | 5 | `vn test oversample --scale 2` | ~10 с | да | **единственная** проверка, что отгружаемые `@2`-варианты движок реально подхватит: зовёт настоящий `Image.get_oversampled_image()` на настоящем `game/assets` | всё остальное; это одна узкая проверка ADR-0012 |
 | 6 | `vn test smoke` | 10-20 с локально | да | реальные падения (`traceback.txt`), недостижимую сцену (`FAIL: vn_scene_unavailable`), превышение `cold_start_s`, фактический путь по меню | ветки, которые вы не перечислили в `--picks`; вёрстку (кроме экранов из `VN_AUTOPILOT_SCREENS`); события геймпада; инициализацию Steam и `owned()==False` |
 | 7 | `vn save check` + `vn save corpus` | секунды / ~40 с | corpus — да | битые фикстуры; поломку загрузки старого сейва; **исполнение миграции `0002`** на фикстуре `schema1-demo` | миграции, для которых нет фикстуры со «своей» исходной схемой (сейчас в корпусе только переход 1 → 2) |
-| 8 | `vn release validate --flavor <f>` | ~10 с | да | **20 тем проверок** в `validate_release` (`release.py:407-629`): схема `project.yaml`, флейвор, паки (строка на каждый), lint, LFS-шрифты, свежесть ассетов и генерата, видео, бюджеты, провенанс, декларации DAZ/VaM/Sims4, покрытие переводов, **озвучка**, лицензии, хранилище сырцов, версия манифеста, git sha, сейв-корпус | ничего нового: **своих правил у гейта нет**, он агрегирует существующие (`release.py:408-410`). Не отличает draft-профиль ассетов от full; Steam-префлайта нет вовсе |
+| 8 | `vn release validate --flavor <f>` | ~10 с | да | **21 тема проверок** в `validate_release` (`release.py:525-750`), включая новую «зрелость контента» (`early_content` против `status` глав): схема `project.yaml`, флейвор, паки (строка на каждый), lint, LFS-шрифты, свежесть ассетов и генерата, видео, бюджеты, провенанс, декларации DAZ/VaM/Sims4, покрытие переводов, **озвучка**, лицензии, хранилище сырцов, версия манифеста, git sha, сейв-корпус | ничего нового: **своих правил у гейта нет**, он агрегирует существующие (`release.py:526-528`). Не отличает draft-профиль ассетов от full; Steam-префлайта нет вовсе |
 
-**Сколько строк печатает гейт.** Тем — 20, но три из них могут промолчать: покрытие переводов
+**Сколько строк печатает гейт.** Тем — 21, но три из них могут промолчать: покрытие переводов
 (только при заданном `release_coverage_min`), озвучка (только при непустом покрытии) и лицензии
 (только при непустых декларациях) — у них нет безусловной `else`-ветки. Строки про DAZ / VaM / Sims4,
 наоборот, печатаются **всегда**, даже при нуле деклараций. Строка про паки печатается на каждый пак
-флейвора. Фактически на этом чекауте: **public — 19 строк** (18 PASS + 1 WARN, exit 0),
-**patron — 20 строк** (`packs: [ep_beach, nsfw]` даёт две строки). Единственный штатный WARN сейчас —
-`озвучка: 14 черновых дублей (draft) — ru: ch01_s010_0001`. `ok` становится `False` **только** на
-FAIL (`release.py:414-418`), WARN релиз не валит — жёлтая строка в выводе это норма, а не поломка.
+флейвора. Фактически на этом чекауте: **public — 20 строк** (18 PASS + **2 WARN**, 0 FAIL, exit 0),
+**patron — 21 строка** (`packs: [ep_beach, nsfw]` даёт две строки, `early_content: true` — зелёную),
+20 PASS + 1 WARN, exit 0. Штатные WARN сейчас два:
+`озвучка: 14 черновых дублей (draft) — ru: ch01_s010_0001` и (только у `public`)
+`зрелость контента: ни одна глава ещё не доведена до status=release (ch01)` — гейт зрелости
+самоактивирующийся и станет строгим с первой главой `status: release`
+([29 §5.1](29-build-and-release.md#maturity-gate-rule)). `ok` становится `False` **только** на
+FAIL (`release.py:532-536`), WARN релиз не валит — жёлтая строка в выводе это норма, а не поломка.
 
 ### Где именно вызывается `renpy lint`
 
@@ -257,12 +263,14 @@ screen vn_autopilot():
 | `VN_AUTOPILOT_LOAD` | прогон корпуса, `"1-1"` (`cli.py:1458`) | `030_flow.rpy:162-164` | `renpy.load(slot)` прямо из `autopilot_boot` |
 | `VN_AUTOPILOT_SCREENS` | **ни один флаг CLI её не ставит** — только наследование из `os.environ` (`cli.py:1538`) | `030_flow.rpy:166-184` | Список экранов через запятую: `show_screen` → `renpy.pause(0.3)` → `screenshot` → `hide_screen` |
 
-`VN_AUTOPILOT_SCREENS` и запись `gallery.json` — **IMPLEMENTED / UNDOCUMENTED**: кода нет ни в одном doc-файле, флага CLI не существует. Что механизм рабочий, доказывает `.vncache/smoke/screen_gallery.png` из прошлого прогона — переменная выставлялась снаружи. Чтобы снять экраны сегодня:
+`VN_AUTOPILOT_SCREENS` флага CLI по-прежнему не имеет — только наследование из окружения. Зато с этой итерации переменная **выставляется в CI**: ночная джоба `controller-first` задаёт `VN_AUTOPILOT_SCREENS=main_menu,preferences,gallery,chapter_select` (`nightly.yml:143`). Локально:
 
 ```bash
-VN_AUTOPILOT_SCREENS=gallery,preferences vn test smoke --picks 0,0    # bash
-$env:VN_AUTOPILOT_SCREENS="gallery,preferences"; vn test smoke --picks 0,0   # PowerShell
+VN_AUTOPILOT_SCREENS=gallery,achievements,preferences vn test smoke --picks 0,0    # bash
+$env:VN_AUTOPILOT_SCREENS="gallery,achievements,preferences"; vn test smoke --picks 0,0   # PowerShell
 ```
+
+Это же — единственный способ снять вёрстку **экрана достижений**: прохождение сцен его не открывает. Оговорка: состояния «скрыто» и «не получено» в боевых декларациях не воспроизводятся (обе ачивки видимы и к концу прогона получены), поэтому «???» и «Не получено» на скриншот сегодня не попадут — см. открытый пункт в [15-gallery.md](15-gallery.md).
 
 Тем же наследованием окружения (`cli.py:1538` — `env = dict(os.environ, VN_AUTOPILOT="1", …)`) до движка доезжает **`RENPY_VARIANT`** — единственный способ проверить controller-first вёрстку без железа (ADR-0014):
 
@@ -271,13 +279,15 @@ RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0   # Deck: ав
 RENPY_VARIANT="steam_big_picture" vn test smoke --picks 0,0         # ТВ: оверлеи ушли на gui.overscan_pad
 ```
 
+**И это тоже теперь гоняет CI.** Джоба `controller-first` (`nightly.yml:85-152`) — матрица двух профилей (`steam_deck medium touch`, `steam_big_picture`), прогон `vn test smoke --picks 0,0` с набором экранов выше, шоты артефактом `controller-shots-<profile>-<run_id>`, **гейта нет**: поломка вёрстки видна на картинке, а не в коде выхода. Джоба живёт в `nightly`, а не в `ci` — прогон движка на профиль стоит минуты, MR-пайплайн держим под 10 минут (G15); отсутствие `RENPY_VARIANT` в `ci.yml` проверяет `test_ci_config.py: test_nightly_runs_controller_first_variants`.
+
 Чего этот прогон **не** проверяет: событий геймпада (автопилот их не шлёт), инициализации Steam, оверлея и `dlc_installed` — только вёрстку. Подробности — [39-platforms.md](39-platforms.md) §7.1.
 
 ### 4.3. Тайминги: продвижение, выбор, подтверждение
 
 - **Продвижение диалога:** оверлей `vn_autopilot` дёргает `vn_qa.autopilot_tick` каждые **0.6 с**; тик делает скриншот и `renpy.queue_event("dismiss")` (`030_flow.rpy:109-128`).
 - **Выбор в меню:** `game/framework/20_ui/screens/choice.rpy:53-54` — `timer 1.0 action Function(vn_qa.autopilot_choose, items) repeat True`. Именно таймер, а не выражение экрана: side effect в screen-выражении запрещён, потому что экран переоценивается предикцией и каждым тиком оверлея, и счётчик picks дрейфовал бы (`030_flow.rpy:131-133`).
-- **Модальные подтверждения:** `game/framework/20_ui/screens/core_screens.rpy:403-404` — `timer 0.8 action yes_action repeat True`. Автопилот всегда отвечает «да».
+- **Модальные подтверждения:** `game/framework/20_ui/screens/core_screens.rpy:409-410` — `timer 0.8 action yes_action repeat True`. Автопилот всегда отвечает «да».
 - **Семантика picks** (`030_flow.rpy:134-143`): действуют только пункты с `action is not None`; кончились значения — берётся `0`; индекс больше числа пунктов — прижимается к последнему; если выбранный пункт заблокирован — берётся первый действующий.
 
 ### 4.4. ЖЕЛЕЗНОЕ ПРАВИЛО: `autopilot_choose` обязан вернуть `renpy.run(action)`
@@ -478,7 +488,7 @@ save corpus: OK (2 фикстур загружены и мигрированы)
 
 ### 5.6. Грабли корпуса
 
-- **Ren'Py 8 подписывает слоты per-machine токеном** (в zip есть член `signatures`). Сейв, созданный на другой машине или в другой инсталляции, при загрузке даёт модальный `confirm`. Автопилот проходит его автоматически — таймер жмёт «да» каждые 0.8 с (`core_screens.rpy:403-404`). Руками при отладке этот диалог придётся подтверждать самому; это не поломка.
+- **Ren'Py 8 подписывает слоты per-machine токеном** (в zip есть член `signatures`). Сейв, созданный на другой машине или в другой инсталляции, при загрузке даёт модальный `confirm`. Автопилот проходит его автоматически — таймер жмёт «да» каждые 0.8 с (`core_screens.rpy:409-410`). Руками при отладке этот диалог придётся подтверждать самому; это не поломка.
 - **Фикстур две, и одна из них на старой схеме — миграция проверяется по-настоящему** (с 2026-08-08). `ci/fixtures/saves/schema2-demo.save` (8912 Б) — на текущей схеме: `{"vn_save_schema": 2, "vn_version": "0.1.0+48d19a3", "vn_scene": "ch01_s020"}`. `ci/fixtures/saves/schema1-demo.save` (10746 Б) — `vn_save_schema=1`, сцена `ch01_s010`; при `project.yaml:3` `save_schema: 2` на ней исполняется ветка `_loaded_schema < _target_schema` в `after_load`. Прогон печатает `schema после загрузки: 2 (цель 2)`, а в `log.txt` появляется `[vn] migration 0002` — доказательство, что миграция реально отработала в игре, а не «сейв просто открылся».
 - **Проверяется ровно один переход, 1 → 2.** Каждый следующий бамп `save_schema` требует своей фикстуры, снятой **до** бампа (§9.8) — иначе новая миграция снова окажется непроверенной.
 - **Обязательные фикстуры из `ARCHITECTURE.md:3681`** (сейв внутри переименованной сцены, «грязный» call-стек, сейв релиза N−1, DLC-контент без DLC) — **NOT IMPLEMENTED**, их просто нет.
@@ -498,9 +508,9 @@ save corpus: OK (2 фикстур загружены и мигрированы)
 | `tools/vn/src/vn/assets/psd.py` | 126 | Нарезка PSD не проверена (и не исполнялась ни разу — в репозитории нет ни одного `.psd`, а зона `assets_src/psd/characters/` пуста) |
 | `tools/vn/src/vn/devloop.py` | 56 | Watch-цикл `vn dev` не проверен |
 
-**Покрыто частично:** `doctor.py` (153) — только `_lfs_pointer_fonts` и `sdk_path`; `vn/pipeline.py` (581 — это внешний конвейер DAZ/ComfyUI, **не** ассет-конвейер) — только `find_ffmpeg`/`find_ffprobe`; `release.py` (629) — `validate_release` **никогда не исполняется в тестах** (`test_release.py:217-230` ассертит только `inspect.getsource`); `repo.py` (43) — используется косвенно, своих тестов нет; `assets/imaging.py` (143) и `assets/render_config.py` (280) — только через `build_assets`.
+**Покрыто частично:** `doctor.py` (153) — только `_lfs_pointer_fonts` и `sdk_path`; `vn/pipeline.py` (581 — это внешний конвейер DAZ/ComfyUI, **не** ассет-конвейер) — только `find_ffmpeg`/`find_ffprobe`; `release.py` (736) — `validate_release` целиком **никогда не исполняется в тестах** (нужны SDK, ассеты и хранилище), но вынесенная из него `early_content_checks` исполняется: ради этого её и сделали отдельной функцией; `repo.py` (43) — используется косвенно, своих тестов нет; `assets/imaging.py` (143) и `assets/render_config.py` (280) — только через `build_assets`.
 
-**Целые подсистемы без автоматической проверки:** рантайм `game/framework/**`, включая `vn_qa` — ни один pytest не исполняет его код (до него дотягиваются только **статические** гард-тесты: `test_crash_handler.py`, `test_platform.py:129`, `test_ui_panels.py:251,295,320`, `test_engine_compat.py:91` — все читают исходники регексом/парсером); сами `vn save check`/`vn save corpus`; `vn package`, `vn release build`, `vn release steam`, `vn pack validate`, `vn test oversample`. `vn pack build` покрыт.
+**Целые подсистемы без автоматической проверки:** рантайм `game/framework/**`, включая `vn_qa` — ни один pytest не исполняет его код (до него дотягиваются только **статические** гард-тесты: `test_crash_handler.py`, `test_platform.py:183`, `test_ui_panels.py:325,369,394`, `test_achievements.py`, `test_engine_compat.py:91` — все читают исходники регексом или парсером. Исключение появилось у гейта паков: `test_release.py` **исполняет** блоки `init python in vn` / `in vn_build` из `.rpy` на заглушке `store` — единственный способ проверить рантайм-логику без движка); сами `vn save check`/`vn save corpus`; `vn package`, `vn release build`, `vn release steam`, `vn pack validate`, `vn test oversample`. `vn pack build` покрыт.
 
 **Хрупкие константы** — упадут от несвязанного изменения: набор `BASE_OUTPUTS` из **16** имён (`test_compile.py:11-28`) и его переиспользование в `test_verify_regressions.py:84` (оно же — источник cwd-зависимости, §2.1), `assert cov == {"total": 6, "translated": 5, "fuzzy": 0}` (`test_loc.py:124`), `assert sites == 8` (`test_ci_config.py:90` — число мест установки тулчейна в CI; добавили джобу → поправьте константу), `assert len(reg.schemas) >= 15` (`test_schemas.py:11` — «не меньше», поэтому не ломается при росте до 39).
 
@@ -541,22 +551,23 @@ save corpus: OK (2 фикстур загружены и мигрированы)
 | Workflow | Триггер | Что из этого файла гоняет |
 |---|---|---|
 | `.github/workflows/ci.yml` | push в **любую ветку** (`branches: ['**']`, теги не матчатся), + `workflow_dispatch`; `pull_request` намеренно нет — голова PR это тот же push | джоба `lint`: `vn content lint` (`:45`). Джоба с SDK: `vn build` (`:80`) → `vn loc keys --check` (`:83`) → `renpy.sh . lint` (`:86`) → **`vn test oversample --scale 2`** (`:91`) → `vn content compile --check` (`:94`) → `pytest tools/vn/tests -q` (`:97`); артефакт `generated-<sha>` на 30 дней (`:99-102`) |
-| `.github/workflows/nightly.yml` | cron `30 2 * * *` + dispatch | `vn build`, `vn loc import/report` (`:49-53`); **матрица smoke**: `--picks 0,0` / `--picks 0,1 --lang en` / `--picks 1` / `--picks 0,0 --lang pseudo` (`:55-60`); `vn save check` + `vn save corpus` (`:62-65`); релизная сборка обоих флейворов на снесённом `game/generated` (`:70-74`); выгрузка `.vncache/smoke/` артефактом на 7 дней (`:76-82`) |
+| `.github/workflows/nightly.yml` | cron `30 2 * * *` + dispatch | Джоба `smoke`: `vn build`, `vn loc import/report` (`:49-53`); **матрица smoke**: `--picks 0,0` / `--picks 0,1 --lang en` / `--picks 1` / `--picks 0,0 --lang pseudo` (`:55-60`); `vn save check` + `vn save corpus` (`:62-65`); релизная сборка обоих флейворов на снесённом `game/generated` (`:70-74`); артефакт `.vncache/smoke/` на 7 дней (`:76-82`). Джоба `controller-first` (`:85-151`): матрица `steam_deck medium touch` / `steam_big_picture`, `vn build` → `vn test smoke --picks 0,0` с `VN_AUTOPILOT_SCREENS`, артефакт `controller-shots-<profile>-<run_id>`. **Внимание:** шаг релизной сборки обоих флейворов сейчас проходит — гейт зрелости контента даёт WARN, пока в проекте нет ни одной главы `status: release`; он покраснеет в тот прогон, где такая глава появится ([29-build-and-release.md](29-build-and-release.md#maturity-gate-rule) §5.1 №4) |
+| `.github/workflows/steam-upload.yml` | **только** `workflow_dispatch` (входы `flavor`, `branch`) | `vn release build --flavor <f> --package win/linux/mac` → `vn release steam --flavor <f> --branch <b>` → steamcmd. Кэш `.rpyc` — restore-only. Без секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` шаг аплоада — зелёный no-op; при `appid: null` workflow падает раньше. Артефакт — только VDF |
 | `.github/workflows/canary.yml` | cron `0 3 * * 1` + dispatch | на **свежайшем** Ren'Py: `vn build` → `renpy.sh . lint` → `pytest tools/vn/tests -q` → `vn test smoke --picks 0,0` (`:46-51`) |
 | `.github/workflows/release.yml` | тег `v*` | гейт «тег == `project.yaml: version`» (`:47-54`), затем `vn release build --flavor <public\|patron>` (гейт внутри, `:78-87`); dmg на macOS-раннере (`:97-113`) |
 | `.gitlab-ci.yml` | — | PARTIAL / STALE: три джобы `lint`/`build`/`test`; есть `renpy lint` (`:47`) и `vn test oversample` (`:48`), но ни smoke, ни корпуса, ни релиза, ни ffmpeg. `ci/README.md` всё ещё называет его «конфигом пайплайна» |
 
 То есть: **smoke и корпус гоняются только ночью** и в canary. Ваш PR их не проверяет — прогоняйте руками перед push, если трогали рантайм, сейвы, локализацию или релизный путь. `vn test oversample`, наоборот, стоит на каждом пуше.
 
-**Три workflow зовут pytest из корня репозитория** (`ci.yml:97`, `canary.yml:50`, `.gitlab-ci.yml:60`) — то есть в форме, которая на текущем коде даёт `1 failed` (§2.1). Это надо иметь в виду, прежде чем объяснять красный CI логической регрессией.
+**Три конфига зовут pytest из корня репозитория** (`ci.yml:97`, `canary.yml:50`, `.gitlab-ci.yml:60`) — то есть в форме, которая на текущем коде даёт `1 failed` (§2.1). Это надо иметь в виду, прежде чем объяснять красный CI логической регрессией.
 
-Два окруженческих инварианта всех четырёх GitHub-workflow стерегутся `tools/vn/tests/test_ci_config.py`: `pip install -r tools/vn.lock` стоит **до** editable-установки (G17, `:73`), а `ffmpeg` ставится **до** любого `vn build` (`:93`). Второе прямо касается ночных прогонов: раньше ffmpeg был только в `ci.yml`/`release.yml`, а видео-сырцы в `assets_src/video_src/` есть — то есть `nightly` и `canary` обязаны были краснеть на видео-ветке конвейера. Ещё три теста стерегут сам триггер `ci.yml` (`:116`, `:129`, `:139`): любая ветка, не теги, без `pull_request`.
+Два окруженческих инварианта всех пяти GitHub-workflow стерегутся `tools/vn/tests/test_ci_config.py` (8 тестов): `pip install -r tools/vn.lock` стоит **до** editable-установки (G17) — мест установки 10 (7 джоб GitHub + 3 GitLab), а `ffmpeg` ставится **до** любого `vn build`. Третий инвариант добавлен этой итерацией: вариантные прогоны живут в `nightly`, а не в `ci`. Второе прямо касается ночных прогонов: раньше ffmpeg был только в `ci.yml`/`release.yml`, а видео-сырцы в `assets_src/video_src/` есть — то есть `nightly` и `canary` обязаны были краснеть на видео-ветке конвейера. Ещё три теста стерегут сам триггер `ci.yml` (`:116`, `:129`, `:139`): любая ветка, не теги, без `pull_request`.
 
 ---
 
 ## 9. Чеклисты
 
-Каждый пункт — команда этого проекта. Ожидаемое «зелёное» состояние: `vn doctor` — 8 PASS, `pytest` — 254 passed (из `tools/vn`, § 2.1), `vn release validate --flavor public` — ни одного FAIL при одном штатном WARN про черновую озвучку.
+Каждый пункт — команда этого проекта. Ожидаемое «зелёное» состояние: `vn doctor` — 8 PASS, `pytest` — 278 passed (из `tools/vn`, § 2.1), `vn release validate --flavor patron` — ни одного FAIL при одном штатном WARN про черновую озвучку. У `--flavor public` FAIL тоже нет (exit 0), но WARN два: к озвучке добавляется зрелость контента — в проекте пока нет ни одной главы `status: release`.
 
 ### 9.1. Pre-commit (5-10 с, после любой правки)
 
@@ -594,9 +605,10 @@ vn release validate --flavor patron
 
 Ни один FAIL в гейте. Строка про корпус сейчас зелёная — `PASS  сейв-корпус: 2 фикстур`.
 
-**«Все PASS» больше не эталон.** Сегодня зелёный гейт выглядит как 19 строк, одна из которых жёлтая:
+**«Все PASS» не эталон.** Сегодня зелёный гейт (`--flavor patron`) выглядит как 21 строка, одна из которых жёлтая:
 `WARN озвучка: 14 черновых дублей (draft) — ru: ch01_s010_0001`. Это штатное состояние демо-главы
-(озвучка есть, но `status: draft`), а не поломка. `ok` становится `False` только на FAIL. Какие WARN
+(озвучка есть, но `status: draft`), а не поломка. У `--flavor public` к ней добавляется вторая жёлтая —
+`WARN зрелость контента: ни одна глава ещё не доведена до status=release (ch01)`, — и это тоже exit 0. `ok` становится `False` только на FAIL. Какие WARN
 ещё бывают штатными: «ci/release-manifest.json нет» (релиз с ним уедет), «сейв-корпус: 0 фикстур»
 (пустой корпус релиз не остановит), «шрифты UI: game/fonts пуст», «хранилище сырцов недоступно».
 Отдельно помните, что озвучка **умеет** дать FAIL на полностью написанной главе: `holes` — реплики
@@ -649,7 +661,7 @@ vn test smoke --picks 0,0                  # видео и панели видн
 vn loc add <code>                          # пакет loc/po/<code>/language.yaml
 vn loc extract                             # PO для переводчиков
 vn loc import                              # game/tl/<code>/ (производная зона)
-vn loc report                              # покрытие и fuzzy: сейчас de/en/pseudo — 130/130, fuzzy 0
+vn loc report                              # покрытие и fuzzy: сейчас de/en/pseudo — 136/136, fuzzy 0
 vn build --check                           # валидация разметки PO ловится именно здесь
 vn test smoke --picks 0,0 --lang <code>    # без game/tl/<code>/ команда откажет — это защита
 vn test smoke --picks 0,0 --lang pseudo
@@ -710,7 +722,7 @@ vn save corpus                                 # старая фикстура -
 
 **Добавить pytest-тест.** Файл `tools/vn/tests/test_<модуль>.py`, функции `def test_*`, докстринг модуля — одной строкой про норму, которую тест защищает (так написаны все 24). Фикстура `repo_root` доступна из `conftest.py`, синтетический корень с tiny-профилем — из `helpers.py` (`mk_root`, `img`). Нужен SDK — копируйте паттерн `test_engine_compat.py:9-14`; нужен ffmpeg — модульный `pytestmark`, как `test_video.py:13-17`, **или** ранний `pytest.skip`, как `test_voice.py:187-189`. Не трогайте настоящий рабочий каталог: `tmp_path` + `mk_root`/`_copy_skeleton`. **Не импортируйте один тестовый модуль из другого** — это ломает прогон из корня (§2.1); общее выносите в `helpers.py`.
 
-**Добавить проверку в релизный гейт.** Только `tools/vn/src/vn/release.py`, внутри `validate_release`, через локальный `add(state, msg)`. Правило проекта — у гейта **нет своих правил**, он агрегирует существующие проверки конвейера, чтобы не расходиться с `vn build` (`release.py:408-410`). Реализуйте проверку в профильном модуле, в гейт добавьте только вызов. Решите заранее, будет ли у проверки безусловная `else`-ветка: без неё гейт молчит, когда проверять нечего, и число строк на экране перестаёт совпадать с числом тем.
+**Добавить проверку в релизный гейт.** Только `tools/vn/src/vn/release.py`, внутри `validate_release`, через локальный `add(state, msg)`. Правило проекта — у гейта **нет своих правил**, он агрегирует существующие проверки конвейера, чтобы не расходиться с `vn build` (`release.py:526-528`). Реализуйте проверку в профильном модуле, в гейт добавьте только вызов. Решите заранее, будет ли у проверки безусловная `else`-ветка: без неё гейт молчит, когда проверять нечего, и число строк на экране перестаёт совпадать с числом тем.
 
 **Добавить действие автопилота.** Функция в `init -999 python in vn_qa` (`030_flow.rpy:91`) + переменная окружения + `timer … action Function(...)` в нужном экране. Помните §4.4: если функция обслуживает интеракцию (меню, confirm), она обязана вернуть результат `renpy.run(action)`. Чтобы флаг CLI её включал — новая опция в `test_smoke` и передача через `extra_env` в `_autopilot_run` (`cli.py:1594`).
 
@@ -730,7 +742,7 @@ vn save corpus                                 # старая фикстура -
 
 - **Не слать синтетический ввод на рабочий стол.** `SendKeys`/`pyautogui`/`xdotool` по окну игры — запрещённый приём (§4.5). Всё автоматизируется in-process через `vn_qa`.
 - **Не писать автопилот-хук без `return renpy.run(action)`** — прогон повиснет до таймаута, и причина будет неочевидной (`030_flow.rpy:148-150`).
-- **Не считать зелёный `pytest` доказательством работоспособности игры.** 254 теста почти не касаются `cli.py` (закрыт один `pack build` из 64 команд) и не исполняют `game/framework/**`. Без SDK скипнутся 7, без ffmpeg — ещё 11, и один при этом **упадёт** (§2.3).
+- **Не считать зелёный `pytest` доказательством работоспособности игры.** 278 тестов почти не касаются `cli.py` (закрыт один `pack build` из 64 команд) и не исполняют `game/framework/**`. Без SDK скипнутся 7, без ffmpeg — ещё 11, и один при этом **упадёт** (§2.3).
 - **Не запускать pytest из корня репозитория** — `1 failed` на `test_verify_regressions.py` из-за межмодульного импорта, а не из-за вашей правки (§2.1). Запускайте из `tools/vn` либо через `PYTHONPATH=tools/vn`.
 - **Не бампать `save_schema`, не сняв фикстуру заранее.** После бампа получить сейв со старой схемой уже нечем — в корпусе окажется ложно-зелёная проверка. Так и было до 2026-08-08; фикстура `schema1-demo.save` закрыла это только для перехода 1 → 2.
 - **Не коммитить фикстуру без `ci/fixtures/rpyc-line/`** (и наоборот). Расхождение делает корпус красным на любой машине кроме той, где фикстуру снимали.
@@ -755,14 +767,14 @@ vn build                                   # ожидание: build: OK
 vn loc keys --check
 bash "$RENPY_SDK/renpy.sh" . lint
 vn content compile --check                 # ожидание: check: генерат свеж
-(cd tools/vn && .venv/bin/python -m pytest -q)  # ожидание: 254 passed (§2.1!)
+(cd tools/vn && .venv/bin/python -m pytest -q)  # ожидание: 278 passed (§2.1!)
 vn test oversample --scale 2               # ожидание: «oversample @2: проверено 22, поднято 13» + OK
 vn test smoke --picks 0,0                  # ожидание: OK: vn_end_of_content (19 скриншотов, cold start ~1.3 c)
 vn save check                              # ожидание: save check: OK (2 фикстур)
 vn save corpus                             # ожидание: OK (2 фикстур); линия имён: 52 .rpyc; на обеих —
                                            #   «schema после загрузки: 2 (цель 2)»
-vn release validate --flavor public        # ожидание: 19 строк, 18 PASS + 1 WARN (озвучка), exit 0
-vn release validate --flavor patron        # ожидание: 20 строк (два пака), exit 0
+vn release validate --flavor public        # ожидание: 20 строк, 18 PASS + 2 WARN (озвучка, зрелость), exit 0
+vn release validate --flavor patron        # ожидание: 21 строка (два пака, early_content=true), exit 0
 ```
 
 Все ожидания выше — фактический вывод на HEAD `db28ce6` (2026-08-18, macOS, SDK 8.5.3, ffmpeg в PATH).
@@ -777,8 +789,8 @@ vn release validate --flavor patron        # ожидание: 20 строк (д
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/cli.py:1317-1484` (группа `save`, линия `.rpyc`), `cli.py:1487-1660` (группа `test`: `_AUTOPILOT_RPY`, `_autopilot_run`, `test_smoke`, `test_oversample`, заглушки), `game/framework/00_core/030_flow.rpy:91-211` (`vn_qa`), `game/framework/90_debug/030_oversample.rpy`, `game/framework/20_ui/screens/choice.rpy:53-54`, `game/framework/20_ui/screens/core_screens.rpy:403-404`, `game/framework/00_core/020_state.rpy:82-107` (`after_load`), `tools/vn/tests/{conftest.py,helpers.py}`, `tools/vn/src/vn/release.py:407-629` (гейт), `.github/workflows/{ci,nightly,canary}.yml` |
+| **Читать перед изменением** | `tools/vn/src/vn/cli.py:1317-1484` (группа `save`, линия `.rpyc`), `cli.py:1487-1660` (группа `test`: `_AUTOPILOT_RPY`, `_autopilot_run`, `test_smoke`, `test_oversample`, заглушки), `game/framework/00_core/030_flow.rpy:91-211` (`vn_qa`), `game/framework/90_debug/030_oversample.rpy`, `game/framework/20_ui/screens/choice.rpy:53-54`, `game/framework/20_ui/screens/core_screens.rpy:409-410`, `game/framework/00_core/020_state.rpy:82-107` (`after_load`), `tools/vn/tests/{conftest.py,helpers.py}`, `tools/vn/src/vn/release.py:474-699` (гейт), `.github/workflows/{ci,nightly,canary}.yml` |
 | **Не трогать** | `.vncache/**` (вычищается каждым прогоном), `game/generated/**` и `game/generated/qa/` (последняя создаётся и удаляется автопилотом), `ci/fixtures/rpyc-line/**` руками — только через `vn save corpus --add`; `.gitignore:12-14` (исключение для линии `.rpyc` — единственное легальное `.rpyc` в git) |
 | **Зависимости (что сломается ниже по течению)** | правка `game/framework/**` или контента → линия statement-имён расходится с `ci/fixtures/rpyc-line/` → `vn save corpus` красный, пока фикстуру не пересняли; правка `choice.rpy`/`core_screens.rpy` → автопилот перестаёт выбирать/подтверждать → smoke виснет до `--timeout`; правка `autopilot_finish` → меняются `state.json`/`gallery.json`, на которых стоит критерий прохода корпуса; бамп `project.yaml: save_schema` → корпус падает по несовпадению схемы, если миграция не написана; правка `budgets.cold_start_s` → меняет вердикт `vn test smoke` (единственное место, где этот бюджет форсится) |
-| **Валидация** | `vn content lint` → `(cd tools/vn && .venv/bin/python -m pytest -q)` (254) → `vn build --check` → `vn test oversample --scale 2` → `vn test smoke --picks 0,0` → `vn save check && vn save corpus` → `vn release validate --flavor public`. Для всего с 3-го пункта обязателен `RENPY_SDK` |
+| **Валидация** | `vn content lint` → `(cd tools/vn && .venv/bin/python -m pytest -q)` (278) → `vn build --check` → `vn test oversample --scale 2` → `vn test smoke --picks 0,0` → `vn save check && vn save corpus` → `vn release validate --flavor public`. Для всего с 3-го пункта обязателен `RENPY_SDK` |
 | **Частые ошибки** | 1) Считать `ARCHITECTURE.md` описанием реальности: `--affected`, `--shard`, `--update-baselines`, `--report`, `--rpyc-regression`, `vn test perf`, `qa/saves-corpus/` — их нет. 2) Добавить автопилот-хук без `return renpy.run(action)` — вечное перевыбирание пункта меню (`030_flow.rpy:148-150`). 3) Предложить SendKeys/pyautogui для «теста UI» — прямой запрет, автопилот только in-process. 4) Считать зелёный `pytest` покрытием CLI и рантайма — из `cli.py` (1930 строк) покрыт только `pack build`, а код `game/framework/**` не исполняется ни одним тестом. 5) Запускать pytest из корня и объяснять `1 failed` своей правкой (§2.1); забыть, что без SDK скипается 7, а без ffmpeg — 11 и один падает (§2.3). 6) Утверждать, что корпус миграций не проверяет — фикстура `schema1-demo.save` реально прогоняет миграцию `0002`; непокрытыми остаются будущие переходы схемы. 7) Ссылаться на `.vncache/langqa/` как на воспроизводимый прогон — его никакой код не производит. 8) Ожидать smoke/корпус в PR-пайплайне — они только в `nightly.yml` и `canary.yml`; на пуше гоняется только `vn test oversample`. 9) Считать «все PASS» эталоном гейта — один WARN про черновую озвучку сейчас штатен (§9.3). 10) Считать импорт одного тестового модуля из другого нормой — именно он и создал проблему §2.1 |

@@ -1,8 +1,9 @@
-"""Инварианты конфигов CI: пиннованный тулчейн (G17) и наличие ffmpeg до сборки.
+"""Инварианты конфигов CI: пиннованный тулчейн (G17), наличие ffmpeg до сборки,
+триггеры без дублей и раскладка «дорогое — в nightly, MR-пайплайн быстрый» (G15).
 
-Оба инварианта — про класс поломок «зелено локально, красно в CI»: их нельзя поймать
-ни одним прогоном vn, потому что ломается не код, а окружение раннера. Дешевле держать
-их тестом по YAML, чем ловить ночью по красному письму.
+Все они — про класс поломок «зелено локально, красно (или ложно-зелено) в CI»: их
+нельзя поймать ни одним прогоном vn, потому что ломается не код, а конфиг раннера.
+Дешевле держать их тестом по YAML, чем ловить ночью по красному письму.
 """
 
 import re
@@ -16,6 +17,11 @@ VN_BUILD = re.compile(r"\bvn\s+(?:release\s+)?build\b")
 
 GH_WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
 GITLAB_CI = REPO_ROOT / ".gitlab-ci.yml"
+
+
+def _workflow(name):
+    """Разобранный workflow по имени файла."""
+    return yaml.safe_load((REPO_ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8"))
 
 
 def _lines(value):
@@ -34,7 +40,7 @@ def _github_jobs():
     """{'ci.yml:build-test': [строки shell по порядку шагов]} — порядок и есть предмет проверки."""
     jobs = {}
     for wf in GH_WORKFLOWS:
-        doc = yaml.safe_load(wf.read_text(encoding="utf-8"))
+        doc = _workflow(wf.name)
         for job_id, job in (doc.get("jobs") or {}).items():
             cmds = []
             for step in job.get("steps") or []:
@@ -66,7 +72,7 @@ def _all_jobs():
 def test_workflows_are_discovered():
     """Тест бессмысленен, если glob промахнулся мимо конфигов, — фиксируем находку."""
     assert {wf.name for wf in GH_WORKFLOWS} == {"ci.yml", "nightly.yml", "canary.yml",
-                                                "release.yml"}
+                                                "release.yml", "steam-upload.yml"}
     assert GITLAB_CI.is_file()
 
 
@@ -85,9 +91,10 @@ def test_lock_installed_before_editable():
                 f"{job}: editable-установка без предшествующего "
                 f"pip install -r tools/vn.lock — G17 не обеспечен"
             )
-    # 5 джоб GitHub (ci x2, nightly, canary, release) + 3 GitLab: там строк установки две,
-    # но before_script шаблона .with-sdk разворачивается и в build, и в test.
-    assert sites == 8, f"изменилось число мест установки тулчейна: {sites} != 8"
+    # 7 джоб GitHub (ci x2, nightly x2, canary, release, steam-upload) + 3 GitLab:
+    # там строк установки две, но before_script шаблона .with-sdk разворачивается
+    # и в build, и в test.
+    assert sites == 10, f"изменилось число мест установки тулчейна: {sites} != 10"
 
 
 def test_ffmpeg_installed_before_vn_build():
@@ -119,7 +126,7 @@ def test_ci_runs_on_every_branch_not_only_main():
     Ровно так и вышло с fix/critical-gaps-and-handbook: пуш ветки не поднял ни одного
     прогона, потому что триггер был branches: [main].
     """
-    doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    doc = _workflow("ci.yml")
     # YAML 1.1: голое `on:` парсится как True — ключ ищем в обоих написаниях.
     triggers = doc.get("on", doc.get(True))
     branches = triggers["push"]["branches"]
@@ -131,7 +138,7 @@ def test_ci_push_trigger_does_not_catch_tags():
 
     branches: ['**'] матчит ветки и не матчит теги. Ключ tags не должен появиться.
     """
-    doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    doc = _workflow("ci.yml")
     push = (doc.get("on", doc.get(True)))["push"]
     assert "tags" not in push, "ci не должен триггериться на тегах — это работа release.yml"
 
@@ -142,10 +149,43 @@ def test_ci_has_no_pull_request_trigger_while_push_is_unfiltered():
     Если pull_request когда-нибудь вернут (ради форков), он обязан прийти с гардом
     head.repo.full_name != github.repository — тогда этот тест нужно осознанно обновить.
     """
-    doc = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    doc = _workflow("ci.yml")
     triggers = doc.get("on", doc.get(True))
     if "pull_request" in triggers:
         guards = [str(job.get("if", "")) for job in (doc.get("jobs") or {}).values()]
         assert all("head.repo.full_name" in g for g in guards), (
             "pull_request вернули без форк-гарда — каждый PR будет прогоняться дважды"
         )
+
+
+def test_nightly_runs_controller_first_variants():
+    """Без прогона с RENPY_VARIANT вёрстку Deck/ТВ не проверяет никто: остальные прогоны
+    идут в десктопном профиле, а варианты steam_deck/steam_big_picture движок вставляет
+    только при живой Steam-инициализации. Значит «интерфейс сплющился при масштабе 1.4»
+    или «оверлей срезан кромкой» доехало бы до игрока.
+
+    Прогоны обязаны стоять в nightly и НЕ в ci: каждый — это отдельный запуск движка,
+    а MR-пайплайн держим под 10 минут (G15). Гейта у них нет по замыслу — предмет
+    проверки визуальный, поэтому обязателен артефакт со скриншотами.
+    """
+    job = _workflow("nightly.yml")["jobs"]["controller-first"]
+    variants = [str(e["variant"]) for e in job["strategy"]["matrix"]["include"]]
+    assert any(v.startswith("steam_deck") for v in variants), (
+        f"нет прогона в профиле Steam Deck: {variants}")
+    assert any(v == "steam_big_picture" for v in variants), (
+        f"нет прогона в профиле Big Picture: {variants}")
+
+    runs = [s for s in job["steps"] if any("vn test smoke" in c for c in _lines(s.get("run")))]
+    assert len(runs) == 1, "профиль задаётся матрицей — прогон в джобе ровно один"
+    env = runs[0].get("env") or {}
+    assert env.get("RENPY_VARIANT") == "${{ matrix.variant }}", (
+        "прогон не берёт профиль из матрицы — оба прогона матрицы будут одинаковыми")
+    assert env.get("VN_AUTOPILOT_SCREENS"), (
+        "без VN_AUTOPILOT_SCREENS прохождение не открывает меню и галерею — "
+        "именно их вёрстку и проверяем")
+    assert any("upload-artifact" in str(s.get("uses", "")) for s in job["steps"]), (
+        "скриншоты без артефакта посмотреть нельзя — джоба выродится в пустой прогон")
+
+    ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "RENPY_VARIANT" not in ci, (
+        "вариантные прогоны переехали в ci — это минуты движка на каждый пуш (G15)")

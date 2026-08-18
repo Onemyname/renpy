@@ -504,7 +504,7 @@ vn build                        # полный проход, включая laye
 vn build --check                # CI-режим: свеж ли генерат (ничего не пишет)
 vn loc report                   # покрытие переводов, включая имя персонажа
 vn test smoke                   # автопилот: сцены реально проходятся, спрайты не падают
-python -m pytest tools/vn/tests -q   # 254 теста
+python -m pytest tools/vn/tests -q   # 278 тестов
 vn play                         # глазами
 ```
 
