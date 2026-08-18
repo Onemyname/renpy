@@ -5,9 +5,10 @@
 # элемента, категории или типа контента не требует правок этого файла.
 #
 # Производительность: в сетке — ТОЛЬКО превью (thumb из конвейера, 512px по
-# длинной стороне). Полноразмерный кадр и видео появляются лишь в просмотрщике
-# и уходят из дерева отображения при его закрытии — движок сам освобождает
-# текстуру, Movie останавливается вместе с экраном.
+# длинной стороне; у послойного шота — композитное превью, ADR-0013).
+# Полноразмерный кадр, живой layeredimage шота и видео появляются лишь в
+# просмотрщике и уходят из дерева отображения при его закрытии — движок сам
+# освобождает текстуру, Movie останавливается вместе с экраном.
 #
 # Локализация: подписи — только ключи (vn_loc.t и *_key элементов). Новый язык
 # не требует правок этого файла.
@@ -109,22 +110,26 @@ screen gallery_viewer(item_id):
     default variant = 0
 
     $ _spec = VN_GALLERY[item_id]
-    $ _shots = [_spec["asset"]] + list(_spec.get("variants") or [])
+    # Что листает кнопка «Вариант», решает стор: у плоской CG это файлы-варианты,
+    # у послойного шота — комбинации вариантов слоёв (имя образа + атрибуты).
+    $ _looks = vn_gal.looks(_spec)
     $ _sibs = vn_gal.unlocked_ids(_spec["category"])
     $ _pos = _sibs.index(item_id) if item_id in _sibs else 0
-    $ _idx = variant % len(_shots)
+    $ _idx = variant % len(_looks)
 
     add Solid("#000000f2")
 
     if _spec["kind"] == "movie":
         # Movie существует ровно пока экран показан: Hide освобождает ресурс.
-        # Листаем ИМЕННО _shots[_idx]: варианты видео объявлялись в gallery.yaml,
+        # Листаем ИМЕННО _looks[_idx]: варианты видео объявлялись в gallery.yaml,
         # счётчик «1/2» и кнопка показывались, а играл всегда основной ассет.
-        add Movie(play=_shots[_idx], loop=True) fit "contain" xysize (1920, 1080)
+        add Movie(play=_looks[_idx], loop=True) fit "contain" xysize (1920, 1080)
     else:
+        # Шот попадает сюда ЖИВЫМ layeredimage, а не превью: ровно в этом ценность
+        # послойного кадра для галереи — наряд листается, а не перерисовывается.
         # fit contain — без растягивания при любых пропорциях (portrait/landscape);
         # zoom переключает на cover (заполнение экрана с обрезкой).
-        add _shots[_idx] fit ("cover" if vn_gal_zoom else "contain") xysize (1920, 1080)
+        add _looks[_idx] fit ("cover" if vn_gal_zoom else "contain") xysize (1920, 1080)
 
     vbox:
         xpos gui.sp_xl
@@ -134,8 +139,8 @@ screen gallery_viewer(item_id):
         text vn_loc.t(_spec["title_key"]) style "vn_gal_view_title"
         if _spec.get("desc_key"):
             text vn_loc.t(_spec["desc_key"]) style "vn_gal_view_desc"
-        if len(_shots) > 1:
-            text "%d / %d" % (_idx + 1, len(_shots)) style "vn_gal_view_desc"
+        if len(_looks) > 1:
+            text "%d / %d" % (_idx + 1, len(_looks)) style "vn_gal_view_desc"
 
     hbox:
         xalign 0.5
@@ -147,12 +152,16 @@ screen gallery_viewer(item_id):
         if len(_sibs) > 1:
             textbutton vn_loc.t("ui.gallery.prev") action Show(
                 "gallery_viewer", item_id=_sibs[(_pos - 1) % len(_sibs)])
-        if len(_shots) > 1:
+        if len(_looks) > 1:
+            # Один чип на все виды кадра — он же единственный путь с пада: dpad
+            # доводит фокус до чипа, A переключает (плечи заняты листанием
+            # элементов). Отдельной кнопки на слой нет сознательно: их число
+            # заранее не известно, а ряд чипов на ТВ уехал бы за кромку.
             textbutton vn_loc.t("ui.gallery.variant") action SetLocalVariable(
                 "variant", _idx + 1)
-        if _spec["kind"] == "image":
+        if _spec["kind"] != "movie":
             textbutton vn_loc.t("ui.gallery.zoom") action ToggleVariable("vn_gal_zoom")
-        # Movie перезапускается сменой _shots[_idx] — отдельного действия не нужно
+        # Movie перезапускается сменой _looks[_idx] — отдельного действия не нужно
         if len(_sibs) > 1:
             textbutton vn_loc.t("ui.gallery.next") action Show(
                 "gallery_viewer", item_id=_sibs[(_pos + 1) % len(_sibs)])
@@ -167,6 +176,12 @@ screen gallery_viewer(item_id):
         key "K_RIGHT" action Show("gallery_viewer", item_id=_sibs[(_pos + 1) % len(_sibs)])
         key "pad_leftshoulder_press" action Show("gallery_viewer", item_id=_sibs[(_pos - 1) % len(_sibs)])
         key "pad_rightshoulder_press" action Show("gallery_viewer", item_id=_sibs[(_pos + 1) % len(_sibs)])
+    if len(_looks) > 1:
+        # Вверх/вниз листают виды кадра — клавиатурная симметрия к стрелкам
+        # «влево/вправо». Пад-события сюда не мапятся (dpad шлёт focus_*), и
+        # своей пад-кнопки эти стрелки не получают: с пада вид переключает чип.
+        key "K_UP" action SetLocalVariable("variant", _idx - 1)
+        key "K_DOWN" action SetLocalVariable("variant", _idx + 1)
     key "K_ESCAPE" action Hide("gallery_viewer")
     key "game_menu" action Hide("gallery_viewer")
 

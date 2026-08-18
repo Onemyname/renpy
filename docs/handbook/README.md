@@ -49,7 +49,7 @@ setx RENPY_SDK "C:\Users\<you>\renpy-sdk\renpy-8.5.3-sdk"   # и ОТКРОЙТ�
 vn doctor                                # окружение: сейчас 8 PASS / 0 FAIL
 vn build                                 # lint → ассеты → генерат → game/tl → бюджеты
 vn play                                  # запуск игры (нужен RENPY_SDK)
-python -m pytest tools/vn/tests -q       # 278 passed
+(cd tools/vn && python -m pytest -q)     # 373 passed (из tools/vn — см. 27 §2.1)
 ```
 
 `setx` виден только **новым** процессам. В bash-сессии агента `RENPY_SDK` не наследуется —
@@ -133,7 +133,7 @@ python -m pytest tools/vn/tests -q       # 278 passed
 | Файл | О чём | Когда открывать |
 |---|---|---|
 | [26-automation.md](26-automation.md) | что делает машина, что руками, и что автоматизировать следующим | планирование работ |
-| [27-testing.md](27-testing.md) | 7 уровней проверок, 278 pytest, smoke-автопилот (включая геймпадные профили в nightly), сейв-корпус, чеклисты | перед push |
+| [27-testing.md](27-testing.md) | 9 уровней проверок, 373 pytest, smoke-автопилот (включая геймпадные профили в nightly), сейв-корпус и корпус масштаба, чеклисты | перед push |
 | [28-debugging.md](28-debugging.md) | логи, dev-меню, crash-репорты, чтение генерата, сужение поломки | «что-то не работает» |
 | [29-build-and-release.md](29-build-and-release.md) | флейворы, гейт из 21 проверки, дистрибутивы, тег → GitHub Release | выпуск |
 | [30-packs-and-dlc.md](30-packs-and-dlc.md) | формат пака, что собирается, что не собирается, гейт владения (провайдер подключён под Steam) | отдельная единица поставки |
@@ -185,8 +185,10 @@ python -m pytest tools/vn/tests -q       # 278 passed
 | Добавить видео | [21](21-video-generation.md) | `assets_src/video_src/<group>/<name>.mp4` → `vn assets video build` |
 | Добавить звук | [23](23-audio.md) | `.ogg` в `assets_src/audio_stems/{bgm,amb,sfx}/` → `vn assets build` → id в `content/audio/{bgm,amb,sfx}.yaml` |
 | Добавить озвучку главы | [23](23-audio.md) §8 | `vn voice manifest chNN --lang <код> -o лист.csv` → запись → `vn voice import <dir> --lang <код>` → `vn assets build` |
+| Озвучить главу черновиком до записи актёров | [23](23-audio.md) §8.1 | `vn voice tts chNN [--backend piper\|say]` → `vn assets build` (статус `draft`, гейт даёт WARN) |
 | Добавить послойный шот | [16](16-assets.md) §13.7, [12](12-scenes.md) | слои в `assets_src/art/shots/chNN/sNNN/<shot>/` + `shots/sNNN.shots.yaml` → `scene shot_chNN_sNNN <shot>` |
 | Добавить элемент галереи | [15](15-gallery.md) | `content/gallery/core.gallery.yaml` |
+| Показать послойный шот в галерее | [15](15-gallery.md) («Послойные шоты в галерее») | запись `kind: shot`, `asset: shots/chNN/sNNN/<shot>` — превью склеит `vn assets build` |
 | Добавить достижение | [15](15-gallery.md) | `content/achievements/core.achievements.yaml` — экран правок не требует |
 | Поменять строку интерфейса | [06](06-frontend.md), [14](14-localization.md) | `content/ui/strings.yaml` → `vn loc extract && vn loc import` |
 | Добавить UI-компонент | [06](06-frontend.md) | `game/framework/20_ui/components.rpy` |
@@ -206,6 +208,8 @@ python -m pytest tools/vn/tests -q       # 278 passed
 | Добавить схему | [08](08-content-pipeline.md) §8, [45](45-architecture-rules.md) | `tools/schemas/<id>@N.schema.json` (сейчас 39 файлов) |
 | Добавить тест | [27](27-testing.md) | `tools/vn/tests/test_*.py` |
 | Выпустить релиз | [29](29-build-and-release.md), приёмка — [43](43-steam-qa.md) | `vn release validate --flavor public` → тег `v<X.Y.Z>` |
+| Собрать мобильную поставку (APK/AAB) | [39](39-platforms.md) §2.1 | `vn release android status` → шаги в лаунчере Ren'Py → `vn release android preflight --bundle` → `build` |
+| Проверить, выдержит ли конвейер N глав | [32](32-performance-and-scalability.md) §7.5 | `vn test corpus --scenes 2000 --images 2000 --dest /tmp/corp` |
 | Починить красный CI | [36](36-troubleshooting.md) §8, [04](04-development-workflow.md) | воспроизвести локально: `vn build --check` |
 | Понять, почему не собирается | [36](36-troubleshooting.md) §2, [28](28-debugging.md) | `vn content lint`, затем `errors.txt` |
 | Настроить окружение для рендера | [03](03-getting-started.md), [`../pipeline/phase-0.md`](../pipeline/phase-0.md) | `vn pipeline doctor` |
@@ -271,9 +275,9 @@ flowchart TB
 [ ] vn doctor                                      # 8 PASS / 0 FAIL
 [ ] прочитать 02-architecture.md §2-3 (зоны) и 35-agent-rules.md
 [ ] vn build && vn play                            # игра запустилась
-[ ] python -m pytest tools/vn/tests -q             # 278 passed
+[ ] (cd tools/vn && python -m pytest -q)           # 373 passed
 [ ] правка — только в источниках истины (content/, packs/, assets_src/, loc/, game/framework/, tools/)
-[ ] vn content lint && vn build && python -m pytest tools/vn/tests -q
+[ ] vn content lint && vn build && (cd tools/vn && python -m pytest -q)
 [ ] git status --short — ни одного файла из game/generated | game/assets | game/tl
 [ ] обновить соответствующий файл docs/handbook/ в ТОМ ЖЕ коммите
 [ ] git commit -m "type(scope): описание по-русски"
@@ -314,7 +318,7 @@ flowchart TB
 
 ## Состояние проекта
 
-Проверено запуском на этом чекауте **2026-08-18** (HEAD `db28ce6`).
+Проверено запуском на этом чекауте **2026-08-18** (HEAD `e077b8b` + незакоммиченная итерация: Android-канал, корпус масштаба, TTS-черновики, шоты в галерее, ADR-0015/0016).
 
 | | |
 |---|---|
@@ -322,8 +326,9 @@ flowchart TB
 | Ren'Py | SDK 8.5.3, пин в `project.yaml:5` |
 | Контент | 1 глава ядра `ch01_awakening` (3 сцены, `status: draft`) + 1 пак-глава `ch90` в `packs/ep_beach`; 1 персонаж (`mira`), 2 локации |
 | Языки | `en`, `de`, `pseudo` — 136/136 строк, fuzzy 0 |
-| Тесты / схемы / релизный гейт | 278 pytest · 39 JSON Schema · 21 проверка гейта (`public` — 20 строк: 18 PASS + 2 WARN «зрелость контента» и драфты озвучки, exit 0; `patron` — 21 строка: 20 PASS + 1 WARN, exit 0) |
-| Платформы | Windows/Linux/macOS standalone — IMPLEMENTED. Steam / Steam Deck / Big Picture — **PARTIALLY IMPLEMENTED**: фасад ([ADR-0014](../adr/0014-platform-services.md), [39](39-platforms.md)) закрыт, но `platform.steam.appid` сейчас `null` (значит локальные сборки — standalone, и `vn release steam` не доходит до раскладки, хотя сама раскладка депотов работает — [40](40-steamworks.md) §4.3), аплоад — ручной workflow `steam-upload` (без секретов и App ID — no-op), controller-навигация закрыта и её вёрстку ночью снимает CI, но открытыми остаются экранная клавиатура вне Deck и настройки/калибровка пада ([42](42-big-picture.md)); ни одна платформа не проверена на живом железе ([43](43-steam-qa.md)). Android — NOT IMPLEMENTED |
+| Тесты / схемы / релизный гейт | **373 pytest** (27 файлов) · 39 JSON Schema · 21 проверка гейта (`public` — 20 строк: 18 PASS + 2 WARN «зрелость контента» и драфты озвучки, exit 0; `patron` — 21 строка: 20 PASS + 1 WARN, exit 0) |
+| Масштаб конвейера | **измерен**, а не смоделирован: `vn test corpus` проводит синтетический проект до 20 000 сцен через весь конвейер ([32](32-performance-and-scalability.md) §7.5); ночная джоба `corpus` гоняет 600 сцен |
+| Платформы | Windows/Linux/macOS standalone — IMPLEMENTED. Steam / Steam Deck / Big Picture — **PARTIALLY IMPLEMENTED**: фасад ([ADR-0014](../adr/0014-platform-services.md), [39](39-platforms.md)) закрыт, но `platform.steam.appid` сейчас `null` (значит локальные сборки — standalone, и `vn release steam` не доходит до раскладки, хотя сама раскладка депотов работает — [40](40-steamworks.md) §4.3), аплоад — ручной workflow `steam-upload` (без секретов и App ID — no-op), controller-навигация закрыта и её вёрстку ночью снимает CI, но открытыми остаются экранная клавиатура вне Deck и настройки/калибровка пада ([42](42-big-picture.md)); ни одна платформа не проверена на живом железе ([43](43-steam-qa.md)). Android — **PARTIALLY IMPLEMENTED**: канал `vn release android status\|preflight\|build` поверх штатного `launcher android_build`, мобильный профиль памяти и предполётные проверки есть; ни одного APK/AAB не собрано — RAPT/JDK/ключей нет, а CLI-пути установки тулчейна у Ren'Py не существует ([39](39-platforms.md) §2.1) |
 
 **Работает:** компилятор контента, ассет-конвейер (включая ветку звука `audio_stems`), локализация
 round-trip, галерея, сейвы и миграции внутри игры, сейв-корпус с проверкой миграций (2 фикстуры),
@@ -333,10 +338,11 @@ round-trip, галерея, сейвы и миграции внутри игры
 поставка в Steam (`vn release steam` рендерит VDF и раскладывает депоты всех трёх платформ,
 включая Linux-`tar.bz2`, но приложения в Steamworks нет: `appid`/`depots` в `project.yaml` пусты,
 аплоад ручной, живого прогона не было — [40](40-steamworks.md) §4.3),
-звук (тракт, канал `ambient` и озвучка `voice@1`/`vn voice` живые — но музыки/SFX ноль, `content/audio/*.yaml` пусты, `vn voice tts` — заглушка),
+звук (тракт, канал `ambient` и озвучка `voice@1`/`vn voice` живые целиком, включая TTS-черновики `vn voice tts` — но музыки/SFX ноль, `content/audio/*.yaml` пусты),
 CODEOWNERS (все хэндлы — плейсхолдеры).
 **Нет вообще:** автоматизации рендера и ComfyUI, автоматического Steam-аплоада (`steamcmd`
-запускается руками, джобы `steam-publish` нет) и каналов dev/beta/release, Android-сборки, `vn validate` /
+запускается руками, джобы `steam-publish` нет) и каналов dev/beta/release, ни одной фактической
+сборки APK/AAB (тулчейн Android ставится только лаунчером), `vn validate` /
 `vn build --use-artifact` из `ARCHITECTURE.md`, `CLAUDE.md`/`AGENTS.md`.
 
 Три главных пункта из [37-roadmap.md](37-roadmap.md): **P0-1** закрыть ADR-0008 (единственный
@@ -382,7 +388,7 @@ DAZ → ComfyUI → provenance → `video_src` → сцена; **P0-3** дове
 ```bash
 vn content lint                              # 0 ошибок
 vn build                                     # build: OK
-python -m pytest tools/vn/tests -q           # 278 passed
+(cd tools/vn && python -m pytest -q)         # 373 passed
 git status --short                           # ни одного файла из game/generated|assets|tl
 ```
 
@@ -435,6 +441,6 @@ NOT IMPLEMENTED». Раздел 0 (G1–G24, C1–C24) при этом оста�
 ---
 
 **Смежные документы:** [`../ARCHITECTURE.md`](../ARCHITECTURE.md) (норматив) ·
-[`../adr/`](../adr/) (14 ADR + шаблон; 13 приняты, ADR-0008 предложен) · [`../conventions/naming.md`](../conventions/naming.md) ·
+[`../adr/`](../adr/) (16 ADR + шаблон; 15 приняты, ADR-0008 предложен) · [`../conventions/naming.md`](../conventions/naming.md) ·
 [`../pipeline/phase-0.md`](../pipeline/phase-0.md) (установка рендер-окружения) ·
 [`../CHANGELOG.md`](../CHANGELOG.md)

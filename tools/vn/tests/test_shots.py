@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 
+import pytest
 from helpers import img, mk_root
 
 from vn.assets.pipeline import build_assets, shot_tree
@@ -20,6 +21,23 @@ def _shot_masters(root, ch="ch01", sid="s030", shot="sunset",
     for name in layers:
         img(base / f"{name}.png", CANVAS)
     return base
+
+
+def _shot_decl(root, ch="ch01", sid="s030", body=None):
+    """Декларация шотов главы на диске: композитное превью конвейер собирает по
+    ней (z-порядок и дефолтные варианты — не догадка конвейера)."""
+    d = root / "content" / "chapters" / f"{ch}_demo" / "shots"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{sid}.shots.yaml").write_text(body or (
+        "schema: shots@1\n"
+        f"scene: {sid}\n"
+        "shots:\n"
+        "  sunset:\n"
+        "    layers:\n"
+        "      env: {}\n"
+        "      mira: {variants: [school, casual], var: g.mira_outfit}\n"
+        "    order: [env, mira]\n"), encoding="utf-8")
+    return d
 
 
 DOC = {
@@ -47,6 +65,94 @@ def test_pipeline_builds_shot_layers_with_variants(tmp_path):
         assert (out / name).is_file(), name
     tree = shot_tree(root)
     assert tree["ch01"]["s030"]["sunset"] == {"env": [""], "mira": ["casual", "school"]}
+
+
+def test_pipeline_builds_composite_preview_for_gallery(tmp_path):
+    """У шота нет плоского файла, поэтому превью для галереи конвейер СОБИРАЕТ:
+    env + дефолтный вариант каждого слоя в z-порядке декларации, выход рядом с
+    папкой слоёв, стоимость в пикселях — в манифесте, как у остальных растров."""
+    import json
+
+    from PIL import Image
+
+    root = mk_root(tmp_path)
+    base = _shot_masters(root)
+    _shot_decl(root)
+    # Дефолтный вариант (school) — синий, второй (casual) — красный: по цвету
+    # видно, ЧТО именно попало в композит.
+    img(base / "mira__school.png", CANVAS, color=(0, 0, 255, 255))
+    img(base / "mira__casual.png", CANVAS, color=(255, 0, 0, 255))
+    rep = build_assets(root)
+    assert not rep.errors, rep.errors
+
+    thumb = root / "game" / "assets" / "shots" / "ch01" / "s030" / "sunset.thumb.webp"
+    assert thumb.is_file(), "композитного превью шота нет"
+    with Image.open(thumb) as im:
+        assert max(im.size) <= 512                  # ограничение thumb-профиля
+        px = im.convert("RGB").getpixel((im.size[0] // 2, im.size[1] // 2))
+    # Центр кадра — слой school поверх env: синий, а не красный вариант и не подложка
+    assert px[2] > px[0], f"в композите не дефолтный вариант слоя: {px}"
+
+    outputs = json.loads(
+        (root / ".vncache" / "assets-manifest.json").read_text(encoding="utf-8"))["outputs"]
+    entry = outputs["shots/ch01/s030/sunset.thumb.webp"]
+    assert entry["transform"].startswith("shot_thumb@")
+    assert entry["cost_px"] > 0
+    # Стоимость превью видна модели памяти (она читает манифест), но в кадр сцены
+    # НЕ приплюсовывается: в игре шот собирается из слоёв, а не из миниатюры.
+    from vn.assets.memory import _shot_cost, load_costs
+
+    costs = load_costs(root)
+    assert costs["shots/ch01/s030/sunset.thumb.webp"] == entry["cost_px"]
+    px_scene, shot_id = _shot_cost(costs, "ch01", "s030", DOC, scale=1)
+    assert shot_id == "sunset"
+    assert px_scene == (costs["shots/ch01/s030/sunset/env.webp"]
+                        + max(costs["shots/ch01/s030/sunset/mira__school.webp"],
+                              costs["shots/ch01/s030/sunset/mira__casual.webp"]))
+
+
+def test_pipeline_composite_follows_declaration(tmp_path):
+    """Порядок слоёв в превью — из декларации, а не из имён файлов: перевёрнутый
+    order обязан дать другой композит (иначе миниатюра врёт про кадр)."""
+    from PIL import Image
+
+    root = mk_root(tmp_path)
+    base = _shot_masters(root, layers=("mira__school", "mira__casual"))
+    # env непрозрачен, поэтому «mira под env» = env целиком
+    _shot_decl(root, body=(
+        "schema: shots@1\nscene: s030\nshots:\n  sunset:\n    layers:\n"
+        "      env: {}\n"
+        "      mira: {variants: [school, casual], var: g.mira_outfit}\n"
+        "    order: [mira, env]\n"))
+    img(base / "mira__school.png", CANVAS, color=(0, 0, 255, 255))
+    assert not build_assets(root).errors
+    thumb = root / "game" / "assets" / "shots" / "ch01" / "s030" / "sunset.thumb.webp"
+    with Image.open(thumb) as im:
+        px = im.convert("RGB").getpixel((im.size[0] // 2, im.size[1] // 2))
+    assert px[2] < 200, f"слой не ушёл под подложку — z-порядок декларации не учтён: {px}"
+
+
+def test_pipeline_warns_when_shot_is_not_declared(tmp_path):
+    """Слои собраны, декларации нет: собирать превью не из чего (порядок неизвестен),
+    но арт вперёд декларации — легитимное состояние, поэтому предупреждение."""
+    root = mk_root(tmp_path)
+    _shot_masters(root)
+    rep = build_assets(root)
+    assert not rep.errors, rep.errors
+    assert any("не объявлен в shots@1" in w for w in rep.warnings)
+    assert not (root / "game" / "assets" / "shots" / "ch01" / "s030"
+                / "sunset.thumb.webp").exists()
+
+
+def test_composite_rejects_mismatched_canvas(tmp_path):
+    """Слои одного шота лежат на одном холсте (layeredimage кладёт их в (0,0));
+    расхождение — понятная ошибка, а не молча съехавший кадр."""
+    from vn.assets import imaging
+
+    a = img(tmp_path / "env.png", CANVAS, mode="RGB", fmt="PNG")
+    b = img(tmp_path / "mira.png", (CANVAS[0] * 2, CANVAS[1]))
+    with pytest.raises(imaging.ImagingError, match="ОДНОМ холсте"):
+        imaging.composite([a, b], quality=80)
 
 
 def test_pipeline_requires_env_layer(tmp_path):

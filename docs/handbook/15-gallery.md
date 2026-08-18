@@ -49,10 +49,10 @@ cat .vncache/smoke/gallery.json     # {"unlocked": N, "total": M, "ids": [...]}
 | Поле | Тип / шаблон | Обяз. | Что делает | Значение по умолчанию в генерате |
 |---|---|---|---|---|
 | `category` | `^[a-z][a-z0-9_]{1,23}$` | да | Вкладка галереи. Должна быть объявлена в `categories:` того же или соседнего файла, иначе ошибка компиляции (`compile.py:189-191`) | — |
-| `kind` | `image` \| `movie` | да | Ветвление UI: `movie` рисует бейдж-ромб на превью и `Movie(...)` в просмотрщике | — |
-| `asset` | `^(cg\|bg\|mov)/[a-z0-9_/]+$` | да | Логический id существующего ассета. Проверяется на диске, если `game/assets` собран (`compile.py:197-199`) | превращается в `assets/<id>.webp\|webm` |
-| `variants` | список `asset_ref` | нет | Варианты одной CG (свет/одежда/поза). Листаются **внутри** элемента кнопкой «Вариант», отдельными записями не считаются и в прогресс не входят | `[]` |
-| `thumb` | `asset_ref` \| `null` | нет | Явное превью. Для `kind: image` не нужен — берётся `<asset>.thumb.webp` из конвейера. Для `kind: movie` **обязателен по смыслу**: у видео своего превью нет, без него warning и пустая заглушка в сетке (`compile.py:224-227`) | вычисленный путь превью |
+| `kind` | `image` \| `movie` \| **`shot`** | да | Ветвление UI: `movie` рисует бейдж-ромб на превью и `Movie(...)` в просмотрщике; `shot` — послойный кадр ADR-0013, в просмотрщик идёт **живой layeredimage** (см. «Послойные шоты в галерее») | — |
+| `asset` | `^(cg\|bg\|mov)/[a-z0-9_/]+$` **или** `^shots/ch\d{2}/s\d{3}/[a-z][a-z0-9_]*$` | да | Логический id ассета — либо файла, либо **шота**. Файл проверяется на диске, если `game/assets` собран; шот — по декларациям `shots@1`, потому что файла у него нет по замыслу | файл → `assets/<id>.webp\|webm`; шот → имя образа `«<тег сцены> <шот>»` |
+| `variants` | список `asset_ref` | нет | Варианты одной CG (свет/одежда/поза) — отдельные файлы. Листаются **внутри** элемента кнопкой «Вариант», отдельными записями не считаются и в прогресс не входят. У `kind: shot` **запрещены** (ошибка компиляции): виды кадра выводятся из `shots@1`, объявлять их второй раз значило бы держать два источника истины | `[]` |
+| `thumb` | `asset_ref` \| `null` | нет | Явное превью. Для `kind: image` не нужен — берётся `<asset>.thumb.webp` из конвейера; для `kind: shot` тоже не нужен — конвейер склеивает **композитное** превью `assets/shots/<chNN>/<sNNN>/<shot>.thumb.webp` (трансформация `shot_thumb`, [16-assets.md](16-assets.md) §2). Для `kind: movie` **обязателен по смыслу**: у видео своего превью нет, без него warning и пустая заглушка в сетке | вычисленный путь превью |
 | `title_key` | `^[a-z0-9_.]+$` | да | Ключ строки в `content/ui/strings.yaml`. Отсутствие ключа — только warning; в игре покажется сырой ключ (`compile.py:244-248`, `040_localization.rpy:151-157`) | — |
 | `desc_key` | `^[a-z0-9_.]+$` | нет | Подпись в просмотрщике под заголовком | `None` |
 | `chapter` | `^ch\d{2}$` | нет | Глава-владелец: второй ключ сортировки в сетке | `None` |
@@ -64,9 +64,9 @@ cat .vncache/smoke/gallery.json     # {"unlocked": N, "total": M, "ids": [...]}
 
 Поля категории (`categories.<id>`): `title_key` (обяз.), `order` (по умолчанию 100), `nsfw` (скрывает всю категорию целиком, `090_gallery.rpy:42`).
 
-## Пять элементов `core.gallery.yaml` — по одному на каждый тип unlock
+## Шесть элементов `core.gallery.yaml` — по одному на каждый тип unlock и на каждый `kind`
 
-Боевая декларация — `content/gallery/core.gallery.yaml`, три категории (`cg` / `videos` / `extras`) и ровно пять элементов, подобранных так, чтобы каждый демонстрировал свой якорь.
+Боевая декларация — `content/gallery/core.gallery.yaml`, три категории (`cg` / `videos` / `extras`) и шесть элементов, подобранных так, чтобы каждый демонстрировал свой якорь или свой класс контента.
 
 | id | kind | unlock | Как открывается на практике |
 |---|---|---|---|
@@ -75,8 +75,9 @@ cat .vncache/smoke/gallery.json     # {"unlocked": N, "total": M, "ids": [...]}
 | `cg_ch01_finale` | image | `{chapter_done: ch01}` | Терминальная сцена главы (без `exits`) получает `$ vn.chapter_done("ch01")` от компилятора → `vn_gal.check(chapter_done="ch01")`. Награда за прохождение, а не за показ кадра |
 | `cg_ch01_concept` | image | `{always: true}` | `is_unlocked` возвращает True сразу (`090_gallery.rpy:53-54`), состояние нигде не хранится. Концепт-арт/обои. Единственный элемент без `desc_key` |
 | `cg_ch01_route_mira` | image | `{var: g.route, equals: mira}` | `_var_value("g.route")` сравнивается с `"mira"` на каждом якоре. В демо-сборке `g.route` стартует как `'prologue'` и роут не проходится — элемент **намеренно остаётся locked**, чтобы в игре и на скриншотах CI была видна закрытая ячейка |
+| `shot_ch01_s030_sunset` | **shot** | `{seen_image: true}` | Послойный кадр `shots/ch01/s030/sunset` (ADR-0013), показанный в сцене как `scene shot_ch01_s030 sunset`. В сетке — композитное превью конвейера, в просмотрщике — живой layeredimage с листанием наряда Миры (`mira_auto` / `mira_school` / `mira_casual`). Разблокировка — по **тегу образа плюс атрибуту шота**, а не по точному кортежу имени (см. «Послойные шоты в галерее») |
 
-Фактический результат прогона (`.vncache/smoke/gallery.json`, `vn test smoke --picks 0,0`): `unlocked: 4, total: 5`, закрыт `cg_ch01_route_mira`. Это и есть регрессионный якорь подсистемы.
+Фактический результат прогона (`.vncache/smoke/gallery.json`, `vn test smoke --picks 0,0`): `unlocked: 5, total: 6`, закрыт `cg_ch01_route_mira`. Это и есть регрессионный якорь подсистемы.
 
 Шестой тип якоря — `beat` — схемой разрешён, но **фактически недостижим**: `vn.beat()` компилятором никогда не эмитится и ни в одной сцене вручную не вызывается. Чтобы `unlock: {beat: x}` заработал, автор обязан сам поставить `$ vn.beat("x")` в теле `*.scene.rpy` (`030_flow.rpy:19-24`). Статус: **PARTIALLY IMPLEMENTED** — рантайм готов, точек вызова нет.
 
@@ -86,7 +87,8 @@ cat .vncache/smoke/gallery.json     # {"unlocked": N, "total": M, "ids": [...]}
 
 | Что | Источник состояния | Почему так |
 |---|---|---|
-| `kind: image` + `unlock: {seen_image: true}` | штатный `persistent._seen_images` движка | Обещание «ручного кода разблокировки нет» сохранено: показал кадр в сцене — он в галерее. Работает на старых сейвах и при перепрохождении без миграций |
+| `kind: image` + `unlock: {seen_image: true}` | штатный `persistent._seen_images` движка, точное сравнение кортежа (`renpy.seen_image`) | Обещание «ручного кода разблокировки нет» сохранено: показал кадр в сцене — он в галерее. Работает на старых сейвах и при перепрохождении без миграций |
+| `kind: shot` + `unlock: {seen_image: true}` | тот же `persistent._seen_images`, но сверка по **тегу образа + атрибуту шота** (`_seen_shot`) | Точным кортежем шот не спросить: движок пишет имя образа КАК ПОКАЗАН, а у шота в имя попадают ещё и липкие атрибуты слоёв, причём в произвольном порядке (см. «Послойные шоты в галерее»). Строгое сравнение давало бы ложное «закрыто» |
 | всё остальное: `scene` / `beat` / `var` / `chapter_done` + **любое видео** | `persistent.vn_gallery_unlocked = {id: True}` | Движок про эти события ничего не знает |
 
 **Почему `_seen_images` не годится для видео.** `persistent._seen_images` заполняется движком при показе *образа* (`image`-стейтмента). Видео у нас объявлено как `image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True)` (`game/generated/registry/images.gen.rpy:15`), но в галерее видео проигрывается через `Movie(...)` прямо в просмотрщике, а в сценах ролик может вообще не показываться как образ. Полагаться на это нельзя — поэтому компилятор жёстко запрещает `seen_image` для `kind: movie` (`compile.py:230-232`, тест `test_seen_image_only_for_images`).
@@ -120,16 +122,19 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 | Функция | Строка | Что делает |
 |---|---|---|
 | `visible(item_id)` | :34 | Показывать ли вообще. `False`, если элемента нет в реестре; если `spec.nsfw` **или** `category.nsfw` при `vn_build.nsfw == False`; если пак не «во владении» (`vn.pack_registry.owned`) |
-| `is_unlocked(item_id)` | :46 | `False`, если невидим. `always` → True. `seen_image` → `renpy.seen_image(spec["image_name"])`. Иначе — `persistent.vn_gallery_unlocked.get(id)` |
-| `unlock(item_id, silent=False)` | :61 | Явная разблокировка, идемпотентная. Неизвестный id → `vn_log`, не краш. Возвращает `True` **только при смене состояния** — на этом стоит уведомление. При `silent=False` кладёт id в `_pending` |
-| `take_pending()` | :77 | Забрать и очистить очередь открытых. **Zero call sites** — `_gallery_notify` использует возврат `check()`. Список `_pending` (:75) растёт до конца процесса. Статус: IMPLEMENTED / UNUSED |
-| `check(scene_id=None, beat_id=None, chapter_done=None)` | :88 | Прогон всех якорей, возвращает список новых id. Дёшево: линейный проход по десяткам записей |
-| `categories()` | :111 | `[(id, spec)]` в объявленном порядке, **только непустые** (категория без видимых элементов исчезает) |
-| `items(category=None)` | :120 | `[(id, spec)]` только видимые, сортировка `(order, chapter, id)` |
-| `progress(category=None)` | :128 | `(открыто, всего)` — считается динамически, никаких сохранённых счётчиков |
-| `unlocked_ids(category=None)` | :134 | Список открытых id; используется просмотрщиком для листания prev/next и автопилотом для `gallery.json` |
+| `_image_names(spec)` | :46 | Имена образа элемента: текущее + исторические из `renames.assets`. Игрок, увидевший кадр до переименования, не теряет его в галерее |
+| `_seen_shot(spec)` | :51 | Показывался ли **послойный шот**: скан ключей `persistent._seen_images` по тегу образа + атрибуту шота (см. «Послойные шоты в галерее»). Плоские ассеты сюда не заходят |
+| `is_unlocked(item_id)` | :74 | `False`, если невидим. `always` → True. `seen_image`: у `kind: shot` — `_seen_shot(spec)`, у остальных — `renpy.seen_image(name)` по каждому из `_image_names`. Иначе — `persistent.vn_gallery_unlocked.get(id)` |
+| `unlock(item_id, silent=False)` | :94 | Явная разблокировка, идемпотентная. Неизвестный id → `vn_log`, не краш. Возвращает `True` **только при смене состояния** — на этом стоит уведомление. При `silent=False` кладёт id в `_pending` |
+| `take_pending()` | :110 | Забрать и очистить очередь открытых. **Zero call sites** — `_gallery_notify` использует возврат `check()`. Статус: IMPLEMENTED / UNUSED |
+| `check(scene_id=None, beat_id=None, chapter_done=None)` | :121 | Прогон всех якорей, возвращает список новых id. Дёшево: линейный проход по десяткам записей |
+| `categories()` | :144 | `[(id, spec)]` в объявленном порядке, **только непустые** (категория без видимых элементов исчезает) |
+| `items(category=None)` | :153 | `[(id, spec)]` только видимые, сортировка `(order, chapter, id)` |
+| `progress(category=None)` | :161 | `(открыто, всего)` — считается динамически, никаких сохранённых счётчиков |
+| `unlocked_ids(category=None)` | :167 | Список открытых id; используется просмотрщиком для листания prev/next и автопилотом для `gallery.json` |
+| `looks(spec)` | :170 | Что листает кнопка «Вариант»: у плоского ассета — сам кадр плюс `variants` (файлы), у шота — комбинации вариантов слоёв (имя образа + по атрибуту на слой, одометром; первая комбинация = ровно то, что игрок видел в игре) |
 
-`default persistent.vn_gallery_unlocked = {}` (:138). Имя с префиксом `vn_` — норма C9; плоская persistent-переменная, а не dict-корень (Ren'Py мержит persistent пофилдово).
+`default persistent.vn_gallery_unlocked = {}` (:198). Имя с префиксом `vn_` — норма C9; плоская persistent-переменная, а не dict-корень (Ren'Py мержит persistent пофилдово).
 
 ## Превью
 
@@ -139,12 +144,28 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 |---|---|---|
 | `img_cg` | `cg/<путь>.webp` (+ `@2`) | WebP q90 (`full`) / q50 (`draft`) |
 | `img_thumb` | `cg/<путь>.thumb.webp` | WebP q80, длинная сторона 512 px (`render.thumb`, `pipeline.py:250-259`, `:631-635`) |
+| `shot_thumb` | `shots/<chNN>/<sNNN>/<shot>.thumb.webp` | **композит**: `env` + первый вариант каждого слоя в z-порядке из `shots@1` → alpha-over → миниатюра по `render.thumb` |
 
-Логика выбора превью в компиляторе (`compile.py:204-227`):
+Логика выбора превью в компиляторе:
 
 1. Есть `thumb:` в декларации → берётся `<thumb>.thumb.webp`, если он существует, иначе полноразмерный `<thumb>`. То есть даже явный постер ужимается до миниатюры, если конвейер её сделал.
-2. Нет `thumb:`, `kind: image` → `<asset>.thumb.webp`. Если файла нет — warning «нет превью… ожидается `png2webp_cg_thumb`» и в сетку идёт полноразмерный кадр (имя трансформации в тексте предупреждения устарело — ветка называется `img_thumb`; сама строка живёт в `compile.py:302-304`).
-3. Нет `thumb:`, `kind: movie` → warning «kind: movie без thumb», `thumb: None`, и экран падает на `spec["asset"]` (`gallery.rpy:76`) — то есть в ячейку попадёт `.webm`. **У видео своего превью нет: указывайте `thumb:` всегда.**
+2. Нет `thumb:`, `kind: image` → `<asset>.thumb.webp`. Если файла нет — warning «нет превью… ожидается трансформация `img_thumb`» и в сетку идёт полноразмерный кадр.
+3. Нет `thumb:`, `kind: shot` → `assets/shots/<chNN>/<sNNN>/<shot>.thumb.webp`. Если файла нет — warning «сетка будет собирать шот целиком (ожидается трансформация `shot_thumb`)», и `thumb` остаётся `None`: собирать композицию слоёв в каждой ячейке сетки дороже, чем показать заглушку.
+4. Нет `thumb:`, `kind: movie` → warning «kind: movie без thumb», `thumb: None`, и экран падает на `spec["asset"]` (`gallery.rpy`) — то есть в ячейку попадёт `.webm`. **У видео своего превью нет: указывайте `thumb:` всегда.**
+
+## Послойные шоты в галерее (`kind: shot`, ADR-0013) — IMPLEMENTED
+
+Послойный шот — это не файл, а `layeredimage`, собираемый движком из слоёв (`env` + вырезанные персонажи/детали), где наряд героини переключается переменной гардероба. Отсюда три отличия от плоской CG, и каждое пришлось решать отдельно.
+
+**1. Превью собирает конвейер.** Плоского кадра у шота не существует по замыслу, а сетке нужна миниатюра — поэтому `vn assets build` читает `shots@1` (ровно ради этого) и склеивает **дефолтный кадр**: `env` плюс первый вариант каждого слоя в объявленном z-порядке (`imaging.composite`, alpha-over как у layeredimage; расхождение холста — ошибка сборки). В ключ кэша входят байты **всех** слоёв и их имена, поэтому смена z-порядка или дефолтного варианта пересобирает превью (G13). Шот без декларации даёт предупреждение, а не ошибку: арт вперёд декларации — легитимное состояние работы. Подробности трансформации — [16-assets.md](16-assets.md) §2 и §13.7.
+
+**2. В просмотрщик идёт живой образ, а не превью.** `add "shot_ch01_s030 sunset mira_casual"` — то есть тот же `layeredimage`, что в сцене, и кнопка «Вариант» листает **комбинации вариантов слоёв**, а не файлы. Список комбинаций отдаёт `vn_gal.looks(spec)` из `shot_layers` (компилятор кладёт их в реестр из `shots@1`): одометр по слоям, младший разряд — верхний слой, **первая комбинация = ровно то, что игрок видел в игре** (`<layer>_auto` для гардероба, иначе дефолтный вариант). В демо это `mira_auto` → `mira_school` → `mira_casual`, счётчик «1 / 3». Зум (`fit cover`) работает и для шота — он выключен только у видео.
+
+Управление в просмотрщике: чип «Вариант» — единственный путь **с пада** (dpad доводит фокус, A переключает; плечи заняты листанием элементов), с клавиатуры добавлены `K_UP`/`K_DOWN` — симметрия к стрелкам «влево/вправо», которые листают элементы. Отдельной кнопки на слой нет сознательно: их число заранее не известно, а ряд чипов на ТВ уехал бы за кромку экрана.
+
+**3. Разблокировка сверяется по тегу и атрибуту, а не по кортежу имени.** Движок пишет в `persistent._seen_images` имя образа **как показано** (`renpy/exports/displayexports.py: show`), а у шота в это имя попадают ещё и «липкие» атрибуты слоёв: второй `show` того же тега приносит наряд из предыдущего кадра, причём порядок таких атрибутов берётся из множества, то есть произволен (`renpy/common/00layeredimage_ren.py: _choose_attributes`). Поэтому `renpy.seen_image("shot_ch01_s030 sunset")` дал бы **ложное «закрыто»**, и вместо него работает `_seen_shot`: скан ключей `_seen_images` по тегу образа плюс атрибуту шота (с учётом истории имён из `renames.assets`). Плоские ассеты по-прежнему идут через `renpy.seen_image` — иначе `cg ch01 a` открывался бы любым `cg ch01 *`.
+
+**Проверено прогоном:** `VN_AUTOPILOT_SCREENS=gallery vn test smoke --picks 1 --lang @source` → `gallery.json`: `unlocked: 5 / total: 6`, `shot_ch01_s030_sunset` открыт; композит виден во второй ячейке сетки на `.vncache/smoke/screen_gallery.png`. Просмотрщик снимался отдельным временным пробником (живой layeredimage, переключение видов реальным путём событий). **Не проверено:** пад-путь на физическом геймпаде (устройства нет); композит на реальных DAZ-слоях с полупрозрачными краями — формула прямая (`Image.alpha_composite`), но качество краёв стоит один раз посмотреть глазами. QA-обвязка просмотрщик снимать **не умеет**: `autopilot_screens` зовёт `renpy.show_screen(name)` без аргументов, а `gallery_viewer` требует `item_id`.
 
 ## Экран галереи (`20_ui/screens/gallery.rpy`) — IMPLEMENTED
 
@@ -211,14 +232,19 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 | `unlock.chapter_done` — такой главы нет | **error** | :235-238 |
 | `unlock.var` нет в Variable Registry | **error** | :239-242 |
 | Дубликат id или категории между файлами | **error** | :172-183 |
+| `kind: shot`, а ссылка плоская (не `shots/<chNN>/<sNNN>/<shot>`) | **error** | `_emit_gallery` |
+| `kind: shot`, а такого шота нет в декларациях `shots@1` | **error** (послабление: сверка только если шоты в этой компиляции есть — как у якорей `unlock.scene`) | `_emit_gallery` |
+| Ссылка на шот при `kind: image`/`movie` | **error** | `_emit_gallery` |
+| `variants` у `kind: shot` | **error** (варианты слоёв объявлены в `shots@1`) | `_emit_gallery` |
 | Нет `<asset>.thumb.webp` | warning | :219-221 |
+| Нет композитного превью шота (`shot_thumb`) | warning | `_emit_gallery` |
 | `kind: movie` без `thumb` | warning | :224-227 |
 | `title_key`/`desc_key` нет в `strings.yaml` | warning | :244-248 |
 | CG собран, но в галерее не объявлен («осиротевший CG») | warning | :268-279 |
 
-Ошибки поднимают `CompileError` до записи генерата (`compile.py:846-848`) — битая запись физически не может доехать до игры. Проверки существования `pack:` у элемента галереи **нет** (у достижений есть, `compile.py:814-817`).
+Ошибки поднимают `CompileError` до записи генерата — битая запись физически не может доехать до игры. Проверки существования `pack:` у элемента галереи **нет** (у достижений есть).
 
-Юнит-тесты подсистемы: `tools/vn/tests/test_gallery.py` (13 тестов), включая проверку боевой декларации на схему и наличие всех её `title_key`/`desc_key` в `strings.yaml` (:145-157).
+Юнит-тесты подсистемы: `tools/vn/tests/test_gallery.py` (24 теста), включая проверку боевой декларации на схему и наличие всех её `title_key`/`desc_key` в `strings.yaml`, все четыре ошибки `kind: shot`, разблокировку шота по тегу+атрибуту и состав `shot_layers` в реестре.
 
 ## Достижения (`achievements@1`) — IMPLEMENTED
 
@@ -328,12 +354,28 @@ reached_rooftop: trigger: {scene: ch01_s030}
 
 Никакой экран, стиль или `.rpy` при этом не трогают. Скаффолда для галереи нет (`vn scene new`-подобной команды для `*.gallery.yaml` не существует, `scaffold.py` её не знает) — YAML правится руками.
 
+**Если добавляете послойный шот**, шаги 1-2 другие, остальные те же:
+
+1. слои — `assets_src/art/shots/chNN/sNNN/<shot>/{env,<layer>[__<variant>]}.png`, декларация — `content/chapters/chNN_*/shots/sNNN.shots.yaml` (`env` обязателен, `order` перечисляет каждый слой ровно один раз) — [16-assets.md](16-assets.md) §13.7;
+2. `vn assets build` собирает и слои, и композитное превью: `ls game/assets/shots/ch01/s030/sunset.thumb.webp`;
+3. запись в галерее — `kind: shot`, `asset: shots/ch01/s030/sunset`, **без** `variants` и без `thumb`:
+   ```yaml
+     shot_ch01_s030_sunset:
+       category: cg
+       kind: shot
+       asset: shots/ch01/s030/sunset
+       title_key: gal.shot_ch01_s030_sunset.title
+       unlock: {seen_image: true}
+   ```
+4. чтобы элемент **открылся**, кадр должен быть показан в сцене (`scene shot_ch01_s030 sunset`) — иначе он останется закрытым навсегда: у шота нет файла, «просмотр» фиксирует только показ образа.
+
 ## Как расширить
 
 | Задача | Что делать |
 |---|---|
 | Новая категория | Блок в `categories:` + `title_key` в `strings.yaml`. UI не трогать: вкладки рисуются циклом по `vn_gal.categories()` |
-| Новый тип контента (`kind`) | Расширить `enum` в `tools/schemas/gallery@1.schema.json:39-42`, добавить ветку в `_gallery_asset_paths` (расширение) и ветвление в `gallery.rpy:86,105,136`. Экран ветвится по `kind`, а не переписывается |
+| Новый тип контента (`kind`) | Расширить `enum` в `tools/schemas/gallery@1.schema.json`, добавить ветку в `_gallery_asset_paths` (расширение), в `vn_gal.looks()` и ветвление в `gallery.rpy`. Экран ветвится по `kind`, а не переписывается — образец есть: `kind: shot` добавлен ровно так |
+| Точечная пересборка превью шотов | отдельной команды нет и не нужна: `vn assets build` инкрементален, а ключ кэша `shot_thumb` включает имена и байты всех слоёв — правка `order` или дефолтного варианта пересобирает превью сама |
 | Разблокировка «за просмотр момента» | `unlock: {beat: <name>}` **плюс** руками `$ vn.beat("<name>")` в теле сцены — иначе якорь мёртв |
 | Фильтр по персонажу | Данные уже есть (`characters`), потребителя нет — писать новый (`items()` + вкладку/выпадашку) |
 | Прогресс отдельной ачивки | **OPEN.** Порядок правок: `achievements@1.schema.json` → `_emit_achievements` → счётчик в `vn_ach` → карточка. Движковая сторона готова (`achievement.register(..., stat_max=)`) |
@@ -343,7 +385,8 @@ reached_rooftop: trigger: {scene: ch01_s030}
 ## Чего НЕ делать
 
 - **Не править `game/generated/registry/gallery.gen.rpy` и `achievements.gen.rpy`** — это генерат, `vn build` перезапишет. Источник — `content/gallery/`, `content/achievements/`.
-- **Не переименовывать id элемента и не переименовывать CG-ассет с `unlock: {seen_image: true}`.** Id — ключ в `persistent`, имя ассета — ключ в `_seen_images`. Переименование = тихая потеря разблокировки у всех игроков, без единого сообщения.
+- **Не переименовывать id элемента и не переименовывать CG-ассет с `unlock: {seen_image: true}`.** Id — ключ в `persistent`, имя ассета — ключ в `_seen_images`. Переименование через `content/renames.yaml` галерея учитывает (историю имён читает `_image_names`), а `git mv` без записи в renames = тихая потеря разблокировки у всех игроков, без единого сообщения.
+- **Не ждать, что переименование самого шота поймает сеть G7.** `built_asset_ids` (`release.py`) перечисляет **файлы** `game/assets`, поэтому в `id_registry@1` попадают слои (`shots/ch01/s030/sunset/env`, `…/mira__school`, `…/mira__casual`), а составной id шота `shots/ch01/s030/sunset` — нет: он не файл. Переименование слоя линт заметит, переименование шота — нет. Запись в `renames.assets` при этом уже работает: галерея историю имён учитывает.
 - **Не писать `vn_gallery.check(...)`.** Стор — `vn_gal`. `vn_gallery_unlocked` — persistent-переменная.
 - **Не рассчитывать, что `var`-якорь сработает в момент присваивания.** Он проверяется только на `checkpoint` / `beat` / `chapter_done`.
 - **Не ставить `unlock: {beat: ...}`, не добавив `$ vn.beat("...")` в сцену.** Компилятор `beat`-якоря не эмитит и на их недостижимость не ругается — получится мёртвый контент.
@@ -358,12 +401,12 @@ reached_rooftop: trigger: {scene: ch01_s030}
 ```bash
 vn content lint                 # схема gallery@1 / achievements@1
 vn build                        # семантика: ассеты, превью, категории, якоря, ключи строк
-python -m pytest tools/vn/tests/test_gallery.py -q       # 13 тестов галереи
-python -m pytest tools/vn/tests/test_achievements.py -q  # 10 тестов достижений
-python -m pytest tools/vn/tests -q                       # весь набор: 278 тестов
+(cd tools/vn && python -m pytest tests/test_gallery.py -q)       # 24 теста галереи
+(cd tools/vn && python -m pytest tests/test_achievements.py -q)  # 10 тестов достижений
+(cd tools/vn && python -m pytest -q)                             # весь набор: 373 теста
 
 vn test smoke --picks 0,0
-cat .vncache/smoke/gallery.json                        # {"unlocked":4,"total":5,"ids":[...]}
+cat .vncache/smoke/gallery.json                        # {"unlocked":5,"total":6,"ids":[...]}
 ```
 
 Скриншот самого экрана галереи снимается только при заданной переменной окружения — **`vn test smoke` её не выставляет** (передаются лишь `VN_AUTOPILOT_PICKS` и `VN_AUTOPILOT_LANG`, `tools/vn/src/vn/cli.py:1370`). Чтобы получить `.vncache/smoke/screen_gallery.png`, переменную задают вручную перед прогоном:
@@ -381,8 +424,8 @@ $env:VN_AUTOPILOT_SCREENS="gallery,achievements"; vn test smoke --picks 0,0   # 
 
 | | |
 |---|---|
-| **Читать перед изменением** | `content/gallery/core.gallery.yaml`, `content/achievements/core.achievements.yaml`, `tools/schemas/{gallery@1,achievements@1}.schema.json`, `docs/adr/0010-gallery-extras.md`, `game/framework/00_core/{090_gallery.rpy,080_achievements.rpy}`, `game/framework/20_ui/screens/{gallery.rpy,achievements.rpy}`, `tools/vn/src/vn/content/compile.py:139-290` |
+| **Читать перед изменением** | `content/gallery/core.gallery.yaml`, `content/achievements/core.achievements.yaml`, `tools/schemas/{gallery@1,achievements@1}.schema.json`, `docs/adr/0010-gallery-extras.md`, `game/framework/00_core/{090_gallery.rpy,080_achievements.rpy}`, `game/framework/20_ui/screens/{gallery.rpy,achievements.rpy}`, `tools/vn/src/vn/content/compile.py` (`_emit_gallery`, `_gallery_shot_index`, `_shot_image_name`), `tools/vn/src/vn/assets/pipeline.py` (`_shot_thumb_jobs`, `_shot_preview_plans`) |
 | **Не трогать** | `game/generated/registry/gallery.gen.rpy`, `game/generated/registry/achievements.gen.rpy`, `game/assets/**`, `.vncache/**` — производные зоны, перезапишет `vn build` |
 | **Зависимости** | Запись галереи требует собранного ассета (`vn assets build`), существующего якоря (сцена/глава/переменная), объявленной категории и ключей в `content/ui/strings.yaml`. Ниже по течению: `vn loc extract/import` (новые строки), `vn test smoke` (`gallery.json`), релизный гейт `vn release validate` (покрытие переводов) |
 | **Валидация** | `vn content lint` → `vn build` → `python -m pytest tools/vn/tests/test_gallery.py tools/vn/tests/test_achievements.py -q` → `VN_AUTOPILOT_SCREENS=gallery,achievements vn test smoke --picks 0,0` + `.vncache/smoke/gallery.json` + просмотр `screen_*.png` глазами |
-| **Частые ошибки** | 1) Стор называется `vn_gal`, не `vn_gallery`. 2) `docs/ARCHITECTURE.md` описывает **заменённый** дизайн на движковом `Gallery` + `_seen_images`; канон — ADR-0010 и код, `game/generated/screens/gallery.gen.rpy` не существует. 3) `unlock: {beat: ...}` бесполезен без ручного `$ vn.beat(...)` в сцене — компилятор его не эмитит. 4) `seen_image` запрещён для `kind: movie` (ошибка компиляции) и ломается при переименовании ассета (тихо). 5) `nsfw: true` прячет запись, но не исключает файл из дистрибутива. 6) Опечатка в `pack:` у элемента галереи не диагностируется — элемент просто исчезает. 7) Писать «экрана достижений нет» — он есть с этой итерации; и не писать, что у ачивок есть прогресс-бар — его нет. 8) Ссылаться на `vn_gal_cell_locked`, `vn_gal_progress`, `vn_gal_empty` — стилей больше не существует |
+| **Частые ошибки** | 1) Стор называется `vn_gal`, не `vn_gallery`. 2) `docs/ARCHITECTURE.md` описывает **заменённый** дизайн на движковом `Gallery` + `_seen_images`; канон — ADR-0010 и код, `game/generated/screens/gallery.gen.rpy` не существует. 3) `unlock: {beat: ...}` бесполезен без ручного `$ vn.beat(...)` в сцене — компилятор его не эмитит. 4) `seen_image` запрещён для `kind: movie` (ошибка компиляции) и ломается при переименовании ассета (тихо). 5) `nsfw: true` прячет запись, но не исключает файл из дистрибутива. 6) Опечатка в `pack:` у элемента галереи не диагностируется — элемент просто исчезает. 7) Писать «экрана достижений нет» — он есть с этой итерации; и не писать, что у ачивок есть прогресс-бар — его нет. 8) Ссылаться на `vn_gal_cell_locked`, `vn_gal_progress`, `vn_gal_empty` — стилей больше не существует. 9) Считать, что `kind` — это только `image`/`movie`: с 2026-08-18 есть `shot` (ADR-0013), и у него ссылка не на файл, `variants` запрещены, превью композитное, а разблокировка сверяется по тегу+атрибуту, а не кортежем имени |

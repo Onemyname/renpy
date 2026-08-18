@@ -232,10 +232,10 @@ vn assets validate              # сырцы + ссылки контента (ф
 vn build                        # полный проход: lint -> assets -> compile
 vn build --check                # CI-режим: ничего не пишет, падает на несвежем генерате
 grep -n "^image bg" game/generated/registry/images.gen.rpy   # что реально объявлено
-python -m pytest tools/vn/tests -q                            # 278 тестов
+python -m pytest tools/vn/tests -q                            # 373 теста
 ```
 
-Ожидаемо на чистом дереве: `lint: OK (0 предупреждений)`, `build: OK`, `278 passed`.
+Ожидаемо на чистом дереве: `lint: OK (0 предупреждений)`, `build: OK`, `373 passed`.
 
 ## Чеклист новой локации
 

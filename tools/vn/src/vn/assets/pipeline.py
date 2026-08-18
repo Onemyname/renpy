@@ -31,6 +31,9 @@ project.yaml: render (render_config.py). Здесь только исполне�
   game/assets/bg/<...>/<name>[@N].webp   (+ <name>.thumb.webp)
   game/assets/cg/<...>/<name>[@N].webp   (+ <name>.thumb.webp)
   game/assets/shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>][@N].webp
+                                         # + <shot>.thumb.webp рядом с папкой слоёв:
+                                         # композитное превью шота для галереи
+                                         # (плоского кадра у шота нет, ADR-0013)
   game/assets/audio/{bgm,amb,sfx}/<id>.ogg
   game/assets/voice/<lang>/<chNN>/<line_id>.opus
   game/assets/mov/<group>/<name>[@N].webm (+ .webm.meta.json — mov_meta@1)
@@ -59,6 +62,7 @@ TRANSFORMS = {
     "img_cg": "2",
     "img_shot": "1",
     "img_thumb": "2",
+    "shot_thumb": "1",
     "ui_panel": "1",
     "copy_audio": "1",
     "voice_opus": "1",
@@ -268,6 +272,42 @@ def _thumb_ext(cfg: RenderConfig) -> str:
     return OUT_FORMATS[cfg.thumb.get("out_format", "webp")]
 
 
+def _shot_thumb_jobs(rep: AssetBuildResult, cfg: RenderConfig, shot_dir: Path,
+                     drel: str, plan: list[str] | None, env: Path,
+                     out_base: str) -> list[Job]:
+    """Композитное превью шота: одна миниатюра на шот вместо файла, которого нет.
+
+    Слои шота по отдельности в сетке галереи бесполезны (вырезанная фигура на
+    прозрачном фоне), а плоского кадра у шота не существует по замыслу ADR-0013 —
+    поэтому кадр по умолчанию (env + первый вариант каждого слоя, z-порядок из
+    декларации) склеивается здесь и ложится РЯДОМ с папкой слоёв."""
+    if plan is None:
+        rep.warnings.append(
+            f"{drel}: шот не объявлен в shots@1 — превью для галереи не собрано "
+            f"(объявите шот в content/chapters/<chNN>_*/shots/<sNNN>.shots.yaml)")
+        return []
+    layers = []
+    for stem in plan:
+        master = _pick_master(shot_dir, stem, cfg.cls("shot").formats)
+        if master is None:
+            # Объявленный слой/вариант не собран: эмиттер образов уже валит на этом
+            # сборку контента, второй раз ту же ошибку не печатаем — просто без превью.
+            return []
+        layers.append(master)
+    return [Job(
+        src=env,
+        transform="shot_thumb",
+        out_rel=f"{out_base}.thumb{_thumb_ext(cfg)}",
+        params={"max_side": int(cfg.thumb["max_side"]),
+                "quality": int(cfg.thumb["quality"]),
+                "out_format": cfg.thumb.get("out_format", "webp"),
+                # Состав кадра — часть параметров: смена z-порядка или дефолтного
+                # варианта в декларации обязана пересобрать миниатюру (G13).
+                "layers": [p.name for p in layers]},
+        extra={"layers": layers},
+    )]
+
+
 # ── Discovery ────────────────────────────────────────────────────────────────
 
 def _discover(root: Path, rep: AssetBuildResult,
@@ -373,6 +413,7 @@ def _discover(root: Path, rep: AssetBuildResult,
     # art/shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>].<ext>. env — подложка
     # без альфы, задаёт холст шота; остальные слои обязаны быть вырезаны (альфа)
     # и лежать на ТОМ ЖЕ холсте: layeredimage кладёт слои в (0,0).
+    preview_plans = _shot_preview_plans(root)
     for art in _art_roots(root):
         shots_dir = art / "shots"
         if not shots_dir.is_dir():
@@ -412,6 +453,10 @@ def _discover(root: Path, rep: AssetBuildResult,
                     # env задаёт холст (сам не сверяется), остальные — на нём же
                     expect_size=(None if f == env else canvas),
                     alpha=("forbid" if layer == SHOT_ENV else "require"))
+            if env is not None:
+                jobs += _shot_thumb_jobs(rep, cfg, shot_dir, drel,
+                                         preview_plans.get((ch, sid, shot)), env,
+                                         f"shots/{ch}/{sid}/{shot}")
 
     # ── Звук: побайтовое копирование ────────────────────────────────────────
     audio = root / "assets_src" / "audio_stems"
@@ -529,6 +574,51 @@ def _declared_canvases(root: Path) -> dict[str, tuple[int, int]]:
     return out
 
 
+def _shot_preview_plans(root: Path) -> dict[tuple[str, str, str], list[str]]:
+    """(chNN, sNNN, shot) -> stem'ы слоёв ДЕФОЛТНОГО кадра шота в z-порядке.
+
+    Конвейер читает декларации shots@1 ровно ради превью галереи и только ради
+    него: в игре кадр собирает layeredimage, но плоского файла у шота нет, а
+    сетке галереи нужна миниатюра. Порядок и дефолтные варианты обязаны прийти из
+    декларации (`order`, первый вариант слоя) — иначе миниатюра показывала бы
+    кадр, которого в игре не существует. Битые декларации здесь игнорируются
+    молча: их валидирует компилятор контента, дублировать ошибку незачем."""
+    from ..repo import load_yaml
+
+    out: dict[tuple[str, str, str], list[str]] = {}
+    zones = [root / "content" / "chapters"]
+    if (root / "packs").is_dir():
+        zones += sorted((root / "packs").glob("*/chapters"))
+    for zone in zones:
+        if not zone.is_dir():
+            continue
+        for ch_dir in sorted(p for p in zone.iterdir() if p.is_dir()):
+            ch_id = ch_dir.name[:4]
+            for f in sorted((ch_dir / "shots").glob("*.shots.yaml")) \
+                    if (ch_dir / "shots").is_dir() else []:
+                try:
+                    doc = load_yaml(f) or {}
+                except Exception:
+                    continue
+                sid = doc.get("scene")
+                if not isinstance(sid, str):
+                    continue
+                for shot_id, spec in (doc.get("shots") or {}).items():
+                    layers = (spec or {}).get("layers") or {}
+                    order = (spec or {}).get("order") or []
+                    stems = []
+                    for layer in order:
+                        lspec = layers.get(layer)
+                        if lspec is None:
+                            stems = []
+                            break
+                        variants = lspec.get("variants") or []
+                        stems.append(f"{layer}__{variants[0]}" if variants else layer)
+                    if stems:
+                        out[(ch_id, sid, shot_id)] = stems
+    return out
+
+
 def _pick_master(directory: Path, stem: str, formats: tuple[str, ...]) -> Path | None:
     """Мастер с заданным stem в любом из допустимых форматов (порядок = приоритет)."""
     for ext in formats:
@@ -641,6 +731,10 @@ def _transform(job: Job, profile: str, cfg: RenderConfig) -> bytes:
             job.src, None, quality=job.params["quality"],
             out_format=job.params["out_format"], keep_alpha=job.params["keep_alpha"],
             max_side=job.params["max_side"])
+    if t == "shot_thumb":
+        return imaging.composite(
+            job.extra["layers"], quality=job.params["quality"],
+            out_format=job.params["out_format"], max_side=job.params["max_side"])
     if t == "copy_audio":
         return job.src.read_bytes()
     raise AssetError(f"неизвестная трансформация {t!r}")
@@ -727,6 +821,10 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
         elif job.transform == "ui_panel" and job.extra:
             from . import ui as uimod
             src_bytes = uimod.panel_hash_source(job.extra["spec"], job.extra["scale"])
+        elif job.transform == "shot_thumb" and job.extra:
+            # Источник композита — ВСЕ его слои, а не только опорный env: правка
+            # любого слоя обязана пересобрать миниатюру (G13).
+            src_bytes = b"\x00".join(p.read_bytes() for p in job.extra["layers"])
         src_hash = _b3_bytes(
             src_bytes + b"\x00" + cfg.params_digest(job.transform, extra_params))
 
@@ -805,8 +903,10 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
         }
         # Стоимость в пикселях кэша Ren'Py — считаем один раз при сборке и храним
         # в манифесте: модель памяти (memory.py) не должна декодировать тысячи
-        # файлов на каждый прогон QA.
-        if job.transform in ("img_sprite", "img_bg", "img_cg", "img_shot"):
+        # файлов на каждый прогон QA. Композитное превью шота считается наравне с
+        # постер-кадром видео: обе миниатюры живут в кэше, пока открыта галерея.
+        if job.transform in ("img_sprite", "img_bg", "img_cg", "img_shot",
+                             "shot_thumb"):
             try:
                 entry["cost_px"] = imaging.decoded_cost_px(data)
             except Exception:

@@ -8,7 +8,12 @@
     "asset_ref": {
       "type": "string",
       "pattern": "^(cg|bg|mov)/[a-z0-9_/]+$",
-      "description": "Логический id ассета (naming.md): cg/ch01/rooftop_kiss, mov/demo/ambient"
+      "description": "Логический id ПЛОСКОГО ассета (naming.md): cg/ch01/rooftop_kiss, mov/demo/ambient"
+    },
+    "shot_ref": {
+      "type": "string",
+      "pattern": "^shots/ch\\d{2}/s\\d{3}/[a-z][a-z0-9_]*$",
+      "description": "Логический id послойного шота (shots@1, ADR-0013): shots/<chNN>/<sNNN>/<shot>. Плоского файла у шота НЕТ — кадр собирает layeredimage сцены, а превью для сетки рисует конвейер (трансформация shot_thumb)"
     },
     "loc_key": {"type": "string", "pattern": "^[a-z0-9_.]+$"}
   },
@@ -37,18 +42,21 @@
         "properties": {
           "category": {"type": "string", "pattern": "^[a-z][a-z0-9_]{1,23}$"},
           "kind": {
-            "enum": ["image", "movie"],
-            "description": "image — статичный ассет (cg/bg); movie — видео-луп (mov). Новые типы добавляются расширением enum, UI ветвится по kind."
+            "enum": ["image", "movie", "shot"],
+            "description": "image — статичный ассет (cg/bg); movie — видео-луп (mov); shot — послойный шот сцены (shots@1): кадр собирается layeredimage, варианты слоёв листаются в просмотрщике. Новые типы добавляются расширением enum, UI ветвится по kind."
           },
-          "asset": {"$ref": "#/$defs/asset_ref"},
+          "asset": {
+            "anyOf": [{"$ref": "#/$defs/asset_ref"}, {"$ref": "#/$defs/shot_ref"}],
+            "description": "Что показывает элемент: плоский ассет (kind: image/movie) или шот (kind: shot). Соответствие kind и вида ссылки сверяет компилятор — он же проверяет, что шот объявлен в shots@1"
+          },
           "variants": {
             "type": "array",
             "items": {"$ref": "#/$defs/asset_ref"},
-            "description": "Варианты одной CG (одежда/свет/поза): листаются внутри элемента, отдельными записями галереи не считаются"
+            "description": "Варианты одной CG (одежда/свет/поза): листаются внутри элемента, отдельными записями галереи не считаются. Для kind: shot не заполняется — варианты слоёв уже объявлены в shots@1"
           },
           "thumb": {
             "anyOf": [{"$ref": "#/$defs/asset_ref"}, {"type": "null"}],
-            "description": "Превью. Для image по умолчанию берётся <asset>.thumb.webp из конвейера; для movie указывается явно (постер-кадр)"
+            "description": "Превью. Для image по умолчанию берётся <asset>.thumb.webp из конвейера, для shot — композитное <shot>.thumb.webp (shot_thumb); для movie конвейер делает постер-кадр, а явное значение переопределяет любое из них"
           },
           "title_key": {"$ref": "#/$defs/loc_key"},
           "desc_key": {"$ref": "#/$defs/loc_key"},
@@ -65,7 +73,7 @@
             "type": "object",
             "description": "Условие разблокировки: ровно один якорь. seen_image опирается на штатный persistent._seen_images движка (ручного кода нет), остальные — на реестр якорей, как достижения.",
             "properties": {
-              "seen_image": {"const": true, "description": "Ассет показывался в игре (движковый _seen_images); только для kind: image"},
+              "seen_image": {"const": true, "description": "Кадр показывался в игре (движковый _seen_images): для kind: image — по имени образа, для kind: shot — по тегу образа сцены и атрибуту шота. Для kind: movie не работает — движок Movie в _seen_images не пишет"},
               "scene": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$", "description": "Вход в сцену (vn.checkpoint)"},
               "beat": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$", "description": "Именованный бит внутри сцены (vn.beat) — в т.ч. «просмотрел момент»"},
               "var": {"type": "string", "pattern": "^(g|ch\\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+)\\.[a-z][a-z0-9_]*$", "description": "Переменная из Variable Registry (в т.ч. следствие выбора)"},

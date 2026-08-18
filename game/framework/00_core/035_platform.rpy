@@ -40,6 +40,35 @@ init -960 python in vn_platform:
         """Игрок, скорее всего, без мыши/клавиатуры: UI не должен требовать их."""
         return is_steam_deck() or is_big_picture()
 
+    # ── Мобильная поставка (Android/iOS) ─────────────────────────────────────
+    # Варианты вставляет САМ движок при старте (renpy/main.py: choose_variants):
+    # Android -> android + mobile + touch + (phone+small | tablet+medium) по
+    # физической диагонали экрана; iOS -> ios + mobile + touch + то же деление;
+    # десктоп -> pc + large. Эмулятор лаунчера подставляет тот же набор через
+    # RENPY_VARIANT, поэтому ветки проверяемы без устройства.
+
+    def is_mobile():
+        """Мобильная сборка: тач вместо мыши, нет окна и нет права выйти."""
+        return renpy.variant("mobile")
+
+    def is_android():
+        """Именно Android (в логе/крэш-репорте: у iOS другие правила стора и UI)."""
+        return renpy.variant("android")
+
+    def is_phone():
+        """Мелкий экран. Делит устройства ФИЗИЧЕСКАЯ диагональ, а не разрешение
+        (renpy/main.py: >= 6 дюймов -> tablet+medium, иначе phone+small), поэтому
+        минимальная тач-зона считается от этого варианта."""
+        return renpy.variant("phone")
+
+    def is_desktop():
+        """ПК: есть окно, мышь и право закрыть приложение. Единственный вариант,
+        под которым уместны «Выйти» и переключатель окно/полный экран: на iOS
+        кнопка выхода запрещена правилами стора, на Android и в вебе бессмысленна,
+        окном там не управляют. Так же гейтит их штатный шаблон SDK
+        (gui/game/screens.rpy: `if renpy.variant("pc")`)."""
+        return renpy.variant("pc")
+
     def overlay_enabled():
         s = steam()
         try:
@@ -48,9 +77,11 @@ init -960 python in vn_platform:
             return False
 
     def describe():
-        """Одна строка для крэш-репорта и дебага."""
-        return "%s deck=%s bigpicture=%s touch=%s" % (
-            backend(), is_steam_deck(), is_big_picture(), has_touch())
+        """Одна строка для крэш-репорта и дебага: по ней видно, какой профиль UI
+        и памяти был активен (мобильные ветки иначе не отличить от десктопных)."""
+        return "%s deck=%s bigpicture=%s touch=%s mobile=%s android=%s phone=%s" % (
+            backend(), is_steam_deck(), is_big_picture(), has_touch(),
+            is_mobile(), is_android(), is_phone())
 
     def _steam_owns_pack(pack_id):
         """Ownership-провайдер (G9): пак с steam_dlc_appid — по факту установки
@@ -86,4 +117,8 @@ init 999 python:
             if vn_ach.has(_vn_aid):
                 achievement.grant(_vn_aid)
         achievement.sync()
-        vn_log("platform: %s" % vn_platform.describe())
+
+    # Идентичность платформы — в лог ВСЕГДА, а не только под Steam: мобильная
+    # сборка отличается от десктопной ровно вариантами, и без этой строки
+    # «на телефоне интерфейс мелкий» невозможно разобрать по логу игрока.
+    vn_log("platform: %s" % vn_platform.describe())

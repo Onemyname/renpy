@@ -1,10 +1,18 @@
-"""Галерея (gallery@1, ADR-0010): валидация деклараций и состав реестра.
+"""Галерея (gallery@1, ADR-0010): валидация деклараций, состав реестра и логика
+разблокировки стора vn_gal.
 
-Рантайм-часть (persistent, seen_images) проверяется e2e в vn test smoke —
-он пишет .vncache/smoke/gallery.json с фактическими разблокировками.
+Стор — блок `init python in vn_gal` в .rpy, но его тело это обычный Python: тесты
+исполняют его с подставным persistent/renpy (_store_module) и проверяют РЕШЕНИЯ,
+а не наличие строк. Полный путь «показ кадра -> persistent -> галерея» всё равно
+проверяется e2e: vn test smoke пишет .vncache/smoke/gallery.json с фактическими
+разблокировками.
 """
 
+import ast
 import shutil
+import sys
+import textwrap
+import types
 
 import pytest
 
@@ -23,6 +31,9 @@ class _Rep:
 
 
 def _mk_assets(root, *rel_paths):
+    # Пустышки пишутся ТОЛЬКО в tmp_path: перепутанный корень затирал бы собранную
+    # зону разработчика однобайтовыми файлами, а сборка молча брала бы их из кэша.
+    assert root != REPO_ROOT, "фикстура пишет в game/assets репозитория"
     for rel in rel_paths:
         p = root / "game" / "assets" / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -35,6 +46,25 @@ def _doc(items, categories=None):
         "categories": categories or {"cg": {"title_key": "ui.gallery.cat.cg"}},
         "items": items,
     })]
+
+
+# Декларация послойного шота сцены (shots@1): тот же документ, что в test_shots.
+SHOTS_DOCS = [("ch01", "content/chapters/ch01_x/shots/s030.shots.yaml", {
+    "schema": "shots@1",
+    "scene": "s030",
+    "shots": {"sunset": {
+        "layers": {"env": {},
+                   "mira": {"variants": ["school", "casual"], "var": "g.mira_outfit"}},
+        "order": ["env", "mira"],
+    }},
+})]
+
+
+def _shot_item(**over):
+    item = {"category": "cg", "kind": "shot", "asset": "shots/ch01/s030/sunset",
+            "title_key": "gal.shot.title", "unlock": {"seen_image": True}}
+    item.update(over)
+    return {"shot_sunset": item}
 
 
 def test_registry_shape_and_thumb_resolution(tmp_path):
@@ -52,6 +82,91 @@ def test_registry_shape_and_thumb_resolution(tmp_path):
     assert "'thumb': 'assets/cg/ch01/a.thumb.webp'" in text
     assert "'image_name': 'cg ch01 a'" in text          # для renpy.seen_image
     assert "'variants': ['assets/cg/ch01/b.webp']" in text
+
+
+def test_shot_item_addresses_image_name_not_file(tmp_path):
+    """kind: shot адресует ШОТ: файла у него нет, в реестр едут имя образа
+    (тег сцены + атрибут) и переключаемые варианты слоёв из shots@1."""
+    root = tmp_path
+    _mk_assets(root, "shots/ch01/s030/sunset.thumb.webp",
+               "shots/ch01/s030/sunset/env.webp")
+    rep, errors = _Rep(), []
+    text = _emit_gallery(root, _doc(_shot_item()), {"ch01_s030"}, {"ch01"}, set(), {},
+                         rep, errors, [("t", "d")], shots_docs=SHOTS_DOCS)
+    assert errors == []
+    assert "'asset': 'shot_ch01_s030 sunset'" in text
+    assert "'image_name': 'shot_ch01_s030 sunset'" in text
+    # Первый вид — как в игре (auto по переменной гардероба), дальше явные варианты
+    assert ("'shot_layers': [{'layer': 'mira', 'options': "
+            "['mira_auto', 'mira_school', 'mira_casual']}]") in text
+    # Превью — композит конвейера рядом с папкой слоёв
+    assert "'thumb': 'assets/shots/ch01/s030/sunset.thumb.webp'" in text
+    assert not rep.warnings
+
+
+def test_shot_item_requires_declared_shot(tmp_path):
+    root = tmp_path
+    _mk_assets(root, "cg/ch01/a.webp")
+    rep, errors = _Rep(), []
+    _emit_gallery(root, _doc(_shot_item(asset="shots/ch01/s030/ghost")), set(), set(),
+                  set(), {}, rep, errors, [("t", "d")], shots_docs=SHOTS_DOCS)
+    assert any("shots/ch01/s030/ghost" in e and "нет в декларациях shots@1" in e
+               for e in errors)
+
+
+def test_shot_kind_and_reference_must_agree(tmp_path):
+    """Плоский ассет под kind: shot и шот под kind: image — обе ошибки сборки."""
+    root = tmp_path
+    _mk_assets(root, "cg/ch01/a.webp", "cg/ch01/a.thumb.webp")
+    rep, errors = _Rep(), []
+    items = _shot_item(asset="cg/ch01/a")
+    items["img_shot"] = {"category": "cg", "kind": "image",
+                         "asset": "shots/ch01/s030/sunset",
+                         "title_key": "t", "unlock": {"seen_image": True}}
+    _emit_gallery(root, _doc(items), set(), set(), set(), {}, rep, errors,
+                  [("t", "d")], shots_docs=SHOTS_DOCS)
+    text = "\n".join(errors)
+    assert "kind: shot, но ассет cg/ch01/a — не шот" in text
+    assert "послойный шот, а kind: image" in text
+
+
+def test_shot_item_rejects_flat_variants(tmp_path):
+    """Варианты слоёв объявлены в shots@1 — второй список в галерее был бы
+    вторым источником правды."""
+    root = tmp_path
+    _mk_assets(root, "shots/ch01/s030/sunset.thumb.webp", "cg/ch01/b.webp")
+    rep, errors = _Rep(), []
+    _emit_gallery(root, _doc(_shot_item(variants=["cg/ch01/b"])), set(), set(), set(),
+                  {}, rep, errors, [("t", "d")], shots_docs=SHOTS_DOCS)
+    assert any("variants у kind: shot не бывает" in e for e in errors)
+
+
+def test_shot_without_composite_thumb_warns(tmp_path):
+    """Нет композитного превью — не ошибка, но сетка потянет весь шот."""
+    root = tmp_path
+    _mk_assets(root, "shots/ch01/s030/sunset/env.webp")
+    rep, errors = _Rep(), []
+    text = _emit_gallery(root, _doc(_shot_item()), set(), set(), set(), {}, rep,
+                         errors, [("t", "d")], shots_docs=SHOTS_DOCS)
+    assert errors == []
+    assert any("shot_thumb" in w for w in rep.warnings)
+    # Заглушки в реестре нет: сетка возьмёт живой кадр (asset), а не битый путь
+    assert "'thumb': None" in text
+
+
+def test_renamed_shot_keeps_unlock_history(tmp_path):
+    """Переименование шота не должно стирать открытый кадр: исторические имена
+    образа считаются наравне, как у плоских ассетов (ADR-0012)."""
+    root = tmp_path
+    _mk_assets(root, "shots/ch01/s030/sunset.thumb.webp")
+    rep, errors = _Rep(), []
+    renames = {"assets": {"shots/ch01/s030/dusk": "shots/ch01/s030/sunset",
+                          # переименование СЛОЯ галереи не касается — оно не шот
+                          "shots/ch01/s030/sunset/mira__old": "shots/ch01/s030/sunset/mira__school"}}
+    text = _emit_gallery(root, _doc(_shot_item()), set(), set(), set(), {}, rep,
+                         errors, [("t", "d")], renames=renames, shots_docs=SHOTS_DOCS)
+    assert errors == []
+    assert "'image_name_history': ['shot_ch01_s030 dusk']" in text
 
 
 def test_missing_asset_is_error(tmp_path):
@@ -98,7 +213,8 @@ def test_unlock_anchor_must_exist(tmp_path):
     assert "unlock.var g.ghost" in text
 
 
-def test_seen_image_only_for_images(tmp_path):
+def test_seen_image_is_rejected_for_movies(tmp_path):
+    """Показ образа движок пишет в _seen_images, проигрывание Movie — нет."""
     root = tmp_path
     _mk_assets(root, "mov/demo/x.webm", "cg/ch01/p.webp")
     rep, errors = _Rep(), []
@@ -107,7 +223,7 @@ def test_seen_image_only_for_images(tmp_path):
               "thumb": "cg/ch01/p", "title_key": "t",
               "unlock": {"seen_image": True}},
     }), set(), set(), set(), {}, rep, errors, [("t", "d")])
-    assert any("seen_image работает только" in e for e in errors)
+    assert any("seen_image не работает для kind: movie" in e for e in errors)
 
 
 def test_warnings_for_missing_thumb_and_orphan_cg(tmp_path):
@@ -157,19 +273,24 @@ def test_duplicate_ids_across_files_are_error(tmp_path):
     assert any("объявлен дважды" in e for e in errors)
 
 
-def test_repo_gallery_declaration_is_schema_valid(repo_root):
-    """Боевая декларация проекта валидна и все её строки объявлены."""
-    doc = load_yaml(repo_root / "content" / "gallery" / "core.gallery.yaml")
+def test_repo_gallery_declarations_are_schema_valid(repo_root):
+    """Боевые декларации проекта валидны и все их строки объявлены. Файлов может
+    быть несколько (реестр собирается из всех content/gallery/*.gallery.yaml),
+    поэтому проверяются все — иначе новый файл проехал бы мимо теста."""
     reg = SchemaRegistry(repo_root / "tools" / "schemas")
-    assert reg.validate(doc, "content/gallery/core.gallery.yaml") == []
-
     strings = load_yaml(repo_root / "content" / "ui" / "strings.yaml")["strings"]
-    for cid, cspec in doc["categories"].items():
-        assert cspec["title_key"] in strings, f"категория {cid}: нет строки"
-    for gid, spec in doc["items"].items():
-        assert spec["title_key"] in strings, f"{gid}: нет title_key"
-        if spec.get("desc_key"):
-            assert spec["desc_key"] in strings, f"{gid}: нет desc_key"
+    files = sorted((repo_root / "content" / "gallery").glob("*.gallery.yaml"))
+    assert files, "боевой декларации галереи нет"
+    for f in files:
+        rel = f"content/gallery/{f.name}"
+        doc = load_yaml(f)
+        assert reg.validate(doc, rel) == []
+        for cid, cspec in (doc.get("categories") or {}).items():
+            assert cspec["title_key"] in strings, f"{rel}: категория {cid}: нет строки"
+        for gid, spec in (doc.get("items") or {}).items():
+            assert spec["title_key"] in strings, f"{rel}: {gid}: нет title_key"
+            if spec.get("desc_key"):
+                assert spec["desc_key"] in strings, f"{rel}: {gid}: нет desc_key"
 
 
 def test_repo_compiles_gallery_registry(repo_root, tmp_path):
@@ -186,6 +307,9 @@ def test_repo_compiles_gallery_registry(repo_root, tmp_path):
     assert "cg_ch01_rooftop" in text
     # locked-элемент тоже в реестре: закрытость — состояние, а не отсутствие записи
     assert "cg_ch01_route_mira" in text
+    # Послойный шот демо-главы доехал живым образом, а не путём к файлу
+    assert "'asset': 'shot_ch01_s030 sunset'" in text
+    assert "'mira_auto', 'mira_school', 'mira_casual'" in text
 
 
 def test_unbuilt_assets_zone_warns_not_errors(tmp_path):
@@ -227,3 +351,126 @@ def test_asset_history_is_empty_without_renames(tmp_path):
                  "title_key": "t", "unlock": {"seen_image": True}},
     }), set(), set(), set(), {}, rep, errors, [("t", "d")])
     assert "'image_name_history': []" in text
+
+
+# ── Рантайм-стор vn_gal: решения разблокировки и виды кадра ──────────────────
+
+STORE_REL = "game/framework/00_core/090_gallery.rpy"
+
+
+def _store_module(repo_root, registry, seen_images=None, unlocked=None):
+    """Стор vn_gal, исполненный без движка: тело `init python in vn_gal` — обычный
+    Python, а его внешний мир это persistent, renpy.seen_image и реестр паков.
+    Подставляем ровно их и получаем настоящие функции, а не их пересказ."""
+    tail = (repo_root / STORE_REL).read_text(encoding="utf-8") \
+        .partition("python in vn_gal:")[2]
+    assert tail, f"{STORE_REL}: блок `python in vn_gal:` не найден"
+    body = []
+    for line in tail.splitlines():
+        if line.strip() and not line.startswith("    "):
+            break                     # блок кончился (default persistent.… и т. п.)
+        body.append(line)
+
+    persistent = types.SimpleNamespace(
+        vn_gallery_unlocked=dict(unlocked or {}),
+        _seen_images=dict(seen_images or {}))
+    renpy_store = types.SimpleNamespace(
+        VN_GALLERY=registry,
+        VN_GALLERY_CATEGORIES={"cg": {"title_key": "k", "order": 10, "nsfw": False}},
+        vn=types.SimpleNamespace(
+            pack_registry=types.SimpleNamespace(owned=lambda pack: True)))
+    # store — рантайм-модуль движка, из которого стор берёт себе окружение.
+    fake_store = types.ModuleType("store")
+    fake_store.persistent = persistent
+    fake_store.renpy = types.SimpleNamespace(
+        store=renpy_store,
+        # Движковый seen_image — СТРОГОЕ сравнение кортежа имени
+        # (SDK renpy/exports/persistentexports.py): повторяем дословно.
+        seen_image=lambda name: tuple(name.split()) in persistent._seen_images)
+    fake_store.vn_log = lambda msg: None
+    ns = {}
+    sys.modules["store"] = fake_store
+    try:
+        exec(compile(textwrap.dedent("\n".join(body)), STORE_REL, "exec"), ns)
+    finally:
+        del sys.modules["store"]
+    return types.SimpleNamespace(**ns)
+
+
+def _registry_from(tmp_path, items, shots_docs=None):
+    """Реестр так, как его собирает компилятор: тесты стора не выдумывают форму
+    записи, иначе они разъехались бы с эмиттером и ничего не проверяли."""
+    _mk_assets(tmp_path, "cg/ch01/a.webp", "cg/ch01/a.thumb.webp", "cg/ch01/b.webp",
+               "shots/ch01/s030/sunset.thumb.webp")
+    rep, errors = _Rep(), []
+    text = _emit_gallery(tmp_path, _doc(items), set(), set(), set(), {}, rep, errors,
+                         [("t", "d")], shots_docs=shots_docs)
+    assert errors == []
+    return ast.literal_eval(text.split("define VN_GALLERY = ", 1)[1])
+
+
+def test_store_unlocks_shot_by_tag_and_attribute(repo_root, tmp_path):
+    """Липкие атрибуты слоёв доезжают в _seen_images вместе с именем шота, и их
+    порядок произволен — поэтому шот засчитывается по тегу+атрибуту, а не целым
+    кортежем. Проверяем оба конца: свой шот открыт, чужой — нет."""
+    registry = _registry_from(tmp_path, _shot_item(), SHOTS_DOCS)
+    seen = {("shot_ch01_s030", "sunset", "mira_casual"): True}
+    gal = _store_module(repo_root, registry, seen_images=seen)
+    assert gal.is_unlocked("shot_sunset") is True
+
+    other = {("shot_ch01_s030", "dawn", "mira_casual"): True}
+    gal2 = _store_module(repo_root, registry, seen_images=other)
+    assert gal2.is_unlocked("shot_sunset") is False
+
+
+def test_store_shot_unlock_accepts_historical_name(repo_root, tmp_path):
+    registry = _registry_from(tmp_path, _shot_item(), SHOTS_DOCS)
+    registry["shot_sunset"]["image_name_history"] = ["shot_ch01_s030 dusk"]
+    gal = _store_module(repo_root, registry,
+                        seen_images={("shot_ch01_s030", "dusk"): True})
+    assert gal.is_unlocked("shot_sunset") is True
+
+
+def test_store_flat_image_still_needs_exact_name(repo_root, tmp_path):
+    """Регрессия: у плоского ассета имя образа сравнивается целиком — иначе
+    «cg ch01 a» открывался бы показом любого другого cg ch01."""
+    registry = _registry_from(tmp_path, {
+        "cg_a": {"category": "cg", "kind": "image", "asset": "cg/ch01/a",
+                 "title_key": "t", "unlock": {"seen_image": True}}})
+    gal = _store_module(repo_root, registry,
+                        seen_images={("cg", "ch01", "b"): True})
+    assert gal.is_unlocked("cg_a") is False
+    gal2 = _store_module(repo_root, registry,
+                         seen_images={("cg", "ch01", "a"): True})
+    assert gal2.is_unlocked("cg_a") is True
+
+
+def test_store_looks_walk_layer_variants(repo_root, tmp_path):
+    """Виды кадра шота: одометр по слоям, первый вид — как в игре (auto)."""
+    registry = _registry_from(tmp_path, _shot_item(), SHOTS_DOCS)
+    gal = _store_module(repo_root, registry)
+    assert gal.looks(registry["shot_sunset"]) == [
+        "shot_ch01_s030 sunset mira_auto",
+        "shot_ch01_s030 sunset mira_school",
+        "shot_ch01_s030 sunset mira_casual",
+    ]
+    # Два вариативных слоя: разряды младше — выше по z-порядку
+    two = dict(registry["shot_sunset"], shot_layers=[
+        {"layer": "env", "options": ["env_day", "env_night"]},
+        {"layer": "mira", "options": ["mira_school", "mira_casual"]}])
+    assert gal.looks(two) == [
+        "shot_ch01_s030 sunset env_day mira_school",
+        "shot_ch01_s030 sunset env_day mira_casual",
+        "shot_ch01_s030 sunset env_night mira_school",
+        "shot_ch01_s030 sunset env_night mira_casual",
+    ]
+
+
+def test_store_looks_of_flat_item_are_asset_and_variants(repo_root, tmp_path):
+    registry = _registry_from(tmp_path, {
+        "cg_a": {"category": "cg", "kind": "image", "asset": "cg/ch01/a",
+                 "variants": ["cg/ch01/b"], "title_key": "t",
+                 "unlock": {"always": True}}})
+    gal = _store_module(repo_root, registry)
+    assert gal.looks(registry["cg_a"]) == ["assets/cg/ch01/a.webp",
+                                           "assets/cg/ch01/b.webp"]

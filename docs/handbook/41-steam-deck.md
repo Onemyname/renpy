@@ -141,7 +141,7 @@ tar xjf build/dist/0.1.5-public/vn-*-linux.tar.bz2 -C build/steam/content/public
 | `controller_first()` → фуллскрин + масштаб 1.4 | **автоматически** | нет (форсировать вручную) | нет (форсировать вручную) |
 | Steam Input, оверлей, скриншоты `STEAM+R1` | да | **да** (даёт клиент, не игра) | нет, пока не добавили в Steam |
 | Ачивки, `dlc_installed`, Steam Cloud | да | нет | нет |
-| Экранная клавиатура Deck для `renpy.input` | да | нет (`00steam.rpy:704-705` гейтит по варианту `steam_deck`) | нет |
+| Экранная клавиатура Deck для `renpy.input` | да | нет (`00steam.rpy:704-705` гейтит по варианту `steam_deck`) | нет — и не понадобится: свободного ввода не будет ([ADR-0016](../adr/0016-no-free-text-input.md)) |
 | Готово в этом репозитории | **нет** — `appid: null`, ключа `depots` нет, аплоад ручной (раскладка депотов при этом рабочая, §2.3) | да | да |
 | Скорость итерации | минуты (аплоад + докачка) | ~минута | секунды |
 
@@ -416,7 +416,7 @@ STATUS: PARTIAL. Норма «≥ 48 px» соблюдена сознатель�
 
 Проверять сегодня **нечего**: `renpy.input` в проекте не вызывается ни разу (grep по `game/` и `tools/vn/src/` — 0 попаданий). `screen input(prompt)` объявлен (`core_screens.rpy:59-66`) как контракт движка, но в него никто не заходит: сейв пишется `FileSave(slot)` без имени (`components.rpy:277`), поиска и полей ввода в UI нет.
 
-Практический вывод для будущего: первая же фича с текстовым вводом (имя героя, подпись сейва) на Deck заработает бесплатно, а **вне** Deck на паде — нет: OSK движка гейтится вариантом `steam_deck`, и в Big Picture на десктопе поле ввода останется без клавиатуры. Разбор и предлагаемое решение — [42-big-picture.md](42-big-picture.md) §5.
+**И проверять больше не придётся: свободного текстового ввода в игре не будет** — [ADR-0016](../adr/0016-no-free-text-input.md) (принято 2026-08-18). Решение принято по G8 (введённая игроком строка непереводима и не склоняется), а не по платформе, поэтому «на Deck заработает бесплатно, а в Big Picture на десктопе — нет» перестало быть разрывом: поля ввода нет. Заодно ADR фиксирует факт, который легко принять за выход из ситуации: **встроенная OSK у движка есть** (`renpy/common/00touchkeyboard.rpy`, включатель `config.touch_keyboard`, проверено прогоном на десктопе), но она **ASCII-only** — русское имя ею не набрать, поэтому её включение тоже отклонено. `screen input` остаётся как контракт движка, `input_enter` на A/RT — как готовая половина пути. Разбор — [42-big-picture.md](42-big-picture.md) §5.7.
 
 ### 7.5 Производительность и время загрузки
 
@@ -566,7 +566,7 @@ ls .vncache/smoke/
 
 ```bash
 # Тулинг (нужно то же окружение, в котором стоит vn: tools/vn/.venv)
-python -m pytest tools/vn/tests -q                       # 278 passed
+python -m pytest tools/vn/tests -q                       # 373 passed
 python -m pytest tools/vn/tests/test_platform.py -q      # 10 passed
 
 # Память сцены в профиле Deck и в профиле 4K-монитора
@@ -601,7 +601,7 @@ vn release validate --flavor patron                      # 21 строка: 20 P
 | **Читать перед изменением** | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) (норматив), `../../game/framework/00_core/035_platform.rpy` (весь, 89 строк), `../../game/framework/20_ui/scale.rpy` (весь, 57 строк), `../../game/framework/20_ui/input.rpy` (весь, 41 строка), `../../game/framework/20_ui/components.rpy:142-153` (`vn_ui.hint`), `../../game/options.rpy:12-17`, `../../project.yaml:13-15,20-33,57-65`, `$RENPY_SDK/renpy/main.py:155-300` (`choose_variants`), `$RENPY_SDK/renpy/common/00steam.rpy:962-1060` (`steam_preinit`/`steam_init`/варианты), `$RENPY_SDK/renpy/common/00build.rpy:421-432` (форматы пакетов), `$RENPY_SDK/renpy/display/im.py:732-763` (`get_oversampled_image`), `../../tools/vn/src/vn/release.py:150-326`, `../../tools/vn/src/vn/cli.py:301-393,1571-1656` |
 | **Не трогать** | `game/generated/**` — генерат (`platform.gen.rpy`, `render.gen.rpy`, `version.gen.rpy`); `build/**` — артефакты (`.gitignore:20`); дефолтные пад-биндинги движка (`00keymap.rpy` в SDK); steam_api-библиотеки — их в репозитории нет и добавлять нельзя (лицензия Valve) |
 | **Зависимости (что ломается ниже по течению)** | `scale.rpy:19` → **все** интерфейсные кегли `gui.*` и минимумы `2*Borders` панелей ADR-0009. `scale.rpy:42` → четыре потребителя `gui.overscan_pad` (`quick_menu.rpy:17,19`, `gallery.rpy:144`, `build_overlay.rpy:15-16`, `core_screens.rpy:91,122,126,511-512`). `035_platform.rpy` → `gui.ui_scale`, `config.default_fullscreen`, ownership-гейт, ачивки. `input.rpy` → раскладка пада во всех контекстах. `project.yaml: render.screen` → вся вёрстка (координаты и кегли заданы в этих пикселях) и расчёт letterbox. `release.py:_DIST_SUFFIX` (`:158-162`) → форматы архивов, которые понимает `vn release steam`; `_flatten_wrapper_dir` (`:186-212`) → раскладка депота и Launch Options в Steamworks; оба под `test_platform.py:96-157` |
-| **Валидация** | `python -m pytest tools/vn/tests -q` → 278 passed → `vn assets memory --scale 1` и `--scale 2` → `vn test oversample --scale 2` → `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` + просмотр `.vncache/smoke/` глазами → `vn release build --flavor patron --package linux` → `vn release validate --flavor patron` |
+| **Валидация** | `python -m pytest tools/vn/tests -q` → 373 passed → `vn assets memory --scale 1` и `--scale 2` → `vn test oversample --scale 2` → `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` + просмотр `.vncache/smoke/` глазами → `vn release build --flavor patron --package linux` → `vn release validate --flavor patron` |
 | **Частые ошибки** | 1) Считать, что запуск на Deck сам даёт вариант `steam_deck` — его даёт только успешный `steamapi.InitFlat()`, то есть App ID + библиотека Valve. 2) Ждать от `--package linux` зипа: Ren'Py 8.5.3 даёт `tar.bz2` — раскладка депотов это понимает (§2.3), но всё, что делаете рядом руками, считайте от фактического формата. Путь А блокируют `appid`/`depots` и ручной аплоад, а не формат архива. 3) Объяснять «мыльные текстуры на Deck» поломкой конвейера — `draw_per_virt` < 1, `@2` не грузятся by design. 4) Проверять `config.default_fullscreen` на непустом persistent — он применяется только на первом запуске. 5) Задавать `RENPY_VARIANT="steam_deck"` без `medium touch` — список вариантов заменяется целиком. 6) Считать `vn test smoke` проверкой пада — событий `pad_*` в автопилоте нет. 7) Искать Steam-проверку в релизном гейте — её там нет ни одной. 8) Считать `gui.overscan_pad` относящимся к Deck — он гейтится `is_big_picture()`, а не `is_steam_deck()`, и на встроенном экране Deck обязан быть нулевым (проверить фактическое `bigpicture=` в `log.txt`, §4.1) |
 
 ---

@@ -61,7 +61,7 @@
     vn build                             # lint -> ассеты -> компилятор -> loc import -> бюджеты
     vn content lint                      # 33 диагностики, 5-10 c
     vn play  |  vn dev                   # запуск | запуск + watch content/ и assets_src/
-    python -m pytest tools/vn/tests -q   # 278 тестов, ~5-9 c
+    python -m pytest tools/vn/tests -q   # 373 теста, ~5-9 c
 Обязательный хвост ЛЮБОЙ правки:
     vn content lint && vn build && python -m pytest tools/vn/tests -q
 Трогал рантайм/сейвы/локализацию — добавь: vn test smoke --picks 0,0 && vn save corpus
@@ -146,12 +146,12 @@
 
 | Правило | Конкретно в этом репозитории |
 |---|---|
-| Минимальный scope | Одна задача = один слой. Не «заодно» рефакторить `cli.py` (1930 строк) при правке одной сцены |
+| Минимальный scope | Одна задача = один слой. Не «заодно» рефакторить `cli.py` (2117 строк) при правке одной сцены |
 | Переиспользовать существующее | `vn_*`-фасад рантайма, `gui.*`-токены, `vn_frame_*`-панели, схемы из `tools/schemas/` |
 | Не менять архитектуру попутно | Норма раздела 0 меняется ADR-ом отдельным коммитом, а не строчкой внутри фичи |
 | Данные — в YAML + схему | Новая сущность = `content/<зона>/*.yaml` + `tools/schemas/<name>@1.schema.json` + правило в `tools/vn/src/vn/content/lint.py` + тест. Хардкод в `.rpy` не переводится, не валидируется и не мигрируется |
 | UI — через `vn_*` и `gui.*` | Литерал в экране не попадёт в PO-экстракцию (`content/ui/strings.yaml:3-4`); число вместо токена ломает панели (ADR-0009) |
-| Обновить тесты | `tools/vn/tests/` — 24 файла `test_*.py` + `conftest.py`, 278 тестов. Новое правило линтера без теста в `test_lint.py` — незакрытая правка |
+| Обновить тесты | `tools/vn/tests/` — 27 файлов `test_*.py` + `conftest.py`, 373 теста. Новое правило линтера без теста в `test_lint.py` — незакрытая правка |
 | Обновить документацию | Назвать, какой файл хендбука затронут, и поправить его. Если изменился статус механизма — поправить пометку |
 
 ### 2.3. После
@@ -161,7 +161,7 @@
 vn content lint                          # 33 диагностики
 vn build                                 # lint -> ассеты -> компилятор -> loc import -> бюджеты
 vn content compile --check               # «check: генерат свеж»
-python -m pytest tools/vn/tests -q       # 278 passed
+python -m pytest tools/vn/tests -q       # 373 passed
 
 # 2. Дополнительно по зоне правки
 vn loc keys --check                      # трогал реплики/меню в *.scene.rpy
@@ -344,7 +344,7 @@ grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
 |---|---|
 | `vn content lint` | OK, 3 предупреждения (перечислены ниже) |
 | `vn build` | `build: OK`; generated: 2 записано, 17 без изменений |
-| `python -m pytest tools/vn/tests -q` | 278 passed |
+| `python -m pytest tools/vn/tests -q` | 373 passed |
 | `vn test smoke --picks 0,0` | НЕ ЗАПУСКАЛОСЬ: нет RENPY_SDK в этой сессии |
 
 ## Затронутые нормы
@@ -360,7 +360,7 @@ ADR не требуется: раздел 0 ARCHITECTURE.md не менялся.
 
 Требования к содержанию:
 
-- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `278 passed`.
+- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `373 passed`.
 - **Не запускавшаяся проверка называется прямо** («НЕ ЗАПУСКАЛОСЬ: причина»), а не опускается. Типичная причина в этом репозитории — отсутствие `RENPY_SDK` в bash-сессии агента.
 - **Предупреждения линтера перечисляются**, даже если exit 0: `vn content lint` печатает warnings, которые в главе со `status: release` станут ошибками (G15).
 - **Затронутые нормы называются номерами** — это язык ревью в этом проекте.
@@ -445,7 +445,7 @@ git diff --stat                                  # объём правки со�
 vn content lint
 vn build
 vn content compile --check
-python -m pytest tools/vn/tests -q               # 278 passed
+python -m pytest tools/vn/tests -q               # 373 passed
 
 # 4. По зоне правки
 vn loc keys --check                              # реплики/меню

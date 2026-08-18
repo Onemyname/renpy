@@ -44,8 +44,12 @@ jobs:
           echo "RENPY_SDK=$SDK" >> "$GITHUB_ENV"
 
       - name: Сборка, движковый lint, тесты на свежем SDK
+        # pytest — в подоболочке из tools/vn: набор импортирует себя как пакет
+        # (test_verify_regressions: from tests.test_compile import BASE_OUTPUTS), и без
+        # tools/vn на sys.path падает ModuleNotFoundError. Остальные команды остаются в
+        # корне репозитория: и vn, и `renpy.sh . lint` отсчитывают проект от cwd.
         run: |
           xvfb-run -a vn build
           xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint
-          xvfb-run -a python -m pytest tools/vn/tests -q
+          (cd tools/vn && xvfb-run -a python -m pytest tests -q)
           xvfb-run -a vn test smoke --picks 0,0

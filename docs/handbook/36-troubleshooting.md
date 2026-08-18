@@ -371,9 +371,9 @@ ls game/assets/**  # сравнить
 ### В галерее нет превью
 
 **Симптомы:** ячейки галереи показывают полноразмерный CG или пусто.
-**Вероятная причина:** превью — отдельная трансформация `img_thumb`, дающая `<name>.thumb.webp` (длинная сторона 512, quality 80 — из `render.thumb`; `tools/vn/src/vn/assets/pipeline.py:250-259`, `:631-635`). Она порождается только для растровых классов с `thumb: true` — сегодня это `bg` и `cg`, то есть источники из `assets_src/art/{cg,backgrounds}/**` (текст предупреждения компилятора всё ещё называет прежнее имя `png2webp_cg_thumb`).
-**Диагностика:** `ls game/assets/cg/**/*.thumb.webp`.
-**Решение:** положить CG именно в `assets_src/png/cg/…` и пересобрать.
+**Вероятная причина:** превью — отдельная трансформация. У плоских кадров это `img_thumb`, дающая `<name>.thumb.webp` (длинная сторона 512, quality 80 — из `render.thumb`); она порождается только для растровых классов с `thumb: true` — сегодня это `bg` и `cg`, то есть источники из `assets_src/art/{cg,backgrounds}/**`. У **послойного шота** превью делает `shot_thumb` — композит `env` + первый вариант каждого слоя в z-порядке `shots@1` → `game/assets/shots/<chNN>/<sNNN>/<shot>.thumb.webp`; если шот не объявлен в `shots@1`, конвейер выдаёт предупреждение и превью не собирает. Текст предупреждения компилятора называет ровно ту трансформацию, которой не хватает (`img_thumb` или `shot_thumb`) — прежнее имя `png2webp_cg_thumb` из вывода убрано.
+**Диагностика:** `ls game/assets/cg/**/*.thumb.webp` и `ls game/assets/shots/*/*/*.thumb.webp`.
+**Решение:** положить CG именно в `assets_src/art/cg/…` и пересобрать; для шота — проверить, что `sNNN.shots.yaml` объявляет шот, слои и `order`.
 **Профилактика:** см. [15-gallery.md](15-gallery.md) — там разобрано, как галерея резолвит `thumb` и что делать, если его нет.
 
 ### Положили `.ogg`, а `game/assets/audio/` не появилось
@@ -932,7 +932,7 @@ vn assets validate                     # assets validate: OK
 vn assets video validate               # video validate: OK (N файлов)
 vn loc keys --check                    # все строки с id, ledger свеж
 vn loc report                          # de/en/pseudo — 136/136 (100%), fuzzy 0
-python -m pytest tools/vn/tests -q     # 278 passed
+python -m pytest tools/vn/tests -q     # 373 passed
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (N скриншотов)
 vn save check && vn save corpus        # 2 фикстур: schema1-demo мигрирует 1 -> 2, schema2-demo уже на 2
 vn release validate --flavor public    # 20 строк: 18 PASS + 2 WARN (зрелость контента, драфты озвучки), exit 0

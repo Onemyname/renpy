@@ -313,6 +313,15 @@ pseudo: 136/136 (100%), fuzzy: 0
 
 **NOT IMPLEMENTED** (`../ARCHITECTURE.md`:2789-2814): `vn loc report --gate`, `--format json|md`, `--manifest`, разбивка по доменам × языкам, конфиг `gates:` / `tier:`, исключение draft-глав из гейтов.
 
+### Перевод — вход для черновой озвучки дубляжа
+
+`vn voice tts chNN --lang <код>` (реализовано 2026-08-18, [23-audio.md](23-audio.md) §8.1) синтезирует черновые дубли и для языков, отличных от исходного. Текст он берёт **из PO этого языка** (`loc/po/<code>/chNN.po` через `po._load_translations`), а не из исходной реплики: иначе en-пак говорил бы по-русски, и озвученный черновик дубляжа врал бы о состоянии перевода. Отсюда два практических следствия:
+
+- **порядок работ фиксирован:** `vn loc keys` → `vn loc extract` → перевод в PO → `vn loc import` → и только потом `vn voice tts --lang en`. Наоборот не получится;
+- **реплика без перевода даёт warning и пропускается**, а не молчаливую подмену исходным текстом. То есть покрытие озвучки дубляжа никогда не обгонит покрытие перевода — по этому же признаку `vn voice validate` видит дыру.
+
+Гейта «озвучка дубляжа ≥ покрытия перевода» нет и не планируется: озвучка едет языковыми паками, а не основным дистрибутивом ([30-packs-and-dlc.md](30-packs-and-dlc.md)).
+
 ## Как изменить / Как расширить
 
 ### Чеклист: новая строка UI
@@ -378,7 +387,7 @@ vn release validate --flavor public    # среди 21 проверки — ге
 
 | Механизм | Где заявлен | Статус |
 |---|---|---|
-| Озвучка: TTS-черновики `vn voice tts`; voice-паки отдельными депотами; `vn loc report --domain voice` | `../ARCHITECTURE.md`:2861-2892 | `vn voice tts` — заглушка фазы 2 (`cli.py:1278-1281`, exit 3), паки не собираются, `--domain voice` не существует. Остальной голосовой контур (`voice@1`, `vn voice manifest\|import\|validate`, `vn.voice_path` с деградацией язык→оригинал) — **IMPLEMENTED**, покрытие описывают манифесты на тех же say-id из ledger — [23-audio.md](23-audio.md) §8 |
+| Озвучка: voice-паки отдельными депотами; `vn loc report --domain voice` | `../ARCHITECTURE.md`:2861-2892 | Паки не собираются, `--domain voice` не существует (покрытие озвучки печатает `vn voice validate --report`). Голосовой контур целиком **IMPLEMENTED**, включая `vn voice tts` — с 2026-08-18 заглушек в домене `vn voice` нет; покрытие описывают манифесты на тех же say-id из ledger — [23-audio.md](23-audio.md) §8, §8.1 |
 | RTL (`config.rtl`, RLO/PDF-обрамление, зеркалирование UI, `pseudo_rtl`) | `../ARCHITECTURE.md`:2822-2824 | NOT IMPLEMENTED |
 | Шрифтовые фолбэк-цепочки (`FontGroup`, `fonts.gen.rpy`, kinsoku, `line_breaking`) | `../ARCHITECTURE.md`:2836-2860 | NOT IMPLEMENTED — есть только целиковая подмена по ролям (`fonts.*` в `language.yaml`), без смешивания глифов из нескольких шрифтов |
 | Множественные формы, форматирование чисел/дат (`loc/locale_rules.yaml`) | `../ARCHITECTURE.md`:2892 | NOT IMPLEMENTED |
@@ -412,7 +421,7 @@ vn build --check        # + валидация разметки переводо
 vn build                # полный прогон, регенерирует game/tl/
 vn release validate --flavor public    # 21 проверка, включая покрытие ≥ 98%
 python -m pytest tools/vn/tests/test_loc.py -q    # 25 тестов локализации
-python -m pytest tools/vn/tests -q                # 278 тестов целиком
+python -m pytest tools/vn/tests -q                # 373 теста целиком
 ```
 
 Ручная проверка в игре: запустить, переключить язык в настройках, убедиться что меняются **и диалоги, и интерфейс**. На `pseudo` (виден только при `config.developer`) вся видимая строка должна быть акцентирована и обрамлена `[...]`; не изменившийся текст = литерал мимо `vn_loc.t()`.

@@ -1,5 +1,9 @@
 # Build-bridge (G24): анализ авторских scene.rpy ПАРСЕРОМ САМОГО Ren'Py.
-# Компилятор (tools/vn) вызывает: renpy.exe <root> vn_analyze <out.json> <файлы...>
+# Компилятор (tools/vn) вызывает:
+#   renpy.exe <root> vn_analyze <out.json> --files-from <список>
+# Список файлом, а не аргументами: на десятках тысяч сцен argv не влезает в ARG_MAX
+# (подробности и цифры — в tools/vn/src/vn/content/analyze.py). Прямые аргументы
+# мост понимает по-прежнему — им его зовут руками при отладке одной сцены.
 # Команда исполняется после init, до главного цикла; return False = не запускать игру.
 # Регексы по .rpy запрещены архитектурой — это единственный легальный способ разбора.
 
@@ -135,17 +139,38 @@ init python:
                 if isinstance(block, list):
                     _vn_walk_ast(block, entry)
 
+    def _vn_analyze_inputs(args, ap):
+        """Единый список входов из двух источников: файла-списка и прямых аргументов.
+
+        Разбор один и тот же — источник влияет только на то, ОТКУДА взялись строки
+        путей, а не на то, что с ними делают. Файл-список: по пути на строку,
+        UTF-8, пустые строки игнорируются; rstrip снимает CRLF, если список
+        писала рука на Windows."""
+        import io
+
+        files = list(args.files)
+        if args.files_from:
+            with io.open(args.files_from, "r", encoding="utf-8") as f:
+                files += [line.rstrip("\r\n") for line in f if line.strip()]
+        if not files:
+            ap.error("нужен --files-from <список> либо пути сцен аргументами")
+        return files
+
     def _vn_analyze_command():
         import io
         import json
 
         ap = renpy.arguments.ArgumentParser()
         ap.add_argument("out")
-        ap.add_argument("files", nargs="+")
+        ap.add_argument("--files-from", dest="files_from", default=None,
+                        metavar="FILE",
+                        help="Файл со списком scene.rpy: по пути на строку, UTF-8.")
+        ap.add_argument("files", nargs="*",
+                        help="Пути scene.rpy аргументами (отладка одной сцены руками).")
         args = ap.parse_args()
 
         result = {"renpy": renpy.version_only, "files": {}}
-        for fn in args.files:
+        for fn in _vn_analyze_inputs(args, ap):
             entry = {
                 "labels": [], "jumps": [], "calls": [], "returns": [],
                 "menus": [], "says": 0, "say_list": [], "menu_markers": [],

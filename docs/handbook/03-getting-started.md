@@ -111,10 +111,10 @@ vn play      # запуск через SDK; закрытие окна возвр
 
 Для долгой итерации вместо `vn play` берите `vn dev`: он поднимает игру и вотчер по `content/` + `assets_src/`, пересобирая при каждой правке (§6).
 
-### Шаг 7. `pytest` — 278 тестов (1 мин)
+### Шаг 7. `pytest` — 373 теста (1 мин)
 
 ```bash
-cd tools/vn && python -m pytest tests -q; cd -     # -> 278 passed
+cd tools/vn && python -m pytest tests -q; cd -     # -> 373 passed
 ```
 
 **Две тонкости, из-за которых у новичка «тесты не такие»:**
@@ -297,7 +297,7 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
 
 ## 6. Ежедневные команды
 
-В CLI сейчас **20 групп/команд верхнего уровня и 64 листовых команды**, из них 54 живых и 10 заглушек (`exit 3`). Ниже — те, что нужны каждый день; полный указатель «задача → команда» — [44-how-do-i.md](44-how-do-i.md).
+В CLI сейчас **20 групп/команд верхнего уровня и 68 листовых команд**, из них 59 живых и 9 заглушек (`exit 3`). Ниже — те, что нужны каждый день; полный указатель «задача → команда» — [44-how-do-i.md](44-how-do-i.md).
 
 | Команда | Что делает | Когда | Статус |
 |---|---|---|---|
@@ -310,7 +310,7 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
 | `vn assets memory` | во что обходится худшая сцена и влезает ли она в кэш образов | после тяжёлого шота/фона | IMPLEMENTED (`cli.py:572-604`) |
 | `vn test oversample --scale 2` | **движком** подтверждает, что варианты `@2` реально подхватываются | после правки render-профиля | IMPLEMENTED (`cli.py:1628-1660`) |
 | `vn test smoke` | in-process автопилот: проходит игру, скриншоты в `.vncache/smoke/`, гейт cold-start против бюджета 30 с | перед PR с изменением флоу | IMPLEMENTED (`cli.py:1571-1626`) |
-| `python -m pytest tests -q` (из `tools/vn`) | 278 тестов в 24 файлах, ~4 с | при правке `tools/vn/` | IMPLEMENTED |
+| `python -m pytest tests -q` (из `tools/vn`) | 373 теста в 27 файлах, ~16 с | при правке `tools/vn/` | IMPLEMENTED |
 | `vn doctor` | самодиагностика | когда «вчера работало» | IMPLEMENTED |
 
 Что `vn dev` **не** отслеживает: `loc/`, `packs/`, `game/`, `tools/`, `project.yaml` — пути watch-а захардкожены как `root/assets_src` и `root/content` (`devloop.py:33-34`). Правку пака или PO-файла придётся пересобирать руками.
@@ -385,7 +385,7 @@ vn play
 | `бюджет: game/assets: … МБ > бюджета 20000 МБ` + `ошибка: бюджеты G19 превышены` | превышен размер-бюджет из `project.yaml:57-65` | это предохранитель от аварии (зацикленный экспорт, забытый 8K-вариант), а не потолок игры; [32-performance-and-scalability.md](32-performance-and-scalability.md) |
 | `vn build` зелёный, но `vn doctor` красный по SDK | тёплый кэш анализа (`.vncache/analyze-*.json`) | `rm .vncache/analyze-*.json` и пересоберите — увидите настоящее состояние |
 | Кракозябры вместо русского в `vn --help` под Git Bash | реконфигурация stdout не успевает отработать до eager-опции `--help` (`cli.py:49-55`) | смотрите help из PowerShell |
-| `эта команда появится в фазе N (раздел 8 ARCHITECTURE.md)`, exit **3** | команда — честная заглушка `_stub` (`cli.py:34-38`) | это не поломка. Полный список: `vn migrate`, `vn shell` (фаза 2), `vn char new|validate` (фаза 1), `vn char sheet`, `vn voice tts`, `vn test replay`, `vn test paths` (фаза 2), `vn save migrate`, `vn test screens` (фаза 3) |
+| `эта команда появится в фазе N (раздел 8 ARCHITECTURE.md)`, exit **3** | команда — честная заглушка `_stub` (`cli.py:34-38`) | это не поломка. Полный список (9, состав закреплён тестом `test_cli.py`): `vn migrate`, `vn shell` (фаза 2), `vn char new|validate` (фаза 1), `vn char sheet`, `vn test replay`, `vn test paths` (фаза 2), `vn save migrate`, `vn test screens` (фаза 3) |
 | `Error: No such command '…'`, exit **2** | команды не существует вовсе | не путать с exit 3: `vn validate`, `vn build --use-artifact`, `vn content lint --strict`, `vn test perf`, `vn bootstrap --role` в CLI отсутствуют |
 
 Exit-коды CLI: `0` успех, `1` ошибка проверки/сборки (**всегда с сообщением, никогда голым трейсбеком** — `cli.py:22-24`), `2` usage error от click, `3` не реализовано в этой фазе (`cli.py:34-38`).
@@ -433,7 +433,7 @@ vn loc report                      # de/en/pseudo — 136/136 (100%), fuzzy 0
 vn voice validate --report         # ch01 [ru]: покрыто 14/14 (100%)
 vn assets memory                   # память: OK
 vn test oversample --scale 2       # oversample: OK
-(cd tools/vn && python -m pytest tests -q)   # 278 passed
+(cd tools/vn && python -m pytest tests -q)   # 373 passed
 vn play                            # игра стартует
 ```
 

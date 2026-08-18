@@ -493,7 +493,7 @@ vn build                      # ожидается: build: OK
 vn build --check              # ожидается: check: генерат свеж
 
 # Тесты тулинга
-python -m pytest tools/vn/tests -q          # 278 тестов
+python -m pytest tools/vn/tests -q          # 373 теста
 python -m pytest tools/vn/tests/test_compile.py tools/vn/tests/test_lint.py \
                 tools/vn/tests/test_schemas.py tools/vn/tests/test_scene_pipeline.py \
                 tools/vn/tests/test_verify_regressions.py -q

@@ -1,7 +1,9 @@
 # Quick menu (новый): back / history / skip / auto / save / qsave / load / prefs.
 # Подключение — через config.overlay_screens (образец — build_overlay.rpy):
 # прячется вместе с интерфейсом (клавиша H) и не требует правок say.
-# Высота кликабельной зоны ≥ 48px (норма геймпада/клавиатуры) — за счёт padding.
+# Высота кликабельной зоны ≥ 48px (норма геймпада/клавиатуры) — за счёт padding;
+# на тач-поставке пол зоны поднимает gui.touch_min (scale.rpy) — палец толще
+# курсора, и промах здесь стоит игроку случайного Rollback или Skip.
 
 init offset = 0
 
@@ -49,6 +51,10 @@ style vn_quick_button:
     padding (13, 17)
     background None
     hover_background Solid("#ffffff12")
+    # Пол хит-зоны: на десктопе токен = 0 и минимум не действует, на тач-поставке
+    # кнопка растёт до квадрата 48 dp (правило Material для пальца).
+    xminimum gui.touch_min
+    yminimum gui.touch_min
 
 style vn_quick_button_text:
     font gui.interface_semibold_font
@@ -58,3 +64,7 @@ style vn_quick_button_text:
     hover_color gui.selected_color
     selected_color gui.accent_color
     outlines [(1, "#00000059", 0, 1)]
+    # Подпись центрируется в увеличенной зоне; при touch_min = 0 бокс равен
+    # тексту, и выравнивание ничего не меняет.
+    xalign 0.5
+    yalign 0.5

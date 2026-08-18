@@ -66,6 +66,17 @@
           "type": "integer", "minimum": 16,
           "description": "-> config.image_cache_size_mb. Ren'Py трактует его как ПИКСЕЛЬНЫЙ лимит: cache_limit = value * 1024 * 1024 // 4"
         },
+        "mobile": {
+          "type": "object",
+          "description": "Мобильный профиль (Android/iOS). Отдельная ветка, а не второй проект: вариант mobile вставляет сам движок (renpy/main.py: choose_variants), эмиттер render.gen.rpy выбирает по нему лимит кэша, всё остальное общее",
+          "properties": {
+            "image_cache_mb": {
+              "type": "integer", "minimum": 16,
+              "description": "-> config.image_cache_size_mb под вариантом mobile. У мобильного процесса памяти в разы меньше десктопного, и переполнение кэша там дороже: не только фризы от перерасшифровки, но и убийство приложения системой. Проверяется мобильной моделью памяти (vn android preflight)"
+            }
+          },
+          "additionalProperties": false
+        },
         "cache_generations": {
           "type": "integer", "minimum": 2,
           "description": "Сколько сцен должно одновременно помещаться в кэш (текущая + предзагрузка следующей + запас). Делитель бюджета сцены"

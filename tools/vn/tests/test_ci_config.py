@@ -18,6 +18,25 @@ VN_BUILD = re.compile(r"\bvn\s+(?:release\s+)?build\b")
 GH_WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
 GITLAB_CI = REPO_ROOT / ".gitlab-ci.yml"
 
+# Куда положена каждая команда, у которой внешний тулчейн или прогон масштаба:
+# дешёвая диагностика — в MR-пайплайн, дорогое измерение — в nightly (G15).
+# Список ЗАМОРОЖЕН здесь: команда, реализованная без покрытия в CI, не ломает ни
+# один прогон — она просто никогда не запускается, и это выясняется у игрока.
+COMMAND_PLACEMENT = {
+    "vn release android preflight": "ci.yml",
+    "vn release android status": "ci.yml",
+    "vn release android build": "ci.yml",
+    "vn voice tts": "ci.yml",
+    "vn test corpus": "nightly.yml",
+}
+
+# Потолок масштаба ночного корпуса. 7.6 ARCHITECTURE.md приводит замеры (macOS
+# arm64, профиль full, 8 реплик на сцену): 100 сцен — 1,2 с, 2000 — 11,1 с,
+# 7000 — 21,2 МБ генерата и 277 МБ RSS. До 2000 сцен прогон остаётся секундами
+# на любом раннере; выше — это уже не «ночная проверка», а исследование, и его
+# место в ручном запуске с --keep, а не в расписании.
+CORPUS_SCENES_CEILING = 2000
+
 
 def _workflow(name):
     """Разобранный workflow по имени файла."""
@@ -47,6 +66,26 @@ def _github_jobs():
                 cmds.extend(_lines(step.get("run")))
             jobs[f"{wf.name}:{job_id}"] = cmds
     return jobs
+
+
+def _github_commands(workflow):
+    """Все строки shell одного workflow, по всем его джобам."""
+    return [cmd for job, cmds in _github_jobs().items()
+            if job.startswith(f"{workflow}:") for cmd in cmds]
+
+
+def _github_steps(needle, workflow=None):
+    """[(имя workflow, шаг)] — шаги, в run которых встречается подстрока.
+
+    Шаг целиком, а не строки shell: у него есть ещё working-directory и
+    continue-on-error, и они тоже меняют смысл прогона.
+    """
+    names = [workflow] if workflow else [wf.name for wf in GH_WORKFLOWS]
+    return [(name, step)
+            for name in names
+            for job in (_workflow(name).get("jobs") or {}).values()
+            for step in (job.get("steps") or [])
+            if any(needle in cmd for cmd in _lines(step.get("run")))]
 
 
 def _gitlab_jobs():
@@ -91,10 +130,10 @@ def test_lock_installed_before_editable():
                 f"{job}: editable-установка без предшествующего "
                 f"pip install -r tools/vn.lock — G17 не обеспечен"
             )
-    # 7 джоб GitHub (ci x2, nightly x2, canary, release, steam-upload) + 3 GitLab:
+    # 8 джоб GitHub (ci x2, nightly x3, canary, release, steam-upload) + 3 GitLab:
     # там строк установки две, но before_script шаблона .with-sdk разворачивается
     # и в build, и в test.
-    assert sites == 10, f"изменилось число мест установки тулчейна: {sites} != 10"
+    assert sites == 11, f"изменилось число мест установки тулчейна: {sites} != 11"
 
 
 def test_ffmpeg_installed_before_vn_build():
@@ -189,3 +228,98 @@ def test_nightly_runs_controller_first_variants():
     ci = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "RENPY_VARIANT" not in ci, (
         "вариантные прогоны переехали в ci — это минуты движка на каждый пуш (G15)")
+
+
+def test_commands_run_in_the_pipeline_they_belong_to():
+    """Раскладка G15 по командам: реализованная команда без прогона в CI не ломает
+    ничего — она просто никогда не запускается, и её поломку находит уже человек.
+    Обратная ошибка так же молчалива: измерительный прогон, переехавший в ci,
+    съедает бюджет MR-пайплайна не заметно для автора правки."""
+    for command, expected in COMMAND_PLACEMENT.items():
+        found = {wf for wf in ("ci.yml", "nightly.yml")
+                 if any(command in cmd for cmd in _github_commands(wf))}
+        assert expected in found, (
+            f"«{command}» не запускается в {expected} — команда есть, прогона нет")
+        if expected != "ci.yml":
+            assert "ci.yml" not in found, (
+                f"«{command}» переехала в MR-пайплайн — это дорого на каждый пуш (G15)")
+
+
+def test_android_preflight_runs_after_build():
+    """На пустом game/ предполётная проверка мобильного канала зелена всегда: и
+    размер против потолка, и модель памяти считаются ПО СОБРАННОМУ дереву. Шаг,
+    уехавший выше сборки, не краснеет — он становится ложно-зелёным, а это хуже
+    отсутствующего шага."""
+    checked = 0
+    for job, cmds in _github_jobs().items():
+        at = next((i for i, c in enumerate(cmds)
+                   if "vn release android preflight" in c), None)
+        if at is None:
+            continue
+        checked += 1
+        assert any(VN_BUILD.search(c) for c in cmds[:at]), (
+            f"{job}: vn release android preflight до сборки — потолок канала и бюджет "
+            f"памяти будут посчитаны по пустому game/")
+    assert checked, "ни одна джоба не зовёт android preflight — проверка выродилась"
+
+
+def test_missing_external_toolchains_are_asserted_not_silenced():
+    """RAPT и piper на раннере отсутствуют, и проверяется ровно одно: команда честно
+    называет отсутствующий тулчейн НЕнулевым кодом. Такой шаг ломается ровно двумя
+    способами, и оба тихие: `|| true`/continue-on-error глушат провал (шаг всегда
+    зелёный и ничего не проверяет), а `vn voice tts` без `--backend` берёт первый
+    доступный на машине бэкенд — стоит образу раннера обзавестись piper, и шаг
+    начнёт молча писать синтезированные мастера в assets_src (LFS-зона)."""
+    for command in ("vn release android status", "vn release android build",
+                    "vn voice tts"):
+        steps = _github_steps(command, "ci.yml")
+        assert len(steps) == 1, f"«{command}»: ожидался ровно один шаг, нашлось {len(steps)}"
+        _, step = steps[0]
+        assert not step.get("continue-on-error"), (
+            f"«{command}»: continue-on-error — провал тулчейна перестал быть провалом")
+        for cmd in _lines(step.get("run")):
+            if command in cmd:
+                assert "|| true" not in cmd, (
+                    f"«{command}»: провал заглушен `|| true` — шаг ничего не проверяет")
+                if command == "vn voice tts":
+                    assert "--backend" in cmd, (
+                        "vn voice tts без --backend возьмёт любой бэкенд раннера и "
+                        "запишет мастера в assets_src — бэкенд обязан быть пиннован")
+
+
+def test_pytest_runs_from_tools_vn():
+    """Набор импортирует сам себя как пакет (test_verify_regressions:
+    `from tests.test_compile import BASE_OUTPUTS`), и это работает только когда на
+    sys.path есть tools/vn — то есть когда pytest запущен ИЗ tools/vn, как его
+    запускает разработчик. `python -m pytest tools/vn/tests` из корня репозитория
+    даёт ModuleNotFoundError: No module named 'tests': один красный тест, который
+    локально не воспроизводится ничем. Ровно тот класс поломок, ради которого
+    существует этот файл.
+
+    Формы две, потому что таковы шаги: у отдельного шага — working-directory,
+    внутри блока из нескольких команд (canary) — подоболочка, потому что остальные
+    команды блока отсчитывают проект от корня репозитория.
+    """
+    steps = _github_steps("pytest")
+    assert steps, "ни один workflow не гоняет pytest — проверка выродилась"
+    for workflow, step in steps:
+        for cmd in _lines(step.get("run")):
+            if "pytest" not in cmd:
+                continue
+            assert "cd tools/vn" in cmd or step.get("working-directory") == "tools/vn", (
+                f"{workflow}: pytest запускается не из tools/vn ({cmd!r}) — "
+                f"набор не сможет импортировать себя")
+
+
+def test_nightly_corpus_scale_is_explicit_and_bounded():
+    """Масштаб корпуса — это и есть содержание прогона, поэтому он задаётся явно, а
+    не дефолтами команды (дефолты меняются вместе с CLI, ночная проверка — нет).
+    Потолок держит ночь конечной: без него безобидная правка числа превращает
+    измерение в исследование на десятки минут."""
+    runs = [cmd for cmd in _github_commands("nightly.yml") if "vn test corpus" in cmd]
+    assert len(runs) == 1, f"ожидался ровно один ночной прогон корпуса, нашлось {len(runs)}"
+    scenes = re.search(r"--scenes\s+(\d+)", runs[0])
+    assert scenes, "масштаб не задан явно — прогон поедет на дефолтах vn test corpus"
+    assert int(scenes.group(1)) <= CORPUS_SCENES_CEILING, (
+        f"--scenes {scenes.group(1)} > потолка {CORPUS_SCENES_CEILING}: ночной прогон "
+        f"перестаёт быть проверкой и становится исследованием (7.6)")

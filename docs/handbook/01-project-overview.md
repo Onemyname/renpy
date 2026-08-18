@@ -42,7 +42,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 
 Главная ставка проекта: **тулинг — это второй продукт размером с игру**
 (`ARCHITECTURE.md:4070`). Поэтому здесь есть свой компилятор контента, свой ассет-конвейер,
-свой релизный гейт и 278 тестов на всё это — при одной черновой главе игры.
+свой релизный гейт и 373 теста на всё это — при одной черновой главе игры.
 
 ## 2. Монетизация: флейворы `public` и `patron`
 
@@ -97,14 +97,14 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 | Языковые пакеты | 3 — `en`, `de`, `pseudo`; покрытие 136/136 (100 %), fuzzy 0 | `loc/po/` |
 | JSON Schema | 39 (включая `assets_manifest@1` и `build_info@2`) | `tools/schemas/` |
 | Выходы Content Compiler | 21 `*.gen.rpy` + `manifest.json` | `game/generated/` |
-| Тесты | 278 собирается (276 функций `def test_*` в 24 файлах, два параметризованы) | `tools/vn/tests/` |
+| Тесты | 373 собирается (в 27 файлах; часть тестов параметризована) | `tools/vn/tests/` |
 | Фикстуры сейв-корпуса | 2 — `schema1-demo.save` (схема 1, `ch01_s010`) и `schema2-demo.save` (схема 2, `ch01_s020`) | `ci/fixtures/saves/` |
 | ADR | 14 решений + шаблон; 13 приняты, ADR-0008 предложен, ни один не заменён | `docs/adr/` |
 | Релизы | 0.1.0 … 0.1.4 | `docs/CHANGELOG.md` |
 
 Проверенные прогоны на машине владельца (Windows 11, RTX 5080, Python 3.12.10):
 `vn doctor` → 8 PASS / 0 FAIL; `vn build` → `build: OK` за ~0.3 с на прогретом кэше;
-`pytest tools/vn/tests -q` → 278 passed; `vn release validate --flavor public` → 20 строк (18 PASS + 2 WARN: зрелость контента и черновые дубли озвучки), exit 0;
+`pytest tools/vn/tests -q` → 373 passed; `vn release validate --flavor public` → 20 строк (18 PASS + 2 WARN: зрелость контента и черновые дубли озвучки), exit 0;
 `vn release validate --flavor patron` → 21 строка (20 PASS + 1 WARN), exit 0 (в том числе `сейв-корпус: 2 фикстур`); `vn save corpus` → OK, обе фикстуры загружены и мигрированы;
 `vn pipeline doctor` → PASS (ffmpeg 8.1.2 VP9, ComfyUI `D:\ComfyUI`, PyTorch 2.11.0+cu128,
 6 обязательных моделей, DAZ Studio 6), WARN на неустановленные Virt-a-Mate и The Sims 4.
@@ -152,7 +152,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 | Релизный гейт `vn release validate --flavor` | **IMPLEMENTED** | 21 проверка; своих правил почти нет — агрегирует чужие. Исключение — «зрелость контента» (`early_content` vs `status` глав), у неё нет другого владельца; она самоактивирующаяся — на этом дереве даёт WARN (ни одной `release`-главы), оба флейвора зелёные, строгость включится с первой `release`-главой |
 | Флейворы `public`/`patron` | **IMPLEMENTED** | Все четыре рычага гейтят: `nsfw` (исключение ассетов + рантайм), `watermark`/`patron_tag`, `packs` (рантайм-гейт установленности: `VN_PACKS ∩ vn_build.packs`), `early_content` (проверка зрелости контента в релизном гейте). Build-time-исключения скриптов паков нет и не будет — гейт логический (G9) |
 | Паки/DLC | **PARTIALLY IMPLEMENTED** | `pack build` кладёт в zip только манифест и сцены. **Установленность** пака теперь честная: `installed()` сверяет `VN_PACKS` со списком поставки `vn_build.packs`, поэтому в `public`-сборке пак `nsfw` невидим. Провайдер **владения** подключён (ADR-0014, `035_platform.rpy:75`), но работает только при живом Steam и только для пака с `steam_dlc_appid`. Охранник «главы объявлены, а генерата нет» ожил и падает ДО создания zip (`cli.py:1624-1627`), но проверяет «хоть одна сцена на весь пак», а не по каждой главе |
-| Платформы: Steam / Steam Deck / Big Picture | **PARTIALLY IMPLEMENTED** (фасад — IMPLEMENTED) | [ADR-0014](../adr/0014-platform-services.md): единственная точка касания — `00_core/035_platform.rpy` (под гард-тестом), ачивки и DLC-владение через штатный стек движка, controller-first UI и авто-масштаб. Открыто: `vn release steam` готовит VDF и раскладку депотов (включая Linux-`tar.bz2`, [40](40-steamworks.md) §4.3), но в репозитории нет ни `appid`, ни `depots` — до конца команда не доходит; аплоад — ручной `steamcmd`, аплоад автоматизирован ручным workflow `steam-upload`, но без секретов и App ID это no-op; на живом железе не проверено ничего ([43](43-steam-qa.md)), controller-вёрстку теперь ночью снимает CI в двух геймпадных профилях ([42](42-big-picture.md) §5.10). Android — NOT IMPLEMENTED ([39-platforms.md](39-platforms.md)) |
+| Платформы: Steam / Steam Deck / Big Picture | **PARTIALLY IMPLEMENTED** (фасад — IMPLEMENTED) | [ADR-0014](../adr/0014-platform-services.md): единственная точка касания — `00_core/035_platform.rpy` (под гард-тестом), ачивки и DLC-владение через штатный стек движка, controller-first UI и авто-масштаб. Открыто: `vn release steam` готовит VDF и раскладку депотов (включая Linux-`tar.bz2`, [40](40-steamworks.md) §4.3), но в репозитории нет ни `appid`, ни `depots` — до конца команда не доходит; аплоад — ручной `steamcmd`, аплоад автоматизирован ручным workflow `steam-upload`, но без секретов и App ID это no-op; на живом железе не проверено ничего ([43](43-steam-qa.md)), controller-вёрстку теперь ночью снимает CI в двух геймпадных профилях ([42](42-big-picture.md) §5.10). Android — **PARTIALLY IMPLEMENTED** с 2026-08-18: канал `vn release android status\|preflight\|build` поверх штатного `android_build` лаунчера, мобильный профиль памяти и тач-токены есть, но ни одного APK/AAB не собрано — тулчейн Android ставится только лаунчером Ren'Py ([39-platforms.md](39-platforms.md) §2.1) |
 | QA-автопилот `vn test smoke` | **IMPLEMENTED** | `test replay`/`paths` — фаза 2, `test screens` — фаза 3, `test perf` не существует |
 | Сейв-корпус `vn save check` / `save corpus` | **IMPLEMENTED** | 2 фикстуры, и одна из них на **старой** схеме: `schema1-demo.save` (`vn_save_schema=1`) поднимается до 2, в `log.txt` появляется `[vn] migration 0002` — миграция реально исполняется в игре. Линия имён `ci/fixtures/rpyc-line/` пересобрана: 52 `.rpyc` |
 | Хранилище сырцов (`type: file`) | **IMPLEMENTED / НИ РАЗУ НЕ ЗАПУСКАЛОСЬ** | `~/vn-assets-store` не существует; `type: s3` — честный `StorageError` |
@@ -260,7 +260,7 @@ Ren'Py и релизный конвейер — все четыре с `ffmpeg` 
 vn doctor                              # ожидаем 8 PASS, 0 FAIL
 vn build                               # ожидаем "build: OK"
 vn build --check                       # CI-режим: генерат свеж? (упадёт после нового коммита — см. ниже)
-python -m pytest tools/vn/tests -q     # ожидаем 278 passed
+python -m pytest tools/vn/tests -q     # ожидаем 373 passed
 vn release validate --flavor public    # 20 строк: 18 PASS + 2 WARN (зрелость контента, драфты озвучки), exit 0
 vn release validate --flavor patron    # 21 строка: 20 PASS + 1 WARN, exit 0 (в т.ч. «сейв-корпус: 2 фикстур»)
 vn save corpus                         # обе фикстуры грузятся; schema1-demo мигрирует 1 -> 2

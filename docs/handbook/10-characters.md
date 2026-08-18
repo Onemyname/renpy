@@ -75,7 +75,7 @@ matrix:
 | `id` | да | `^[a-z][a-z0-9_]{1,23}$`, **обязан равняться имени папки** | линтер `lint.py:309`, эмиттеры | IMPLEMENTED |
 | `name` | да | непустая строка, исходный язык | `emit_characters` → `Character(_('Мира'), …)` (`scenes.py:315`) | IMPLEMENTED |
 | `color` | да | `^#[0-9a-fA-F]{6}$` | `Character(color=…)` — цвет имени в say-окне | IMPLEMENTED |
-| `voice_tag` | нет | `^[a-z][a-z0-9_]*$` | `Character(voice_tag=…)` | IMPLEMENTED — тег даёт per-character mute в настройках; сама озвучка привязана не к тегу, а к say-id через манифесты `voice@1` (см. [23-audio.md](23-audio.md) §8; заглушкой осталась только `vn voice tts`) |
+| `voice_tag` | нет | `^[a-z][a-z0-9_]*$` | `Character(voice_tag=…)` | IMPLEMENTED — тег даёт per-character mute в настройках; сама озвучка привязана не к тегу, а к say-id через манифесты `voice@1` (см. [23-audio.md](23-audio.md) §8). Голос и темп синтеза черновиков задаются флагами `vn voice tts`, а не полями персонажа |
 | `canvas` | нет | `[int,int]`, обе ≥1 | `assets/pipeline.py` — холст всех мастеров персонажа | IMPLEMENTED (ADR-0012): расхождение = ошибка сборки |
 | `matrix` | нет | объект, ниже | `emit_images` (`images.py:357-510`) | IMPLEMENTED |
 | `animated` | нет | `{backend: live2d\|spine, source, map}` | **никто** — 0 совпадений `animated`/`live2d`/`spine` в коде тулинга | NOT IMPLEMENTED (G12, ARCHITECTURE.md:75) |
@@ -266,7 +266,7 @@ label ch01_s020__body:
 | `animated` (Live2D/Spine, G12) | NOT IMPLEMENTED | схема есть, потребителей нет; `assets_src/{live2d,spine_export}/characters/` содержат только `.gitkeep` |
 | Персонажи в паках | NOT IMPLEMENTED | компилятор берёт **только** `content/characters/*/character.yaml` (`compile.py:878`); `packs/<id>/characters/` сканирует лишь G7-проверка линтера (`lint.py:366-373`). Персонаж, объявленный в паке, не попадёт ни в `characters.gen.rpy`, ни в `images.gen.rpy` |
 | Переименование персонажа | NOT IMPLEMENTED (by design) | `renames@1` имеет секции `scenes`, `deleted_scenes`, `labels`, `vars` — секции `characters` **нет**. Комментарий линтера прямо говорит: «главы и персонажи механизма переименования не имеют» (`lint.py:320-321`) |
-| `vn voice tts` (TTS-черновики; остальной `vn voice` и озвучка по say-id — работают, [23-audio.md](23-audio.md) §8) | NOT IMPLEMENTED (фаза 2) | `cli.py:1278-1281` |
+| Пер-персонажный TTS-профиль (`voice.tts_draft` в `character.yaml`) | NOT IMPLEMENTED — схема `character@1` знает из голосового только `voice_tag` и стоит с `additionalProperties: false`; сам `vn voice tts` работает и берёт бэкенд/голос/темп из флагов ([23-audio.md](23-audio.md) §8.1) | `tools/schemas/character@1.schema.json`, `voice.py: resolve_tts` |
 | Автоматизация рендера DAZ/VaM/Sims4 | NOT IMPLEMENTED | есть только валидаторы деклараций и запись провенанса; headless-вызова нет |
 
 ---
@@ -504,7 +504,7 @@ vn build                        # полный проход, включая laye
 vn build --check                # CI-режим: свеж ли генерат (ничего не пишет)
 vn loc report                   # покрытие переводов, включая имя персонажа
 vn test smoke                   # автопилот: сцены реально проходятся, спрайты не падают
-python -m pytest tools/vn/tests -q   # 278 тестов
+python -m pytest tools/vn/tests -q   # 373 теста
 vn play                         # глазами
 ```
 

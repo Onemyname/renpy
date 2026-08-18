@@ -622,7 +622,7 @@ vn test smoke --picks 0,0                # прогон ветки автопи�
 vn test smoke --picks 0,1 --lang en
 vn save check && vn save corpus          # совместимость сейвов (2 фикстуры)
 vn release validate --flavor public      # 21 проверка релизного гейта
-python -m pytest tools/vn/tests -q       # 278 тестов тулинга
+python -m pytest tools/vn/tests -q       # 373 теста тулинга
 ```
 
 Ожидаемое сейчас: `vn content lint` → `lint: OK (0 предупреждений)`; `vn build` → `build: OK`; `vn release validate --flavor patron` → 21 строка (20 PASS + 1 WARN), exit 0 (среди них — `PASS сейв-корпус: 2 фикстур`); у `--flavor public` — 20 строк, 0 FAIL и второй WARN по зрелости контента, exit 0.

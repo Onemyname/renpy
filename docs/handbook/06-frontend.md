@@ -171,7 +171,7 @@ vn test smoke --picks 0,0                    # автопрохождение, �
 | Экран | Файл:строка | Назначение | Ключевые особенности |
 |---|---|---|---|
 | `say(who, what)` | `core_screens.rpy:21` | реплика | прозрачное окно + `vn_scrim`; id `window`/`who`/`what` сохранены (контракт движка); CTC-ромб; **зарезервирована колонка под side-image — сам side-image NOT IMPLEMENTED** |
-| `input(prompt)` | `core_screens.rpy:59` | ввод текста | тот же scrim; потребителей нет (`renpy.input` не вызывается), но подтверждение с пада есть — A/RT шлют `input_enter` (`input.rpy:37-38`) |
+| `input(prompt)` | `core_screens.rpy:59` | ввод текста | тот же scrim; потребителей нет (`renpy.input` не вызывается) и не появится — свободный текстовый ввод запрещён [ADR-0016](../adr/0016-no-free-text-input.md); экран остаётся **контрактом движка** осознанно (набор объявляется целиком, а неоформленное поле хуже оформленного). Подтверждение с пада уже есть — A/RT шлют `input_enter` (`input.rpy:37-38`) |
 | `navigation()` | `core_screens.rpy:71` | левая рельса / колонка меню | ветвится по `main_menu`; пункт «Главы» только если `vn_registry.chapters()`; «Галерея» — если `vn_gal.categories()` (:110); «Достижения» — если `vn_ach.visible_ids()` (:116) |
 | `main_menu()` | `core_screens.rpy:179` | главное меню | `tag menu`; wordmark `[config.name!t]`; «Продолжить» появляется по `renpy.newest_slot()` (:195). Ни «Галереи», ни «Достижений» в колонке нет — оба доступны только через рельсу игрового меню (осознанно, как у галереи) |
 | `save()` / `load()` / `file_menu` | `core_screens.rpy:253,257,261` | сейвы | 4 страницы + autopage, сетка 3×2 из `vn_save_slot` |
@@ -374,7 +374,7 @@ vn test smoke --picks 0,0                  # автопрохождение; с�
 vn test smoke --lang pseudo                # псевдолокаль +40% длины строк — проверка вёрстки
 vn test smoke --lang de
 vn test oversample --scale 2               # движок обязан подобрать @2-варианты панелей
-python -m pytest tools/vn/tests -q         # 278 тестов (в т.ч. 15 в test_ui_panels.py, 6 в test_crash_handler.py,
+python -m pytest tools/vn/tests -q         # 373 теста (в т.ч. 15 в test_ui_panels.py, 6 в test_crash_handler.py,
                                            #            10 в test_achievements.py)
 vn release validate --flavor patron        # релизный гейт (21 проверка); у public штатный WARN по зрелости, exit 0
 ```

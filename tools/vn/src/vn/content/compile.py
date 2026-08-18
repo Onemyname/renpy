@@ -210,6 +210,48 @@ def _gallery_asset_paths(asset_id: str) -> tuple[str, str]:
     return f"assets/{asset_id}{ext}", asset_id.replace("/", " ")
 
 
+GALLERY_SHOT_PREFIX = "shots/"
+GALLERY_SHOT_RE = re.compile(r"^shots/(ch\d{2})/(s\d{3})/([a-z][a-z0-9_]*)$")
+
+
+def _shot_image_name(shot_ref: str) -> str | None:
+    """shots/<chNN>/<sNNN>/<shot> -> имя образа «<тег сцены> <атрибут шота>».
+
+    None — если ссылка не адресует шот целиком (например, это id отдельного слоя
+    из renames.assets): галерея работает с шотом, а не со слоями."""
+    from .images import shot_tag
+
+    m = GALLERY_SHOT_RE.match(shot_ref)
+    if not m:
+        return None
+    return f"{shot_tag(m.group(1), m.group(2))} {m.group(3)}"
+
+
+def _gallery_shot_index(shots_docs) -> dict[str, list[dict]]:
+    """Логический id шота (shots/<chNN>/<sNNN>/<shot>) -> переключаемые слои.
+
+    Просмотрщик галереи листает ровно то, что объявлено в shots@1: по одному
+    атрибуту на слой, своего списка вариантов галерея не ведёт (второй источник
+    правды разъехался бы с кадром сцены)."""
+    index: dict[str, list[dict]] = {}
+    for chapter_id, _rel, doc in (shots_docs or []):
+        scene_short = doc["scene"]
+        for shot_id, spec in (doc.get("shots") or {}).items():
+            layers = []
+            for layer in spec["order"]:
+                lspec = spec["layers"][layer]
+                variants = lspec.get("variants") or []
+                if not variants:
+                    continue        # безвариантный слой переключать нечем
+                # Слой с переменной гардероба начинается с <layer>_auto: первый вид
+                # в галерее — тот, что игрок видел в игре, дальше явные варианты.
+                options = [f"{layer}_auto"] if lspec.get("var") else []
+                layers.append({"layer": layer,
+                               "options": options + [f"{layer}_{v}" for v in variants]})
+            index[f"{GALLERY_SHOT_PREFIX}{chapter_id}/{scene_short}/{shot_id}"] = layers
+    return index
+
+
 def _asset_history(renames: dict) -> dict[str, list[str]]:
     """Текущий логический id ассета -> его исторические имена.
 
@@ -230,7 +272,7 @@ def _asset_history(renames: dict) -> dict[str, list[str]]:
 def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: set[str],
                   chapter_ids: set[str], var_registry: set[str],
                   ui_strings: dict, rep: CompileResult, errors: list[str],
-                  sources, renames: dict | None = None) -> str:
+                  sources, renames: dict | None = None, shots_docs=None) -> str:
     """Реестр галереи (gallery@1) + валидация: битые ассеты/превью/категории/якоря
     ловятся до запуска игры. UI получает только данные — ни списка элементов в
     коде, ни логики разблокировки."""
@@ -249,6 +291,7 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
     items: dict[str, dict] = {}
     used_assets: set[str] = set()
     history = _asset_history(renames or {})
+    shot_index = _gallery_shot_index(shots_docs)
 
     for rel, doc in sorted(gal_docs):
         for cid, spec in (doc.get("categories") or {}).items():
@@ -273,18 +316,42 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
             errors.append(f"{rel}: {gid}: категория {cat!r} не объявлена "
                           f"(есть: {', '.join(sorted(categories)) or 'ни одной'})")
         kind = spec["kind"]
-        assets = [spec["asset"], *(spec.get("variants") or [])]
-        for a in assets:
-            used_assets.add(a)
-            path, _name = _gallery_asset_paths(a)
-            if assets_built and not (assets_dir / path[len("assets/"):]).is_file():
-                errors.append(f"{rel}: {gid}: ассета {a} нет в game/assets "
-                              f"(ожидался {path}) — прогоните vn build")
-            if kind == "movie" and not a.startswith("mov/"):
-                errors.append(f"{rel}: {gid}: kind: movie, но ассет {a} не из mov/")
-            if kind == "image" and a.startswith("mov/"):
-                errors.append(f"{rel}: {gid}: kind: image, но ассет {a} — видео")
-        # Превью: для картинок берём из конвейера, для видео обязателен явный
+        asset = spec["asset"]
+        # Шот — единственная ссылка без файла на диске: кадр собирает layeredimage
+        # сцены, поэтому проверяется он не по game/assets, а по декларациям shots@1.
+        shot = None
+        if kind == "shot":
+            shot = shot_index.get(asset)
+            if not asset.startswith(GALLERY_SHOT_PREFIX):
+                errors.append(f"{rel}: {gid}: kind: shot, но ассет {asset} — не шот "
+                              f"(ожидался shots/<chNN>/<sNNN>/<shot>)")
+            elif shot is None and shot_index:
+                # Сверка — только когда шоты в этой компиляции вообще есть: зона
+                # глав может в неё не входить (скелет, подмножество контента), и
+                # тогда «шота нет» значило бы «главы не собраны». Тот же приём,
+                # что у якорей unlock.scene/chapter_done/var.
+                errors.append(
+                    f"{rel}: {gid}: шота {asset} нет в декларациях shots@1 "
+                    f"(есть: {', '.join(sorted(shot_index)) or 'ни одного'}) — "
+                    f"галерея адресует шот именем образа, а не файлом (ADR-0013)")
+            if spec.get("variants"):
+                errors.append(f"{rel}: {gid}: variants у kind: shot не бывает — "
+                              f"варианты слоёв объявлены в shots@1 и листаются сами")
+        elif asset.startswith(GALLERY_SHOT_PREFIX):
+            errors.append(f"{rel}: {gid}: ассет {asset} — послойный шот, "
+                          f"а kind: {kind} (нужен kind: shot)")
+        else:
+            for a in [asset, *(spec.get("variants") or [])]:
+                used_assets.add(a)
+                path, _name = _gallery_asset_paths(a)
+                if assets_built and not (assets_dir / path[len("assets/"):]).is_file():
+                    errors.append(f"{rel}: {gid}: ассета {a} нет в game/assets "
+                                  f"(ожидался {path}) — прогоните vn build")
+                if kind == "movie" and not a.startswith("mov/"):
+                    errors.append(f"{rel}: {gid}: kind: movie, но ассет {a} не из mov/")
+                if kind == "image" and a.startswith("mov/"):
+                    errors.append(f"{rel}: {gid}: kind: image, но ассет {a} — видео")
+        # Превью: картинке и шоту его делает конвейер, видео — постер-кадр
         thumb = spec.get("thumb")
         if thumb:
             used_assets.add(thumb)
@@ -296,31 +363,37 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
             small = f"assets/{thumb}{GALLERY_THUMB_SUFFIX}"
             resolved_thumb = small if (assets_dir / small[len("assets/"):]).is_file() \
                 else tpath
-        elif kind == "image":
-            cand = f"assets/{spec['asset']}{GALLERY_THUMB_SUFFIX}"
-            if assets_built and not (assets_dir / cand[len("assets/"):]).is_file():
-                rep.warnings.append(
-                    f"{rel}: {gid}: нет превью {cand} — сетка будет крутить "
-                    f"полноразмерный кадр (ожидается png2webp_cg_thumb)")
-                cand = _gallery_asset_paths(spec["asset"])[0]
-            resolved_thumb = cand
-        else:
+        elif kind == "movie":
             # Постер-кадр конвейер делает сам (ADR-0012): ручной thumb у видео
             # больше не обязателен, а заглушка в сетке — редкое исключение.
             from ..assets.pipeline import POSTER_SUFFIX
 
-            cand = f"assets/{spec['asset']}{POSTER_SUFFIX}"
+            cand = f"assets/{asset}{POSTER_SUFFIX}"
             if not assets_built or (assets_dir / cand[len("assets/"):]).is_file():
                 resolved_thumb = cand
             else:
                 rep.warnings.append(f"{rel}: {gid}: нет постер-кадра {cand} — "
                                     f"в сетке будет заглушка")
                 resolved_thumb = None
+        else:
+            cand = f"assets/{asset}{GALLERY_THUMB_SUFFIX}"
+            if assets_built and not (assets_dir / cand[len("assets/"):]).is_file():
+                # Без миниатюры сетка тянет полный кадр: у картинки — файл целиком,
+                # у шота — всю композицию слоёв. Работает, но стоит мегабайты кэша.
+                rep.warnings.append(
+                    f"{rel}: {gid}: нет превью {cand} — "
+                    + ("сетка будет крутить полноразмерный кадр "
+                       "(ожидается трансформация img_thumb)" if kind == "image" else
+                       "сетка будет собирать шот целиком "
+                       "(ожидается трансформация shot_thumb)"))
+                cand = _gallery_asset_paths(asset)[0] if kind == "image" else None
+            resolved_thumb = cand
 
         unlock = dict(spec["unlock"])
-        if "seen_image" in unlock and kind != "image":
-            errors.append(f"{rel}: {gid}: unlock.seen_image работает только "
-                          f"для kind: image (движковый _seen_images)")
+        if "seen_image" in unlock and kind == "movie":
+            errors.append(f"{rel}: {gid}: unlock.seen_image не работает для "
+                          f"kind: movie — движок пишет в _seen_images показ образа, "
+                          f"а не проигрывание Movie (возьмите якорь scene/beat)")
         if "scene" in unlock and known_scenes and unlock["scene"] not in known_scenes:
             errors.append(f"{rel}: {gid}: unlock.scene {unlock['scene']} — такой сцены нет")
         if "chapter_done" in unlock and chapter_ids \
@@ -338,11 +411,20 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
                 rep.warnings.append(f"{rel}: {gid}: {key} {k!r} нет в "
                                     f"content/ui/strings.yaml — покажется сырой ключ")
 
-        full_path, image_name = _gallery_asset_paths(spec["asset"])
         # Исторические имена образа: игрок мог увидеть кадр под прошлым id, и
         # переименование файла не должно стирать ему открытую CG (ADR-0012).
-        past = [_gallery_asset_paths(old)[1]
-                for old in history.get(spec["asset"], [])]
+        if kind == "shot":
+            # Файла у шота нет: и в просмотрщик, и в unlock идёт ИМЯ ОБРАЗА — тег
+            # layeredimage сцены плюс атрибут шота. Оно выводится из самой ссылки,
+            # поэтому известно даже без декларации (её отсутствие — ошибка выше).
+            image_name = _shot_image_name(asset) or ""
+            full_path = image_name
+            past = [name for name in
+                    (_shot_image_name(old) for old in history.get(asset, []))
+                    if name]
+        else:
+            full_path, image_name = _gallery_asset_paths(asset)
+            past = [_gallery_asset_paths(old)[1] for old in history.get(asset, [])]
         items[gid] = {
             "category": cat,
             "kind": kind,
@@ -350,6 +432,7 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
             "image_name": image_name,
             "image_name_history": past,
             "variants": [_gallery_asset_paths(v)[0] for v in (spec.get("variants") or [])],
+            "shot_layers": shot or [],
             "thumb": resolved_thumb,
             "title_key": spec["title_key"],
             "desc_key": spec.get("desc_key"),
@@ -383,6 +466,11 @@ def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: se
         "# Gallery Registry (gallery@1): читается store vn_gal\n"
         "# (framework/00_core/090_gallery.rpy) и экранами галереи. Категории и\n"
         "# элементы — данные: UI не содержит ни списка, ни логики разблокировки.\n"
+        "#\n"
+        "# asset — то, что просмотрщик кладёт в кадр: путь файла у image/movie и\n"
+        "# ИМЯ ОБРАЗА «<тег сцены> <шот>» у kind: shot (файла у шота нет, ADR-0013).\n"
+        "# shot_layers — переключаемые варианты слоёв шота из shots@1 (пусто у\n"
+        "# остальных видов): по одному атрибуту на слой, первый — как было в игре.\n"
         f"define VN_GALLERY_CATEGORIES = {cats!r}\n\n"
         f"define VN_GALLERY = {items!r}\n"
     )
@@ -1124,7 +1212,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     gallery_out = _emit_gallery(
         root, gal_docs, {u.full_id for u in units}, {c["id"] for c in chapters},
         var_registry, ui_strings, result, gal_errors, gal_sources or [proj_src],
-        renames=renames)
+        renames=renames, shots_docs=shots_docs)
     if gal_errors:
         raise CompileError(
             f"{len(gal_errors)} ошибок галереи:\n" + "\n".join(gal_errors))

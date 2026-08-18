@@ -3,7 +3,7 @@
 > **Статус подсистемы:** IMPLEMENTED (инструментальная часть) / PARTIAL (процессная) — цикл «правка → `vn build` → `vn play`/`vn dev` → `vn content lint` → `pytest` → commit» работает целиком и покрыт CI из 4 GitHub-workflow; **но** процесс вокруг него держится на дисциплине одного человека: PR-процесса нет (71 коммит линейно в `main`, ноль merge-коммитов), все хэндлы в `CODEOWNERS` — плейсхолдеры, pre-commit-хука из `ARCHITECTURE.md:659` не существует, `ci.yml` **не** триггерится на `pull_request` (сознательно), а `.gitlab-ci.yml` устарел и вводит в заблуждение.
 > **Отвечает на вопрос:** «Я поправил файл — что запустить, чем проверить и как это закоммитить, чтобы CI не покраснел?»
 
-Всё, что делает разработчик руками, проходит через CLI `vn` (`../../tools/vn/src/vn/cli.py`, 1930 строк, 20 групп/команд верхнего уровня, 64 листовых команды — 54 живых и 10 заглушек `exit 3`). CI — тонкая обёртка над теми же командами: `.github/workflows/ci.yml:1-2` явно фиксирует правило «вся логика — в CLI `vn`, конфиг тонкий». Поэтому локальный прогон и CI отличаются только окружением (Linux + `xvfb-run`, у Ren'Py нет headless-режима — норма G23), а не набором проверок.
+Всё, что делает разработчик руками, проходит через CLI `vn` (`../../tools/vn/src/vn/cli.py`, 2117 строк, 20 групп/команд верхнего уровня, 68 листовых команд — 59 живых и 9 заглушек `exit 3`). CI — тонкая обёртка над теми же командами: `.github/workflows/ci.yml:1-2` явно фиксирует правило «вся логика — в CLI `vn`, конфиг тонкий». Поэтому локальный прогон и CI отличаются только окружением (Linux + `xvfb-run`, у Ren'Py нет headless-режима — норма G23), а не набором проверок.
 
 Указатель «задача → команда» — [44-how-do-i.md](44-how-do-i.md); установка окружения — [03-getting-started.md](03-getting-started.md).
 
@@ -250,7 +250,7 @@ vn loc keys --check                             # say-id и ledger свежи (G
 xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint   # Linux; на Windows исполняемый файл — renpy.exe (cli.py:286)
 vn test oversample --scale 2                    # движок подтверждает подхват @2
 vn content compile --check                      # генерат свеж, без записи
-(cd tools/vn && python -m pytest tests -q)      # 278 тестов, ~4 с
+(cd tools/vn && python -m pytest tests -q)      # 373 теста, ~16 с
 ```
 
 **Pre-push, если трогали рантайм, сейвы, локализацию или релизный путь** — то, что `ci.yml` не гоняет вообще:
@@ -396,7 +396,7 @@ vn content lint                              # lint: OK (0 предупрежд�
 vn content compile --check                   # генерат свеж
 vn loc keys --check
 vn test oversample --scale 2                 # oversample: OK
-(cd tools/vn && python -m pytest tests -q)   # 278 passed
+(cd tools/vn && python -m pytest tests -q)   # 373 passed
 
 # Релизный путь цел (то, что ci.yml не гоняет)
 vn test smoke --picks 0,0                    # RESULT.txt = OK: vn_end_of_content

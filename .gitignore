@@ -20,6 +20,28 @@ traceback.txt
 build/
 .vncache/
 .vnstorage.local.yaml
+# Движок сорит saves/ + cache/ + log.txt рядом с КАТАЛОГОМ ИГРЫ, и делает это всегда:
+# <gamedir>/saves — вторая локация сейвов помимо пользовательской ($RENPY_SDK/renpy/
+# savelocation.py:702-704), а FileLocation каталог создаёт. Для боевого проекта это
+# game/ — покрыто выше. Но у basedir без подкаталога game/ каталогом игры становится
+# сам basedir: `renpy.sh . <команда>` из tools/vn (так каталог и появился —
+# воспроизводится дословно) кладёт след в tools/vn/. Наш тулинг так не умеет — каждый
+# запуск движка получает абсолютный корень репозитория из find_root() (cli.py,
+# content/analyze.py, android.py), и полный прогон pytest не создаёт ничего — чинить
+# нечего, но ручной промах не должен светиться в git status.
+# Путь точный: голое saves/ съело бы ci/fixtures/saves/, где фикстуры сейв-корпуса
+# лежат В git (G6). cache/ целиком, а не *.rpyb: движок пишет туда и shaders.txt.
+tools/vn/saves/
+tools/vn/cache/
+# Ключи подписи Android: лаунчер (Android -> Generate Keys) создаёт android.keystore
+# и bundle.keystore в КОРНЕ проекта, рядом с project.yaml. Игнор стоит ДО генерации
+# ключей, а не после: ключ в истории git считается скомпрометированным навсегда
+# (история переписывается только силой и у всех клонов), а его потеря = невозможность
+# обновить уже опубликованное приложение. Бэкап — вне репозитория.
+# Из дистрибутива их исключает game/options.rpy (build.classify("**.keystore", None)),
+# из репозитория — эта строка; что оба контура на месте, проверяет
+# vn release android preflight (android.py: keystore_leaks).
+*.keystore
 
 # ═══ Python ═══
 __pycache__/

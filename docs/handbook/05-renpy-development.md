@@ -355,7 +355,7 @@ vn content lint                        # декларации, граф, layout 
 vn content compile --check             # генерат актуален? (тут ловится контракт .rpy)
 vn build                               # полный проход: lint -> assets -> compile -> loc import
 vn build --check                       # ничего не пишет; падает, если генерат отстал
-python -m pytest tools/vn/tests -q     # 278 тестов, в т.ч. контракт-тесты engine_compat
+python -m pytest tools/vn/tests -q     # 373 теста, в т.ч. контракт-тесты engine_compat
 vn play                                # запуск руками
 vn test smoke                          # in-process автопилот: прогон сцен + бюджет cold start
 vn save corpus                         # 2 фикстуры сейвов загружаются и мигрируют

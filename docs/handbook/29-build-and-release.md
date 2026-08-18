@@ -3,7 +3,7 @@
 > **Статус подсистемы:** IMPLEMENTED — путь «тег `v*` → гейт из 21 проверки → дистрибутивы обоих флейворов → GitHub Release» работает целиком и обкатан пятью реальными релизами (`v0.1.0`, `v0.1.2`…`v0.1.5`); **и все четыре рычага флейвора теперь гейтят**: `nsfw`, `watermark` + `--patron-token`, `packs` (рантайм-гейт установленности, §3.2) и `early_content` (проверка №4 гейта, §5.1 — самоактивирующаяся: на этом дереве, где ни одна глава ещё не `release`, она даёт WARN и оба флейвора собираются, а с первой `release`-главой становится строгой сама). **Но** кэш `.rpyc` ключуется версией без флейвора, у Steam-поставки автоматизирована только подготовка (`vn release steam`: VDF + раскладка депотов — она понимает форматы всех трёх платформ, включая `tar.bz2` для Linux, §14.2), а **аплоад делает человек** и в этом чекауте команду вообще не получится довести до конца: `platform.steam.appid: null` и ключа `depots` нет (§14.1), а QA на живом железе (Windows/mac/Deck) не автоматизировано ничем.
 > **Отвечает на вопрос:** «Глава готова. Что запустить, в каком порядке, что проверить на каждой стадии и как выпустить сборку, которую не стыдно отдать игроку?»
 
-Весь релизный путь живёт в двух файлах: `../../tools/vn/src/vn/release.py` (629 строк — гейт, флейворы, build-info, changelog, бюджеты, Steam-поставка) и группы `package` / `release` / `pack` в `../../tools/vn/src/vn/cli.py` (1930 строк; группа `release` начинается на `:1720`). CI — тонкая обёртка: `.github/workflows/release.yml` не содержит ни одной релизной проверки собственного изготовления, он вызывает `vn release build`. Поэтому всё, что делает CI на теге, воспроизводится локально одной командой.
+Весь релизный путь живёт в двух файлах: `../../tools/vn/src/vn/release.py` (629 строк — гейт, флейворы, build-info, changelog, бюджеты, Steam-поставка) и группы `package` / `release` / `pack` в `../../tools/vn/src/vn/cli.py` (2117 строк; группа `release` начинается на `:1720`). CI — тонкая обёртка: `.github/workflows/release.yml` не содержит ни одной релизной проверки собственного изготовления, он вызывает `vn release build`. Поэтому всё, что делает CI на теге, воспроизводится локально одной командой.
 
 Сквозной практический маршрут от «правлю сцену» до «нажал setlive» — §13. Если нужен только чеклист перед тегом — §15.
 
@@ -495,15 +495,15 @@ $ vn assets memory
 
 ## 12. CI/CD
 
-Живой пайплайн — GitHub Actions: **5 workflow, 9 определений джоб** (на теге релизная `build` разворачивается матрицей в 2 прогона). Общее для всех: `actions/checkout@v4` с `with: {lfs: true}`, Python 3.12, установка тулчейна двумя шагами — `pip install --quiet -r tools/vn.lock` и следом `pip install --quiet -e "tools/vn[dev]"` (лок первым, G17), `SDL_AUDIODRIVER: dummy`, `PYTHONIOENCODING: utf-8`, движок под `xvfb-run -a` (headless-режима у Ren'Py нет, G23). Везде, где джоба доходит до `vn build`, раньше него ставится `ffmpeg`.
+Живой пайплайн — GitHub Actions: **5 workflow, 10 определений джоб** (на теге релизная `build` разворачивается матрицей в 2 прогона; ночная `corpus` добавлена 2026-08-18). Общее для всех: `actions/checkout@v4` с `with: {lfs: true}`, Python 3.12, установка тулчейна двумя шагами — `pip install --quiet -r tools/vn.lock` и следом `pip install --quiet -e "tools/vn[dev]"` (лок первым, G17), `SDL_AUDIODRIVER: dummy`, `PYTHONIOENCODING: utf-8`, движок под `xvfb-run -a` (headless-режима у Ren'Py нет, G23). Везде, где джоба доходит до `vn build`, раньше него ставится `ffmpeg`.
 
-**Оба этих инварианта — не соглашение, а тест.** `tools/vn/tests/test_ci_config.py` (**8 тестов**) парсит YAML конфигов и проверяет в том числе: (а) перед каждой editable-установкой идёт `pip install -r tools/vn.lock` (мест установки — 10: 7 джоб GitHub + 3 GitLab, где шаблон `.with-sdk` разворачивается в `build` и `test`); (б) в каждой GitHub-джобе, которая зовёт `vn build` или `vn release build`, `ffmpeg` ставится раньше; (в) вариантные прогоны живут в `nightly`, а не в `ci` (G15: MR-пайплайн держим под 10 минут). GitLab из проверки (б) исключён намеренно — конфиг исторический и вне паритета.
+**Эти инварианты — не соглашение, а тест.** `tools/vn/tests/test_ci_config.py` (**13 тестов**) парсит YAML конфигов и проверяет в том числе: (а) перед каждой editable-установкой идёт `pip install -r tools/vn.lock` (мест установки — 11: 8 джоб GitHub + 3 GitLab, где шаблон `.with-sdk` разворачивается в `build` и `test`); (б) в каждой GitHub-джобе, которая зовёт `vn build` или `vn release build`, `ffmpeg` ставится раньше; (в) вариантные прогоны и корпус масштаба живут в `nightly`, а не в `ci` (G15: MR-пайплайн держим под 10 минут); (г) `vn release android preflight` стоит **после** `vn build` — на пустом `game/` он зелен всегда, и гейт был бы ложно-зелёным; (д) провал внешнего тулчейна не заглушён `|| true` / `continue-on-error`, а `voice tts` в CI пиннует бэкенд флагом; (е) масштаб корпуса задан явно и ограничен потолком; (ж) pytest запускается из `tools/vn`. GitLab из проверок (б) и (ж) исключён намеренно — конфиг исторический и вне паритета.
 
 | Workflow | Триггер | Джобы | Ключевые шаги | Артефакты |
 |---|---|---|---|---|
-| `ci.yml` | push в любую ветку, dispatch | `lint`; `build-test` (needs `lint`) | `vn content lint`; кэш SDK; `vn build` (`:80`) → `vn loc keys --check` (`:83`) → `renpy.sh . lint` (`:86`) → **`vn test oversample --scale 2`** (`:90-91`) → `vn content compile --check` (`:94`) → `pytest tools/vn/tests -q` (`:97`) | `generated-<sha>` = `game/generated/`, 30 дней |
-| `nightly.yml` | cron `30 2 * * *`, dispatch | `smoke`; `controller-first` | `smoke`: `vn build`; `vn loc import`; `vn loc report`; smoke-матрица из 4 прогонов (`:57-60`); `vn save check` + `vn save corpus` (`:62-65`); **`rm -rf game/generated` → `vn release build --flavor public --package win` и то же для patron** (`:70-74`). `controller-first`: матрица двух профилей (`RENPY_VARIANT="steam_deck medium touch"` и `steam_big_picture`, `:97-105`) → `vn build` → `vn test smoke --picks 0,0` с `VN_AUTOPILOT_SCREENS=main_menu,preferences,gallery,chapter_select` (`:138-144`) | `smoke-shots-<run_id>`; `controller-shots-<profile>-<run_id>` — оба `.vncache/smoke/`, 7 дней, `if: always()` |
-| `canary.yml` | cron `0 3 * * 1`, dispatch | `fresh-renpy` | берёт **самый свежий** Ren'Py с `renpy.org/latest.html`, подменяет `RENPY_SDK` через `$GITHUB_ENV`, гоняет `vn build` → `renpy.sh . lint` → `pytest` → `vn test smoke --picks 0,0` | — |
+| `ci.yml` | push в любую ветку, dispatch | `lint`; `build-test` (needs `lint`) | `vn content lint`; кэш SDK; `vn build` → `vn loc keys --check` → `renpy.sh . lint` → **`vn test oversample --scale 2`** → **`vn release android preflight --bundle`** (после сборки: на пустом `game/` проверка зелена всегда) → **шаг `must_fail`** (отсутствие RAPT и piper обязано давать НЕнулевой код с именем тулчейна в выводе) → `vn content compile --check` → `pytest -q` из `tools/vn` (`working-directory`) | `generated-<sha>` = `game/generated/`, 30 дней |
+| `nightly.yml` | cron `30 2 * * *`, dispatch | `smoke`; `controller-first`; **`corpus`** | `smoke`: `vn build`; `vn loc import`; `vn loc report`; smoke-матрица из 4 прогонов (`:57-60`); `vn save check` + `vn save corpus` (`:62-65`); **`rm -rf game/generated` → `vn release build --flavor public --package win` и то же для patron** (`:70-74`). `controller-first`: матрица двух профилей (`RENPY_VARIANT="steam_deck medium touch"` и `steam_big_picture`, `:97-105`) → `vn build` → `vn test smoke --picks 0,0` с `VN_AUTOPILOT_SCREENS=main_menu,preferences,gallery,chapter_select` (`:138-144`). **`corpus`**: свой checkout с LFS, SDK, ffmpeg → `xvfb-run -a vn test corpus --scenes 600 --images 400 --videos 2 --lines 8 --vars 100` — измерительный прогон конвейера на синтетическом проекте вне репозитория ([32 §7.5](32-performance-and-scalability.md)) | `smoke-shots-<run_id>`; `controller-shots-<profile>-<run_id>` — оба `.vncache/smoke/`, 7 дней, `if: always()`; у `corpus` артефактов нет — числа в логе джобы |
+| `canary.yml` | cron `0 3 * * 1`, dispatch | `fresh-renpy` | берёт **самый свежий** Ren'Py с `renpy.org/latest.html`, подменяет `RENPY_SDK` через `$GITHUB_ENV`, гоняет `vn build` → `renpy.sh . lint` → `pytest` (в подоболочке из `tools/vn`) → `vn test smoke --picks 0,0` | — |
 | `release.yml` | push тега `v*` | `build` (matrix `flavor: [public, patron]`, `fail-fast: false`); `dmg`; `publish` | сверка тега с `project.yaml` (`:47-54`); кэш SDK; кэш `build/rpyc-cache` **на флейвор** (`:71-76`); `vn release build --flavor <f> --package win --package linux --package mac --timeout 1800` (+`--patron-token` из secrets только для patron) | `dist-public`, `dist-patron` (7 дней); `dmg`; GitHub Release |
 | `steam-upload.yml` | **только** `workflow_dispatch` (входы `flavor`: public/patron, `branch`: по умолчанию `beta`) | `upload` | `vn release build --flavor <f> --package win/linux/mac` → `vn release steam --flavor <f> --branch <b>` → steamcmd (`+login … +run_app_build`). Кэш `.rpyc` — **restore-only** (ручная выкладка не должна становиться источником релизной линии, G6); `concurrency: steam-upload` без cancel-in-progress (аккаунт-билдер один) | `steam-vdf-<flavor>-<run_id>` — только сгенерированный VDF, 7 дней |
 
@@ -517,7 +517,7 @@ $ vn assets memory
 
 - `.gitlab-ci.yml` — 3 джобы (`lint`, `build`, `test`), **ни релиза, ни флейворов, ни LFS, ни ffmpeg, ни кэша `.rpyc`**. `../../CODEOWNERS` покрывает `/.gitlab-ci.yml` и **не покрывает `/.github/`** — релизный workflow формально ничей.
 - `canary.yml` не имеет `continue-on-error`: красный canary валит workflow. Это строже, чем `allow_failure: true` из `../ARCHITECTURE.md`, и это осознанное расхождение.
-- Не существует ни одной из джоб `rpyc-compat`, `screens`, `nightly-paths`, `nightly-perf`, `steam-publish`, матрицы `PLATFORM: [win, mac, linux, android]` и шага `vn validate --budgets --dist dist/` — всё NOT IMPLEMENTED (команды `vn validate` нет вовсе).
+- Не существует ни одной из джоб `rpyc-compat`, `screens`, `nightly-paths`, `nightly-perf`, `steam-publish`, матрицы `PLATFORM: [win, mac, linux, android]` и шага `vn validate --budgets --dist dist/` — всё NOT IMPLEMENTED (команды `vn validate` нет вовсе). Мобильный канал в CI присутствует, но **только арифметикой**: `vn release android preflight --bundle` считает предпосылки по `game/`, а самой сборки APK/AAB в CI нет и быть не может — RAPT ставит только апдейтер лаунчера ([39 §2.1](39-platforms.md)).
 - **QA на живом железе не автоматизировано ничем**: ни Windows-, ни mac-, ни Deck-прогона в CI нет; всё это стадии 5-7 §13, и все они ручные.
 
 ---
@@ -548,7 +548,7 @@ $ vn assets memory
 | `vn content lint` | `lint: 0 ошибок, 0 предупреждений` | схемы, графы, id, LFS-покрытие бинарей |
 | `vn loc keys --check` | `loc keys --check: все строки с id, ledger свеж` | say-id и ledger разошлись с текстом (G8) |
 | `vn content compile --check` | `check: генерат свеж` | несвежий генерат, разметка переводов, бюджеты |
-| `python -m pytest tools/vn/tests -q` | `278 passed` | тулинг; **из venv проекта** — системный python без `yaml`/`blake3` даст ошибки коллекции |
+| `python -m pytest tools/vn/tests -q` | `373 passed` | тулинг; **из venv проекта** — системный python без `yaml`/`blake3` даст ошибки коллекции |
 | `bash "$RENPY_SDK/renpy.sh" . lint` | движковый отчёт без ошибок | то, что видит только Ren'Py: битые метки, отсутствующие образы |
 | `vn test oversample --scale 2` | `oversample: OK` | что 4K-варианты реально подхватываются движком (ADR-0012) |
 | `vn loc report` | `de: 136/136 (100%), fuzzy: 0` и так для каждого языка | покрытие переводов (гейт — не здесь, а в `release validate`) |
@@ -715,7 +715,7 @@ SDK, а не из фактической сборки.
 - [ ] `vn build` — `build: OK` (и строка `память: худшая сцена … из …` в рамках)
 - [ ] `vn content lint` — `0 ошибок`
 - [ ] `vn content compile --check` — `check: генерат свеж`
-- [ ] `python -m pytest tools/vn/tests -q` — **278 passed** (из venv проекта: `tools/vn/.venv/bin/python`; с системным python часть тестов не соберётся)
+- [ ] `python -m pytest tools/vn/tests -q` — **373 passed** (из venv проекта: `tools/vn/.venv/bin/python`; с системным python часть тестов не соберётся)
 - [ ] `bash "$RENPY_SDK/renpy.sh" . lint` — движковый lint чист
 - [ ] `vn test oversample --scale 2` — `oversample: OK`
 - [ ] `vn loc keys --check` — `все строки с id, ledger свеж`
@@ -780,7 +780,7 @@ vn content lint                       # должно остаться 0 ошиб
 vn build
 vn loc keys --check
 vn content compile --check
-python -m pytest tools/vn/tests -q    # 278 passed
+python -m pytest tools/vn/tests -q    # 373 passed
 bash "$RENPY_SDK/renpy.sh" . lint
 vn test oversample --scale 2
 vn voice validate

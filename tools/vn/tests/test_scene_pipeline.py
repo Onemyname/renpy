@@ -1,10 +1,19 @@
 """Фаза 1: компиляция сцен. Юнит-тесты валидатора/эмиттера — на фабрикованном анализе
-(SDK не нужен); e2e через build-bridge — skipif без RENPY_SDK."""
+(SDK не нужен); e2e через build-bridge — skipif без RENPY_SDK.
 
+Здесь же — два свойства масштаба конвейера сцен: список файлов уезжает в мост
+файлом, а не argv (иначе ARG_MAX кладёт компиляцию на тысячах сцен), и вывод
+однотипных предупреждений компилятора сворачивается (иначе один warning на главу
+превращается в тысячи строк)."""
+
+import json
 import os
+import subprocess
 from pathlib import Path
 
+import click
 import pytest
+from click.testing import CliRunner
 
 from vn.content import scenes as sc
 
@@ -328,7 +337,162 @@ def test_emit_scene_location():
     assert any("без варианта" in e for e in rep3.errors)
 
 
+def _fake_scenes(root: Path, count: int) -> list[Path]:
+    scenes_dir = root / "content" / "chapters" / "ch01_scale" / "scenes"
+    scenes_dir.mkdir(parents=True, exist_ok=True)
+    out = []
+    for i in range(count):
+        p = scenes_dir / f"s{i:04d}_gen.scene.rpy"
+        p.write_text(f"label ch01_s{i:04d}__body:\n    return\n", encoding="utf-8")
+        out.append(p)
+    return out
+
+
+def _run_analyze(monkeypatch, root: Path, files: list[Path]) -> list[str]:
+    """Прогнать analyze_scene_files с фальшивым мостом; вернуть argv вызова."""
+    from vn.content import analyze as an
+
+    captured: dict = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = list(cmd)
+        idx = cmd.index("--files-from")
+        captured["listed"] = Path(cmd[idx + 1]).read_bytes()
+        Path(cmd[3]).write_text(
+            json.dumps({"renpy": "test", "files": {str(f): {"says": 0} for f in files}}),
+            encoding="utf-8")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(an, "sdk_renpy_exe", lambda: root / "renpy.sh")
+    monkeypatch.setattr(an.subprocess, "run", fake_run)
+    result = an.analyze_scene_files(root, files)
+    assert len(result) == len(files)
+    captured["result"] = result
+    return captured
+
+
+def test_analyze_sends_file_list_through_file_not_argv(tmp_path, monkeypatch):
+    """Регрессия масштаба: пути сцен НЕ едут в argv.
+
+    Аргументами список ограничен ARG_MAX (~950 КБ под аргументы), то есть 6–9 тыс.
+    сцен, и на 8 000 компиляция падала сырым OSError [Errno 7]. Свойство, которое
+    охраняет тест: argv вызова моста не растёт вместе с корпусом (при росте числа
+    сцен в 100 раз он БАЙТ-В-БАЙТ тот же), а сами пути приезжают файлом-списком.
+    """
+    root = tmp_path / "proj"
+    small = _fake_scenes(root, 30)
+    small_call = _run_analyze(monkeypatch, root, small)
+    big = _fake_scenes(root, 3000)
+    big_call = _run_analyze(monkeypatch, root, big)
+
+    assert small_call["cmd"] == big_call["cmd"]          # argv не зависит от масштаба
+    assert "--files-from" in big_call["cmd"]
+    assert [a for a in big_call["cmd"] if a.endswith(".scene.rpy")] == []
+    # Файл-список: по пути на строку, ровно \n (иначе на Windows приехал бы CRLF).
+    assert big_call["listed"] == "".join(f"{f}\n" for f in big).encode("utf-8")
+    # Рабочий файл убран за собой: на диске остаётся только кэш анализа.
+    assert not (root / ".vncache" / "analyze-files.txt").exists()
+
+
+def test_analyze_refuses_newline_in_path(tmp_path):
+    """Перевод строки в пути сделал бы файл-список неоднозначным: это ошибка с
+    сообщением, а не молча потерянная сцена."""
+    from vn.content.analyze import AnalyzeError, write_files_listing
+
+    with pytest.raises(AnalyzeError):
+        write_files_listing(tmp_path / "files.txt", [Path("scenes/пло\nхой.scene.rpy")])
+
+
+# Предупреждения, которых по одному на главу и по одному на CG: именно они растут
+# линейно с контентом (на корпусе 8 000 образов — 8 000 строк вывода).
+def _chapter_warnings(count: int) -> list[str]:
+    return [f"ch{i:02d}: title_key 'meta.chapters.ch{i:02d}.title' нет в "
+            f"content/ui/strings.yaml — в меню глав отобразится сырой ключ"
+            for i in range(1, count + 1)]
+
+
+def _cg_warnings(count: int) -> list[str]:
+    return [f"cg/ch01/set01_{i:03d}: CG собран, но не объявлен в галерее "
+            f"(content/gallery/*.gallery.yaml) — игрок его не увидит в галерее"
+            for i in range(count)]
+
+
+def _echo(warnings: list[str]) -> str:
+    from vn import cli
+
+    @click.command()
+    def cmd():
+        cli._echo_warnings(warnings)
+
+    res = CliRunner().invoke(cmd, catch_exceptions=False)
+    assert res.exit_code == 0
+    return res.output
+
+
+def test_cli_folds_same_kind_warnings():
+    """Однотипные предупреждения печатаются примерами, а не целиком.
+
+    Класс определяется текстом с вымаранными значениями, поэтому главы ch01…ch40
+    — один класс, CG — другой, а одиночная проверка не сворачивается вовсе.
+    """
+    from vn import cli
+
+    warnings = _chapter_warnings(40) + _cg_warnings(30) + [
+        "audio/music/calm.ogg: трек объявлен, файла нет"]
+    lines = _echo(warnings).splitlines()
+
+    assert sum(1 for line in lines if "title_key" in line) == cli.WARN_SAMPLES
+    assert sum(1 for line in lines if "CG собран" in line) == cli.WARN_SAMPLES
+    assert f"warning: ещё {40 - cli.WARN_SAMPLES} однотипных (всего 40)" in lines
+    assert f"warning: ещё {30 - cli.WARN_SAMPLES} однотипных (всего 30)" in lines
+    # Единственное в своём классе печатается целиком: сворачивать нечего.
+    assert "warning: audio/music/calm.ogg: трек объявлен, файла нет" in lines
+    assert len(lines) == cli.WARN_SAMPLES * 2 + 2 + 1
+    # Сворачивается только ПЕЧАТЬ: сам отчёт остаётся полным (его читают тесты,
+    # release-гейт и другие команды).
+    assert len(warnings) == 71
+
+
+def test_cli_keeps_short_warning_lists_verbatim():
+    """Пока однотипных мало, вывод совпадает с несгруппированным: агрегация не
+    должна менять поведение на обычном проекте."""
+    from vn import cli
+
+    warnings = _chapter_warnings(cli.WARN_SAMPLES) + _cg_warnings(1)
+    assert _echo(warnings).splitlines() == [f"warning: {w}" for w in warnings]
+
+
 SDK = os.environ.get("RENPY_SDK")
+
+
+@pytest.mark.skipif(not (SDK and (Path(SDK) / "renpy.py").is_file()),
+                    reason="RENPY_SDK не установлен")
+def test_bridge_reads_files_from_and_direct_args(repo_root, tmp_path):
+    """Мост понимает оба входа: компилятор зовёт его файлом-списком, человек при
+    отладке одной сцены — путями аргументами. Результат обязан быть одинаковым,
+    иначе отладочный вызов проверял бы не то, что собирает CI."""
+    from vn.content.analyze import sdk_renpy_exe, write_files_listing
+
+    exe = str(sdk_renpy_exe())
+    scene = repo_root / "content/chapters/ch01_awakening/scenes/s010_intro.scene.rpy"
+    listing = write_files_listing(tmp_path / "files.txt", [scene])
+
+    def analyze(out: Path, *args: str):
+        proc = subprocess.run([exe, str(repo_root), "vn_analyze", str(out), *args],
+                              capture_output=True, text=True, timeout=300)
+        return proc, (json.loads(out.read_text(encoding="utf-8"))["files"]
+                      if out.is_file() else None)
+
+    _proc, via_list = analyze(tmp_path / "list.json", "--files-from", str(listing))
+    _proc, via_argv = analyze(tmp_path / "argv.json", str(scene))
+    assert via_list == via_argv
+    assert list(via_list) == [str(scene)]
+    assert via_list[str(scene)]["says"] > 0
+
+    # Ни одного входа — внятная ошибка и непустой код, а не отчёт про пустоту.
+    proc, data = analyze(tmp_path / "none.json")
+    assert proc.returncode != 0 and data is None
+    assert "--files-from" in proc.stderr
 
 
 @pytest.mark.skipif(not (SDK and (Path(SDK) / "renpy.py").is_file()),

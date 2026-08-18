@@ -3,9 +3,9 @@
 # спрашивает этот стор и НЕ содержит ни списка элементов, ни логики unlock.
 #
 # Два источника разблокировки, и это осознанно:
-#   1) kind: image + unlock.seen_image — ШТАТНЫЙ persistent._seen_images движка.
-#      Кадр засчитывается самим фактом показа в сцене, ручного кода нет
-#      (обещание раздела 3.7 ARCHITECTURE сохранено).
+#   1) kind: image / kind: shot + unlock.seen_image — ШТАТНЫЙ
+#      persistent._seen_images движка. Кадр засчитывается самим фактом показа в
+#      сцене, ручного кода нет (обещание раздела 3.7 ARCHITECTURE сохранено).
 #   2) остальные якоря (scene/beat/var/chapter_done) и ВИДЕО — движок про них
 #      ничего не знает, поэтому ведётся persistent.vn_gallery_unlocked
 #      (id -> True; C9: persistent-имена с vn_). Дублирования нет: для картинок
@@ -43,8 +43,36 @@ init -980 python in vn_gal:
             return False
         return renpy.store.vn.pack_registry.owned(spec.get("pack", "core"))
 
+    def _image_names(spec):
+        """Имена образа элемента: текущее + исторические (renames.assets).
+        Игрок, увидевший кадр до переименования, не должен терять его в галерее."""
+        return [spec["image_name"]] + list(spec.get("image_name_history") or [])
+
+    def _seen_shot(spec):
+        """Показывался ли послойный шот. Точным кортежем имени тут не спросить.
+
+        Движок пишет в persistent._seen_images имя образа КАК ПОКАЗАНО (SDK
+        renpy/exports/displayexports.py: show), а у шота в это имя попадают ещё и
+        липкие атрибуты слоёв: второй `show` того же тега приносит наряд из
+        предыдущего кадра, причём порядок таких атрибутов — из множества, то есть
+        произвольный (SDK 00layeredimage_ren.py: _choose_attributes). Поэтому
+        renpy.seen_image («кортеж целиком») дал бы ложное «закрыто», и шот
+        засчитывается по ТЕГУ образа сцены плюс атрибуту шота."""
+        seen = getattr(persistent, "_seen_images", None) or {}
+        wanted = {}
+        for name in _image_names(spec):
+            tag, _, attr = name.partition(" ")
+            wanted.setdefault(tag, set()).add(attr)
+        for key in seen:
+            if not isinstance(key, tuple) or not key:
+                continue
+            attrs = wanted.get(key[0])
+            if attrs and attrs.intersection(key[1:]):
+                return True
+        return False
+
     def is_unlocked(item_id):
-        """Открыт ли элемент. Для картинок с seen_image ответ даёт движок —
+        """Открыт ли элемент. Для кадров с seen_image ответ даёт движок —
         поэтому перепрохождение и старые сейвы работают без миграций."""
         spec = _registry().get(item_id)
         if spec is None or not visible(item_id):
@@ -53,12 +81,14 @@ init -980 python in vn_gal:
         if unlock.get("always"):
             return True
         if unlock.get("seen_image"):
-            # image_name — имя образа через пробелы (cg ch01 rooftop_day).
-            # Исторические имена (renames.assets) засчитываются наравне: игрок,
-            # увидевший кадр до переименования, не должен терять его в галерее.
-            for name in [spec["image_name"]] + list(spec.get("image_name_history") or []):
-                if renpy.seen_image(name):
+            if spec["kind"] == "shot":
+                if _seen_shot(spec):
                     return True
+            else:
+                # image_name — имя образа через пробелы (cg ch01 rooftop_day).
+                for name in _image_names(spec):
+                    if renpy.seen_image(name):
+                        return True
         return bool(_store().get(item_id))
 
     def unlock(item_id, silent=False):
@@ -136,6 +166,33 @@ init -980 python in vn_gal:
 
     def unlocked_ids(category=None):
         return [iid for iid, _s in items(category) if is_unlocked(iid)]
+
+    def looks(spec):
+        """Что просмотрщик листает кнопкой «Вариант»: список ссылок для add.
+
+        У плоского ассета это сам кадр и его варианты — отдельные файлы. У
+        послойного шота файла нет: «варианты» — комбинации вариантов слоёв, и
+        ссылка собирается из имени образа шота плюс по одному атрибуту на слой
+        (shot_layers из shots@1). Порядок — одометр по слоям: младший разряд —
+        верхний слой, первая комбинация = ровно то, что игрок видел в игре
+        (<layer>_auto для гардероба, иначе дефолтный вариант слоя).
+
+        Список отдаётся целиком, потому что экран листает его по индексу: у
+        реальных шотов это единицы строк, дерева отображения они не занимают."""
+        if spec["kind"] != "shot":
+            return [spec["asset"]] + list(spec.get("variants") or [])
+        rows = [row["options"] for row in (spec.get("shot_layers") or [])]
+        total = 1
+        for options in rows:
+            total *= len(options)
+        out = []
+        for i in range(total):
+            attrs, rest = [], i
+            for options in reversed(rows):
+                attrs.insert(0, options[rest % len(options)])
+                rest //= len(options)
+            out.append(" ".join([spec["asset"]] + attrs))
+        return out
 
 
 default persistent.vn_gallery_unlocked = {}

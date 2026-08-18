@@ -1,14 +1,17 @@
-"""vn — единая точка входа (G1). Домены: bootstrap|doctor|dev|build|play|package|migrate|shell,
-assets, content, scene, chapter, char, loc, voice, save, test, release, pack.
+"""vn — единая точка входа (G1). Домены (C13): bootstrap|doctor|dev|build|play|package|
+migrate|shell, assets, content, scene, chapter, char, loc, voice, save, test, release
+(в т.ч. release android — мобильный канал), pack, pipeline.
 
-Фаза 0: работают doctor, build, play, content lint|compile. Остальное — честные заглушки
-с номером фазы (раздел 8 ARCHITECTURE.md), а не тихие no-op.
+Нереализованное — честные заглушки с номером фазы (раздел 8 ARCHITECTURE.md) и кодом
+выхода 3, а не тихие no-op: char new|validate|sheet, migrate, shell, save migrate,
+test replay|screens|paths. Перечень сверяется тестом (tests/test_cli.py).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -18,10 +21,47 @@ import click
 from . import __version__
 from .repo import RepoError, find_root
 
+# Сколько примеров ОДНОГО класса предупреждений печатать, прежде чем свернуть
+# остаток в «ещё N однотипных». Предупреждения вида «одно на главу» или «одно на
+# CG» растут линейно с контентом: на корпусе 8 000 образов это 8 000 строк, в
+# которых тонет всё остальное (измерено vn test corpus). Пять — чтобы по примерам
+# был виден паттерн (какие именно главы и файлы), но класс занимал единицы строк.
+# Сворачивается только ПЕЧАТЬ: в отчётах предупреждения остаются полными — их
+# читают тесты, release-гейт и другие команды.
+WARN_SAMPLES = 5
+
+# Что в тексте предупреждения отличает один случай от другого (а не один класс
+# проверок от другого): закавыченные значения, пути и любой токен с цифрой — id
+# главы ch07, сцены s030, размеры, числа. Класс — текст с вымаранными значениями:
+# «ch01: title_key … нет в strings.yaml» и то же про ch02 сворачиваются в один
+# класс, а разные проверки не сливаются, потому что различаются словами.
+_WARN_VALUE_RE = re.compile(r"""'[^']*'|"[^"]*"|\S*[\\/]\S*|\S*\d\S*""")
+
 
 def _fail(msg: str) -> "None":
     click.secho(f"ошибка: {msg}", fg="red", err=True)
     sys.exit(1)
+
+
+def _warn_kind(text: str) -> str:
+    return _WARN_VALUE_RE.sub("*", text)
+
+
+def _echo_warnings(warnings, prefix: str = "warning") -> None:
+    """Напечатать предупреждения, свернув однотипные (WARN_SAMPLES).
+
+    Классы идут в порядке первого появления, внутри класса — в исходном порядке:
+    пока однотипных мало, вывод совпадает с несгруппированным.
+    """
+    groups: dict[str, list[str]] = {}
+    for w in warnings:
+        groups.setdefault(_warn_kind(str(w)), []).append(str(w))
+    for group in groups.values():
+        for w in group[:WARN_SAMPLES]:
+            click.secho(f"{prefix}: {w}", fg="yellow")
+        if len(group) > WARN_SAMPLES:
+            click.secho(f"{prefix}: ещё {len(group) - WARN_SAMPLES} однотипных "
+                        f"(всего {len(group)})", fg="yellow")
 
 
 def _root() -> Path:
@@ -35,6 +75,9 @@ def _stub(phase: int):
     def cmd(*args, **kwargs):
         click.secho(f"эта команда появится в фазе {phase} (раздел 8 ARCHITECTURE.md)", fg="yellow")
         sys.exit(3)   # 3 = «не реализовано в этой фазе»; 2 занят click за usage error
+    # Метка для сверки с докой: перечень заглушек называется в docs/handbook/25-custom-engine.md,
+    # и без машинной сверки он расходится с кодом при первой же реализованной команде.
+    cmd.vn_stub_phase = phase
     return cmd
 
 
@@ -68,12 +111,10 @@ def _assets_build(root, profile: str, only_transforms: set[str] | None = None):
     from .assets.pipeline import build_assets
 
     res = build_assets(root, profile=profile, only_transforms=only_transforms)
-    for w in res.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(res.warnings)
     # Пропущенный вариант — не ошибка (мастер мал), но и не мелочь: игрок на 4K
     # останется на растянутом 1080p. Молчать об этом нельзя.
-    for s in res.skipped_variants:
-        click.secho(f"вариант пропущен: {s}", fg="yellow")
+    _echo_warnings(res.skipped_variants, prefix="вариант пропущен")
     if res.errors:
         for e in res.errors:
             click.secho(f"error: {e}", fg="red")
@@ -96,8 +137,7 @@ def build(check: bool, profile: str):
 
     root = _root()
     rep = lint(root)
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     if not rep.ok:
         for e in rep.errors:
             click.secho(f"error: {e}", fg="red")
@@ -125,8 +165,7 @@ def build(check: bool, profile: str):
         import traceback
         _fail(f"внутренняя ошибка компилятора: {type(e).__name__}: {e}\n"
               + traceback.format_exc(limit=3))
-    for w in res.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(res.warnings)
     if check:
         if res.stale:
             for rel in res.stale:
@@ -189,8 +228,7 @@ def _check_budgets(root: Path):
         _fail("бюджеты G19 превышены (project.yaml: budgets)")
 
     mem = analyze(root)
-    for w in mem.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(mem.warnings)
     if mem.errors:
         for e in mem.errors:
             click.secho(f"память: {e}", fg="red")
@@ -238,8 +276,7 @@ def bootstrap():
         res = compile_content(root)
     except CompileError as e:
         _fail(str(e))
-    for w in res.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(res.warnings)
     _loc_import(root)    # game/tl не в git — чекаут без импорта был бы без переводов
     click.secho("bootstrap: OK — запускайте vn play", fg="green")
 
@@ -277,8 +314,7 @@ def dev():
         click.secho("content изменился — компиляция…", fg="cyan")
         try:
             res = compile_content(root)
-            for w in res.warnings:
-                click.secho(f"warning: {w}", fg="yellow")
+            _echo_warnings(res.warnings)
             click.secho("готово — Shift+R в игре", fg="green")
         except CompileError as e:
             click.secho(f"компилятор: {e}", fg="red")
@@ -409,8 +445,7 @@ def content_lint(layout: bool):
 
     root = _root()
     rep = lint(root, layout=layout)
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for e in rep.errors:
         click.secho(f"error: {e}", fg="red")
     if not rep.ok:
@@ -429,8 +464,7 @@ def content_compile(check: bool):
         res = compile_content(root, check=check)
     except CompileError as e:
         _fail(str(e))
-    for w in res.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(res.warnings)
     if check:
         if res.stale:
             for rel in res.stale:
@@ -550,21 +584,19 @@ def assets_validate():
     root = _root()
     # 1) Уровень сырцов: конвенции имён, обязательные base.png, свежесть выходов.
     ares = build_assets(root, check=True)
-    for w in ares.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(ares.warnings)
     if ares.errors:
         for e in ares.errors:
             click.secho(f"error: {e}", fg="red")
         _fail(f"assets: {len(ares.errors)} ошибок в сырцах")
-    for rel in ares.stale:
-        click.secho(f"warning: несвежий выход: assets/{rel} (vn assets build)", fg="yellow")
+    _echo_warnings([f"несвежий выход: assets/{rel} (vn assets build)"
+                    for rel in ares.stale])
     # 2) Уровень контента: реестр образов + music-треки (check ничего не пишет).
     try:
         res = compile_content(root, check=True)
     except CompileError as e:
         _fail(str(e))
-    for w in res.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(res.warnings)
     n_warn = len(ares.warnings) + len(ares.stale) + len(res.warnings)
     click.secho(f"assets validate: OK ({n_warn} предупреждений)", fg="green")
 
@@ -581,8 +613,7 @@ def assets_memory(scale: int | None, top: int):
     root = _root()
     cfg = load_render_config(root)
     rep = analyze(root, cfg, scale=scale)
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     click.echo(
         f"кэш образов: {cfg.image_cache_mb} МБ -> {rep.limit_px / 1e6:.0f} Мпикс; "
         f"бюджет сцены {rep.budget_px / 1e6:.1f} Мпикс "
@@ -711,8 +742,7 @@ def assets_video_validate(paths: tuple):
                                                            file_budget_mb=file_budget)
         except videomod.VideoError as e:
             _fail(str(e))
-        for w in warnings:
-            click.secho(f"warning: {w}", fg="yellow")
+        _echo_warnings(warnings)
         for e in errors:
             click.secho(f"error: {e}", fg="red")
         n_err += len(errors)
@@ -762,8 +792,7 @@ def assets_daz_validate(scope: str | None, no_provenance: bool):
     from .assets.daz import validate_renders
 
     rep = validate_renders(_root(), scope=scope, write_provenance=not no_provenance)
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for e in rep.errors:
         click.secho(f"error: {e}", fg="red")
     for p in rep.provenance_written:
@@ -792,8 +821,7 @@ def assets_vam_validate(scope: str | None, no_provenance: bool):
     from .assets.vam import validate_scenes
 
     rep = validate_scenes(_root(), scope=scope, write_provenance=not no_provenance)
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for e in rep.errors:
         click.secho(f"error: {e}", fg="red")
     for p in rep.provenance_written:
@@ -823,8 +851,7 @@ def assets_sims4_validate(scope: str | None, no_provenance: bool):
     from .assets.sims4 import validate_scenes
 
     rep = validate_scenes(_root(), scope=scope, write_provenance=not no_provenance)
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for e in rep.errors:
         click.secho(f"error: {e}", fg="red")
     for p in rep.provenance_written:
@@ -912,8 +939,7 @@ def assets_licenses():
     from .assets.licenses import REGISTRY_REL, validate_licenses
 
     rep = validate_licenses(_root())
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for e in rep.errors:
         click.secho(f"error: {e}", fg="red")
     if rep.errors:
@@ -1001,8 +1027,7 @@ def assets_provenance_verify(scope: str | None):
     from .assets.provenance import verify
 
     rep = verify(_root(), scope=scope)
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for e in rep.errors:
         click.secho(f"error: {e}", fg="red")
     if rep.errors:
@@ -1147,8 +1172,7 @@ def loc_add(code: str, name: str):
         rep = extract(root)
     except LocError as e:
         _fail(str(e))
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for c in rep.changed:
         click.echo(f"обновлён: {c}")
     click.secho(f"loc add: OK — пакет {code} готов; переводите loc/po/{code}/*.po "
@@ -1164,8 +1188,7 @@ def loc_extract():
         rep = extract(_root())
     except LocError as e:
         _fail(str(e))
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for c in rep.changed:
         click.echo(f"обновлён: {c}")
     click.secho(f"loc extract: OK ({len(rep.changed)} PO-файлов)", fg="green")
@@ -1275,10 +1298,54 @@ def voice_import(src_dir: Path, lang: str, draft: bool):
                 fg="green")
 
 
-voice.command(
-    name="tts",
-    help="TTS-черновики непокрытых реплик. Появится в фазе 2 (раздел 8 ARCHITECTURE.md).",
-)(_stub(2))
+@voice.command("tts")
+@click.argument("chapter")
+@click.option("--lang", default=None,
+              help="Язык дублей (по умолчанию — исходный язык проекта из loc.yaml).")
+@click.option("--char", default=None, help="Только реплики этого персонажа.")
+@click.option("--backend", default=None,
+              help="Чем синтезировать: piper (основной) | say (дев-фолбэк, macOS). "
+                   "По умолчанию — первый доступный.")
+@click.option("--voice", "voice_name", default=None,
+              help="Голос: имя модели piper (ru_RU-irina-medium) или путь к .onnx; "
+                   "для say — имя системного голоса (say -v '?').")
+@click.option("--rate", type=float, default=None,
+              help="Множитель темпа речи (по умолчанию 1.0 — нормальный темп голоса).")
+@click.option("--only-missing/--regenerate-drafts", default=True, show_default=True,
+              help="Только непокрытые реплики либо ещё и перезапись существующих "
+                   "черновиков. Реплики status: final не трогаются никогда.")
+@click.option("--allow-download", is_flag=True,
+              help="Разрешить скачать модель голоса piper в .vncache/piper-voices.")
+def voice_tts(chapter: str, lang: str | None, char: str | None, backend: str | None,
+              voice_name: str | None, rate: float | None, only_missing: bool,
+              allow_download: bool):
+    """TTS-черновики непокрытых реплик главы: озвученный играбельный билд до записи актёров.
+
+    Дубли помечаются status: draft (WARN релизного гейта) и лежат в общей мастер-зоне;
+    боевые дубли заменяют их через vn voice import. Транскод в game/assets — vn assets build."""
+    from .loc.po import LocError
+    from .voice import TTS_DEFAULT_RATE, VoiceError, synth_drafts
+
+    root = _root()
+    try:
+        rep = synth_drafts(root, chapter, lang=lang, char=char, backend=backend,
+                           voice=voice_name,
+                           rate=TTS_DEFAULT_RATE if rate is None else rate,
+                           only_missing=only_missing, allow_download=allow_download)
+    except (VoiceError, LocError) as e:
+        _fail(str(e))
+    _echo_warnings(rep.warnings)
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    if rep.errors:
+        _fail(f"voice tts: {len(rep.errors)} ошибок — ничего не импортировано")
+    if not rep.generated:
+        click.secho(f"voice tts: озвучивать нечего (пропущено: {len(rep.skipped)})",
+                    fg="green")
+        return
+    click.secho(f"voice tts: {len(rep.generated)} черновиков [{rep.backend}/{rep.voice}] "
+                f"({', '.join(rep.updated_manifests)}); транскод — vn assets build",
+                fg="green")
 
 
 @voice.command("validate")
@@ -1293,8 +1360,7 @@ def voice_validate(show_report: bool):
 
     root = _root()
     rep = voice_validate_fn(root)
-    for w in rep.warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(rep.warnings)
     for e in rep.errors:
         click.secho(f"error: {e}", fg="red")
     if show_report:
@@ -1657,6 +1723,43 @@ def test_oversample(scale: float, timeout_s: int):
         _fail("оверсэмпл не подтверждён движком:\n" + out.strip()[-1200:])
 
 
+@test.command("corpus")
+@click.option("--scenes", default=100, help="Сколько сцен сгенерировать (главы набираются по 50).")
+@click.option("--images", default=100, help="Сколько мастеров образов (bg/spr/shot/cg по долям).")
+@click.option("--videos", default=0, help="Видео-мастеров (энкод дорог — по умолчанию без видео).")
+@click.option("--lines", default=8, help="Реплик (say) на сцену.")
+@click.option("--vars", "variables", default=50, help="Объявленных сохраняемых переменных всего.")
+@click.option("--profile", type=click.Choice(["full", "draft"]), default="full",
+              help="Профиль энкода ассетов в измеряемой сборке.")
+@click.option("--dest", type=click.Path(path_type=Path), default=None,
+              help="Каталог корпуса (по умолчанию .vncache/test-corpus — вне git).")
+@click.option("--keep", is_flag=True, help="Не удалять корпус после прогона (для разбора генерата).")
+def test_corpus(scenes: int, images: int, videos: int, lines: int, variables: int,
+                profile: str, dest: Path | None, keep: bool):
+    """Синтетический корпус масштаба + измерительный прогон конвейера.
+
+    Строит настоящий проект заданного размера ВНЕ репозитория и гоняет по нему
+    assets build -> lint -> compile -> модель памяти, печатая время, память и объём
+    генерата. Утверждения о масштабе проверяются числами, а не рассуждением."""
+    from .corpus import CorpusError, CorpusSpec, default_dest, format_table, run
+
+    root = _root()
+    target = Path(dest) if dest else default_dest(root)
+    try:
+        rep = run(target, CorpusSpec(scenes=scenes, images=images, videos=videos,
+                                     lines=lines, variables=variables),
+                  root, profile=profile, keep=keep)
+    except CorpusError as e:
+        _fail(str(e))
+    click.echo(format_table([rep]))
+    if keep:
+        click.echo(f"корпус оставлен: {target}")
+    if not rep.ok:
+        _fail("прогон не зелёный: корпус этого масштаба не выдержали конвейер "
+              "или бюджеты G19 (строки выше)")
+    click.secho("test corpus: OK", fg="green")
+
+
 for _cmd, _phase in {"replay": 2, "screens": 3, "paths": 2}.items():
     test.command(name=_cmd, help=f"Появится в фазе {_phase} (раздел 8).")(_stub(_phase))
 
@@ -1836,8 +1939,7 @@ def release_steam(flavor: str, branch: str):
         vdf, warnings = steam_app_build(root, flavor, branch=branch)
     except ReleaseError as e:
         _fail(str(e))
-    for w in warnings:
-        click.secho(f"warning: {w}", fg="yellow")
+    _echo_warnings(warnings)
     for lib in steam_libs_status(sdk_path()):
         click.secho(f"warning: в SDK нет {lib} — дистрибутив будет standalone, "
                     f"не Steam-сборкой (ci/steam/README.md)", fg="yellow")
@@ -1852,6 +1954,89 @@ def release_steam(flavor: str, branch: str):
     click.secho(f"steam: {out.relative_to(root)} готов; платформы: "
                 f"{', '.join(staged)}; аплоад: steamcmd +run_app_build (README)",
                 fg="green")
+
+
+# ── vn release android (мобильный канал) ──────────────────────────────────────
+# Домена android в C13 нет и не вводится: Android — ещё один КАНАЛ поставки, как
+# Steam, поэтому его команды живут рядом с vn release steam. В vn package их место
+# было бы неверным: package — это launcher distribute (win/linux/mac/market), а у
+# Android другая команда лаунчера (android_build), свой тулчейн и свои потолки.
+
+@release.group("android")
+def release_android():
+    """Мобильный канал: готовность тулчейна, предпосылки поставки, сборка APK/AAB."""
+
+
+@release_android.command("status")
+def release_android_status():
+    """Чего не хватает для сборки: RAPT, Android SDK, JDK, ключи подписи, конфиг.
+
+    Установку CLI не делает и не изображает: у Ren'Py её вне лаунчера нет, поэтому
+    каждый пункт называет свой штатный шаг лаунчера."""
+    from .android import rapt_status
+    from .doctor import sdk_path
+
+    gaps = rapt_status(sdk_path(), _root())
+    for gap in gaps:
+        click.secho(f" - {gap}", fg="yellow")
+    if gaps:
+        _fail("android: тулчейн не готов — перечисленное выше выполняется в лаунчере "
+              "Ren'Py, CLI-пути установки у Ren'Py нет")
+    click.secho("android status: OK — тулчейн готов", fg="green")
+
+
+@release_android.command("preflight")
+@click.option("--bundle", is_flag=True,
+              help="Правила Play-бандла (.aab): +пофайловый лимит 500 МБ к потолку канала.")
+def release_android_preflight(bundle: bool):
+    """Предпосылки проекта: размер против потолка канала, пофайловый лимит бандла,
+    мобильный бюджет памяти образов, утечка ключей подписи, оформление приложения.
+
+    Секунды проверок против часа gradle-сборки, которая упадёт на том же самом."""
+    from .android import preflight
+
+    rep = preflight(_root(), bundle=bundle)
+    click.echo(f"game/: {rep.game_mb:.1f} МБ, из них @N-вариантов {rep.oversample_mb:.1f} МБ "
+               f"(в мобильный пакет не едут) -> {rep.mobile_mb:.0f} МБ с накладными")
+    click.echo(f"кэш образов мобильного профиля: {rep.mobile_cache_mb} МБ")
+    _echo_warnings(rep.warnings)
+    for e in rep.errors:
+        click.secho(f"error: {e}", fg="red")
+    if not rep.ok:
+        _fail("android preflight: есть блокеры — мобильная сборка не запускается")
+    click.secho("android preflight: OK", fg="green")
+
+
+@release_android.command("build")
+@click.option("--bundle", is_flag=True, help="Play-бандл (.aab) для стора вместо universal APK.")
+@click.option("--install", is_flag=True, help="Поставить на подключённое устройство (adb).")
+@click.option("--launch", is_flag=True, help="Запустить после установки (подразумевает --install).")
+@click.option("--timeout", "timeout_s", default=3600,
+              help="Лимит сборки, сек: первая тянет gradle и зависимости — она самая долгая.")
+def release_android_build(bundle: bool, install: bool, launch: bool, timeout_s: int):
+    """Сборка мобильного пакета: vn build -> предполётные проверки -> android_build.
+
+    Лог RAPT/gradle не перехватывается: сборка идёт минутами, и молчащий процесс
+    не отличить от зависшего."""
+    from .android import AndroidError, build_apk
+    from .doctor import sdk_path
+
+    root = _root()
+    ctx = click.get_current_context()
+    # Тулчейн — ПЕРВЫМ, до полной сборки: без RAPT/JDK/ключей сборка всё равно не
+    # состоится, и узнать это после assets build + compile обиднее, чем сразу.
+    # Вызовом команды, а не копией проверки: build_apk сверит тулчейн ещё раз сам
+    # (он публичная точка входа), но формулировки пунктов живут в одном месте.
+    ctx.invoke(release_android_status)
+    ctx.invoke(build, check=False, profile="full")
+    try:
+        res = build_apk(root, sdk_path(), bundle=bundle, install=install,
+                        launch=launch, timeout_s=timeout_s)
+    except AndroidError as e:
+        _fail(str(e))
+    click.echo("команда: " + " ".join(res.command))
+    click.secho("android build: OK — " + ", ".join(
+        p.relative_to(root).as_posix() for p in res.artifacts), fg="green")
 # ── vn pack ───────────────────────────────────────────────────────────────────
 
 @main.group()

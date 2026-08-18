@@ -150,3 +150,51 @@ jobs:
           name: controller-shots-${{ matrix.profile }}-${{ github.run_id }}
           path: .vncache/smoke/
           retention-days: 7
+
+  corpus:
+    # Утверждения о масштабе проверяются измерением, а не рассуждением (G19, 7.6):
+    # синтетический корпус строится ВНЕ репозитория, и по нему гоняется весь конвейер —
+    # assets build -> content lint -> compile -> повторный compile (идемпотентность
+    # генерата) -> модель памяти, с бюджетами и числами в логе.
+    # В nightly, а не в ci: это лишний прогон движка и тысяча энкодов на каждый пуш при
+    # бюджете MR-пайплайна < 10 минут (G15). Отдельная джоба, а не шаги в smoke:
+    # корпусу не нужны ни сборка репозитория, ни переводы, ни сейв-фикстуры — он сам
+    # себе проект, и красный smoke не должен прятать измерения, которые читает человек.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # lfs: корпус копирует game/framework и gui/ шаблоном из репозитория, а
+        # шрифты UI лежат в LFS; с указателями вместо шрифтов прогон движка
+        # (build-bridge разбирает сцены корпуса) падает FreetypeError
+        with: {lfs: true}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      # Лок ставится ПЕРВЫМ (G17): точные версии тулчейна, откат = git revert одного файла.
+      # Editable следом ничего не поднимет — его >=-диапазоны уже удовлетворены локом.
+      - run: pip install --quiet -r tools/vn.lock
+      - run: pip install --quiet -e "tools/vn[dev]"
+      # ffmpeg — видео-мастера корпуса (--videos) и их транскод; xvfb/libgl1 — build-bridge
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libgl1 ffmpeg > /dev/null
+
+      - name: Кэш Ren'Py SDK
+        uses: actions/cache@v4
+        with:
+          path: .sdk
+          key: renpy-sdk-${{ env.RENPY_VERSION }}-linux
+
+      - name: Установка SDK при холодном кэше
+        run: |
+          if [ ! -f "$RENPY_SDK/renpy.py" ]; then
+            mkdir -p .sdk
+            curl -sL -o .sdk/sdk.zip "https://www.renpy.org/dl/$RENPY_VERSION/renpy-$RENPY_VERSION-sdk.zip"
+            unzip -q .sdk/sdk.zip -d .sdk && rm .sdk/sdk.zip
+          fi
+          chmod +x "$RENPY_SDK/renpy.sh" || true
+
+      # Масштаб вдвое выше целевого для проекта (ARCHITECTURE.md: «20+ глав, 300+ сцен»):
+      # линейность конвейера видна, а ночь не съедается. Замер на macOS arm64 (7.6
+      # приводит ряд 100 -> 2000 -> 7000 сцен): 600 сцен / 400 образов / 2 видео — 4,8 с.
+      # --videos 2 намеренно: без них видео-ветку корпуса (мастер ffmpeg -> транскод)
+      # не прогоняет ни один тест — pytest-корпус собирается без видео.
+      - name: Корпус масштаба + измерительный прогон конвейера
+        run: xvfb-run -a vn test corpus --scenes 600 --images 400 --videos 2 --lines 8 --vars 100

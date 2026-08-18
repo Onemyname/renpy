@@ -1,6 +1,6 @@
 # 39. Платформы: Steam, Steam Deck, Big Picture
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — архитектура слоя закрыта (**фасад — IMPLEMENTED**), приёмка на железе — нет. Платформенный слой замкнут одним файлом-фасадом ([ADR-0014](../adr/0014-platform-services.md)): Steam-ачивки и DLC-владение работают, controller-first UI сделан одной копией экранов, и его вёрстку теперь ночью снимает CI в двух геймпадных профилях ([42](42-big-picture.md) §5.10). Поставка стала полнее: раскладка депотов работает на всех трёх платформах, включая Linux (`tar.bz2`, §3.4), содержимое кладётся **в корень депота** без каталога-обёртки ([40](40-steamworks.md) §4.3.1), а аплоад автоматизирован ручным workflow `steam-upload`. **Но** `platform.steam.appid` в `project.yaml` сейчас `null` (все локальные сборки — standalone), ключа `depots` в файле нет вовсе — `vn release steam` честно падает на первом шаге; секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` в репозитории нет, поэтому шаг выкладки — no-op; Android — NOT IMPLEMENTED. Ни одна платформа не проверена на живом железе, и ни один депот не проходил через реальный SteamPipe: подтверждено только то, что подтверждается кодом и эмуляцией вариантов (§2).
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED — архитектура слоя закрыта (**фасад — IMPLEMENTED**), приёмка на железе — нет. Платформенный слой замкнут одним файлом-фасадом ([ADR-0014](../adr/0014-platform-services.md)): Steam-ачивки и DLC-владение работают, controller-first UI сделан одной копией экранов, и его вёрстку теперь ночью снимает CI в двух геймпадных профилях ([42](42-big-picture.md) §5.10). Поставка стала полнее: раскладка депотов работает на всех трёх платформах, включая Linux (`tar.bz2`, §3.4), содержимое кладётся **в корень депота** без каталога-обёртки ([40](40-steamworks.md) §4.3.1), а аплоад автоматизирован ручным workflow `steam-upload`. **Но** `platform.steam.appid` в `project.yaml` сейчас `null` (все локальные сборки — standalone), ключа `depots` в файле нет вовсе — `vn release steam` честно падает на первом шаге; секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` в репозитории нет, поэтому шаг выкладки — no-op. Мобильный канал перестал быть пустым местом: `vn release android status|preflight|build` вызывает штатный `launcher android_build` и проверяет предпосылки поставки (§2.1), но **ни одного APK/AAB не собрано** — RAPT в SDK не установлен, и CLI-пути его установки у Ren'Py нет. Ни одна платформа не проверена на живом железе, и ни один депот не проходил через реальный SteamPipe: подтверждено только то, что подтверждается кодом и эмуляцией вариантов (§2).
 > **Отвечает на вопрос:** «Как игра узнаёт, что она запущена в Steam / на Deck / в Big Picture, что для этого надо положить на build-машину — и как добавить следующую платформу, не переписывая UI и контент».
 
 Платформа в этом проекте — **не фундамент, а провайдер**. Ядро (`vn_ach`, `vn.pack_registry`) самодостаточно и работает без всякой платформы; `game/framework/00_core/035_platform.rpy` — единственное место, которое знает слово «Steam», и единственное, что меняется при добавлении витрины. Steam-специфика идёт через **штатный стек движка** (`00steam.rpy` + `00achievement.rpy` из `renpy/common/`): сторонних биндингов (SteamworksPy и т. п.) в проекте нет и по ADR-0014 быть не должно.
@@ -94,12 +94,18 @@ Store `vn_platform`, `init -960` (`035_platform.rpy:16`).
 | `is_steam_deck()` | `renpy.variant("steam_deck")` | `controller_first()`, косвенно `scale.rpy` |
 | `is_big_picture()` | `renpy.variant("steam_big_picture")` | `../../game/framework/20_ui/scale.rpy:42` (`gui.overscan_pad`) |
 | `has_touch()` | `renpy.variant("touch")` | `describe()` |
-| `controller_first()` | `is_steam_deck() or is_big_picture()` | `scale.rpy:32`, `../../game/options.rpy:16` |
+| `controller_first()` | `is_steam_deck() or is_big_picture()` | `scale.rpy`, `../../game/options.rpy:16` |
+| `is_mobile()` | `renpy.variant("mobile")` — тач вместо мыши, нет окна и нет права выйти | `scale.rpy` (масштаб, safe-area, тач-зона), `describe()` |
+| `is_android()` | `renpy.variant("android")` — именно Android (у iOS другие правила стора) | `describe()` |
+| `is_phone()` | `renpy.variant("phone")` — мелкий экран; делит устройства **физическая диагональ**, а не разрешение | `scale.rpy` (`gui.touch_min`), `describe()` |
+| `is_desktop()` | `renpy.variant("pc")` — есть окно, мышь и право закрыть приложение | задел под гейтинг «Выйти» и переключателя окно/фуллскрин (в экранах пока не применён) |
 | `overlay_enabled()` | Steam-оверлей активен (в `try/except`, ошибка = `False`) | **никто** — задел (например «не показывать свой тост, когда открыт оверлей») |
-| `describe()` | одна строка `backend deck=… bigpicture=… touch=…` | `035_platform.rpy:89` — уходит в `log.txt` при старте под Steam |
-| `_steam_owns_pack(pack_id)` | ownership-провайдер G9 (см. §5) | ставится в `:75` |
+| `describe()` | одна строка `backend deck=… bigpicture=… touch=… mobile=… android=… phone=…` | `035_platform.rpy` — уходит в `log.txt` при **каждом** старте |
+| `_steam_owns_pack(pack_id)` | ownership-провайдер G9 (см. §5) | ставится на `init 999` |
 
-**Честная оговорка:** `describe()`/`backend()` пишутся в `log.txt` одной строкой на старте (`vn_log("platform: …")`), но в crash-отчёт `070_crash.rpy` **не попадают** — докстринг фасада («для логов/крэш-репортов») обещает больше, чем сегодня подключено. Это однострочное расширение, а не долг архитектуры.
+**Варианты вставляет движок, а не мы** (`$RENPY_SDK/renpy/main.py: choose_variants`, `:163-225`): Android → `android` + `mobile` + `touch` + (`tablet`+`medium` при физической диагонали ≥ 6″, иначе `phone`+`small`); iOS → `ios` + `mobile` + `touch` + то же деление; десктоп → `pc` + `large`. Две ветки, о которых легко забыть: **Android TV/OUYA** (`hasSystemFeature("android.hardware.type.television")`) вставляет `tv` + `small` и **выходит раньше** — то есть без `touch` и без `phone`/`tablet`, поэтому тач-токены там нулевые; Fire TV дополнительно даёт `firetv`, ChromeOS — `chromeos`. Наш фасад читает только `mobile`/`android`/`phone`/`pc`, так что TV-ветка деградирует в «мобильный без тача» — на телевизоре это и требуется.
+
+**Честная оговорка:** `describe()`/`backend()` пишутся в `log.txt` одной строкой на старте (`vn_log("platform: …")`) — теперь всегда, а не только под Steam (иначе на Android лог о платформе молчал бы), — но в crash-отчёт `070_crash.rpy` **не попадают**: докстринг фасада («для логов/крэш-репортов») обещает больше, чем сегодня подключено. Это однострочное расширение, а не долг архитектуры.
 
 ### 1.3 Порядок инициализации
 
@@ -128,32 +134,63 @@ Store `vn_platform`, `init -960` (`035_platform.rpy:16`).
 | **Linux** | IMPLEMENTED (сборка) | `--package linux` → **`tar.bz2`, не zip** (`00build.rpy:424`), `vn-<ver>-linux.tar.bz2`. Собирается в CI; `release.yml:132-134` ищет артефакты по маске, включающей `*.tar.bz2` | То же | Да — при `libsteam_api.so` в `py3-linux-x86_64`; депот стейджится из `tar.bz2` (§3.4) | **Не проверялось**: Linux-машины нет |
 | **Steam Deck** | PARTIALLY IMPLEMENTED (вёрстка и детект есть, на железе не проверено — [41](41-steam-deck.md)) | Отдельного пакета нет — едет Linux-пакет | `controller_first()` → `config.default_fullscreen = True` (`options.rpy:15-17`) и `gui.ui_scale = 1.4`; L3 = skip, R3 = auto-forward, LB/RB = листание вьюпортов (`input.rpy:19-29`); quick menu выведен из dpad-пути (`quick_menu.rpy:44-48`) | Вариант `steam_deck` вставляет **движок** при `steam_init()` (`00steam.rpy:1053-1059`: убирает `large`, добавляет `medium` и `touch`); экранную клавиатуру для `input()` тоже включает движок (`00steam.rpy:704`) | Эмуляция вёрстки — `RENPY_VARIANT="steam_deck medium touch" vn test smoke` (§7.1). **Живой Deck не проверялся** — устройства нет; прогон на нём объявлен обязательным в `../../ci/steam/README.md`. Протокол — [43-steam-qa.md](43-steam-qa.md) |
 | **Big Picture** | PARTIALLY IMPLEMENTED (вёрстка и детект есть, вёрстку ночью снимает CI, оставшиеся открытые пункты — [42](42-big-picture.md)) | Тот же desktop-пакет | `controller_first()` (фуллскрин + масштаб 1.4) плюс `gui.overscan_pad = 48` (`scale.rpy:42`); потребители — `quick_menu.rpy:17,19`, `gallery.rpy:138`, `build_overlay.rpy:15-16`, `core_screens.rpy:91,122,126,511-512` (рельса меню и тост, [42](42-big-picture.md) §5.6) | Вариант `steam_big_picture` вставляет движок (`00steam.rpy:1050`) | Эмуляция — `RENPY_VARIANT="steam_big_picture" vn test smoke`. **На реальном ТВ не проверялось**. Подробно — [42-big-picture.md](42-big-picture.md) |
-| **Android** | **NOT IMPLEMENTED** | Ветки нет: у `vn package` / `vn release build` нет `--package android`, RAPT/SDK не подключён (`grep -rni "android\|rapt\|\.aab\|apk" tools/vn/src/` — ноль). Движок пакет `android` объявляет (`00build.rpy:430`, `directory`, hidden), но без RAPT он бесполезен | Вариант `touch` уже опрашивается фасадом (`035_platform.rpy:36-37`); тач-hit-area аудита не было | Неприменимо | — |
+| **Android** | PARTIALLY IMPLEMENTED (канал сборки и предполётные проверки есть; ни одного APK не собрано — RAPT на машине не установлен) | Канал живёт в `vn release android {status,preflight,build}` (`cli.py`, модуль `tools/vn/src/vn/android.py`) и вызывает **штатную** команду лаунчера `renpy.sh <SDK>/launcher android_build <проект> --destination …` (`launcher/game/android.rpy:739`). `vn package` про Android не знает намеренно: там `launcher distribute`, а мобильный канал — другая команда лаунчера, свой тулчейн и свои потолки. Оверсэмпл-варианты `@N` в мобильный пакет не едут (`options.rpy:92`, §10.3) | Профиль тача — токены: `gui.touch_min` 120 px на телефоне / 72 px на планшете, `gui.ui_scale = 1.4`, `gui.overscan_pad = 48` (`scale.rpy:33-39,53-64,79-83`). Копий экранов под мобильный нет | Неприменимо | Вёрстка эмулируется вариантами: `RENPY_VARIANT="touch small phone android mobile" vn test smoke`; **на устройстве не проверялось** — RAPT/JDK/ключей на этой машине нет |
 
 **Остальные каналы.** GOG / itch.io / Epic — NOT IMPLEMENTED как процесс, но технически им достаточно standalone-архивов, залитых загрузчиком витрины руками; ownership-API у GOG/itch нет, поэтому «владение = наличие пака» (поведение без провайдера) там уже корректно по ADR-0014. iOS/web — пакеты у движка есть (`00build.rpy:431-432`), у нас не заводились. Консоли — вне горизонта: Ren'Py консольных портов не даёт.
 
 **Что общего у всех шести строк.** Копии UI под платформу не существует (§7-§8): различия делаются токенами `gui.*`, а не вариантами вёрстки. Поэтому «поддержать платформу» в этом проекте = детект + токены + канал поставки, а не порт интерфейса.
 
-### 2.1 Android: что уже готово, а что потребуется
+### 2.1 Android: что реализовано, что осталось
 
-Полезно знать заранее, потому что часть работы **уже сделана побочно** — release-рантайм чист для мобильных и консольных окружений (аудит 2026-08-18, зафиксирован в «Последствиях» ADR-0014):
+Часть работы была сделана побочно — release-рантайм чист для мобильных и консольных окружений (аудит 2026-08-18, зафиксирован в «Последствиях» ADR-0014):
 
 | Уже готово | Где |
 |---|---|
 | Ноль сети в рантайме: ни `urllib`, ни `socket`, ни HTTP-клиентов в `game/` | grep по `game/framework/` |
-| Ноль `subprocess` в релизной части (dev-инструменты `90_debug/` исключаются `build.classify`) | `../../game/options.rpy:31` |
+| Ноль `subprocess` в релизной части (dev-инструменты `90_debug/` исключаются `build.classify`) | `../../game/options.rpy:41` |
 | Файловый ввод только через `renpy.loader` — никаких абсолютных путей ФС | конвенция ядра |
 | UI не требует мыши: dpad-навигация, фокус по умолчанию в модалках, скролл-пресет | §7 |
 | Масштаб интерфейса — токен, а не вёрстка (мобильный экран = тот же рычаг, что Deck) | §8 |
-| Вариант `touch` уже опрашивается фасадом (`has_touch()`) | `035_platform.rpy:36-37` |
+| Детект мобильного окружения в фасаде: `is_mobile()`, `is_android()`, `is_phone()`, `is_desktop()`, `has_touch()`; строка `platform:` в лог пишется всегда, не только под Steam | `035_platform.rpy:36-84` |
+| Минимальная тач-зона — токен `gui.touch_min` (120 px телефон / 72 px планшет; вывод от 48 dp Material расписан в комментарии), safe-area `gui.overscan_pad = 48` и на мобильном (движок safe-area не инсетит) | `20_ui/scale.rpy:33-39,57-64,79-83`; потребитель — `quick_menu.rpy` |
+| Мобильный пакет без `@N`-вариантов: правило `build.classify("**@[2-9].*", "windows linux mac")` стоит **после** флейворных исключений (правило первого совпадения) | `../../game/options.rpy:72-92`, §10.3 |
+| Канал сборки в CLI: `vn release android status` (готовность тулчейна), `preflight` (предпосылки проекта), `build` (штатный `launcher android_build`) | `tools/vn/src/vn/android.py`, `cli.py` |
+| Предполётные проверки: потолок канала 2 ГБ (+80 % — предупреждение), пофайловый лимит 500 МБ для Play-бандла, мобильная модель памяти образов, утечка ключей подписи в git, отсутствие иконок/пресплэша | `android.py: preflight`, `keystore_leaks` |
 
-| Потребуется | Почему это работа, а не флаг |
+| Осталось | Почему это работа, а не флаг |
 |---|---|
-| RAPT/SDK Android + подпись, канал сборки | у `vn package`/`vn release build` нет `--package android`; в `cli.py` ветки нет вовсе |
-| Размер-бюджеты по каналам (AAB / universal APK < 2 ГБ) | `ARCHITECTURE.md:1189` требует реальную сборку `.aab` и сравнение с лимитами Play Asset Delivery — джобы нет |
+| Сам APK/AAB ни разу не собран | RAPT в SDK не установлен, JDK 21 и ключей подписи на этой машине нет. **CLI-пути установки тулчейна у Ren'Py не существует** — RAPT ставит апдейтер лаунчера (`launcher/game/updater.rpy:41`), Android SDK — кнопка *Install SDK*, ключи — *Generate Keys*, конфиг — *Configure*. `vn release android status` называет каждый шаг и падает кодом 1, а не изображает установку |
+| Мобильный лимит кэша образов не доезжает до движка | `render.mobile.image_cache_mb` (дефолт 200 МБ) читает только `preflight`; в `render.gen.rpy` эмитится один лимит — десктопный. Закрытие — вариант-условие `renpy.variant('mobile')` в эмиссии `config.image_cache_size_mb` |
+| `*.keystore` не в `.gitignore` | ключи создаёт лаунчер в корне проекта; из дистрибутива они исключены (`options.rpy:31`), но от коммита сейчас не защищены. `vn release android preflight` назовёт это блокером, как только ключ появится |
+| Размер-бюджеты по каналам в CI (AAB / universal APK) | `ARCHITECTURE.md:1189` требует реальную сборку `.aab` и сравнение с лимитами Play Asset Delivery — джобы нет; `preflight` считает оценку по `game/` + накладные ~150 МБ, а не по факту пакета |
 | Провайдер владения для Google Play Billing | в `035_platform.rpy` нужна вторая ветка `init 999` (см. §9) |
-| Тач-жесты и hit-area | «≥ 48 px» соблюдается только у quick menu (`quick_menu.rpy:4,49`), сплошного аудита не было |
+| Тач-жесты и сплошной аудит hit-area | токен `gui.touch_min` применён в quick menu; остальные экраны на палец не проверялись, физические размеры (120/72 px) выведены из типовых dpi, а не измерены на устройстве |
+| `is_desktop()` в фасаде есть, но **ни один экран им не гейтится** | на мобильном остаются бессмысленные «Выйти» (на iOS она запрещена правилами стора, на Android приложение снимает система) и группа настроек «Окно / Полный экран» — окна там нет. Штатный шаблон SDK гейтит и то, и другое как `renpy.variant("pc")`. Правка — обёртки `if vn_platform.is_desktop():` в `core_screens.rpy`; после скрытия группы «Экран» проверить, куда уедет `default_focus` |
 | Тематические `.rpa` под каналы без пофайловых дельта-патчей | норма `ARCHITECTURE.md` §2.4: desktop едет россыпью ради Steam-дельта-патчей; mobile-`.rpa` — опция фазы 3, **только через ADR** |
+
+#### 2.1.1 Мобильный канал: команды и что они проверяют
+
+```bash
+vn release android status      # RAPT, hash RAPT<->SDK, adb (Android SDK), JDK 21,
+                               # android.keystore / bundle.keystore, android.json
+                               # -> код 1 и перечень штатных шагов лаунчера, если чего-то нет
+vn release android preflight [--bundle]
+                               # размер: game/ минус @N-варианты + ~150 МБ накладных
+                               # против потолка 2 ГБ; для --bundle ещё лимит 500 МБ
+                               # на файл; мобильная модель памяти; ключи и оформление
+vn release android build [--bundle] [--install] [--launch] [--timeout 3600]
+                               # status -> vn build -> launcher android_build
+                               # лог gradle/RAPT идёт живьём: молчащая сборка
+                               # неотличима от зависшей
+```
+
+Фактический прогон на этой машине (2026-08-18, дословно): `status` печатает единственный пункт — «нет `<SDK>/rapt` — RAPT (тулчейн Android) не установлен: запустите лаунчер (`<SDK>/renpy.sh`), раздел Android — он предложит скачать RAPT» — и падает с «android: тулчейн не готов — перечисленное выше выполняется в лаунчере Ren'Py, CLI-пути установки у Ren'Py нет», код 1. `preflight --bundle` проходит: `game/: 2.8 МБ, из них @N-вариантов 0.3 МБ (в мобильный пакет не едут) -> 152 МБ с накладными`, `кэш образов мобильного профиля: 200 МБ`, три предупреждения — нет `android-icon_foreground.png`, `android-icon_background.png`, `android-presplash.jpg`. Порядок в `build` намеренный: тулчейн проверяется **до** `vn build`, потому что сборка ассетов и компиляция идут минутами, а проверка — миллисекунды.
+
+**Мобильный профиль памяти — отдельное число, и сегодня его видит только `preflight`.** `render.mobile.image_cache_mb` (`tools/schemas/project@1.schema.json`, дефолт `200`; в `project.yaml` не переопределён — десктопный `image_cache_mb: 1024`) применяется методом `RenderConfig.for_mobile()` (`assets/render_config.py`), и `preflight` считает на нём **ту же** модель памяти, что `vn assets memory`, но на масштабе `@1`: `@N`-варианты в мобильный пакет не едут, поэтому считать worst-case на `@2` было бы враньём в свою пользу. Отдельная проверка — «мобильный лимит ≥ десктопного» (предупреждение: почти всегда это забытая правка, а не решение). В **движок** этот лимит не эмитится: `render.gen.rpy` содержит один `define config.image_cache_size_mb` (см. таблицу «Осталось»), то есть на телефоне игра пока живёт с десктопным потолком кэша.
+
+**В CI мобильный канал проверяется на каждый пуш** — `ci.yml`: `vn release android preflight --bundle` **после** `vn build` (на пустом `game/` и потолок канала, и модель памяти зелены всегда → гейт был бы ложно-зелёным), плюс шаг `must_fail`, который требует, чтобы `vn release android status` и `vn release android build --timeout 1` возвращали НЕнулевой код **и называли** отсутствующий RAPT. Секунды против часа gradle, который упал бы на том же самом.
+
+**Что осталось непроверенным честно:** ни одной сборки APK/AAB не запускалось; `--install`/`--launch` (adb) не проверялись — устройства нет; оценка накладных расходов пакета (150 МБ) — оценка сверху, а не измерение, и уточняется по первому реальному APK; раскладка Android SDK внутри `rapt/` определяется по `rapt/sdk.txt` и `platform-tools/adb*` — если RAPT её сменит, диагностика даст ложное «нет adb» (сборку это не ломает).
 
 ---
 
@@ -360,11 +397,14 @@ RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0
 
 | Токен | Значение | Где считается |
 |---|---|---|
-| `gui.ui_scale` | `1.0` или `VN_UI_SCALE_LARGE = 1.4` | `../../game/framework/20_ui/scale.rpy:19` (константа), `:21-32` (расчёт), `:37` (`define`) |
-| `gui.overscan_pad` | `48` в Big Picture, иначе `0` | `scale.rpy:42` |
+| `gui.ui_scale` | `1.0` или `VN_UI_SCALE_LARGE = 1.4` | `../../game/framework/20_ui/scale.rpy:23` (константа), `:41-55` (расчёт), `:70` (`define`) |
+| `gui.overscan_pad` | `VN_SAFE_AREA_PAD = 48` в Big Picture **и на мобильном**, иначе `0` | `scale.rpy:36-39,79-80` |
+| `gui.touch_min` | `120` (телефон) / `72` (планшет) / `0` (десктоп) — **пол** тач-зоны, не размер | `scale.rpy:25-34,57-65,83` |
 | `persistent.vn_ui_scale` | `null` = авто, `"normal"`, `"large"` | `../../content/variables/settings.vars.yaml:11-15` |
 
-Как считается масштаб (`scale.rpy:21-32`): выбор игрока сильнее платформы; при `null` (авто) — `1.4`, если `vn_platform.controller_first()`, иначе `1.0`. Множитель применяется **в самих `define` в `gui.rpy`** (`../../game/gui.rpy:52-55` — комментарий-норма, `:58-64` — сами `round(N * gui.ui_scale)`): `interface 21 → 29`, `button 17 → 24`, `tiny 13 → 18` — интерфейс проходит порог читаемости Deck (~26–28 вирт. px строчных) и «10-foot» ТВ. Экраны при этом не трогаются **по построению**.
+Как считается масштаб (`scale.rpy:41-55`): выбор игрока сильнее платформы; при `null` (авто) — `1.4`, если `vn_platform.controller_first()` **или** `vn_platform.is_mobile()` (мелкий физический экран — те же 21 вирт. px на пятидюймовой стороне нечитаемы), иначе `1.0`.
+
+Проверено прогоном движка (`renpy.sh . quit --json-dump` + лог), значения из строки `display:`: десктоп `ui_scale=1.00 overscan=0 touch_min=0`; телефон `1.40 / 48 / 120`; планшет `1.40 / 48 / 72`; Steam Deck `1.40 / 0 / 0` — регрессии Deck мобильная ветка не дала. Множитель применяется **в самих `define` в `gui.rpy`** (`../../game/gui.rpy:52-55` — комментарий-норма, `:58-64` — сами `round(N * gui.ui_scale)`): `interface 21 → 29`, `button 17 → 24`, `tiny 13 → 18` — интерфейс проходит порог читаемости Deck (~26–28 вирт. px строчных) и «10-foot» ТВ. Экраны при этом не трогаются **по построению**.
 
 Переключение на лету — `vn.set_ui_scale(mode)` (`scale.rpy:52-57`): пишет `persistent` и зовёт `gui.rebuild()`, который перезапускает все `define gui.*` в исходном порядке и перестраивает стили; завершается `restart_interaction`, поэтому экран настроек переоценивает себя сам, без перезапуска игры. UI настройки — сегмент из трёх кнопок «авто / крупный / обычный» (`core_screens.rpy:326-349`).
 
@@ -473,7 +513,7 @@ RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0
 ```bash
 # Тулинг: эмиттер, VDF, раскладка депотов, статус библиотек, гард-тест фасада
 python -m pytest tools/vn/tests/test_platform.py -q                 # 10 passed
-python -m pytest tools/vn/tests -q                                  # 278 passed
+python -m pytest tools/vn/tests -q                                  # 373 passed
 
 # Контракт со штатным стеком движка (нужен RENPY_SDK, иначе skip)
 python -m pytest tools/vn/tests/test_engine_compat.py::test_steam_engine_contract -q
@@ -510,7 +550,7 @@ vn release validate --flavor public
 | **Читать перед изменением** | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) (**норматив**, читать целиком), `../../game/framework/00_core/035_platform.rpy` (весь файл — 89 строк), `../../game/framework/20_ui/{scale.rpy,input.rpy}`, `../../game/framework/20_ui/components.rpy:91-197`, `../../tools/vn/src/vn/release.py:150-326`, `../../tools/vn/src/vn/cli.py:1819-1852`, `../../tools/vn/src/vn/content/compile.py:133-152`, `../../ci/steam/README.md`, `../../project.yaml:13-15`, `$RENPY_SDK/renpy/common/00steam.rpy` (источник истины про штатный стек) и `$RENPY_SDK/renpy/common/00build.rpy:421-432` (форматы пакетов) |
 | **Не трогать** | `game/generated/platform.gen.rpy` — генерат (`.gitignore`); `build/steam/**` — артефакт `vn release steam`; steam_api-библиотеки — их в репозитории нет и добавлять нельзя; дефолтные пад-биндинги движка (`00keymap.rpy` в SDK) |
 | **Зависимости (что ломается ниже по течению)** | Правка `035_platform.rpy` → ачивки, ownership-гейт (`chapter_select`, галерея, ачивки), `controller_first()` → `gui.ui_scale` и `config.default_fullscreen`. Правка `scale.rpy` → **все** кегли `gui.*` и минимумы `2*Borders` панелей ADR-0009. Правка `input.rpy` → раскладка пада во всех контекстах. Правка `_emit_platform` → свежесть генерата (`vn build --check`) и `test_platform.py`. Добавление `steam_dlc_appid` → `VN_STEAM_DLC` и поведение `owned()` |
-| **Валидация** | `python -m pytest tools/vn/tests/test_platform.py -q` → 13 passed → `python -m pytest tools/vn/tests -q` → 278 passed (без `RENPY_SDK` — 271 passed + 7 skipped) → `test_engine_compat::test_steam_engine_contract` (с `RENPY_SDK`) → `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` + просмотр `.vncache/smoke/` глазами → `vn release steam --flavor public` (при заполненном appid) → `vn release validate --flavor patron` (у `public` штатный FAIL по зрелости контента) |
+| **Валидация** | `python -m pytest tools/vn/tests/test_platform.py -q` → 13 passed → `python -m pytest tools/vn/tests -q` → 373 passed (без `RENPY_SDK` — 271 passed + 7 skipped) → `test_engine_compat::test_steam_engine_contract` (с `RENPY_SDK`) → `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` + просмотр `.vncache/smoke/` глазами → `vn release steam --flavor public` (при заполненном appid) → `vn release validate --flavor patron` (у `public` штатный FAIL по зрелости контента) |
 | **Частые ошибки** | 1) Добавлять платформенное ветвление в экран или сцену — точка касания ровно одна, и это под тестом (`test_platform.py:183-193`). 2) Считать, что `owned()` по-прежнему всегда `True` — с ADR-0014 под Steam у пака с `steam_dlc_appid` он честно даёт `False`; описание «провайдера никто не подключает» в старых текстах устарело. 3) Читать `vn release steam` как аплоад — она только готовит VDF и раскладку депотов. 4) Ожидать Steam в локальной сборке: без steam_api в `$RENPY_SDK/lib/py3-*/` и с `appid: null` любая сборка — standalone, это норма. 5) Уменьшать `gui.ui_scale` (< 1.0) — ADR-0009 запрещает, сплющит панели. 6) Верить `../ARCHITECTURE.md` §6.7 про `steam_appid` в манифесте пака — поле называется `steam_dlc_appid`, а `steam_appid` схемой запрещён. 7) Искать Steam-проверку в релизном гейте — её там нет (и проверок в нём **20**, не 19). 8) Считать Steam Cloud недоделкой: кода нет осознанно (§6). 9) Утверждать, что `vn release steam` отработает целиком — раскладка депотов работает (§3.4), но `appid`/`depots` в `project.yaml` не заполнены, аплоад ручной, живого прогона не было. 10) Писать «Steam Deck поддержан и проверен» — проверена только вёрстка через `RENPY_VARIANT`; живого устройства не было, и это надо называть прямо |
 
 ---

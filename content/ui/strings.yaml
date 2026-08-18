@@ -49,6 +49,8 @@ strings:
   gal.cg_ch01_route_mira.title: "Роут Миры: закат"
   gal.cg_ch01_route_mira.desc: "Открывается на роуте Миры"
   gal.cg_ch01_concept.title: "Концепт: крыша"
+  gal.shot_ch01_s030_sunset.title: "Крыша на закате"
+  gal.shot_ch01_s030_sunset.desc: "Послойный кадр: наряд Миры переключается прямо в галерее"
 
   # ── Экран достижений (20_ui/screens/achievements.rpy) ───────────────────────
   # [_done]/[_total] — экранные локали счётчика: имена обязаны совпадать с

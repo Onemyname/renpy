@@ -31,7 +31,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 # Расширения, которые Pillow читает и которые имеют смысл как МАСТЕР.
@@ -51,6 +51,13 @@ DEFAULTS: dict = {
     # -> config.image_cache_size_mb. Ren'Py трактует его как ПИКСЕЛЬНЫЙ лимит:
     # cache_limit = image_cache_mb * 1024 * 1024 // 4 (renpy/display/im.py: Cache.init).
     "image_cache_mb": 400,
+    # Мобильная поставка (Android/iOS). Тот же кэш, но памяти у процесса в разы
+    # меньше, и переполнение стоит дороже: на телефоне вытеснение образов — это
+    # не только фризы, но и убийство приложения системой. Отдельное число, а не
+    # «поделим десктопное»: сколько именно можно взять — решение проекта, и живёт
+    # оно там же, где остальные решения о качестве. Дефолт — половина десктопного
+    # (пропорция боевого профиля из docs/ARCHITECTURE.md: 1024 desktop / 512 mobile).
+    "mobile": {"image_cache_mb": 200},
     # Сколько «поколений» сцен должно помещаться в кэш одновременно: текущая сцена
     # + предзагрузка следующей + запас на откат. Меньше 2 — гарантированный трэш.
     "cache_generations": 3,
@@ -233,6 +240,7 @@ class RenderConfig:
     image_cache_mb: int
     cache_generations: int
     thumb: dict
+    mobile_image_cache_mb: int = DEFAULTS["mobile"]["image_cache_mb"]
     max_oversampling: int = 4
     classes: dict[str, AssetClass] = field(default_factory=dict)
 
@@ -248,6 +256,12 @@ class RenderConfig:
         """Сколько пикселей может стоить одна сцена, чтобы в кэш влезло
         cache_generations сцен подряд (текущая + предзагрузка следующей + запас)."""
         return self.cache_limit_px // max(1, self.cache_generations)
+
+    def for_mobile(self) -> "RenderConfig":
+        """Тот же профиль с МОБИЛЬНЫМ лимитом кэша: модель памяти (assets/memory.py)
+        и предполётная проверка APK считают мобильный worst-case тем же кодом, что
+        десктопный, — иначе два расчёта разъезжаются на первой правке формулы."""
+        return replace(self, image_cache_mb=self.mobile_image_cache_mb)
 
     def cls(self, name: str) -> AssetClass:
         if name not in self.classes:
@@ -287,6 +301,7 @@ def load_render_config(root: Path | None = None, project: dict | None = None) ->
         image_cache_mb=int(merged["image_cache_mb"]),
         cache_generations=int(merged["cache_generations"]),
         thumb=dict(merged["thumb"]),
+        mobile_image_cache_mb=int(merged["mobile"]["image_cache_mb"]),
         max_oversampling=int(merged["max_oversampling"]),
         classes=classes,
     )

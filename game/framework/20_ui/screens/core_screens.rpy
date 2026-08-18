@@ -127,9 +127,14 @@ screen navigation():
                 add Solid(gui.panel_border) xsize 248 ysize 1
                 null height gui.sp_m
                 if main_menu:
-                    # Confirm со СВОИМ текстом: движковые layout.*-строки наш
-                    # конвейер переводов не покрывает.
-                    textbutton vn_loc.t("ui.nav.quit") action Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False)) style "vn_nav_button"
+                    # «Выйти» — только на десктопе: на iOS кнопка выхода запрещена
+                    # правилами стора, на Android приложение снимает система, и
+                    # игрок, вышедший «внутри» приложения, видит чёрный экран.
+                    # Штатный шаблон SDK гейтит её так же (gui/game/screens.rpy:
+                    # `if renpy.variant("pc")`). Confirm со СВОИМ текстом:
+                    # движковые layout.*-строки наш конвейер переводов не покрывает.
+                    if vn_platform.is_desktop():
+                        textbutton vn_loc.t("ui.nav.quit") action Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False)) style "vn_nav_button"
                 else:
                     textbutton vn_loc.t("ui.nav.return") action Return() style "vn_nav_button"
                     textbutton vn_loc.t("ui.nav.main_menu") action Confirm(vn_loc.t("ui.confirm.main_menu"), MainMenu(confirm=False)) style "vn_nav_button"
@@ -209,7 +214,10 @@ screen main_menu():
             textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select") style "vn_main_item"
         textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_main_item"
         textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_main_item"
-        textbutton vn_loc.t("ui.nav.quit") action Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False)) style "vn_main_item"
+        # «Выйти» — только на десктопе (та же причина и тот же гейт, что в рельсе
+        # navigation): мобильное приложение закрывает система, а не пункт меню.
+        if vn_platform.is_desktop():
+            textbutton vn_loc.t("ui.nav.quit") action Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False)) style "vn_main_item"
     text vn_loc.t("ui.main.version"):
         style "vn_version"
         xpos 96
@@ -298,25 +306,35 @@ screen preferences():
             spacing gui.sp_xl
             vbox:
                 spacing gui.sp_l + gui.sp_s
-                vbox:
-                    spacing gui.sp_m
-                    $ _g = vn_loc.t("ui.prefs.display").upper()
-                    text _g style "vn_group"
-                    hbox:
-                        spacing gui.sp_xs
-                        # Контент забирает default focus у рельсы (§5.1), но
-                        # садится на УЖЕ выбранный сегмент: слепой A тогда
-                        # переустанавливает текущий режим экрана (no-op), а не
-                        # выбивает игрока из полноэкранного режима на ТВ.
-                        $ _fs = _preferences.fullscreen
-                        textbutton vn_loc.t("ui.prefs.windowed"):
-                            action Preference("display", "window")
-                            style "vn_seg_button"
-                            default_focus (0 if _fs else gui.focus_content)
-                        textbutton vn_loc.t("ui.prefs.fullscreen"):
-                            action Preference("display", "fullscreen")
-                            style "vn_seg_button"
-                            default_focus (gui.focus_content if _fs else 0)
+                # Режим экрана — только там, где окно есть: на мобильном приложение
+                # всегда занимает экран целиком, Preference("display", …) там ничего
+                # не меняет, а группа занимает место и ловит палец. Гейт вариантом, а
+                # не копией экрана (scale.rpy: вторая вёрстка расходится с первой);
+                # штатный шаблон SDK гейтит эту же группу так же (gui/game/screens.rpy:
+                # `if renpy.variant("pc")`). Побочное следствие осознанно: на мобильном
+                # у экрана не остаётся своего default focus (gui.focus_content жил
+                # на сегментах) — первый фокус берёт рельса (navigation), и слепой A
+                # там переоткрывает «Настройки», то есть ничего не делает.
+                if vn_platform.is_desktop():
+                    vbox:
+                        spacing gui.sp_m
+                        $ _g = vn_loc.t("ui.prefs.display").upper()
+                        text _g style "vn_group"
+                        hbox:
+                            spacing gui.sp_xs
+                            # Контент забирает default focus у рельсы (§5.1), но
+                            # садится на УЖЕ выбранный сегмент: слепой A тогда
+                            # переустанавливает текущий режим экрана (no-op), а не
+                            # выбивает игрока из полноэкранного режима на ТВ.
+                            $ _fs = _preferences.fullscreen
+                            textbutton vn_loc.t("ui.prefs.windowed"):
+                                action Preference("display", "window")
+                                style "vn_seg_button"
+                                default_focus (0 if _fs else gui.focus_content)
+                            textbutton vn_loc.t("ui.prefs.fullscreen"):
+                                action Preference("display", "fullscreen")
+                                style "vn_seg_button"
+                                default_focus (gui.focus_content if _fs else 0)
                 vbox:
                     spacing gui.sp_m
                     $ _g2 = vn_loc.t("ui.prefs.text").upper()

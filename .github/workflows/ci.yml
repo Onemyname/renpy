@@ -90,11 +90,50 @@ jobs:
       - name: Оверсэмпл подтверждён движком (ADR-0012)
         run: xvfb-run -a vn test oversample --scale 2
 
+      # Мобильный канал: на каждый пуш идёт только арифметика по game/ — секунды
+      # против часа gradle, который упал бы на том же самом. Шаг обязан стоять ПОСЛЕ
+      # vn build: на пустом game/ и потолок канала, и модель памяти зелены всегда,
+      # то есть гейт был бы ложно-зелёным. --bundle — строгое надмножество: к потолку
+      # канала добавляется пофайловый лимит fast-follow пакета Play.
+      - name: Предпосылки мобильной поставки (vn release android preflight)
+        run: vn release android preflight --bundle
+
+      # RAPT (тулчейн Android) и piper (TTS) на раннере отсутствуют и не появятся:
+      # RAPT ставит только апдейтер лаунчера, piper — ручная установка. Проверяется
+      # ровно одно, и это единственное, что здесь вообще проверяемо: команда есть в
+      # установленном пакете, отвечает НЕнулевым кодом и называет отсутствующий
+      # тулчейн — а не падает трейсбеком и не делает вид, что собрала.
+      # Все вызовы — миллисекунды: тулчейн проверяется до всякой работы (android
+      # build зовёт status ДО vn build, voice tts — resolve_tts до записи в assets_src).
+      # --backend piper у tts обязателен: без пина команда возьмёт первый доступный
+      # бэкенд и запишет синтез мастерами в assets_src (LFS-зона).
+      - name: Отсутствие внешних тулчейнов диагностируется честно (Android/TTS)
+        run: |
+          log="${RUNNER_TEMP:-/tmp}/toolchain.log"   # вне рабочего дерева: ниже идут гейты по репозиторию
+          must_fail() {           # $1 — что обязано быть в выводе, дальше сама команда
+            want="$1"; shift
+            if "$@" > "$log" 2>&1; then
+              echo "::error::«$*» вернула 0 — тулчейна нет, а команда молчит"; cat "$log"; exit 1
+            fi
+            grep -q "$want" "$log" || {
+              echo "::error::«$*» упала, не назвав $want — по выводу непонятно, что делать"
+              cat "$log"; exit 1; }
+          }
+          must_fail RAPT vn release android status
+          must_fail RAPT vn release android build --timeout 1
+          must_fail piper vn voice tts ch01 --backend piper --regenerate-drafts
+
       - name: Свежесть генерата (режим без записи, G1)
         run: xvfb-run -a vn content compile --check
 
+      # Из tools/vn, а не из корня: набор импортирует себя как пакет
+      # (test_verify_regressions: from tests.test_compile import BASE_OUTPUTS), а это
+      # работает только когда tools/vn на sys.path. `python -m pytest tools/vn/tests`
+      # из корня даёт ModuleNotFoundError: No module named 'tests' — локально такой
+      # прогон не воспроизводится ничем, потому что разработчик запускает из tools/vn.
       - name: pytest (юнит + e2e с движком)
-        run: xvfb-run -a python -m pytest tools/vn/tests -q
+        working-directory: tools/vn
+        run: xvfb-run -a python -m pytest tests -q
 
       - name: Артефакт generated (аварийный режим G4)
         uses: actions/upload-artifact@v4

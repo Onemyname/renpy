@@ -1,6 +1,6 @@
 # 43. Предрелизная приёмка: Steam и Steam Deck
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — автоматизирован «холодный» слой (278 pytest-тестов, движковый lint, smoke-автопилот в реальном движке, сейв-корпус с реальными миграциями, `vn test oversample`, релизный гейт из 21 проверки) плюс ночная съёмка вёрстки в двух геймпадных профилях (`nightly.yml`, джоба `controller-first`), но **всё Steam-специфичное по-прежнему проверяется только руками и только на живой машине**: ни `vn test smoke`, ни pytest не видят Steam-инициализации, оверлея, `dlc_installed` и событий геймпада. Сегодня недоступны две большие части чек-листа: **нет App ID** (`../../project.yaml:15` — `appid: null`) и **нет физического Steam Deck**.
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED — автоматизирован «холодный» слой (373 pytest-теста, движковый lint, smoke-автопилот в реальном движке, сейв-корпус с реальными миграциями, `vn test oversample`, релизный гейт из 21 проверки) плюс ночная съёмка вёрстки в двух геймпадных профилях (`nightly.yml`, джоба `controller-first`), но **всё Steam-специфичное по-прежнему проверяется только руками и только на живой машине**: ни `vn test smoke`, ни pytest не видят Steam-инициализации, оверлея, `dlc_installed` и событий геймпада. Сегодня недоступны две большие части чек-листа: **нет App ID** (`../../project.yaml:15` — `appid: null`) и **нет физического Steam Deck**.
 > **Отвечает на вопрос:** «Что именно я обязан проверить перед тем, как переключить Steam-ветку в `default` — какой командой, что смотреть глазами и что считать провалом».
 
 Этот файл — рабочий чек-лист, а не теория. Как включается Steam и что откуда берётся — [40-steamworks.md](40-steamworks.md); архитектура платформенного слоя и controller-first приёмы — [39-platforms.md](39-platforms.md); уровни тестов вообще — [27-testing.md](27-testing.md).
@@ -13,7 +13,7 @@
 # ── Автоматизированный минимум (без Steam, ~2-4 минуты) ────────────────────
 vn doctor                                      # окружение, SDK-пин, шрифты из LFS
 vn content lint                                # схемы, граф, достижимость
-python -m pytest tools/vn/tests -q             # 278 тестов тулинга
+python -m pytest tools/vn/tests -q             # 373 теста тулинга
 vn build                                       # ассеты + генерат + бюджеты (в т.ч. памяти)
 bash "$RENPY_SDK/renpy.sh" . lint              # движковый lint
 vn test oversample --scale 2                   # 4K-варианты реально подхватываются
@@ -437,7 +437,7 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True, i
 |---|---|---|
 | `vn doctor` | окружение, пин SDK (8.5.3), шрифты-указатели LFS, реестр схем | ничего про Steam и рантайм |
 | `vn content lint` | схемы, именование, граф сцен, достижимость, бинари мимо LFS | визуальные поломки, рантайм |
-| `python -m pytest tools/vn/tests -q` (278) | тулинг; `test_platform.py` (13) — эмиттер, VDF, раскладка депотов + разворачивание каталога-обёртки, гард-тест «Steam только в фасаде»; `test_release.py` (18) — в т.ч. рантайм-гейт паков по флейвору и зрелость контента; `test_crash_handler.py` (6) — инварианты экрана краха; `test_achievements.py` (10) — экран достижений на уровне данных | сам движок; `game/framework/**` в рантайме питоном не исполняется |
+| `python -m pytest tools/vn/tests -q` (373) | тулинг; `test_platform.py` (13) — эмиттер, VDF, раскладка депотов + разворачивание каталога-обёртки, гард-тест «Steam только в фасаде»; `test_release.py` (18) — в т.ч. рантайм-гейт паков по флейвору и зрелость контента; `test_crash_handler.py` (6) — инварианты экрана краха; `test_achievements.py` (10) — экран достижений на уровне данных | сам движок; `game/framework/**` в рантайме питоном не исполняется |
 | `vn build` | ассеты, генерат, размерные бюджеты **и бюджет памяти сцены** (жёстко) | всё, что видно только глазами |
 | `renpy.sh . lint` | движковые проблемы скрипта и стилей | сплющенный 9-patch, обрезанный текст |
 | `vn test oversample --scale 2` | движок реально подставляет `@2`-варианты | что вариант выглядит хорошо |
@@ -542,7 +542,7 @@ steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 # 7. Руками: §1.1-1.2, §1.7-1.8, §1.11-1.12, §2.1-2.8 на живом Deck и на десктопе
 ```
 
-Эталон на 2026-08-18 (HEAD `e3c2842` + текущая итерация): `pytest tools/vn/tests -q` → 278 passed; `test_platform.py` → 13 passed; `vn release validate --flavor public` → 20 строк, 18 PASS + 2 WARN (озвучка-драфты и зрелость контента), 0 FAIL, exit 0; `vn release validate --flavor patron` → 21 строка, 20 PASS + 1 WARN, exit 0; `vn assets memory` → `память: OK`, худшая сцена `ch01_s030` 28.5 из 89.5 Мпикс; `vn release steam --flavor public` → exit 1 (`appid` не задан) — ожидаемо; `vn test oversample --scale 2` → проверено 22, поднято 21 (панели вошли в проверку).
+Эталон на 2026-08-18 (HEAD `e3c2842` + текущая итерация): `pytest tools/vn/tests -q` → 373 passed; `test_platform.py` → 13 passed; `vn release validate --flavor public` → 20 строк, 18 PASS + 2 WARN (озвучка-драфты и зрелость контента), 0 FAIL, exit 0; `vn release validate --flavor patron` → 21 строка, 20 PASS + 1 WARN, exit 0; `vn assets memory` → `память: OK`, худшая сцена `ch01_s030` 28.5 из 89.5 Мпикс; `vn release steam --flavor public` → exit 1 (`appid` не задан) — ожидаемо; `vn test oversample --scale 2` → проверено 22, поднято 21 (панели вошли в проверку).
 
 ---
 

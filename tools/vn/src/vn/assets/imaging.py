@@ -122,18 +122,52 @@ def encode(src: Path, target: tuple[int, int] | None, quality: int,
             im = im.resize(tuple(target), Image.LANCZOS)
         if max_side:
             im.thumbnail((max_side, max_side), Image.LANCZOS)
-        buf = io.BytesIO()
-        fmt = out_format.lower()
-        if fmt == "webp":
-            im.save(buf, format="WEBP", quality=quality, method=4)
-        elif fmt == "png":
-            im.save(buf, format="PNG", optimize=True)
-        elif fmt == "jpg":
-            im.convert("RGB").save(buf, format="JPEG", quality=quality,
-                                   optimize=True, progressive=True, subsampling=0)
-        else:
-            raise ImagingError(f"неизвестный формат выхода {out_format!r}")
-        return buf.getvalue()
+        return _save(im, quality, out_format)
+
+
+def composite(layers: list[Path], quality: int, out_format: str = "webp",
+              max_side: int | None = None) -> bytes:
+    """Слои (снизу вверх) -> байты СОБРАННОГО кадра.
+
+    Нужно там, где кадр существует только как композиция и плоского мастера у него
+    нет: послойные шоты (ADR-0013) собираются движком в рантайме, а сетке галереи
+    нужна одна картинка. Склейка — alpha_over ровно как у layeredimage: слои
+    лежат на одном холсте и кладутся в (0,0), поэтому превью совпадает с кадром,
+    который игрок видел в игре."""
+    from PIL import Image
+
+    if not layers:
+        raise ImagingError("композиция без слоёв: нечего склеивать")
+    with _open(layers[0]) as base:
+        out = base.convert("RGBA")
+    for path in layers[1:]:
+        with _open(path) as im:
+            layer = im.convert("RGBA")
+        if layer.size != out.size:
+            raise ImagingError(
+                f"{path.name}: холст {layer.size} != {out.size} — слои одного шота "
+                f"обязаны лежать на ОДНОМ холсте")
+        out = Image.alpha_composite(out, layer)
+    if max_side:
+        out.thumbnail((max_side, max_side), Image.LANCZOS)
+    # Подложка шота непрозрачна, поэтому альфа в собранном кадре — мёртвый вес.
+    return _save(out.convert("RGB"), quality, out_format)
+
+
+def _save(im, quality: int, out_format: str) -> bytes:
+    """Готовое изображение -> байты файла заданного формата."""
+    buf = io.BytesIO()
+    fmt = out_format.lower()
+    if fmt == "webp":
+        im.save(buf, format="WEBP", quality=quality, method=4)
+    elif fmt == "png":
+        im.save(buf, format="PNG", optimize=True)
+    elif fmt == "jpg":
+        im.convert("RGB").save(buf, format="JPEG", quality=quality,
+                               optimize=True, progressive=True, subsampling=0)
+    else:
+        raise ImagingError(f"неизвестный формат выхода {out_format!r}")
+    return buf.getvalue()
 
 
 def aspect_mismatch(size: tuple[int, int], target: tuple[int, int]) -> float:
