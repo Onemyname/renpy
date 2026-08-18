@@ -102,4 +102,7 @@ init -998 python in vn:
         (включая gui.ui_scale) и перестраивает стили; завершается
         restart_interaction — экран настроек переоценивается сам."""
         renpy.store.persistent.vn_ui_scale = mode
-        renpy.store.gui.rebuild()
+        # Через фасад: gui.rebuild — функция ШАБЛОНА SDK, не документированный API
+        # движка (G18). Прямой вызов из 20_ui был единственным местом, где это
+        # правило нарушалось.
+        renpy.store.vn_compat.gui_rebuild()

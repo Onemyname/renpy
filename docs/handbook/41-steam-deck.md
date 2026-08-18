@@ -74,9 +74,9 @@ Deck — Linux x86_64 (SteamOS 3, Arch-based). Нужен пакет `linux`. Re
 vn release build --flavor public --package linux
 ```
 
-Что делает команда (`tools/vn/src/vn/cli.py:1762-1816`): `vn build` → релизный гейт (`validate_release`) → `game/build_id.json` → `vn package` → `build-info.json` в каталог дистрибутива. `--flavor` обязателен; `--package` можно повторять.
+Что делает команда (`tools/vn/src/vn/cli.py`): `vn build` → релизный гейт (`validate_release`) → `game/build_id.json` → `vn package` → `build-info.json` в каталог дистрибутива. `--flavor` обязателен; `--package` можно повторять.
 
-Для быстрой итерации без гейта: `vn package --package linux` (`cli.py:301-393`) — та же раскладка, но без флейвора, без вотермарки и без исключения NSFW-глобов. Для проверки вёрстки этого достаточно; для проверки того, что уедет игроку, — нет.
+Для быстрой итерации без гейта: `vn package --package linux` (`cli.py`) — та же раскладка, но без флейвора, без вотермарки и без исключения NSFW-глобов. Для проверки вёрстки этого достаточно; для проверки того, что уедет игроку, — нет.
 
 ### 2.2 Что получается на диске
 
@@ -422,7 +422,7 @@ STATUS: PARTIAL. Норма «≥ 48 px» соблюдена сознатель�
 
 Два числа, оба уже есть в проекте.
 
-**Cold start.** Бюджет `budgets.cold_start_s: 30` (`project.yaml:63`). Меряется **только** в `vn test smoke`: `vn_qa._T0` берётся на `init` (`030_flow.rpy:94`), результат пишется в `.vncache/smoke/startup.txt`, сравнение с бюджетом — `cli.py:1608-1616`. На Deck запустить `vn test smoke` нельзя (нет SDK и тулинга), поэтому измеряйте секундомером от нажатия Play до появления главного меню. Ориентир из `project.yaml:63`: CI-раннер на llvmpipe ~14 c, RTX ~1 c; Deck — между ними, ближе к нижней границе.
+**Cold start.** Бюджет `budgets.cold_start_s: 30` (`project.yaml:63`). Меряется **только** в `vn test smoke`: `vn_qa._T0` берётся на `init` (`030_flow.rpy:94`), результат пишется в `.vncache/smoke/startup.txt`, сравнение с бюджетом — `cli.py`. На Deck запустить `vn test smoke` нельзя (нет SDK и тулинга), поэтому измеряйте секундомером от нажатия Play до появления главного меню. Ориентир из `project.yaml:63`: CI-раннер на llvmpipe ~14 c, RTX ~1 c; Deck — между ними, ближе к нижней границе.
 
 **Память образов.** Реальный потолок производства — не диск, а кэш декодированных образов: при переполнении Ren'Py не падает, а перестаёт предзагружать и начинает перерасшифровывать образы посреди сцены — игрок видит необъяснимые фризы при зелёной сборке (докстринг `tools/vn/src/vn/assets/memory.py:1-9`). Проверяется до выезда на Deck:
 
@@ -438,7 +438,7 @@ $ vn assets memory --scale 1
 память: OK
 ```
 
-`--scale 1` — это ровно случай Deck: `draw_per_virt` = 0.667 < 1, `@2` не грузятся (§5), сцена стоит в 2.8 раза дешевле, чем на 4K-мониторе (`--scale 2` даёт 28.5 Мпикс на той же сцене). Значит **Deck — не узкое место по памяти образов, узкое место — 4K-монитор.** Тот же анализ гоняется внутри `vn build` и валит сборку сообщением «бюджет памяти сцены превышен» (`cli.py:176-203`).
+`--scale 1` — это ровно случай Deck: `draw_per_virt` = 0.667 < 1, `@2` не грузятся (§5), сцена стоит в 2.8 раза дешевле, чем на 4K-мониторе (`--scale 2` даёт 28.5 Мпикс на той же сцене). Значит **Deck — не узкое место по памяти образов, узкое место — 4K-монитор.** Тот же анализ гоняется внутри `vn build` и валит сборку сообщением «бюджет памяти сцены превышен» (`cli.py`).
 
 Чего в проекте нет: замера FPS, профиля GPU, бюджета энергопотребления. STATUS: NOT IMPLEMENTED. Штатные инструменты движка на месте и работают в релизной сборке: оверлей производительности — **F3** (`00keymap.rpy:155`, обработчик `ToggleScreen("_performance")` на `:461`), выбор рендерера — **Shift+G**. На Deck к ним нужна клавиатура (или Steam-раскладка с назначенными клавишами).
 
@@ -500,7 +500,7 @@ RENPY_VARIANT="steam_deck medium touch" VN_AUTOPILOT_SCREENS=gallery,achievement
 ls .vncache/smoke/
 ```
 
-Почему это работает: `vn test smoke` запускает игру подпроцессом, наследуя окружение — `env = dict(os.environ, VN_AUTOPILOT="1", …)` (`cli.py:1538`), поэтому `RENPY_VARIANT` доезжает до движка и `choose_variants()` берёт его вместо автодетекции. `VN_AUTOPILOT_SCREENS` читает `vn_qa.autopilot_screens()` (`030_flow.rpy:166-183`) в конце прогона: показывает каждый экран, ждёт 0.3 c, снимает `screen_<name>.png`, прячет.
+Почему это работает: `vn test smoke` запускает игру подпроцессом, наследуя окружение — `env = dict(os.environ, VN_AUTOPILOT="1", …)` (`cli.py`), поэтому `RENPY_VARIANT` доезжает до движка и `choose_variants()` берёт его вместо автодетекции. `VN_AUTOPILOT_SCREENS` читает `vn_qa.autopilot_screens()` (`030_flow.rpy:166-183`) в конце прогона: показывает каждый экран, ждёт 0.3 c, снимает `screen_<name>.png`, прячет.
 
 **Что этот прогон проверяет:**
 
@@ -519,7 +519,7 @@ ls .vncache/smoke/
 | Не проверяет | Почему |
 |---|---|
 | **letterbox 40 px и физический масштаб** | окно у прогона десктопное; `RENPY_VARIANT` меняет варианты, но не разрешение экрана. Реальные 1280×800 не эмулируются |
-| **`draw_per_virt` и подбор `@N`** | зависит от физического окна. Для этого есть отдельная команда: `vn test oversample --scale 2` (`cli.py:1622-1656`) — она подменяет `draw_per_virt` и дёргает настоящий `Image.get_oversampled_image()` (`game/framework/90_debug/030_oversample.rpy`) |
+| **`draw_per_virt` и подбор `@N`** | зависит от физического окна. Для этого есть отдельная команда: `vn test oversample --scale 2` (`cli.py`) — она подменяет `draw_per_virt` и дёргает настоящий `Image.get_oversampled_image()` (`game/framework/90_debug/030_oversample.rpy`) |
 | **пад** | автопилот не генерирует события `pad_*` вообще. Ни один фокус-путь, ни один `default_focus`, ни одна пад-кнопка автоматикой не проверены |
 | **Steam-инициализацию** | `RENPY_VARIANT` подставляет варианты, но не поднимает `steamapi`. `owned() == False`, ачивки, оверлей, `dlc_installed` — только живой Steam |
 | **тач** | вариант `touch` есть, событий тача нет |
@@ -598,7 +598,7 @@ vn release validate --flavor patron                      # 21 строка: 20 P
 
 | | |
 |---|---|
-| **Читать перед изменением** | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) (норматив), `../../game/framework/00_core/035_platform.rpy` (весь, 89 строк), `../../game/framework/20_ui/scale.rpy` (весь, 57 строк), `../../game/framework/20_ui/input.rpy` (весь, 41 строка), `../../game/framework/20_ui/components.rpy:142-153` (`vn_ui.hint`), `../../game/options.rpy:12-17`, `../../project.yaml:13-15,20-33,57-65`, `$RENPY_SDK/renpy/main.py:155-300` (`choose_variants`), `$RENPY_SDK/renpy/common/00steam.rpy:962-1060` (`steam_preinit`/`steam_init`/варианты), `$RENPY_SDK/renpy/common/00build.rpy:421-432` (форматы пакетов), `$RENPY_SDK/renpy/display/im.py:732-763` (`get_oversampled_image`), `../../tools/vn/src/vn/release.py:150-326`, `../../tools/vn/src/vn/cli.py:301-393,1571-1656` |
+| **Читать перед изменением** | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) (норматив), `../../game/framework/00_core/035_platform.rpy` (весь, 89 строк), `../../game/framework/20_ui/scale.rpy` (весь, 57 строк), `../../game/framework/20_ui/input.rpy` (весь, 41 строка), `../../game/framework/20_ui/components.rpy:142-153` (`vn_ui.hint`), `../../game/options.rpy:12-17`, `../../project.yaml:13-15,20-33,57-65`, `$RENPY_SDK/renpy/main.py:155-300` (`choose_variants`), `$RENPY_SDK/renpy/common/00steam.rpy:962-1060` (`steam_preinit`/`steam_init`/варианты), `$RENPY_SDK/renpy/common/00build.rpy:421-432` (форматы пакетов), `$RENPY_SDK/renpy/display/im.py:732-763` (`get_oversampled_image`), `../../tools/vn/src/vn/release.py:150-326`, `../../tools/vn/src/vn/cli.py,1571-1656` |
 | **Не трогать** | `game/generated/**` — генерат (`platform.gen.rpy`, `render.gen.rpy`, `version.gen.rpy`); `build/**` — артефакты (`.gitignore:20`); дефолтные пад-биндинги движка (`00keymap.rpy` в SDK); steam_api-библиотеки — их в репозитории нет и добавлять нельзя (лицензия Valve) |
 | **Зависимости (что ломается ниже по течению)** | `scale.rpy:19` → **все** интерфейсные кегли `gui.*` и минимумы `2*Borders` панелей ADR-0009. `scale.rpy:42` → четыре потребителя `gui.overscan_pad` (`quick_menu.rpy:17,19`, `gallery.rpy:144`, `build_overlay.rpy:15-16`, `core_screens.rpy:91,122,126,511-512`). `035_platform.rpy` → `gui.ui_scale`, `config.default_fullscreen`, ownership-гейт, ачивки. `input.rpy` → раскладка пада во всех контекстах. `project.yaml: render.screen` → вся вёрстка (координаты и кегли заданы в этих пикселях) и расчёт letterbox. `release.py:_DIST_SUFFIX` (`:158-162`) → форматы архивов, которые понимает `vn release steam`; `_flatten_wrapper_dir` (`:186-212`) → раскладка депота и Launch Options в Steamworks; оба под `test_platform.py:96-157` |
 | **Валидация** | `python -m pytest tools/vn/tests -q` → 400 passed → `vn assets memory --scale 1` и `--scale 2` → `vn test oversample --scale 2` → `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` + просмотр `.vncache/smoke/` глазами → `vn release build --flavor patron --package linux` → `vn release validate --flavor patron` |

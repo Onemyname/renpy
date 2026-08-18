@@ -2171,6 +2171,14 @@ def pipeline_models(pull: bool, include_optional: bool, only: str | None, comfy_
         req = "" if e["required"] else " (опц.)"
         click.secho(f" {mark} {e['id']:<22} {size:>10}  models/{e['dest']}{req}{note}",
                     fg=color)
+        # Правовой статус — второй строкой, а не в общей: ADR-0008 обещает, что он
+        # «виден и проверяем этой командой», а до сих пор команда печатала только
+        # факт наличия файла. Красным — то, что нельзя использовать коммерчески:
+        # решение о таком контенте принимается ДО рендера, а не после.
+        legal = f"{e.get('license') or 'лицензия не указана'} / коммерческое: " \
+                f"{e.get('commercial_use') or 'не указано'}"
+        click.secho(f"     {legal}",
+                    fg=(None if e.get("commercial_use") == "allowed" else "red"))
     if comfy is None:
         click.secho("ComfyUI не найден — статусы условны (tools/setup-comfyui.ps1)", fg="yellow")
     click.echo("загрузка: vn pipeline models --pull  (ручные шаги будут перечислены)")

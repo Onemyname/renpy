@@ -145,7 +145,7 @@ def validate(root: Path, only: str | None = None) -> CharReport:
         rep.errors += arep.errors
         rep.warnings += arep.warnings
 
-        poses = check_matrix(rel, doc, tree.get(char_id, {}), rep)
+        poses = check_matrix(root, rel, doc, tree.get(char_id, {}), rep)
 
         matrix = doc.get("matrix") or {}
         built = tree.get(char_id, {})

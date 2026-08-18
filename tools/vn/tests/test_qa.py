@@ -160,7 +160,7 @@ def test_write_record_from_artifacts(tmp_path):
     art = read_run(root, _artifacts(root, state={"g.route": "mira"},
                                     gallery={"ids": ["cg_b", "cg_a"]}))
     path = write_record(root, "route-mira", "держит ветку с CG", art, picks="0,1",
-                        lang="", variant="", content_version="0.1.5+abc",
+                        lang="", variant="", content_version="0.1.5",
                         recorded_at="2026-08-18T00:00:00Z")
     doc = json.loads(path.read_text(encoding="utf-8"))
     assert doc["schema"] == "replay@1" and doc["input"]["picks"] == [0, 1]
@@ -184,7 +184,7 @@ def test_written_record_passes_its_schema(tmp_path, repo_root):
     root = mk_root_with_schemas(tmp_path, repo_root)
     art = read_run(root, _artifacts(root, state={"g.route": "x"}, gallery={"ids": []}))
     path = write_record(root, "route-x", "зачем", art, picks="0", lang="ru",
-                        variant="steam_deck", content_version="0.1.5+abc",
+                        variant="steam_deck", content_version="0.1.5",
                         recorded_at="2026-08-18T00:00:00Z")
     errors = SchemaRegistry(root / "tools" / "schemas").validate(
         json.loads(path.read_text(encoding="utf-8")), path.name)
@@ -212,7 +212,7 @@ def test_replay_records_reads_all(tmp_path):
 def _record(**over):
     rec = {
         "schema": "replay@1", "name": "r", "why": "w",
-        "recorded_at": "2026-08-18T00:00:00Z", "content_version": "0.1.5+abc",
+        "recorded_at": "2026-08-18T00:00:00Z", "content_version": "0.1.5",
         "input": {"picks": [0, 1]},
         "expect": {"result": "OK: vn_end_of_content",
                    "picks": ["ch01_s010_m001#1"],
@@ -223,11 +223,12 @@ def _record(**over):
     return rec
 
 
-def _with_version(root, version="0.1.5+abc"):
+def _with_version(root, version="0.1.5"):
     gen = root / "game" / "generated"
     gen.mkdir(parents=True, exist_ok=True)
-    (gen / "version.gen.rpy").write_text(f'define config.version = "{version}"\n',
-                                         encoding="utf-8")
+    (gen / "version.gen.rpy").write_text(
+        f'define config.version = "{version}+abc1234"\n\n'
+        f'define build.version = "{version}"\n', encoding="utf-8")
 
 
 def test_replay_diff_empty_when_reproduced(tmp_path):
@@ -266,11 +267,26 @@ def test_replay_diff_catches_gallery_drift(tmp_path):
     assert any("галерея" in d for d in replay_diff(root, _record(), art))
 
 
+def test_replay_survives_a_commit(tmp_path):
+    """Запись обязана переживать коммит: `config.version` несёт git-sha и меняется
+    на каждом, а сверка идёт по ПОСТАВОЧНОЙ версии (`build.version`) — иначе все
+    записи обнулялись бы после любой правки, и ночная джоба была бы вечно красной."""
+    root = mk_root(tmp_path)
+    gen = root / "game" / "generated"
+    gen.mkdir(parents=True)
+    (gen / "version.gen.rpy").write_text(
+        'define config.version = "0.1.5+ffffff9"\n\ndefine build.version = "0.1.5"\n',
+        encoding="utf-8")
+    art = read_run(root, _artifacts(root, state={"g.route": "prologue"},
+                                    gallery={"ids": ["cg_a"]}))
+    assert replay_diff(root, _record(content_version="0.1.5"), art) == []
+
+
 def test_replay_diff_stops_on_version_drift(tmp_path):
     """На другом контенте расхождение состояния ничего не доказывает — сверять его
     молча значит выдавать ложную панику вместо «перезапишите запись»."""
     root = mk_root(tmp_path)
-    _with_version(root, "0.2.0+zzz")
+    _with_version(root, "0.2.0")
     art = read_run(root, _artifacts(root, state={"g.route": "что угодно"}))
     diffs = replay_diff(root, _record(), art)
     assert len(diffs) == 1 and "перезапишите" in diffs[0]

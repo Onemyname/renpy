@@ -595,7 +595,7 @@ ls .vncache/smoke/
 #   startup.txt               cold start в секундах
 ```
 
-Как это работает: `vn test smoke` наследует окружение процесса (`tools/vn/src/vn/cli.py:1538`: `env = dict(os.environ, VN_AUTOPILOT="1", …)`), поэтому `RENPY_VARIANT` доезжает до движка и `choose_variants()` берёт его вместо автодетекции (`$RENPY_SDK/renpy/main.py:157-160`). `VN_AUTOPILOT_SCREENS` обрабатывает `vn_qa.autopilot_screens()` (`game/framework/00_core/030_flow.rpy:166-183`): для каждого имени — `show_screen` → `renpy.pause(0.3)` (кадр рисуется только интеракцией) → `screenshot("screen_<name>.png")` → `hide_screen`. Вызывается из `label vn_end_of_content` **до** выхода, то есть когда разблокировки галереи уже произошли. **Ни один флаг CLI эту переменную не выставляет** — только наследование из окружения.
+Как это работает: `vn test smoke` наследует окружение процесса (`tools/vn/src/vn/cli.py`: `env = dict(os.environ, VN_AUTOPILOT="1", …)`), поэтому `RENPY_VARIANT` доезжает до движка и `choose_variants()` берёт его вместо автодетекции (`$RENPY_SDK/renpy/main.py:157-160`). `VN_AUTOPILOT_SCREENS` обрабатывает `vn_qa.autopilot_screens()` (`game/framework/00_core/030_flow.rpy:166-183`): для каждого имени — `show_screen` → `renpy.pause(0.3)` (кадр рисуется только интеракцией) → `screenshot("screen_<name>.png")` → `hide_screen`. Вызывается из `label vn_end_of_content` **до** выхода, то есть когда разблокировки галереи уже произошли. **Ни один флаг CLI эту переменную не выставляет** — только наследование из окружения.
 
 ### Что смотреть на скриншотах
 

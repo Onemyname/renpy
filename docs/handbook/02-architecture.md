@@ -85,7 +85,7 @@ flowchart TB
     ENG --> DIST
 ```
 
-Порядок внутри `vn build` жёсткий и проверяемый по [`tools/vn/src/vn/cli.py:88-157`](../../tools/vn/src/vn/cli.py):
+Порядок внутри `vn build` жёсткий и проверяемый по [`tools/vn/src/vn/cli.py`](../../tools/vn/src/vn/cli.py):
 
 | Шаг | Что делает | Строка | Провал → |
 |---|---|---|---|
@@ -95,7 +95,7 @@ flowchart TB
 | 4a | при `--check`: сверка свежести → `validate_translations` → `_check_budgets` → `check: генерат свеж` | `:133-147` | exit 1 |
 | 4b | при записи: `_loc_import` (PO → `game/tl/`) → `_check_budgets` → `build: OK` | `:155-157` | exit 1 |
 
-**У `vn build` два независимых способа упасть на бюджетах** — `_check_budgets` (`cli.py:176-203`)
+**У `vn build` два независимых способа упасть на бюджетах** — `_check_budgets` (`cli.py`)
 проверяет и то, и другое в обоих режимах:
 
 1. **размерные бюджеты G19** — `budget_failures(root)` по `project.yaml: budgets`; сообщение
@@ -409,7 +409,7 @@ store `vn` на `init -999` (`030_flow.rpy:4`), остальные **допол�
 | **C19** | :187 | Служебные зоны: локальный кэш `.vncache/` (одно написание); два манифеста с разными ролями — `game/generated/manifest.json` (Content Compiler) и `.vncache/build-graph.json` (DAG оркестратора); хэш — blake3 | PARTIAL: `.vncache/` и `manifest.json` IMPLEMENTED; `.vncache/build-graph.json` — NOT IMPLEMENTED (оркестратора нет) |
 | **C20** | :190 | Сырцы Live2D/Spine — отдельные ветки `assets_src/live2d/characters/<key>/` и `assets_src/spine_export/characters/<key>/`, НЕ внутри `assets_src/psd/` | Зоны заведены, содержимого нет — NOT IMPLEMENTED по существу |
 | **C21** | :193 | Regex-константы: ключ персонажа `^[a-z][a-z0-9_]{1,23}$`; переменная `^(g\|ch\d{2}\|mech_[a-z0-9_]+\|dlc_[a-z0-9_]+)\.[a-z][a-z0-9_]*$` | IMPLEMENTED (`vars@1.schema.json`, `character@1.schema.json`) |
-| **C22** | :196 | `vn bootstrap` доставляет `game/assets/` + `game/generated/` + `game/tl/` последнего зелёного main | NOT IMPLEMENTED — команда делает локальную пересборку, о чём честно пишет её docstring (`cli.py:206-207`) |
+| **C22** | :196 | `vn bootstrap` доставляет `game/assets/` + `game/generated/` + `game/tl/` последнего зелёного main | NOT IMPLEMENTED — команда делает локальную пересборку, о чём честно пишет её docstring (`cli.py`) |
 | **C23** | :199 | `vn play --scene` реализуется env-вариантом: `game/generated/qa/dev_boot.gen.rpy` читает `VN_SCENE`/`VN_PRESET`; release-CI проверяет отсутствие файла | NOT IMPLEMENTED — ни файла, ни опции `--scene` у `vn play` |
 | **C24** | :202 | Галерея: разблокировка штатным `Gallery` + `persistent._seen_images`; генерат `game/generated/screens/gallery.gen.rpy`; пути `assets/cg/…`, `assets/bg/…` — сегмента `images/` не существует | ЗАМЕНЁН ADR-0010: два источника разблокировки, экран рукописный (`20_ui/screens/gallery.rpy`), генерат — `registry/gallery.gen.rpy`. Норма «сегмента `images/` не существует» — IMPLEMENTED |
 
@@ -419,7 +419,7 @@ store `vn` на `init -999` (`030_flow.rpy:4`), остальные **допол�
 
 | Обещание | Где обещано | Реальность |
 |---|---|---|
-| `vn build --use-artifact <sha>` — аварийный запуск на артефактном генерате | G4 (`:59`), § 8.5 (`:4120`), `docs/runbooks/pipeline-broken-at-night.md:11`; **14 упоминаний в документе** | **NOT IMPLEMENTED.** У `vn build` есть только `--check` и `--profile` (`cli.py:84-88`). Во всём `tools/`, `ci/`, `.github/` строка `use-artifact` встречается **один раз** — в title схемы `tools/schemas/gen_manifest@1.schema.json:4`. Аварийный путь исполняется только вручную: скачать артефакт CI и распаковать в `game/generated/` |
+| `vn build --use-artifact <sha>` — аварийный запуск на артефактном генерате | G4 (`:59`), § 8.5 (`:4120`), `docs/runbooks/pipeline-broken-at-night.md:11`; **14 упоминаний в документе** | **NOT IMPLEMENTED.** У `vn build` есть только `--check` и `--profile` (`cli.py`). Во всём `tools/`, `ci/`, `.github/` строка `use-artifact` встречается **один раз** — в title схемы `tools/schemas/gen_manifest@1.schema.json:4`. Аварийный путь исполняется только вручную: скачать артефакт CI и распаковать в `game/generated/` |
 | `vn validate --schemas` / `--budgets` | § 7 | **NOT IMPLEMENTED.** Группы `vn validate` не существует вовсе |
 | `vn bootstrap` доставляет три зоны из CI-артефактов; CI-джоба «clone → ≤ 5 мин» | G4, C22, § 7.4, § 8.2 | **NOT IMPLEMENTED.** Команда пересобирает локально; такой джобы в `.github/workflows/` нет |
 | `content/flags.yaml` — флаг как условие **компиляции** («выключенный контент не существует в release-сборке») | `:696` | **NOT IMPLEMENTED.** Файл обязан существовать (`lint.py:40`), но `flags` не читает ни компилятор, ни рантайм |

@@ -99,7 +99,7 @@ define mira = Character(_('Мира'), color='#c94f7c', image='mira', voice_tag=
   `loc/ledger/chNN.json устарел (тексты/структура разошлись со сценами) — выполните vn loc keys`;
 - в CI это отдельный шаг `.github/workflows/ci.yml:64`, `xvfb-run -a vn loc keys --check`.
 
-**`vn build` НЕ вызывает `vn loc keys`** (`tools/vn/src/vn/cli.py:84-153`: lint → assets →
+**`vn build` НЕ вызывает `vn loc keys`** (`tools/vn/src/vn/cli.py`: lint → assets →
 compile → `_loc_import` → бюджеты). Сборка молча пройдёт с репликами без id — красным станет CI.
 
 ### Алгоритм назначения номеров (что важно знать автору)
@@ -453,7 +453,7 @@ vn test smoke --lang pseudo --picks 0,0
 ### Чеклист «новый диалог» (реплики без выбора)
 
 1. Файл: `content/chapters/chNN_<slug>/scenes/sNNN_<slug>.scene.rpy`. Нет сцены — создать пару
-   файлов: `vn scene new ch01 rooftop` (следующий номер с шагом 10, `cli.py:488-503`).
+   файлов: `vn scene new ch01 rooftop` (следующий номер с шагом 10, `cli.py`).
 2. Писать в `label chNN_sNNN__body:`; **никаких `id`** — их проставит тулинг.
 3. Персонажу нужен `define` — проверить, что он есть в `content/characters/<id>/character.yaml`,
    и добавить id в `participants:` парного YAML.
@@ -474,7 +474,7 @@ vn test smoke --lang pseudo --picks 0,0
    приходит к `return`.
 3. Новые `exit_id` добавить в `exits:` парного `scene.yaml`; цель — `sNNN` внутри главы
    или `chNN/sNNN` между главами.
-4. Цели ещё нет — `vn scene stub ch01 s040` (`cli.py:484-500`), иначе для не-`draft` главы
+4. Цели ещё нет — `vn scene stub ch01 s040` (`cli.py`), иначе для не-`draft` главы
    будет ошибка «сцена не существует».
 5. Записи состояния из веток — объявить переменные.
 6. `vn loc keys` → появится `$ vn_menu = "chNN_sNNN_mNNN"`, в ledger — блок `menus`.

@@ -1,5 +1,5 @@
 {
- "content_version": "0.1.5+1d140ac",
+ "content_version": "0.1.5",
  "expect": {
   "gallery_ids": [
    "cg_ch01_concept",
@@ -34,7 +34,7 @@
   ]
  },
  "name": "mira-casual-route",
- "recorded_at": "2026-08-18T21:33:01Z",
+ "recorded_at": "2026-08-18T21:59:24Z",
  "schema": "replay@1",
- "why": "путь через школьную форму: единственный, где меняется g.mira_outfit и открывается CG"
+ "why": "путь через школьную форму: единственный, где g.mira_outfit меняется и открывается CG рооftop"
 }

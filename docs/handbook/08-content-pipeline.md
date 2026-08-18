@@ -31,7 +31,7 @@ vn content graph            # Mermaid-граф сцен в stdout
 | `game/tl/` | выход `vn loc import` | нет |
 | `game/framework/` | рукописный код надстройки — **не генерат** | да |
 
-Важная неочевидность: **зона `game/assets/` — это одновременно выход ассетного конвейера и вход контентного.** `emit_images` (`tools/vn/src/vn/content/images.py:48`) сканирует `game/assets/{cg,mov,spr}`, `_emit_gallery` (`compile.py:197,209-222`) проверяет существование файлов галереи. Отсюда жёсткий порядок «assets → compile» в `vn build` и в `vn dev` (`cli.py:243-252`, комментарий там прямой: «реестр образов зависит от собранных ассетов»).
+Важная неочевидность: **зона `game/assets/` — это одновременно выход ассетного конвейера и вход контентного.** `emit_images` (`tools/vn/src/vn/content/images.py:48`) сканирует `game/assets/{cg,mov,spr}`, `_emit_gallery` (`compile.py:197,209-222`) проверяет существование файлов галереи. Отсюда жёсткий порядок «assets → compile» в `vn build` и в `vn dev` (`cli.py`, комментарий там прямой: «реестр образов зависит от собранных ассетов»).
 
 ---
 
@@ -95,34 +95,34 @@ packs/ep_beach/chapters/ch90_beach/scenes/s010_shore.scene.{yaml,rpy}
 
 ## 3. Порядок работы `vn build`
 
-Код: `tools/vn/src/vn/cli.py:84-153`.
+Код: `tools/vn/src/vn/cli.py`.
 
 | Шаг | Строка | Что делает | Что при провале |
 |---|---|---|---|
-| 1 | `cli.py:93` | `root = _root()` — поиск корня по `project.yaml` + `tools/schemas/` (`repo.py:15-23`) | exit 1, красное `ошибка: не найден корень репозитория` |
-| 2 | `cli.py:94` | `lint(root)` — полный линт, `layout=True` | печатает все ошибки, `_fail("lint: N ошибок — сборка остановлена")`, exit 1 |
-| 3 | `cli.py:95-96` | печать `rep.warnings` жёлтым (предупреждения никогда не валят сборку) | — |
-| 4 | `cli.py:113-114` | `_assets_build(root, profile)` → `tools/vn/src/vn/assets/pipeline.py:251 build_assets` | exit 1 с перечнем ошибок ассетов |
-| 5 | `cli.py:116` | `compile_content(root, check=False)` | `CompileError` → exit 1 с текстом; любое другое исключение → `внутренняя ошибка компилятора: <Type>: <msg>` + 3 кадра трейсбека (`cli.py:119-123`) |
-| 6 | `cli.py:145-148` | сводка `generated: N записано, N без изменений, N осиротевших удалено` | — |
-| 7 | `cli.py:151` | `_loc_import(root)` → `game/tl/` из `loc/po/` | exit 1 при ошибках разметки переводов |
-| 8 | `cli.py:156` | `_check_budgets(root)` → `release.py:29-66 budget_failures` (G19) | `бюджет: …` + exit 1 |
-| 9 | `cli.py:153` | зелёное `build: OK` | — |
+| 1 | `cli.py` | `root = _root()` — поиск корня по `project.yaml` + `tools/schemas/` (`repo.py:15-23`) | exit 1, красное `ошибка: не найден корень репозитория` |
+| 2 | `cli.py` | `lint(root)` — полный линт, `layout=True` | печатает все ошибки, `_fail("lint: N ошибок — сборка остановлена")`, exit 1 |
+| 3 | `cli.py` | печать `rep.warnings` жёлтым (предупреждения никогда не валят сборку) | — |
+| 4 | `cli.py` | `_assets_build(root, profile)` → `tools/vn/src/vn/assets/pipeline.py:251 build_assets` | exit 1 с перечнем ошибок ассетов |
+| 5 | `cli.py` | `compile_content(root, check=False)` | `CompileError` → exit 1 с текстом; любое другое исключение → `внутренняя ошибка компилятора: <Type>: <msg>` + 3 кадра трейсбека (`cli.py`) |
+| 6 | `cli.py` | сводка `generated: N записано, N без изменений, N осиротевших удалено` | — |
+| 7 | `cli.py` | `_loc_import(root)` → `game/tl/` из `loc/po/` | exit 1 при ошибках разметки переводов |
+| 8 | `cli.py` | `_check_budgets(root)` → `release.py:29-66 budget_failures` (G19) | `бюджет: …` + exit 1 |
+| 9 | `cli.py` | зелёное `build: OK` | — |
 
 ### Что меняется при `--check` (CI-режим, G1)
 
 | Шаг | Строка | Отличие |
 |---|---|---|
-| 4′ | `cli.py:104` | `build_assets(root, check=True)` — **ничего не пишет**; любой несвежий выход → `устарело: assets/<rel>` + `_fail("game/assets не свеж")` |
-| 5′ | `cli.py:116` | `compile_content(root, check=True)` — выходы считаются в память, побайтово сравниваются с диском, `result.stale` наполняется; запись не происходит (`compile.py:882-890`) |
-| 8a′ | `cli.py:127-130` | `res.stale` → `устарело: <rel>` + `_fail("генерат не свеж — выполните vn build")` |
-| 8b′ | `cli.py:133-141` | **дополнительно** `validate_translations(root)` — read-only проверка разметки PO. Комментарий в коде честный: полный build упал бы на импорте tl, поэтому `--check` обязан ловить то же до мержа |
-| 8c′ | `cli.py:142` | бюджеты G19 проверяются и в CI-режиме |
-| 9′ | `cli.py:143` | зелёное `check: генерат свеж` и **ранний return** — `_loc_import` не выполняется |
+| 4′ | `cli.py` | `build_assets(root, check=True)` — **ничего не пишет**; любой несвежий выход → `устарело: assets/<rel>` + `_fail("game/assets не свеж")` |
+| 5′ | `cli.py` | `compile_content(root, check=True)` — выходы считаются в память, побайтово сравниваются с диском, `result.stale` наполняется; запись не происходит (`compile.py:882-890`) |
+| 8a′ | `cli.py` | `res.stale` → `устарело: <rel>` + `_fail("генерат не свеж — выполните vn build")` |
+| 8b′ | `cli.py` | **дополнительно** `validate_translations(root)` — read-only проверка разметки PO. Комментарий в коде честный: полный build упал бы на импорте tl, поэтому `--check` обязан ловить то же до мержа |
+| 8c′ | `cli.py` | бюджеты G19 проверяются и в CI-режиме |
+| 9′ | `cli.py` | зелёное `check: генерат свеж` и **ранний return** — `_loc_import` не выполняется |
 
 **Грабля `--check --profile draft`.** На check-пути профиль ассетов не передаётся: `build_assets(root, check=True)`, а дефолт сигнатуры — `profile="full"` (`tools/vn/src/vn/assets/pipeline.py:251`). Значит зона, собранная как `vn build --profile draft`, в `vn build --check` всегда покажется несвежей. Перед проверкой пересоберите на `full`.
 
-`vn content compile` — **не** укороченный `vn build`. Он не запускает линт (`cli.py:421-424`: команда зовёт только `compile_content`) и не валидирует по схемам `*.vars.yaml`, `content/audio/*.yaml`, `content/ui/strings.yaml`, `content/renames.yaml`, `content/migrations/registry.yaml`. Битый файл из этого списка даст не понятную схемную ошибку, а `внутренняя ошибка компилятора: KeyError`. Используйте его только для быстрой итерации, финальная команда — `vn build`.
+`vn content compile` — **не** укороченный `vn build`. Он не запускает линт (`cli.py`: команда зовёт только `compile_content`) и не валидирует по схемам `*.vars.yaml`, `content/audio/*.yaml`, `content/ui/strings.yaml`, `content/renames.yaml`, `content/migrations/registry.yaml`. Битый файл из этого списка даст не понятную схемную ошибку, а `внутренняя ошибка компилятора: KeyError`. Используйте его только для быстрой итерации, финальная команда — `vn build`.
 
 ---
 
@@ -130,28 +130,28 @@ packs/ep_beach/chapters/ch90_beach/scenes/s010_shore.scene.{yaml,rpy}
 
 | Команда | Строка | Режим |
 |---|---|---|
-| `vn content compile [--check]` | `cli.py:399-422` | напрямую, без линта |
-| `vn bootstrap` | `cli.py:208-218` | doctor → assets full → compile → loc import |
-| `vn assets validate` | `cli.py:522-547` | `build_assets(check=True)` + `compile_content(check=True)` |
-| `vn dev` (watcher) | `cli.py:243-262` | правка `assets_src/` → assets draft + compile; правка `content/` → только compile |
-| `vn release build` | `cli.py:1529-1530` | `vn build` выполняется **до** релизного гейта |
+| `vn content compile [--check]` | `cli.py` | напрямую, без линта |
+| `vn bootstrap` | `cli.py` | doctor → assets full → compile → loc import |
+| `vn assets validate` | `cli.py` | `build_assets(check=True)` + `compile_content(check=True)` |
+| `vn dev` (watcher) | `cli.py` | правка `assets_src/` → assets draft + compile; правка `content/` → только compile |
+| `vn release build` | `cli.py` | `vn build` выполняется **до** релизного гейта |
 
-Полный список вызовов `compile_content` — этот и есть: `cli.py:116` (build), `cli.py:216` (bootstrap), `cli.py:247,257` (dev), `cli.py:407` (content compile), `cli.py:541` (assets validate), `release.py:391` (релизный гейт). Проверяется одной командой: `grep -rn "compile_content" tools/vn/src/vn/`.
+Полный список вызовов `compile_content` — этот и есть: `cli.py` (build), `cli.py` (bootstrap), `cli.py,257` (dev), `cli.py` (content compile), `cli.py` (assets validate), `release.py:391` (релизный гейт). Проверяется одной командой: `grep -rn "compile_content" tools/vn/src/vn/`.
 
-**`vn pack build` компилятор НЕ вызывает.** `pack_build` (`cli.py:1602-1639`) только зипует **уже существующий** генерат: `manifest.yaml` пака плюс файлы из `game/generated/scenes/<ch>/`. Прогоняйте `vn build` перед `vn pack build` руками. (`cli.py:1576` — это импорт внутри **`vn pack validate`**, а не `pack build`.)
+**`vn pack build` компилятор НЕ вызывает.** `pack_build` (`cli.py`) только зипует **уже существующий** генерат: `manifest.yaml` пака плюс файлы из `game/generated/scenes/<ch>/`. Прогоняйте `vn build` перед `vn pack build` руками. (`cli.py` — это импорт внутри **`vn pack validate`**, а не `pack build`.)
 
-**Охранник «нет скомпилированных сцен» теперь рабочий — IMPLEMENTED.** Раньше он был недостижим: сцены считались общим счётчиком вместе с манифестом, манифест давал `n = 1` всегда, и при пустом или несвежем `game/generated/` пак молча уезжал как zip почти без содержимого. Сейчас список сцен собирается отдельно от манифеста и **до** открытия архива (`cli.py:1617-1619` — иначе «нет генерата» обнаруживалось бы, когда неполный zip уже лежит в `build/packs/` и может уехать в депот), а условие звучит так (`cli.py:1624-1626`):
+**Охранник «нет скомпилированных сцен» теперь рабочий — IMPLEMENTED.** Раньше он был недостижим: сцены считались общим счётчиком вместе с манифестом, манифест давал `n = 1` всегда, и при пустом или несвежем `game/generated/` пак молча уезжал как zip почти без содержимого. Сейчас список сцен собирается отдельно от манифеста и **до** открытия архива (`cli.py` — иначе «нет генерата» обнаруживалось бы, когда неполный zip уже лежит в `build/packs/` и может уехать в депот), а условие звучит так (`cli.py`):
 
 ```
 пак объявляет главы, но в game/generated/scenes/ нет ни одной их
 скомпилированной сцены — сначала vn build
 ```
 
-Падение происходит **до** создания zip. Ноль сцен сам по себе ошибкой не считается: пак-контейнер `packs/nsfw` глав не объявляет, собирается штатно и получает жёлтое предупреждение «не объявляет глав … — в архиве только манифест» (`cli.py:1635-1637`), чтобы архив из одного манифеста не выглядел поломкой сборки.
+Падение происходит **до** создания zip. Ноль сцен сам по себе ошибкой не считается: пак-контейнер `packs/nsfw` глав не объявляет, собирается штатно и получает жёлтое предупреждение «не объявляет глав … — в архиве только манифест» (`cli.py`), чтобы архив из одного манифеста не выглядел поломкой сборки.
 
 **Что осталось незакрытым:** охранник проверяет «хоть одна скомпилированная сцена на весь пак», а не по каждой главе. Пак с двумя главами, у которого собрана одна, пройдёт молча.
 
-`vn assets watch` использует тот же watcher, но передаёт `lambda: None` вместо контентного колбэка (`cli.py:566`) — правки `content/` в этом режиме молча игнорируются. Для одновременного слежения нужен `vn dev`.
+`vn assets watch` использует тот же watcher, но передаёт `lambda: None` вместо контентного колбэка (`cli.py`) — правки `content/` в этом режиме молча игнорируются. Для одновременного слежения нужен `vn dev`.
 
 ---
 
@@ -256,7 +256,7 @@ version = f"{project['version']}+{sha}"          # sha = repo.git_sha(root)
 
 ## 7. Линтер: 33 диагностики
 
-`tools/vn/src/vn/content/lint.py` (463 строки), точка входа `lint(root, layout=True)` (`lint.py:146`). CLI — `vn content lint [--layout/--no-layout]` (`cli.py:382-396`), по умолчанию layout включён. Предупреждения никогда не валят прогон; ошибки → `_fail("lint: N ошибок")`, exit 1.
+`tools/vn/src/vn/content/lint.py` (463 строки), точка входа `lint(root, layout=True)` (`lint.py:146`). CLI — `vn content lint [--layout/--no-layout]` (`cli.py`), по умолчанию layout включён. Предупреждения никогда не валят прогон; ошибки → `_fail("lint: N ошибок")`, exit 1.
 
 Инвариант, записанный в самом коде (`lint.py:34`): **«lint зелёный ⇒ build не падает»**. Он держится не полностью — см. §7.3.
 
@@ -409,7 +409,7 @@ vn content graph                       # Mermaid в stdout
 vn content graph --out docs/graph.mmd  # в файл
 ```
 
-`tools/vn/src/vn/content/graph.py:13-45`, CLI `cli.py:425-437`. Читает **только декларации** — SDK не нужен, работает мгновенно. Узлы — `chNN_sNNN` с подписью-слагом, рёбра — `exits` (метка = `<exit_id>` плюс `[when]`, если условие есть), сцена без `exits` получает ребро на `vn_end([конец контента])` (`graph.py:41-42`). Кавычки и угловые скобки в `when` экранируются в `#quot;`/`#lt;`/`#gt;` (`graph.py:37-39`), иначе Mermaid ломается.
+`tools/vn/src/vn/content/graph.py:13-45`, CLI `cli.py`. Читает **только декларации** — SDK не нужен, работает мгновенно. Узлы — `chNN_sNNN` с подписью-слагом, рёбра — `exits` (метка = `<exit_id>` плюс `[when]`, если условие есть), сцена без `exits` получает ребро на `vn_end([конец контента])` (`graph.py:41-42`). Кавычки и угловые скобки в `when` экранируются в `#quot;`/`#lt;`/`#gt;` (`graph.py:37-39`), иначе Mermaid ломается.
 
 **Паки он видит с 2026-08-18.** Граф обходит ядро И главы паков (`repo.chapter_zones`), пак подписан в заголовке подграфа: `ch90_beach (draft) · pack ep_beach`. Проверено запуском: в выводе оба подграфа — `ch01_awakening (draft)` с тремя сценами и `ch90_beach (draft) · pack ep_beach`. Раньше межпаковые `exits` отрисовывались бы висячими узлами. Флага `--chapter` по-прежнему нет.
 
@@ -431,7 +431,7 @@ vn content graph --out docs/graph.mmd  # в файл
 
 | Заявлено | Где заявлено | Реальность |
 |---|---|---|
-| `vn build --use-artifact <sha>` (аварийный режим) | `docs/ARCHITECTURE.md` — 14 упоминаний (проверено `grep -c`) | **NOT IMPLEMENTED.** У `build` есть только `--check` и `--profile` (`cli.py:85-87`). Во всём тулчейне строка `use-artifact` встречается один раз — в `title` схемы `tools/schemas/gen_manifest@1.schema.json:4`. Аварийный откат сегодня делается руками: скачать артефакт `generated-<sha>` из GitHub Actions (`ci.yml`, `retention-days: 30`) и распаковать в `game/generated/` |
+| `vn build --use-artifact <sha>` (аварийный режим) | `docs/ARCHITECTURE.md` — 14 упоминаний (проверено `grep -c`) | **NOT IMPLEMENTED.** У `build` есть только `--check` и `--profile` (`cli.py`). Во всём тулчейне строка `use-artifact` встречается один раз — в `title` схемы `tools/schemas/gen_manifest@1.schema.json:4`. Аварийный откат сегодня делается руками: скачать артефакт `generated-<sha>` из GitHub Actions (`ci.yml`, `retention-days: 30`) и распаковать в `game/generated/` |
 | Группа `vn validate --schemas/--budgets` | ARCHITECTURE.md | **NOT IMPLEMENTED** — группы `vn validate` не существует вовсе |
 | `vn content lint --strict` | `ARCHITECTURE.md:1911` | **NOT IMPLEMENTED** — есть только `--layout/--no-layout` |
 | `vn content lint --arch` (AST-скан python-блоков на нарушения границ слоёв) | `ARCHITECTURE.md:722` | **NOT IMPLEMENTED** |
@@ -516,7 +516,7 @@ vn play                                     # требует непустой ga
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/content/compile.py` (1211 стр., эмиттеры + оркестрация `compile_content:790`), `tools/vn/src/vn/content/lint.py` (463 стр.), `tools/vn/src/vn/content/scenes.py` (валидация C2 + эмиссия обвязки), `tools/vn/src/vn/content/analyze.py`, `game/framework/00_core/050_build_bridge.rpy`, `tools/vn/src/vn/schemas.py`, `tools/vn/src/vn/cli.py:84-153` (порядок `vn build`), `game/generated/manifest.json` (актуальные 36 входов / 21 выход) |
+| **Читать перед изменением** | `tools/vn/src/vn/content/compile.py` (1211 стр., эмиттеры + оркестрация `compile_content:790`), `tools/vn/src/vn/content/lint.py` (463 стр.), `tools/vn/src/vn/content/scenes.py` (валидация C2 + эмиссия обвязки), `tools/vn/src/vn/content/analyze.py`, `game/framework/00_core/050_build_bridge.rpy`, `tools/vn/src/vn/schemas.py`, `tools/vn/src/vn/cli.py` (порядок `vn build`), `game/generated/manifest.json` (актуальные 36 входов / 21 выход) |
 | **Не трогать** | `game/generated/**` (генерат), `game/assets/**` (выход `vn assets build`), `game/tl/**` (выход `vn loc import`), `.vncache/**` (кэш), `build/**` — всё производное и вне git. Правки там исчезнут при первой же сборке |
 | **Зависимости (что сломается ниже по течению)** | правка эмиттера → меняются байты генерата → `vn build --check` краснеет у всех, пока не пересоберут; правка `050_build_bridge.rpy` → инвалидируется весь `.vncache/analyze-*.json` и требуется полный прогон движка; правка схемы → линт, компилятор, `vn doctor` (проверка №6) и релизный гейт строят реестр заново; добавление/удаление выхода → предыдущий `manifest.json` даст диффом удаление осиротевших `.rpy` + `.rpyc`; правка `content/renames.yaml` → `registry/overrides.gen.rpy` (shim-метки и `config.label_overrides`) |
 | **Валидация** | `vn content lint` → `vn build` → `vn build --check` → `python -m pytest tools/vn/tests -q`. Для сцен обязателен `RENPY_SDK` |

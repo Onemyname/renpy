@@ -19,7 +19,7 @@ vn build --check                 # CI-режим: ничего не пишет, 
 vn assets cache --dry-run        # сколько мусора накопил кэш трансформаций
 ```
 
-Свежий чекаут без `game/assets/`: `vn bootstrap` (`../../tools/vn/src/vn/cli.py:202-222`) — прогоняет `vn doctor`, затем локальную сборку ассетов, компиляцию контента и импорт переводов.
+Свежий чекаут без `game/assets/`: `vn bootstrap` (`../../tools/vn/src/vn/cli.py`) — прогоняет `vn doctor`, затем локальную сборку ассетов, компиляцию контента и импорт переводов.
 
 ## 1. Две зоны: сырцы и собранное
 
@@ -33,7 +33,7 @@ vn assets cache --dry-run        # сколько мусора накопил к
 
 Собранное не коммитится сознательно: `docs/ARCHITECTURE.md:1380,1975` объясняет — derived-бинари недетерминированы между версиями энкодеров и платформами, а массовая перегенерация раздувала бы append-only историю (в т.ч. LFS) на десятки ГБ.
 
-**Честно про `vn bootstrap`:** ARCHITECTURE.md (G4, `:59`, `:425`, `:818`) обещает, что bootstrap *скачивает* готовые `game/assets/` + `game/generated/` + `game/tl/` из remote cache / CI-артефактов, чтобы сценарист и QA работали без asset-тулчейна. Это **NOT IMPLEMENTED**; текущая команда собирает всё локально, и её собственный докстринг это признаёт (`cli.py:205-206`). Практическое следствие: без Python-окружения с Pillow и без ffmpeg игру из чекаута не запустить. Аварийный режим `vn build --use-artifact <sha>` (14 упоминаний в ARCHITECTURE.md) — **NOT IMPLEMENTED**, флага не существует.
+**Честно про `vn bootstrap`:** ARCHITECTURE.md (G4, `:59`, `:425`, `:818`) обещает, что bootstrap *скачивает* готовые `game/assets/` + `game/generated/` + `game/tl/` из remote cache / CI-артефактов, чтобы сценарист и QA работали без asset-тулчейна. Это **NOT IMPLEMENTED**; текущая команда собирает всё локально, и её собственный докстринг это признаёт (`cli.py`). Практическое следствие: без Python-окружения с Pillow и без ffmpeg игру из чекаута не запустить. Аварийный режим `vn build --use-artifact <sha>` (14 упоминаний в ARCHITECTURE.md) — **NOT IMPLEMENTED**, флага не существует.
 
 ## 2. Полная таблица трансформаций (10 штук)
 
@@ -106,7 +106,7 @@ ffmpeg -y -hide_banner -loglevel error -i <src>
 
 Числа `quality` — не константы кода, а дефолты render-профиля; `project.yaml: render.classes.<c>.quality` их переопределяет.
 
-Значения по умолчанию: `vn assets build` → `full` (`cli.py:536-537`); `vn assets watch` → **`draft`** (`cli.py:605-607`); `vn dev` при правке `assets_src/` → `draft` (`cli.py:265-268`); `vn build` → `full` (`cli.py:90-91`).
+Значения по умолчанию: `vn assets build` → `full` (`cli.py`); `vn assets watch` → **`draft`** (`cli.py`); `vn dev` при правке `assets_src/` → `draft` (`cli.py`); `vn build` → `full` (`cli.py`).
 
 **Грабля:** профиль входит в ключ кэша *и* в сравнение свежести (`pipeline.py:724-725`, `:867`). После `vn assets build --profile draft` команда `vn build --check` объявит все выходы несвежими («источник изменился»), потому что сравнивает с `profile: full`. Перед пушем — пересоберите `full`. Обратное тоже верно: `full` и `draft` блобы сосуществуют в кэше, переключение профилей туда-сюда удваивает его объём.
 
@@ -170,7 +170,7 @@ vn assets cache --dry-run   # сколько будет удалено
 vn assets cache --gc        # удалить
 ```
 
-`cache_gc` (`pipeline.py:458-491`, CLI `cli.py:744-765`) — mark & sweep от манифеста: пересчитывает ключ для каждой записи, чья трансформация есть в `TRANSFORMS` (записи `mov_meta@1` пропускаются — у них нет блоба), удаляет всё остальное под `.vncache/assets/`, включая осиротевшие `*.tmp`.
+`cache_gc` (`pipeline.py:458-491`, CLI `cli.py`) — mark & sweep от манифеста: пересчитывает ключ для каждой записи, чья трансформация есть в `TRANSFORMS` (записи `mov_meta@1` пропускаются — у них нет блоба), удаляет всё остальное под `.vncache/assets/`, включая осиротевшие `*.tmp`.
 
 **Что будет, если удалить кэш целиком.** Ничего необратимого: следующая `vn assets build` заново прогонит все трансформации. Плата — время: PNG-энкод дёшев, VP9-энкод дорог (`cpu-used 2`), а PSD-нарезка не инкрементальна вовсе и пересекается заново при каждой сборке (`psd.py:91-95`). Опаснее удалять **манифест** — см. §6.
 
@@ -236,7 +236,7 @@ for orphan in sorted(candidates):
 
 ## 8. Хранилище сырцов
 
-**Статус: IMPLEMENTED (`type: file`) / NEVER RUN HERE.** `~/vn-assets-store` не существует, `assets_src/**/*.manifest.json` — ноль, `vn assets status` печатает «манифестов нет — сырцы ещё не пушились (vn assets lock + push)» (`cli.py:953-955`).
+**Статус: IMPLEMENTED (`type: file`) / NEVER RUN HERE.** `~/vn-assets-store` не существует, `assets_src/**/*.manifest.json` — ноль, `vn assets status` печатает «манифестов нет — сырцы ещё не пушились (vn assets lock + push)» (`cli.py`).
 
 ### 8.1 Конфигурация
 
@@ -321,7 +321,7 @@ vn assets provenance workflow <artifact> [--out graph.json]
 vn assets provenance verify [--scope png/cg]
 ```
 
-**`record`** (`cli.py:795-816` → `provenance.py:204-263`):
+**`record`** (`cli.py` → `provenance.py:204-263`):
 1. `--source` → цепочка источника копируется как **префикс**, записывается `src_ref = {path, hash}`.
 2. Шаг выводится так: `--workflow api.json` → парсинг графа; иначе, если артефакт `.png` → `extract_comfyui_png` читает `tEXt`-чанки `prompt` (API-граф) и `workflow` (UI-граф) (`provenance.py:80-98`).
 3. Из графа извлекаются (`provenance.py:160-199`): `model` из `CheckpointLoaderSimple`/`CheckpointLoader.ckpt_name` или `*UNETLoader.unet_name`; `loras[] = {name, strength_model}`; `resolution` из `EmptyLatentImage`/`EmptySD3LatentImage`; из первого узла с `seed`/`noise_seed` — `seed, steps, cfg, sampler_name, denoise`; `prompt`/`negative_prompt` прослеживаются по связям `inputs.positive|negative` **до 8 переходов** до узла с `inputs.text`.
@@ -536,7 +536,7 @@ vn build             # -> layeredimage shot_ch01_s030 в game/generated/registry
 - **Не править `game/assets/**` руками.** Ближайшая сборка перезапишет; хуже — файл, которого нет в манифесте, **не удалится никогда** и поедет мёртвым грузом в каждый дистрибутив.
 - **Не удалять `.vncache/assets-manifest.json`.** Он не в git и ниоткуда не восстанавливается. Без него удаление осиротевших молча отключается, а сборка остаётся зелёной. Если удалили — сносите `game/assets/` целиком и пересобирайте.
 - **Не собирать `--profile draft` перед `vn build --check` / пушем.** Профиль участвует в сравнении свежести — check покраснеет «источник изменился» на всех выходах.
-- **Не рассчитывать, что `vn assets watch` подхватит правку `content/ui/panels.yaml`.** Вотчер следит и за `content/`, и за `assets_src/`, но content-события выброшены: `watch(root, on_assets, lambda: None)` (`cli.py:566`). Для панелей — `vn dev` или ручной `vn build`.
+- **Не рассчитывать, что `vn assets watch` подхватит правку `content/ui/panels.yaml`.** Вотчер следит и за `content/`, и за `assets_src/`, но content-события выброшены: `watch(root, on_assets, lambda: None)` (`cli.py`). Для панелей — `vn dev` или ручной `vn build`.
 - **Не ждать `define vn_frame_<id>` от `vn assets build`.** Панель нарисуется, но Frame эмитит компилятор — нужен `vn build` (или `vn content compile`).
 - **Не класть аудио в `assets_src/audio/`** — такой зоны нет ни в коде, ни в нормативном дереве; единственный вход конвейера — `assets_src/audio_stems/{bgm,amb,sfx}/` (§13.6). Файл в неизвестной зоне не соберётся, и сборка об этом промолчит.
 - **Не пушить сырцы без лока** — `push` откажет (G14). И не считать лок защитой: он не атомарный, без TTL, владелец = `git config user.name`, `--force` снимает чужой без следа.
@@ -569,7 +569,7 @@ vn release validate --flavor public  # 21 проверка, включая ли�
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/assets/pipeline.py` (весь: 1045 строк, discovery+кэш+манифест+GC), `../../tools/vn/src/vn/assets/video.py`, `../../tools/vn/src/vn/assets/ui.py`, `../../tools/vn/src/vn/assets/psd.py`, `../../tools/vn/src/vn/assets/storage.py`, `../../tools/vn/src/vn/assets/provenance.py`, `../../tools/vn/src/vn/assets/licenses.py`, `../../tools/vn/src/vn/cli.py:511-955` (группа `vn assets`), `../conventions/naming.md`, `../adr/0004-local-png-sources-in-git.md`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../adr/0009-generated-ui-panels.md` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/assets/pipeline.py` (весь: 1045 строк, discovery+кэш+манифест+GC), `../../tools/vn/src/vn/assets/video.py`, `../../tools/vn/src/vn/assets/ui.py`, `../../tools/vn/src/vn/assets/psd.py`, `../../tools/vn/src/vn/assets/storage.py`, `../../tools/vn/src/vn/assets/provenance.py`, `../../tools/vn/src/vn/assets/licenses.py`, `../../tools/vn/src/vn/cli.py` (группа `vn assets`), `../conventions/naming.md`, `../adr/0004-local-png-sources-in-git.md`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../adr/0009-generated-ui-panels.md` |
 | **Не трогать** | `game/assets/**` (производная зона, `.gitignore:3`), `game/generated/**` (`.gitignore:2`), `.vncache/**` — кэш, манифест сборки, staging PSD (`.gitignore:21`). Любая правка там будет затёрта; правка `.vncache/assets-manifest.json` вручную ломает удаление осиротевших |
 | **Зависимости (что ломается ниже по течению)** | `tools/vn/src/vn/content/images.py` строит `image bg/cg/mov` и `layeredimage` **по факту собранных файлов** — пропавший выход даёт ошибку компилятора или битую ссылку в рантайме; `tools/vn/src/vn/content/compile.py:139-227` резолвит `*.thumb.webp` для галереи; `tools/vn/src/vn/assets/ui.py:119-137` эмитит `vn_frame_*`; `release.py:29-53` считает бюджеты (`assets_total_mb 20000`, `video_total_mb 8000`, `video_file_mb 512` — ADR-0012); `release.py:441-452` строит NSFW-глобы из реальных каталогов; `release.py:475-493` — гейты лицензий и статуса хранилища |
 | **Валидация** | `vn assets build` → `vn assets validate` → `vn build --check` → `vn content lint` → `python -m pytest tools/vn/tests -q` (373 теста) → `vn release validate --flavor public` |

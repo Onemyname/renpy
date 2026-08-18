@@ -37,7 +37,7 @@ ls assets_src/voice/ru/ch01/          # → wav-мастера демо-дубл
 | Трансформация `copy_audio` (`assets_src/audio_stems/…` → `game/assets/audio/…`) | IMPLEMENTED — зона источника совпадает с нормативной, ветка покрыта тестом `test_audio_stems_branch_copies_ogg` | `../../tools/vn/src/vn/assets/pipeline.py:415-430` |
 | Микшеры и слайдеры громкости music/sound/voice | IMPLEMENTED (штатные Ren'Py; канал `ambient` висит на микшере music) | `../../game/framework/20_ui/screens/core_screens.rpy:289-293` |
 | `voice_tag` персонажа → `Character(..., voice_tag=…)` | IMPLEMENTED | `game/generated/registry/characters.gen.rpy:9` |
-| `vn voice manifest\|import\|validate` | IMPLEMENTED | `../../tools/vn/src/vn/cli.py:1226-1311`, `../../tools/vn/src/vn/voice.py` |
+| `vn voice manifest\|import\|validate` | IMPLEMENTED | `../../tools/vn/src/vn/cli.py`, `../../tools/vn/src/vn/voice.py` |
 | `vn voice tts` (TTS-черновики непокрытых реплик) | **IMPLEMENTED** (2026-08-18) — синтез двумя бэкендами (`piper` основной, macOS `say` — дев-фолбэк), мастер сразу в `.opus`, статус `draft`, идемпотентно (§8.1) | `../../tools/vn/src/vn/voice.py` (секция «TTS-черновики»), `cli.py: voice_tts` |
 | Схема `voice@1`, voice-манифесты, инжекция `voice vn.voice_path("<id>")`, транскод `voice_opus` | IMPLEMENTED (§8) | `../../tools/schemas/voice@1.schema.json`, `compile.py:985-1005`, `scenes.py:283-300`, `pipeline.py:432-466` |
 | Гейт озвучки в `vn release validate` (ошибки/дыры = FAIL, драфты = WARN) | IMPLEMENTED | `../../tools/vn/src/vn/release.py:531-548` |
@@ -283,7 +283,7 @@ lines:
 
 **Рантайм** — `vn.voice_path()` в `game/framework/00_core/045_audio.rpy:26-45`: файл текущего языка → деградация до языка оригинала → `""` (falsy → voice-оператор движка = no-op, закреплено контракт-тестом engine_compat). Не установлен voice-пак / нет дубля — реплика просто молчит, без падения. Плюс дакинг: пока канал `voice` звучит, остальные приглушаются (§5).
 
-**CLI** (`cli.py:1226-1311`):
+**CLI** (`cli.py`):
 
 ```bash
 vn voice manifest ch01 --lang ru -o ch01_ru.csv   # лист записи для актёра/студии

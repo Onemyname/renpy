@@ -102,7 +102,7 @@ matrix:
 
 Все токены — `^[a-z][a-z0-9_]*$` (схема). `required`/`forbidden` требуют ключ `pose`; `outfits`/`emotions` внутри них опциональны.
 
-Валидации в `emit_images` (`tools/vn/src/vn/content/images.py`), все выполняются **против собранной зоны** `game/assets/spr/` (скан `sprite_tree`, `pipeline.py:481-499`), а не против `assets_src/`. Поэтому порядок всегда `vn assets build` → `vn build`; `vn build` делает это сам (`cli.py:114-116`).
+Валидации в `emit_images` (`tools/vn/src/vn/content/images.py`), все выполняются **против собранной зоны** `game/assets/spr/` (скан `sprite_tree`, `pipeline.py:481-499`), а не против `assets_src/`. Поэтому порядок всегда `vn assets build` → `vn build`; `vn build` делает это сам (`cli.py`).
 
 | Проверка | Где | Уровень | Сообщение (сокращённо) |
 |---|---|---|---|
@@ -486,7 +486,7 @@ matrix:
 
 **Убрать персонажа из сборки:** удалите ссылки на него из сцен и `participants`, декларацию оставьте (G7). Слои можно вынести из `assets_src/` — orphan-очистка `game/assets` пройдёт по диффу манифеста (`.vncache/assets-manifest.json`; потеряете манифест — удаление перестанет работать, см. [16-assets.md](16-assets.md)).
 
-**Ускорить итерацию:** `vn assets build --profile draft` (quality 50) или `vn dev` — вотчер `assets_src/` + `content/`. Осторожно: `vn assets watch` события `content/` молча выбрасывает (`cli.py:566` — `watch(root, on_assets, lambda: None)`).
+**Ускорить итерацию:** `vn assets build --profile draft` (quality 50) или `vn dev` — вотчер `assets_src/` + `content/`. Осторожно: `vn assets watch` события `content/` молча выбрасывает (`cli.py` — `watch(root, on_assets, lambda: None)`).
 
 ---
 

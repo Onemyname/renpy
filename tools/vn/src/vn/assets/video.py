@@ -170,7 +170,6 @@ def summarize(path: Path) -> dict:
     }
 
 
-SEQUENCE_RE = None      # инициализируется лениво в assemble_sequence
 
 
 def assemble_sequence(frames_dir: Path, dest: Path, fps: float = 24.0,

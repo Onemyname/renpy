@@ -104,11 +104,19 @@ def load_manifests(root: Path, errors: list[str]) -> list[tuple[str, str, str, d
             if doc["chapter"] != ch_id:
                 errors.append(f"{rel}: chapter ({doc['chapter']}) != главе каталога ({ch_id})")
                 continue
+            # Две РАЗНЫЕ ошибки, и раньше вторая проверка была всегда истинной
+            # (`LINE_ID_RE.match(lid) or [None]` — непустой список в любом случае),
+            # то есть конвенция id здесь не проверялась вовсе.
+            malformed = [lid for lid in (doc.get("lines") or {})
+                         if not LINE_ID_RE.match(lid)]
+            for lid in sorted(malformed):
+                errors.append(f"{rel}: {lid}: id реплики вне конвенции "
+                              f"chNN_sNNN_NNNN (naming.md)")
             bad = [lid for lid in (doc.get("lines") or {})
-                   if (LINE_ID_RE.match(lid) or [None])
-                   and not lid.startswith(ch_id + "_")]
+                   if LINE_ID_RE.match(lid) and not lid.startswith(ch_id + "_")]
             for lid in sorted(bad):
                 errors.append(f"{rel}: {lid}: реплика чужой главы в манифесте {ch_id}")
+            bad += malformed
             if bad:
                 continue
             out.append((ch_id, lang, rel, doc))

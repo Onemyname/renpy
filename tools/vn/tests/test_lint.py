@@ -295,3 +295,35 @@ def test_non_lfs_binary_in_assets_src_is_error(repo_root, tmp_path):
     rep = lint(root)
     assert any("loose.tga" in e and "LFS" in e for e in rep.errors)
     assert not any("covered.png" in e for e in rep.errors)
+
+def test_lint_catches_chapter_number_collision(repo_root, tmp_path):
+    """Одинаковый номер главы в ядре и в паке раньше молча затирал запись: по
+    затёртой главе не выполнялись ни достижимость, ни сверка exits. id сцен плоские
+    (chNN_sNNN), так что коллизия номера — это коллизия идентификаторов."""
+    from vn.content.lint import lint
+
+    root = _copy_skeleton(repo_root, tmp_path)
+
+    def _chapter(base):
+        base.mkdir(parents=True, exist_ok=True)
+        (base.parent / "chapter.yaml").write_text(
+            "schema: chapter@1\nid: ch01\ntitle_key: meta.chapters.ch01.title\n"
+            "status: draft\nentry_scene: s010\nscene_order: [s010]\n", encoding="utf-8")
+        (base / "s010_x.scene.yaml").write_text("schema: scene@1\nid: s010\nexits: {}\n",
+                                                encoding="utf-8")
+        (base / "s010_x.scene.rpy").write_text(
+            'label ch01_s010__body:\n    "…"\n    return\n', encoding="utf-8")
+
+    _chapter(root / "content" / "chapters" / "ch01_core" / "scenes")
+    pack = root / "packs" / "ep_beach" / "chapters" / "ch01_clash" / "scenes"
+    pack.mkdir(parents=True, exist_ok=True)
+    (pack.parent / "chapter.yaml").write_text(
+        "schema: chapter@1\nid: ch01\ntitle_key: meta.chapters.ch01.title\n"
+        "status: draft\nentry_scene: s010\nscene_order: [s010]\n", encoding="utf-8")
+    (pack / "s010_clash.scene.yaml").write_text("schema: scene@1\nid: s010\nexits: {}\n",
+                                                encoding="utf-8")
+    (pack / "s010_clash.scene.rpy").write_text(
+        'label ch01_s010__body:\n    "…"\n    return\n', encoding="utf-8")
+
+    rep = lint(root)
+    assert any("номер главы ch01 уже занят" in e for e in rep.errors), rep.errors

@@ -89,7 +89,7 @@
    `vn_frame_*` (`content/ui/panels.yaml`, ADR-0009). Элемент не может быть меньше `2*Borders`.
 7. Каждый YAML начинается с `schema: <name>@<int>`; схема лежит в
    `tools/schemas/<name>@<N>.schema.json` (G16). Данные — в YAML+схему, а не в код.
-8. Заглушка = честный отказ: `_stub(phase)` + exit 3 (`cli.py:34-38`). Тихий no-op запрещён.
+8. Заглушка = честный отказ: `_stub(phase)` + exit 3 (`cli.py`). Тихий no-op запрещён.
 9. Изменение нормы раздела 0 ARCHITECTURE.md — только новым ADR (`docs/adr/template.md`).
 10. Не запускать GUI-автоматизацию рабочего стола. QA-прогон — только `vn test smoke`.
 
@@ -198,17 +198,17 @@ git status --short                       # game/generated|assets|tl быть н�
 6. **Не использовать магические числа в UI.**
    Причина: размеры/отступы/цвета — токены `gui.*` из `game/gui.rpy`; фоны — генерируемые панели ADR-0009. Ловушка геометрии: `Borders = radius + max(blur+|dy|, border.width)`, элемент не может быть меньше `2*Borders`. Живых нарушений в репозитории **нет** (закрыто 2026-08-08): `style vn_gal_tab` (`game/framework/20_ui/screens/gallery.rpy:161-168`) и `style vn_gal_ctl_button` (`:221-225`) переведены с панелей `choice*` (минимум 60 и 54 px) на пару `chip`/`chip_active` — radius 8, Borders 11, минимум 22×22 px при фактической высоте ≈31 и ≈29 px. Мелкому элементу нужна своя панель, а не чужая: копировать в новый компактный контрол именно чипы. Регресс стерегут `test_ui_panels.py:244-304`.
 7. **Не пушить сырцы без лока.**
-   Причина: G14 — `vn assets push` требует валидный лок (`cli.py:897-908`); `vn assets lock --force` = снятие ЧУЖОГО лока, эскалация на лида. Реальность: хранилище `~/vn-assets-store` ещё не существует, `vn assets status` отвечает «манифестов нет — сырцы ещё не пушились», TTL и атомарность лока NOT IMPLEMENTED — тем важнее не обходить процедуру руками.
+   Причина: G14 — `vn assets push` требует валидный лок (`cli.py`); `vn assets lock --force` = снятие ЧУЖОГО лока, эскалация на лида. Реальность: хранилище `~/vn-assets-store` ещё не существует, `vn assets status` отвечает «манифестов нет — сырцы ещё не пушились», TTL и атомарность лока NOT IMPLEMENTED — тем важнее не обходить процедуру руками.
 8. **Не менять раздел 0 `docs/ARCHITECTURE.md` без ADR.**
    Причина: `../ARCHITECTURE.md:36` — «Изменение любого пункта — только через ADR». Правка нормы без ADR делает контракт ревью недоказуемым.
 9. **Не слать синтетический ввод (SendKeys, AutoHotkey, эмуляция мыши) на рабочий стол.**
-   Причина: недетерминированно, попадает в чужие окна, невоспроизводимо в CI. Штатный путь — in-process автопилот: `vn test smoke` (`cli.py:1347-1401`) + `vn_qa.autopilot_choose` (`game/framework/00_core/030_flow.rpy:130-150`), который обязан `return renpy.run(items[idx].action)` — без возврата non-None интеракция меню не завершается и автопилот зациклится.
+   Причина: недетерминированно, попадает в чужие окна, невоспроизводимо в CI. Штатный путь — in-process автопилот: `vn test smoke` (`cli.py`) + `vn_qa.autopilot_choose` (`game/framework/00_core/030_flow.rpy:130-150`), который обязан `return renpy.run(items[idx].action)` — без возврата non-None интеракция меню не завершается и автопилот зациклится.
 10. **Не обходить логины, капчи и gated-загрузки за моделями.**
     Причина: `vn pipeline models --pull` намеренно не считает manual/auth-шаги ошибкой — они выполняются человеком. Агент печатает, что требуется, и останавливается.
 11. **Не коммитить ключи и токены.**
     Причина: `CIVITAI_API_KEY` живёт в User-окружении Windows, `PATRON_TOKEN` — в `secrets` GitHub. Грабля: `setx` виден только новым процессам; `vn pipeline doctor` умеет отличить «ключ есть в User-окружении, но не виден этому процессу» (`pipeline.py:321-336`).
 12. **Не делать тихих no-op вместо заглушки.**
-    Причина: контракт `_stub(phase)` — жёлтое сообщение «эта команда появится в фазе N» + **exit 3** (`cli.py:34-38`). Молчаливая пустая функция создаёт ложное «работает». Тот же принцип в рантайме: `vn_qa.choice()` — честный `pass` с комментарием «Фаза 2» (`030_flow.rpy:98-101`), а не имитация записи.
+    Причина: контракт `_stub(phase)` — жёлтое сообщение «эта команда появится в фазе N» + **exit 3** (`cli.py`). Молчаливая пустая функция создаёт ложное «работает». Тот же принцип в рантайме: `vn_qa.choice()` — честный `pass` с комментарием «Фаза 2» (`030_flow.rpy:98-101`), а не имитация записи.
 13. **Не изобретать флаги и команды CLI.**
     Причина: несуществующая команда — usage error (exit 2), в CI это красный шаг с непонятной причиной. Проверять по `vn --help` и `cli.py`.
 14. **Не понижать `status` главы, чтобы граф-проверки стали предупреждениями.**
@@ -216,7 +216,7 @@ git status --short                       # game/generated|assets|tl быть н�
 15. **Не редактировать `docs/CHANGELOG.md` до `vn release changelog`** и **не ставить тег без бампа `project.yaml: version`.**
     Причина: генератор вставляет свой блок выше вашего текста; `release.yml:47-54` сверяет тег с `project.yaml` первым шагом и падает до сборки.
 16. **Не менять `project.yaml: save_schema` без файла миграции и записи в реестре.**
-    Причина: G5 — номер резервируется в том же PR (`content/migrations/registry.yaml`, `schema: migrations_registry@1`; сейчас занят один номер — `{number: 2, slug: route_prologue}`). Внешнего `vn save migrate` не существует (`_stub(3)`, `cli.py:1260`) — единственная проверка миграции — `vn save corpus`. С 2026-08-08 она настоящая: в корпусе 2 фикстуры, и `ci/fixtures/saves/schema1-demo.save` (`vn_save_schema=1`) реально прогоняет цепочку в игре — прогон печатает «schema после загрузки: 2 (цель 2)», а в `log.txt` появляется строка `[vn] migration 0002`.
+    Причина: G5 — номер резервируется в том же PR (`content/migrations/registry.yaml`, `schema: migrations_registry@1`; сейчас занят один номер — `{number: 2, slug: route_prologue}`). Внешнего `vn save migrate` не существует (`_stub(3)`, `cli.py`) — единственная проверка миграции — `vn save corpus`. С 2026-08-08 она настоящая: в корпусе 2 фикстуры, и `ci/fixtures/saves/schema1-demo.save` (`vn_save_schema=1`) реально прогоняет цепочку в игре — прогон печатает «schema после загрузки: 2 (цель 2)», а в `log.txt` появляется строка `[vn] migration 0002`.
 
 ---
 
@@ -225,11 +225,11 @@ git status --short                       # game/generated|assets|tl быть н�
 | Задача | Точка входа (команда / файл) | Хендбук | Код |
 |---|---|---|---|
 | Поднять окружение с нуля | `pip install -e "tools/vn[dev]"`, `vn doctor` | [03-getting-started.md](03-getting-started.md) | `doctor.py` |
-| Добавить главу | `vn chapter new <slug>` (`cli.py:449`) | [09-chapters.md](09-chapters.md) | `tools/vn/src/vn/content/scaffold.py` |
-| Добавить сцену | `vn scene new ch01 <slug>` (`cli.py:470`) | [12-scenes.md](12-scenes.md) | `tools/vn/src/vn/content/scaffold.py`, `tools/vn/src/vn/content/scenes.py` |
-| Заглушить объявленный, но не написанный переход | `vn scene stub ch01 s040` (`cli.py:506-520`) | [12-scenes.md](12-scenes.md) | `tools/vn/src/vn/content/scaffold.py` |
+| Добавить главу | `vn chapter new <slug>` (`cli.py`) | [09-chapters.md](09-chapters.md) | `tools/vn/src/vn/content/scaffold.py` |
+| Добавить сцену | `vn scene new ch01 <slug>` (`cli.py`) | [12-scenes.md](12-scenes.md) | `tools/vn/src/vn/content/scaffold.py`, `tools/vn/src/vn/content/scenes.py` |
+| Заглушить объявленный, но не написанный переход | `vn scene stub ch01 s040` (`cli.py`) | [12-scenes.md](12-scenes.md) | `tools/vn/src/vn/content/scaffold.py` |
 | Написать реплики и выборы | `content/chapters/*/scenes/*.scene.rpy` | [13-dialogue.md](13-dialogue.md) | `tools/vn/src/vn/content/analyze.py`, `00_core/050_build_bridge.rpy` |
-| Добавить персонажа | вручную `content/characters/<id>/character.yaml` (`vn char new` — заглушка фазы 1, exit 3, `cli.py:958`) | [10-characters.md](10-characters.md) | `tools/schemas/character@1.schema.json` |
+| Добавить персонажа | вручную `content/characters/<id>/character.yaml` (`vn char new` — заглушка фазы 1, exit 3, `cli.py`) | [10-characters.md](10-characters.md) | `tools/schemas/character@1.schema.json` |
 | Добавить локацию | вручную `content/locations/<id>/location.yaml` | [11-locations.md](11-locations.md) | `tools/schemas/location@1.schema.json` |
 | Добавить фон / CG / спрайт | `assets_src/png/...` → `vn assets build` | [16-assets.md](16-assets.md) | `tools/vn/src/vn/assets/pipeline.py` |
 | Добавить видео-луп | `assets_src/video_src/...` → `vn assets video build`, `vn assets video validate` | [21-video-generation.md](21-video-generation.md), [16-assets.md](16-assets.md) | `tools/vn/src/vn/assets/video.py` |
@@ -246,7 +246,7 @@ git status --short                       # game/generated|assets|tl быть н�
 | Добавить правило линтера | `tools/vn/src/vn/content/lint.py` + `tools/vn/tests/test_lint.py` | [08-content-pipeline.md](08-content-pipeline.md) §7 | `tools/vn/src/vn/content/lint.py` (411 строк) |
 | Добавить схему | `tools/schemas/<name>@1.schema.json` (имя файла = `properties.schema.const`) | [08-content-pipeline.md](08-content-pipeline.md) §8 | `schemas.py:13-51` |
 | Добавить выход компилятора | `tools/vn/src/vn/content/compile.py` + ожидания в `tests/test_compile.py` | [08-content-pipeline.md](08-content-pipeline.md) §2 | `tools/vn/src/vn/content/compile.py` (923 строки) |
-| Завести пак / DLC | `packs/<id>/manifest.yaml` → `vn pack validate`, `vn pack build <id>` | [30-packs-and-dlc.md](30-packs-and-dlc.md) | `cli.py:1573,1600` |
+| Завести пак / DLC | `packs/<id>/manifest.yaml` → `vn pack validate`, `vn pack build <id>` | [30-packs-and-dlc.md](30-packs-and-dlc.md) | `cli.py,1600` |
 | Зарегистрировать лицензию ассета | `content/licenses.yaml` → `vn assets licenses` | [16-assets.md](16-assets.md) §10, [33-security-and-legal.md](33-security-and-legal.md) | `tools/vn/src/vn/assets/licenses.py` |
 | Добавить тест | `tools/vn/tests/test_*.py` | [27-testing.md](27-testing.md) | `tests/conftest.py` |
 | Добавить проверку в CI | сначала команда в `vn`, потом шаг в `.github/workflows/ci.yml` | [04-development-workflow.md](04-development-workflow.md) §4 | `.github/workflows/` |
@@ -287,9 +287,9 @@ grep -n "\-\-<флаг>" tools/vn/src/vn/cli.py
 grep -n "_stub(\|_stub_group(" tools/vn/src/vn/cli.py
 # одиночные заглушки:  393, 394 (migrate, shell), 1281 (voice tts),
 #                      1484 (save migrate), 1659 (test replay|screens|paths)
-# НЕ заглушка: release steam (cli.py:1819) — реализована по ADR-0014
-# группы заглушек:     _stub_group — генератор cli.py:523-527, вызов :1097 (char)
-# определение:         def _stub — cli.py:34
+# НЕ заглушка: release steam (cli.py) — реализована по ADR-0014
+# группы заглушек:     _stub_group — генератор cli.py, вызов :1097 (char)
+# определение:         def _stub — cli.py
 # ЛОЖНЫЕ срабатывания шаблона "_stub(": scene_stub / new_stub — это рабочий код
 
 # Механизм упоминается в ARCHITECTURE.md, но есть ли он в коде?
@@ -371,7 +371,7 @@ ADR не требуется: раздел 0 ARCHITECTURE.md не менялся.
 
 ### Проверка красная
 
-1. **Прочитать сообщение целиком.** `vn` никогда не падает голым трейсбеком: exit 1 всегда сопровождается строкой `ошибка: …` на stderr (`cli.py:22-24`), даже внутренняя ошибка компилятора обёрнута. Коды: `0` успех, `1` ошибка проверки/сборки, `2` usage error (click), `3` заглушка фазы.
+1. **Прочитать сообщение целиком.** `vn` никогда не падает голым трейсбеком: exit 1 всегда сопровождается строкой `ошибка: …` на stderr (`cli.py`), даже внутренняя ошибка компилятора обёрнута. Коды: `0` успех, `1` ошибка проверки/сборки, `2` usage error (click), `3` заглушка фазы.
 2. **Понять класс отказа перед правкой:**
    | Симптом | Класс |
    |---|---|

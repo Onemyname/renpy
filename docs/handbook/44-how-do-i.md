@@ -79,7 +79,7 @@ vn build                 # layeredimage aiko в generated/registry/images.gen.rp
 
 **Типичные ошибки**
 
-- `vn char new` — **заглушка** (`cli.py:1097`, `exit 3`): каталог и YAML создаются руками.
+- `vn char new` — **заглушка** (`cli.py`, `exit 3`): каталог и YAML создаются руками.
 - Слои разного размера: `canvas` из `character.yaml` (а если его нет — холст `base`) обязателен для **каждого** слоя позы, `layeredimage` кладёт всё в (0,0). Сообщение: «холст …x… != …x… — слои одной позы обязаны лежать на ОДНОМ холсте» (`pipeline.py:225-229`).
 - Спрайт без прозрачности: класс `spr` имеет `alpha: require`, невырезанный фон — ошибка сборки, а не предупреждение.
 - Файл, положенный не в `base`/`outfits`/`faces`/`overlays`/`side`, не исчезает молча: `_orphan_masters` даёт ошибку «файл в зоне мастеров не подобран» — и она валит **всю** сборку ассетов, а не только эту ветку.
@@ -610,7 +610,7 @@ vn build && vn play                                       # standalone-ветк�
 
 - Дублировать движок внутри `035_platform.rpy`: движок сам пишет/удаляет `steam_appid.txt`, ставит позицию тостов, вставляет варианты `steam_deck`/`steam_big_picture`, включает экранную клавиатуру Deck для `input()`, регистрирует `SteamBackend` и гоняет callbacks. Гард-тест единственной точки касания от этого не защищает.
 - Считать `vn test smoke` под `RENPY_VARIANT` проверкой Steam: варианты и масштаб он даёт, Steam-инициализацию и `dlc_installed` — нет.
-- Проверять `steam_libs_status` через `vn doctor`: она вызывается **только** из `vn release steam` (`cli.py:1839`) и из тестов, и даёт warning, а не ошибку.
+- Проверять `steam_libs_status` через `vn doctor`: она вызывается **только** из `vn release steam` (`cli.py`) и из тестов, и даёт warning, а не ошибку.
 
 ## 18. Как протестировать на Steam Deck
 
@@ -900,7 +900,7 @@ vn test oversample --scale 2       # ДВИЖОК подтверждает, чт
 | `.vncache/**` | тулинг | кэш трансформаций, анализа, smoke, corpus-savedir |
 | `build/**` | `vn package` / `release` / `pack` | `dist/`, `rpyc-cache/`, `steam/`, `packs/` |
 
-**Единственное исключение — `ci/fixtures/rpyc-line/**`:** негативное правило `!ci/fixtures/rpyc-line/**` (`.gitignore:14`) держит в git **52** `.rpyc` — линию statement-имён для сейв-корпуса (G6). Их нельзя удалять, «чистить» и пересобирать руками: ими управляют `_rpyc_line_restore` / `_rpyc_line_snapshot` (`cli.py:1354`, `cli.py:1375`), меняются они только через `vn save corpus --add`.
+**Единственное исключение — `ci/fixtures/rpyc-line/**`:** негативное правило `!ci/fixtures/rpyc-line/**` (`.gitignore:14`) держит в git **52** `.rpyc` — линию statement-имён для сейв-корпуса (G6). Их нельзя удалять, «чистить» и пересобирать руками: ими управляют `_rpyc_line_restore` / `_rpyc_line_snapshot` (`cli.py`, `cli.py`), меняются они только через `vn save corpus --add`.
 
 **Что произойдёт, если всё-таки поправить**
 

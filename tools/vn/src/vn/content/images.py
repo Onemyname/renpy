@@ -284,7 +284,8 @@ def _emit_shots(root: Path, shots_docs: list[tuple[str, str, dict]],
 LAYER_ORDER = ("base", "outfits", "faces", "overlays")
 
 
-def check_matrix(rel: str, doc: dict, poses_files: dict, rep) -> list[str]:
+def check_matrix(root: Path, rel: str, doc: dict, poses_files: dict,
+                 rep) -> list[str]:
     """Контракт полноты матрицы персонажа: возвращает позы, пригодные к эмиссии.
 
     Один носитель контракта на двух потребителей: эмиттер layeredimage (здесь же) и
@@ -293,7 +294,8 @@ def check_matrix(rel: str, doc: dict, poses_files: dict, rep) -> list[str]:
     «сборка зелёная, а у игрока слой ссылается в пустоту».
 
     `poses_files` — срез собранных слоёв персонажа (`assets.pipeline.sprite_tree`),
-    `rep` — любой отчёт с полями `errors`/`warnings`.
+    `rep` — любой отчёт с полями `errors`/`warnings`; `root` нужен, чтобы назвать в
+    ошибке ФАКТИЧЕСКОЕ расширение собранного файла (класс spr настраивается).
     """
     matrix = doc.get("matrix")
     char_id = doc["id"]
@@ -377,7 +379,12 @@ def check_matrix(rel: str, doc: dict, poses_files: dict, rep) -> list[str]:
         if p not in poses_files:
             continue
         if not poses_files[p]["base"]:
-            rep.errors.append(f"{rel}: у позы {p!r} нет base@2.webp — поза не собрана")
+            # Имя в сообщении — РЕФЕРЕНСНОЕ: sprite_tree заполняет `base` по
+            # безсуффиксному файлу, и «нет base@2.webp» отправляло искать не тот
+            # файл (оверсэмпл может отсутствовать законно).
+            rep.errors.append(
+                f"{rel}: у позы {p!r} нет base{_spr_ext(root, char_id, poses_files)} "
+                f"— поза не собрана")
             continue
         poses.append(p)
     if not poses:
@@ -468,7 +475,7 @@ def emit_images(root: Path, locations: dict[str, dict],
         char_id = doc["id"]
         matrix = doc.get("matrix")
         poses_files = tree.get(char_id, {})
-        poses = check_matrix(rel, doc, poses_files, rep)
+        poses = check_matrix(root, rel, doc, poses_files, rep)
         if not poses:
             continue
 

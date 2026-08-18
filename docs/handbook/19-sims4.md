@@ -141,7 +141,7 @@ Tray-бандл/сейв/`.package` — бинарные сырцы: в хран
 
 ## 5. Что делает `vn assets sims4 validate`
 
-Код: `../../tools/vn/src/vn/cli.py:817-840` → `../../tools/vn/src/vn/assets/sims4.py` (обёртка, 26 строк) → `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три копии сведены к одному контракту; различия источников стали данными (`SourceKind`, `sources.py:47-67`).
+Код: `../../tools/vn/src/vn/cli.py` → `../../tools/vn/src/vn/assets/sims4.py` (обёртка, 26 строк) → `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три копии сведены к одному контракту; различия источников стали данными (`SourceKind`, `sources.py:47-67`).
 
 | Шаг | Что происходит | Строка |
 |---|---|---|
@@ -260,7 +260,7 @@ python -m pytest tools/vn/tests/test_provenance.py -q   # включая test_si
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/assets/sims4.py` (весь, 80 строк), `../../tools/schemas/sims4_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:266-306`, `../../tools/vn/src/vn/cli.py:712-741`, `../../tools/vn/src/vn/pipeline.py:195-227` и `:549-552`, `../../tools/vn/src/vn/release.py:436-443`, `../../tools/install-sims4.ps1`, `../adr/0007-sims4-optional-source.md` (весь, 53 строки), `../pipeline/phase-0.md:132-162`, `../../tools/vn/tests/test_provenance.py:229-303` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/assets/sims4.py` (весь, 80 строк), `../../tools/schemas/sims4_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:266-306`, `../../tools/vn/src/vn/cli.py`, `../../tools/vn/src/vn/pipeline.py:195-227` и `:549-552`, `../../tools/vn/src/vn/release.py:436-443`, `../../tools/install-sims4.ps1`, `../adr/0007-sims4-optional-source.md` (весь, 53 строки), `../pipeline/phase-0.md:132-162`, `../../tools/vn/tests/test_provenance.py:229-303` |
 | **Не трогать** | `assets_src/sims4/.gitkeep` (маркер зоны), `game/assets/**` и `game/generated/**` (производные), `<output>.provenance.json` (пишет валидатор; ручная правка ломает `provenance verify` по blake3) |
 | **Зависимости (что ломается ниже по течению)** | Декларация → `provenance@1` → `vn assets provenance verify` → релизный гейт (`release.py:566-574`); `license` → `tools/vn/src/vn/assets/licenses.py:53-109` (`DECL_SOURCES` содержит `("sims4", "sims4_render@1")`) → гейт (`release.py:654-662`); `output` в `art/cg/**` → `img_cg` + `img_thumb`; `output` в `video_src/**` → `video2webm` + `mov_meta@1` |
 | **Валидация** | `vn assets sims4 validate` → `vn assets provenance verify` → `vn assets licenses` → `vn content lint` → `vn build` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests/test_provenance.py -q` |

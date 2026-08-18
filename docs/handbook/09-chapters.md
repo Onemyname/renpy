@@ -50,7 +50,7 @@ vn test smoke --picks 0,1              # прогон конкретной ве�
 | 20 | Сборка | всё дерево | `build/dist/<version>-<flavor>/` | `vn release build --flavor public` | — |
 | 21 | Фиксация id и changelog | `status: release` | `docs/CHANGELOG.md`, `ci/release-manifest.json`, `content/registry/id_registry.json` | `vn release changelog` | — |
 
-Статус: шаги 2–4, 6–17 — **IMPLEMENTED**; шаг 5 (скаффолд персонажа/локации) — **NOT IMPLEMENTED** (фаза 1, `cli.py:958`); шаг 21 видит главы паков с 2026-08-18 (`snapshot_content` → `repo.chapter_zones`, в снимке появилось поле `pack`) — **IMPLEMENTED**.
+Статус: шаги 2–4, 6–17 — **IMPLEMENTED**; шаг 5 (скаффолд персонажа/локации) — **NOT IMPLEMENTED** (фаза 1, `cli.py`); шаг 21 видит главы паков с 2026-08-18 (`snapshot_content` → `repo.chapter_zones`, в снимке появилось поле `pack`) — **IMPLEMENTED**.
 
 **Про шаг 12 (звук). Аудио-тракт живой — IMPLEMENTED.** Конвейер читает нормативную зону `assets_src/audio_stems/{bgm,amb,sfx}/` (`tools/vn/src/vn/assets/pipeline.py:159-170`; имя закреплено `docs/ARCHITECTURE.md:392` и `docs/conventions/folder-layout.md:29`, поэтому код пошёл к норме, а не наоборот). Каталоги `assets_src/audio_stems/{bgm,amb,sfx}/` созданы; `.ogg` оттуда копируется трансформацией `copy_audio` в `game/assets/audio/<kind>/<имя>.ogg`. Ветку стережёт тест `test_audio_stems_branch_copies_ogg` (`tools/vn/tests/test_assets.py:52`). Каталога `assets_src/audio/` нет и не должно быть.
 
@@ -68,7 +68,7 @@ vn test smoke --picks 0,1              # прогон конкретной ве�
 
 ## 2. Создать главу с нуля
 
-**Статус: IMPLEMENTED** — `tools/vn/src/vn/content/scaffold.py:59-78`, CLI `tools/vn/src/vn/cli.py:447-459`.
+**Статус: IMPLEMENTED** — `tools/vn/src/vn/content/scaffold.py:59-78`, CLI `tools/vn/src/vn/cli.py`.
 
 ```bash
 vn chapter new reunion
@@ -144,7 +144,7 @@ vn scene stub ch02 s040       # -> scenes/s040_stub.scene.{yaml,rpy} — заг�
 
 - Номер: `(max // 10) * 10 + 10` (`scaffold.py:131`) — то есть `s010, s020, s030…`.
 - Глава ищется по точному имени папки **или** по префиксу `ch02_`; неоднозначность — ошибка (`scaffold.py:81-95`).
-- CLI печатает напоминание «добавить сцену в `scene_order` главы и связать exits» (`cli.py:481`) — скаффолд `chapter.yaml` не трогает.
+- CLI печатает напоминание «добавить сцену в `scene_order` главы и связать exits» (`cli.py`) — скаффолд `chapter.yaml` не трогает.
 - `vn scene stub` пишет тело `"Заглушка: сцена в разработке."` и `exits: {}`; нужен, чтобы draft-глава со ссылкой на ненаписанную сцену проходила smoke, а не падала в `vn_scene_unavailable`.
 
 ---
@@ -380,7 +380,7 @@ vars:
 
 ### 10.1. `vn test smoke --picks`
 
-**Статус: IMPLEMENTED** — `cli.py:1347-1401`, автопилот `030_flow.rpy:106-211`.
+**Статус: IMPLEMENTED** — `cli.py`, автопилот `030_flow.rpy:106-211`.
 
 ```bash
 vn build                              # обязателен: smoke падает без game/generated/manifest.json
@@ -391,13 +391,13 @@ vn test smoke --picks 0,0 --lang pseudo --timeout 300
 ```
 
 - `--picks` — индексы пунктов **по порядку встреченных меню**; не хватило значений — берётся `0`; индекс больше числа пунктов — прижимается к последнему (`030_flow.rpy:137-141`).
-- `--lang` требует, чтобы `game/tl/<code>/` существовал, иначе явный отказ (иначе был бы ложно-зелёный прогон на исходном языке); исходный язык подставляется как маркер `@source` (`cli.py:1354-1367`).
+- `--lang` требует, чтобы `game/tl/<code>/` существовал, иначе явный отказ (иначе был бы ложно-зелёный прогон на исходном языке); исходный язык подставляется как маркер `@source` (`cli.py`).
 - Выход — `.vncache/smoke/`: `shot*.png`, `RESULT.txt` (`OK: vn_end_of_content` / `FAIL: vn_scene_unavailable`), `picks.log` (фактический путь: `menu 0 -> pick 1 (ch01_s010_m001)`), `startup.txt` (cold start, гейтится бюджетом `cold_start_s: 30`), `state.json`, `gallery.json`.
 - Автопилот работает **внутри процесса игры**; синтетический ввод на рабочий стол не используется никогда (G23).
 
 **Перебор веток `ch01` — это ровно то, что гоняет `.github/workflows/nightly.yml:57-60`:** `0,0`, `0,1 --lang en`, `1`, `0,0 --lang pseudo`. Для своей главы составьте такой же список: одно значение на каждое меню самого длинного пути, плюс по прогону на каждую развилку.
 
-`vn test paths` (исчерпывающий обход графа), `vn test replay`, `vn test screens` — **NOT IMPLEMENTED**, заглушки фаз 2/2/3, exit 3 (`cli.py:1404-1405`). Полный перебор веток сегодня — ручной список `--picks`.
+`vn test paths` (исчерпывающий обход графа), `vn test replay`, `vn test screens` — **NOT IMPLEMENTED**, заглушки фаз 2/2/3, exit 3 (`cli.py`). Полный перебор веток сегодня — ручной список `--picks`.
 
 ### 10.2. `vn content graph`
 
@@ -452,7 +452,7 @@ vn loc report          # 5. покрытие: "en: 136/136 (100%), fuzzy: 0"
 
 Что важно знать именно при выпуске главы:
 
-- **`vn build` НЕ вызывает `vn loc keys` и `vn loc extract`** — только `_loc_import` (`cli.py:151`). Прогонять `vn loc keys` после каждой правки текста — ваша обязанность; CI проверяет это через `vn loc keys --check` (`.github/workflows/ci.yml:69-70`).
+- **`vn build` НЕ вызывает `vn loc keys` и `vn loc extract`** — только `_loc_import` (`cli.py`). Прогонять `vn loc keys` после каждой правки текста — ваша обязанность; CI проверяет это через `vn loc keys --check` (`.github/workflows/ci.yml:69-70`).
 - `vn loc keys` **пишет прямо в ваш авторский `.rpy`** (дописывает ` id chNN_sNNN_NNNN` и вставляет `$ vn_menu = "chNN_sNNN_mNNN"` перед `menu:`). Изменённые файлы надо закоммитить. Требуется `RENPY_SDK` — разбор идёт парсером самого движка (G24).
 - Новая глава автоматически становится новым PO-доменом: `loc/po/<lang>/chNN.po` + шард `loc/ledger/chNN.json`.
 - `vn loc report` даёт **глобальный** процент по всем доменам сразу; порога он не применяет и всегда возвращает 0. Гейт 98 % живёт только в релизе (`release.py:475-502`, порог из `loc/loc.yaml: release_coverage_min`).
@@ -568,7 +568,7 @@ vn loc report          # 5. покрытие: "en: 136/136 (100%), fuzzy: 0"
 | Куда компилируется | `game/generated/scenes/chNN/` | **туда же** — общее пространство имён; конфликт id ядра и пака = ошибка компиляции (`compile.py:727-729`) |
 | `vn release changelog` / `ci/release-manifest.json` | видит | видит (2026-08-18): в changelog глава пака помечена `(pack <id>)`, в манифесте — полем `pack` |
 | Гейт по флейвору | — | **NOT IMPLEMENTED**: `VN_PACKS` перечисляет все паки из `packs/` независимо от `flavors.<f>.packs`. Владение при этом гейтится: провайдер подключён (ADR-0014, `035_platform.rpy:75`), но только под Steam — вне него `owned()` всегда `True` |
-| Поставка | вместе с игрой | `vn pack build <id>` → `build/packs/<id>.zip`: только `manifest.yaml` + скомпилированные `.gen.rpy`/`.rpyc` сцен. Ни ассетов, ни `tl/`, ни персонажей — **PARTIALLY IMPLEMENTED**. Охранник «объявлены главы, но нет ни одной скомпилированной сцены» рабочий и падает до создания zip (`cli.py:1624-1626`); пак без глав собирается штатно с предупреждением. Остаток: проверка идёт «хоть одна сцена на весь пак», не по каждой главе |
+| Поставка | вместе с игрой | `vn pack build <id>` → `build/packs/<id>.zip`: только `manifest.yaml` + скомпилированные `.gen.rpy`/`.rpyc` сцен. Ни ассетов, ни `tl/`, ни персонажей — **PARTIALLY IMPLEMENTED**. Охранник «объявлены главы, но нет ни одной скомпилированной сцены» рабочий и падает до создания zip (`cli.py`); пак без глав собирается штатно с предупреждением. Остаток: проверка идёт «хоть одна сцена на весь пак», не по каждой главе |
 
 Практически: главу пака пишете тем же контрактом (метки, exits, say-id — всё идентично, `vn loc keys` и `vn loc extract` паки видят, `keys.py:48-49`), но скаффолдинг, граф и changelog делаете вручную и проверяете `vn pack validate`.
 

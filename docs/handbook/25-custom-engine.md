@@ -39,7 +39,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 Норма G1 требует единой точки входа. Практический смысл — не эстетика:
 
 - **Одна установка.** `pip install -e "tools/vn[dev]"` — и человек, и CI-раннер, и AI-агент получают одинаковый набор операций. Нет каталога `scripts/` с `build.ps1`, `build.sh`, `rebuild_assets.py` и тремя вариантами одного и того же.
-- **Один контракт ошибок.** Любая ошибка проходит через `_fail()` (`../../tools/vn/src/vn/cli.py:22-24`) и печатает `ошибка: <текст>` красным в stderr. Голых трейсбеков в нормальном пути нет — даже внутренняя ошибка компилятора ловится и оформляется (`cli.py:119-123`).
+- **Один контракт ошибок.** Любая ошибка проходит через `_fail()` (`../../tools/vn/src/vn/cli.py`) и печатает `ошибка: <текст>` красным в stderr. Голых трейсбеков в нормальном пути нет — даже внутренняя ошибка компилятора ловится и оформляется (`cli.py`).
 - **Один порядок операций.** `vn build` фиксирует последовательность lint → ассеты → компиляция → импорт переводов → бюджеты. Собрать «частично и в другом порядке» нельзя случайно — только явной подкомандой.
 - **CI и человек делают одно и то же.** `.github/workflows/*.yml` вызывают ровно те же команды `vn`, что и разработчик. Воспроизвести падение CI = выполнить его строку локально.
 
@@ -55,23 +55,23 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 | Команда | Опции / аргументы | Что делает | Статус |
 |---|---|---|---|
-| `vn --version` | — | `vn, version 0.1.0` (`cli.py:42`) | IMPL |
-| `vn doctor` | — | Самодиагностика окружения, 8–9 проверок с рецептами; `sys.exit(run_doctor())` (`cli.py:60-64`) | IMPL |
+| `vn --version` | — | `vn, version 0.1.0` (`cli.py`) | IMPL |
+| `vn doctor` | — | Самодиагностика окружения, 8–9 проверок с рецептами; `sys.exit(run_doctor())` (`cli.py`) | IMPL |
 | `vn build` | `--check`, `--profile [full\|draft]` (def `full`), `--use-artifact REF` | lint → ассеты → компиляция → `game/tl` → бюджеты. С `--use-artifact` — АВАРИЙНЫЙ режим: ничего не собирает, а забирает генерат из артефакта зелёного прогона CI (несовместим с `--check`) | IMPL |
-| `vn play` | — | Запуск игры через `RENPY_SDK`; требует `game/generated/manifest.json` (`cli.py:183-199`) | IMPL |
-| `vn bootstrap` | — | `doctor` → `assets build (full)` → `compile` → `loc import` (`cli.py:202-222`) | PART — сборка только локальная; скачивание из remote cache / CI-артефактов (G4) не реализовано, о чём честно сказано в docstring (`cli.py:206-207`) |
-| `vn dev` | — | Запускает игру + вотчер `content/` и `assets_src/` в демон-потоке (`cli.py:225-276`) | IMPL |
-| `vn package` | `--package` (multiple, def `("win",)`), `--timeout` (def 900), `--dest-suffix` (**hidden**) | `vn build` → перенос `.rpyc` прошлого релиза (G6) → `renpy compile` → `launcher distribute` → кэш `.rpyc` этого релиза (`cli.py:279-370`) | IMPL |
-| `vn migrate` | — | Миграции схем деклараций | STUB — фаза 2 (`cli.py:371`) |
-| `vn shell` | — | Docker-репро CI-окружения | STUB — фаза 2 (`cli.py:372`) |
+| `vn play` | — | Запуск игры через `RENPY_SDK`; требует `game/generated/manifest.json` (`cli.py`) | IMPL |
+| `vn bootstrap` | — | `doctor` → `assets build (full)` → `compile` → `loc import` (`cli.py`) | PART — сборка только локальная; скачивание из remote cache / CI-артефактов (G4) не реализовано, о чём честно сказано в docstring (`cli.py`) |
+| `vn dev` | — | Запускает игру + вотчер `content/` и `assets_src/` в демон-потоке (`cli.py`) | IMPL |
+| `vn package` | `--package` (multiple, def `("win",)`), `--timeout` (def 900), `--dest-suffix` (**hidden**) | `vn build` → перенос `.rpyc` прошлого релиза (G6) → `renpy compile` → `launcher distribute` → кэш `.rpyc` этого релиза (`cli.py`) | IMPL |
+| `vn migrate` | — | Миграции схем деклараций | STUB — фаза 2 (`cli.py`) |
+| `vn shell` | — | Docker-репро CI-окружения | STUB — фаза 2 (`cli.py`) |
 
-### 2.2 `vn content` — «Контент: lint, compile, graph» (`cli.py:377-379`)
+### 2.2 `vn content` — «Контент: lint, compile, graph» (`cli.py`)
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
-| `content lint` | `--layout/--no-layout` (def **True**) | Схемы, naming-конвенции, структура глав, битые exits; строгость привязана к `status` главы (G15) (`cli.py:382-396`) | IMPL |
-| `content compile` | `--check` | Компиляция деклараций в `game/generated/` **без линта** (`cli.py:399-422`) | IMPL |
-| `content graph` | `--out PATH` (def stdout) | Mermaid-граф сцен: узлы, exits с условиями, тупик `vn_end` (`cli.py:425-437`) | IMPL — обходит ядро и паки (`repo.chapter_zones`), пак подписан в заголовке подграфа. Проверено прогоном 2026-08-18: в выводе `ch01` и `ch90_beach (draft) · pack ep_beach` |
+| `content lint` | `--layout/--no-layout` (def **True**) | Схемы, naming-конвенции, структура глав, битые exits; строгость привязана к `status` главы (G15) (`cli.py`) | IMPL |
+| `content compile` | `--check` | Компиляция деклараций в `game/generated/` **без линта** (`cli.py`) | IMPL |
+| `content graph` | `--out PATH` (def stdout) | Mermaid-граф сцен: узлы, exits с условиями, тупик `vn_end` (`cli.py`) | IMPL — обходит ядро и паки (`repo.chapter_zones`), пак подписан в заголовке подграфа. Проверено прогоном 2026-08-18: в выводе `ch01` и `ch90_beach (draft) · pack ep_beach` |
 
 Подробности компилятора, линта и реестра схем — в [Контентный конвейер](08-content-pipeline.md), здесь не дублируются.
 
@@ -79,53 +79,53 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 | Команда | Аргументы | Что делает | Статус |
 |---|---|---|---|
-| `chapter new SLUG` | `SLUG` | Каталог `chNN_<slug>/` со скелетом (`chapter.yaml`, `vars.yaml`, `s010`) (`cli.py:447-459`) | IMPL |
-| `scene new CHAPTER SLUG` | 2 позиционных | Пара `sNNN_<slug>.scene.{yaml,rpy}`, следующий номер с шагом 10 (`cli.py:488-503`) | IMPL |
-| `scene stub CHAPTER SCENE_ID` | 2 позиционных | Placeholder-сцена для объявленной, но не написанной цели перехода (G15) (`cli.py:484-496`) | IMPL |
+| `chapter new SLUG` | `SLUG` | Каталог `chNN_<slug>/` со скелетом (`chapter.yaml`, `vars.yaml`, `s010`) (`cli.py`) | IMPL |
+| `scene new CHAPTER SLUG` | 2 позиционных | Пара `sNNN_<slug>.scene.{yaml,rpy}`, следующий номер с шагом 10 (`cli.py`) | IMPL |
+| `scene stub CHAPTER SCENE_ID` | 2 позиционных | Placeholder-сцена для объявленной, но не написанной цели перехода (G15) (`cli.py`) | IMPL |
 
 Обе команды после успеха печатают напоминание («владельца главы в CODEOWNERS», «добавить сцену в `scene_order`»). См. [Главы](09-chapters.md), [Сцены](12-scenes.md).
 
-### 2.4 `vn assets` — «Конвейер ассетов: assets_src → game/assets» (`cli.py:510-512`)
+### 2.4 `vn assets` — «Конвейер ассетов: assets_src → game/assets» (`cli.py`)
 
 | Команда | Опции / аргументы | Что делает | Статус |
 |---|---|---|---|
-| `assets build` | `--profile [full\|draft]` (def `full`) | Сборка `game/assets` из `assets_src` (`cli.py:515-519`) | IMPL |
-| `assets validate` | — | Два уровня: сырцы (`build_assets(check=True)`) + ссылки контента (`compile_content(check=True)`); несвежие выходы — **warning**, не ошибка (`cli.py:522-547`) | IMPL |
-| `assets watch` | `--profile [full\|draft]` (def **`draft`**) | Вотчер `assets_src` (`cli.py:550-568`) | PART — на `content/`-события передан `lambda: None` (`cli.py:566`), хотя вотчер их снимает: правки контента молча теряются |
-| `assets cache` | `--gc`, `--dry-run` | Размер `.vncache/assets` и mark&sweep GC от манифеста сборки (`cli.py:744-764`) | IMPL |
-| `assets licenses` | — | Сверка деклараций рендеров с `content/licenses.yaml`: ссылка есть, `game_use`, `nsfw_allowed` для выходов в `nsfw/**` (`cli.py:767-787`) | IMPL |
-| `assets push PATHS...` | `PATHS` (nargs=-1, **required**, `exists=True`), `--storage` (def `"default"`) | Залить сырцы в хранилище (**требует лока**, G14) + обновить манифесты (`cli.py:894-908`) | IMPL / никогда не запускалось в этом репозитории |
-| `assets pull` | `--scope`, `--edit` | Восстановить бинари сырцов по манифестам (`cli.py:911-924`) | IMPL / не запускалось |
-| `assets lock REL_PATH` | `--release`, `--force` | Взять/снять лок; путь нормализуется `\`→`/` (`cli.py:937`) | IMPL / не запускалось |
-| `assets status` | — | Версии, локальное состояние, держатели локов (`cli.py:943-956`) | IMPL — сейчас печатает «манифестов нет — сырцы ещё не пушились» |
+| `assets build` | `--profile [full\|draft]` (def `full`) | Сборка `game/assets` из `assets_src` (`cli.py`) | IMPL |
+| `assets validate` | — | Два уровня: сырцы (`build_assets(check=True)`) + ссылки контента (`compile_content(check=True)`); несвежие выходы — **warning**, не ошибка (`cli.py`) | IMPL |
+| `assets watch` | `--profile [full\|draft]` (def **`draft`**) | Вотчер `assets_src` (`cli.py`) | PART — на `content/`-события передан `lambda: None` (`cli.py`), хотя вотчер их снимает: правки контента молча теряются |
+| `assets cache` | `--gc`, `--dry-run` | Размер `.vncache/assets` и mark&sweep GC от манифеста сборки (`cli.py`) | IMPL |
+| `assets licenses` | — | Сверка деклараций рендеров с `content/licenses.yaml`: ссылка есть, `game_use`, `nsfw_allowed` для выходов в `nsfw/**` (`cli.py`) | IMPL |
+| `assets push PATHS...` | `PATHS` (nargs=-1, **required**, `exists=True`), `--storage` (def `"default"`) | Залить сырцы в хранилище (**требует лока**, G14) + обновить манифесты (`cli.py`) | IMPL / никогда не запускалось в этом репозитории |
+| `assets pull` | `--scope`, `--edit` | Восстановить бинари сырцов по манифестам (`cli.py`) | IMPL / не запускалось |
+| `assets lock REL_PATH` | `--release`, `--force` | Взять/снять лок; путь нормализуется `\`→`/` (`cli.py`) | IMPL / не запускалось |
+| `assets status` | — | Версии, локальное состояние, держатели локов (`cli.py`) | IMPL — сейчас печатает «манифестов нет — сырцы ещё не пушились» |
 
-#### `vn assets video` (ADR-0006, `cli.py:573-575`)
+#### `vn assets video` (ADR-0006, `cli.py`)
 
 | Команда | Опции / аргументы | Что делает | Статус |
 |---|---|---|---|
-| `video build` | `--profile [full\|draft]` (def `full`) | Только видео-ветка: `_assets_build(..., only_transforms={"video2webm"})` (`cli.py:578-583`) | IMPL |
-| `video validate [PATHS...]` | `PATHS` (nargs=-1, `exists=True`) | Кодек/пиксели/размеры/fps/луп/бюджет. Без аргументов — все `game/assets/mov/**/*.webm`; бюджет из `project.yaml budgets.video_file_mb`; workdir `.vncache/video-tmp` (`cli.py:586-627`) | IMPL |
-| `video inspect PATH` | `PATH` (`exists=True`) | Свойства видео + сайдкары `.webm.meta.json` и `.provenance.json` (`cli.py:630-647`) | IMPL / **UNDOCUMENTED** — нет упоминаний в `docs/` вне хендбука |
+| `video build` | `--profile [full\|draft]` (def `full`) | Только видео-ветка: `_assets_build(..., only_transforms={"video2webm"})` (`cli.py`) | IMPL |
+| `video validate [PATHS...]` | `PATHS` (nargs=-1, `exists=True`) | Кодек/пиксели/размеры/fps/луп/бюджет. Без аргументов — все `game/assets/mov/**/*.webm`; бюджет из `project.yaml budgets.video_file_mb`; workdir `.vncache/video-tmp` (`cli.py`) | IMPL |
+| `video inspect PATH` | `PATH` (`exists=True`) | Свойства видео + сайдкары `.webm.meta.json` и `.provenance.json` (`cli.py`) | IMPL / **UNDOCUMENTED** — нет упоминаний в `docs/` вне хендбука |
 
-#### `vn assets daz` / `vam` / `sims4` — одинаковая форма (`cli.py:652-741`)
+#### `vn assets daz` / `vam` / `sims4` — одинаковая форма (`cli.py`)
 
 | Команда | Опции | Статус |
 |---|---|---|
-| `assets daz validate` | `--scope` (подпуть в `assets_src/daz`), `--no-provenance` | IMPL (`cli.py:756-778`) |
-| `assets vam validate` | те же | IMPL (`cli.py:786-808`), источник объявлен опциональным |
-| `assets sims4 validate` | те же | IMPL (`cli.py:817-840`), ADR-0007, опциональный задел |
+| `assets daz validate` | `--scope` (подпуть в `assets_src/daz`), `--no-provenance` | IMPL (`cli.py`) |
+| `assets vam validate` | те же | IMPL (`cli.py`), источник объявлен опциональным |
+| `assets sims4 validate` | те же | IMPL (`cli.py`), ADR-0007, опциональный задел |
 
 Все три проверяют схему деклараций `*.render.yaml`, наличие сцен и выходов, и по умолчанию **пишут провенанс** для готовых рендеров. Деклараций в репозитории пока ноль — команды печатают «деклараций нет» и выходят с 0. См. [DAZ Studio](17-daz-studio.md), [Virt-a-Mate](18-vam.md), [The Sims 4](19-sims4.md).
 
-#### `vn assets provenance` (`cli.py:790-792`)
+#### `vn assets provenance` (`cli.py`)
 
 | Команда | Опции / аргументы | Что делает | Статус |
 |---|---|---|---|
-| `provenance record ARTIFACT` | `--source`, `--workflow`, `--note`, `--model`, `--seed` (int) | Записать провенанс; PNG из ComfyUI разбирается автоматически из tEXt-чанков (`cli.py:795-820`) | IMPL / ни разу не выполнялось (ноль сайдкаров в репозитории) |
-| `provenance workflow ARTIFACT` | `--out PATH` (def stdout) | Восстановить workflow-граф ComfyUI по `workflow_hash` или инлайн-fallback (`cli.py:823-854`) | IMPL / **UNDOCUMENTED** |
-| `provenance verify` | `--scope` | Сверка цепочек: схема, хэш артефакта, хэши источников (`cli.py:857-875`) | IMPL / не выполнялось |
+| `provenance record ARTIFACT` | `--source`, `--workflow`, `--note`, `--model`, `--seed` (int) | Записать провенанс; PNG из ComfyUI разбирается автоматически из tEXt-чанков (`cli.py`) | IMPL / ни разу не выполнялось (ноль сайдкаров в репозитории) |
+| `provenance workflow ARTIFACT` | `--out PATH` (def stdout) | Восстановить workflow-граф ComfyUI по `workflow_hash` или инлайн-fallback (`cli.py`) | IMPL / **UNDOCUMENTED** |
+| `provenance verify` | `--scope` | Сверка цепочек: схема, хэш артефакта, хэши источников (`cli.py`) | IMPL / не выполнялось |
 
-### 2.5 `vn char` — «Персонажи: new, validate, sheet» (`cli.py:958`)
+### 2.5 `vn char` — «Персонажи: new, validate, sheet» (`cli.py`)
 
 | Команда | Статус |
 |---|---|
@@ -135,39 +135,39 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 Персонажей сейчас заводят руками, редактируя `content/characters/<id>/character.yaml` (персонаж — **каталог**: компилятор глобит `content/characters/*/character.yaml`, `tools/vn/src/vn/content/compile.py:878`). См. [Персонажи](10-characters.md).
 
-### 2.6 `vn loc` — «Локализация (раздел 5, G8)» (`cli.py:961-963`)
+### 2.6 `vn loc` — «Локализация (раздел 5, G8)» (`cli.py`)
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
-| `loc keys` | `--check` | Дописать say-id и маркеры меню в авторские `scene.rpy` **парсером Ren'Py** (G24); `--check` — CI-режим (`cli.py:966-993`) | IMPL |
-| `loc add CODE` | `--name` | Создать пакет `loc/po/<code>/` (ADR-0005) и сразу выполнить `extract` (`cli.py:996-1016`) | IMPL |
-| `loc extract` | — | Обновить PO всех языков из ledger/strings/персонажей (`cli.py:1019-1032`) | IMPL |
-| `loc import` | — | PO → `game/tl/<lang>/`; ручные правки `tl` запрещены (`cli.py:1035-1051`) | IMPL |
-| `loc pseudo` | — | Псевдолокаль `pseudo` + импорт (`cli.py:1054-1069`) | IMPL |
-| `loc report` | — | Покрытие по языкам и число fuzzy (`cli.py:1072-1086`) | IMPL — но **без** `--gate/--format`: гейтинг живёт только в релизном гейте (`release.py:475-501`) |
+| `loc keys` | `--check` | Дописать say-id и маркеры меню в авторские `scene.rpy` **парсером Ren'Py** (G24); `--check` — CI-режим (`cli.py`) | IMPL |
+| `loc add CODE` | `--name` | Создать пакет `loc/po/<code>/` (ADR-0005) и сразу выполнить `extract` (`cli.py`) | IMPL |
+| `loc extract` | — | Обновить PO всех языков из ledger/strings/персонажей (`cli.py`) | IMPL |
+| `loc import` | — | PO → `game/tl/<lang>/`; ручные правки `tl` запрещены (`cli.py`) | IMPL |
+| `loc pseudo` | — | Псевдолокаль `pseudo` + импорт (`cli.py`) | IMPL |
+| `loc report` | — | Покрытие по языкам и число fuzzy (`cli.py`) | IMPL — но **без** `--gate/--format`: гейтинг живёт только в релизном гейте (`release.py:475-501`) |
 
 Подробно — [Локализация](14-localization.md).
 
-### 2.7 `vn voice` — «Озвучка (C5/§4.9)» (`cli.py:1226-1311`)
+### 2.7 `vn voice` — «Озвучка (C5/§4.9)» (`cli.py`)
 
 | Команда | Опции / аргументы | Что делает | Статус |
 |---|---|---|---|
-| `voice manifest CHAPTER` | `--lang` (**required**), `--char`, `-o/--out` (**required**) | CSV-лист записи для актёра/студии: реплики главы из ledger с контекстом соседних строк и статусом покрытия (`cli.py:1233-1252`) | IMPL |
-| `voice import SRC_DIR` | `--lang` (**required**), `--draft` | Разложить дубли `<line_id>.<ext>` по `assets_src/voice/<lang>/<chNN>/` и обновить манифесты `voice@1`; импорт атомарен — любая ошибка, и ни один файл не скопирован. Транскод в Opus — следующий `vn assets build` (`cli.py:1255-1275`) | IMPL |
+| `voice manifest CHAPTER` | `--lang` (**required**), `--char`, `-o/--out` (**required**) | CSV-лист записи для актёра/студии: реплики главы из ledger с контекстом соседних строк и статусом покрытия (`cli.py`) | IMPL |
+| `voice import SRC_DIR` | `--lang` (**required**), `--draft` | Разложить дубли `<line_id>.<ext>` по `assets_src/voice/<lang>/<chNN>/` и обновить манифесты `voice@1`; импорт атомарен — любая ошибка, и ни один файл не скопирован. Транскод в Opus — следующий `vn assets build` (`cli.py`) | IMPL |
 | `voice tts CHAPTER` | `--lang`, `--char`, `--backend piper\|say`, `--voice`, `--rate`, `--only-missing/--regenerate-drafts` (def `--only-missing`), `--allow-download` | TTS-черновики непокрытых реплик: синтез → `encode_opus` → импорт со `status: draft`. Бэкенд по доступности (`piper` → `say`), `final` не перезаписывается никогда, повтор идемпотентен и не требует TTS на машине | **IMPL** (2026-08-18) — [23-audio.md](23-audio.md) §8.1 |
-| `voice validate` | `--report` | Манифесты ↔ ledger ↔ мастера: сироты в обе стороны, драфты, дыры покрытия; `--report` — сводка по главам и языкам (`cli.py:1284-1311`) | IMPL |
+| `voice validate` | `--report` | Манифесты ↔ ledger ↔ мастера: сироты в обе стороны, драфты, дыры покрытия; `--report` — сводка по главам и языкам (`cli.py`) | IMPL |
 
 Ядро — `tools/vn/src/vn/voice.py`; жёсткими драфты (WARN) и дыры покрытия (FAIL) становятся в релизном гейте (`release.py:531-548`). Подробно — [Аудио](23-audio.md) §8.
 
-### 2.8 `vn save` (`cli.py:1093-1096`)
+### 2.8 `vn save` (`cli.py`)
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
-| `save check` | — | Оффлайн: каждая `ci/fixtures/saves/*.save` открывается как zip, читается член `json`, требуется целочисленный `vn_save_schema` (`cli.py:1099-1124`) | IMPL |
-| `save corpus` | `--add NAME`, `--timeout` (def 180) | Каждая фикстура **реально загружается** в игре с `--savedir`, миграции идут в `after_load`, автопилот доигрывает; линия `.rpyc` восстанавливается из `ci/fixtures/rpyc-line/` (`cli.py:1167-1256`) | IMPL — 2 фикстуры: `schema2-demo` (текущая схема) и `schema1-demo` (старая), на второй миграция `0002` реально исполняется в игре |
-| `save migrate` | — | Оффлайн-миграция файла сейва | STUB — фаза 3 (`cli.py:1259-1260`) |
+| `save check` | — | Оффлайн: каждая `ci/fixtures/saves/*.save` открывается как zip, читается член `json`, требуется целочисленный `vn_save_schema` (`cli.py`) | IMPL |
+| `save corpus` | `--add NAME`, `--timeout` (def 180) | Каждая фикстура **реально загружается** в игре с `--savedir`, миграции идут в `after_load`, автопилот доигрывает; линия `.rpyc` восстанавливается из `ci/fixtures/rpyc-line/` (`cli.py`) | IMPL — 2 фикстуры: `schema2-demo` (текущая схема) и `schema1-demo` (старая), на второй миграция `0002` реально исполняется в игре |
+| `save migrate` | — | Оффлайн-миграция файла сейва | STUB — фаза 3 (`cli.py`) |
 
-### 2.9 `vn test` — «QA-прогоны (7.4)» (`cli.py:1263-1265`)
+### 2.9 `vn test` — «QA-прогоны (7.4)» (`cli.py`)
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
@@ -175,26 +175,26 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | `test oversample` | `--scale` (def 2.0) | Подтверждение движком, что `@N`-варианты реально подхватываются на заданном `draw_per_virt` (ADR-0012) | IMPL |
 | `test deck-kit` | `--timeout` | Комплект приёмки для живого устройства: скриншоты вариантов Deck/Big Picture, сводка (кегли в физических px), чек-лист из `43-steam-qa.md` (`deckkit.py`) | IMPL |
 | `test corpus` | `--scenes` (def 100), `--images` (def 100), `--videos` (def 0), `--lines` (def 8), `--vars` (def 50), `--profile [full\|draft]`, `--dest`, `--keep` | Синтетический корпус масштаба **вне репозитория** + измерительный прогон конвейера: `assets build → lint → compile → повторный compile → модель памяти`, таблица «метрика × масштаб». Красный, если упала стадия, если повторная компиляция что-то перезаписала или превышен бюджет G19 | **IMPL** (2026-08-18) — [32](32-performance-and-scalability.md) §7.5 |
-| `test replay` | — | Замысел (`../ARCHITECTURE.md:3672`): автопилот скармливает записанные индексы выборов из `*.vnrec.json` | STUB — фаза 2 (`cli.py:1404-1405`) |
-| `test screens` | — | Замысел (`../ARCHITECTURE.md:3720`): скриншоты экранов против эталонов с допуском по пикселям | STUB — фаза 3 (`cli.py:1404-1405`) |
-| `test paths` | — | Замысел (`../ARCHITECTURE.md:3685`): обход графа выборов без полного перебора | STUB — фаза 2 (`cli.py:1404-1405`) |
+| `test replay` | — | Замысел (`../ARCHITECTURE.md:3672`): автопилот скармливает записанные индексы выборов из `*.vnrec.json` | STUB — фаза 2 (`cli.py`) |
+| `test screens` | — | Замысел (`../ARCHITECTURE.md:3720`): скриншоты экранов против эталонов с допуском по пикселям | STUB — фаза 3 (`cli.py`) |
+| `test paths` | — | Замысел (`../ARCHITECTURE.md:3685`): обход графа выборов без полного перебора | STUB — фаза 2 (`cli.py`) |
 
-`--lang` умеет отдельный случай: если указан исходный язык, подставляется маркер `@source` (иначе `change_language` молча показал бы исходный язык и дал ложно-зелёный прогон, `cli.py:1354-1367`). См. [Тестирование](27-testing.md).
+`--lang` умеет отдельный случай: если указан исходный язык, подставляется маркер `@source` (иначе `change_language` молча показал бы исходный язык и дал ложно-зелёный прогон, `cli.py`). См. [Тестирование](27-testing.md).
 
-### 2.10 `vn pipeline` — «Окружение production-конвейера» (`cli.py:1409-1411`)
+### 2.10 `vn pipeline` — «Окружение production-конвейера» (`cli.py`)
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
-| `pipeline doctor` | `--comfyui` (def `VN_COMFYUI`, затем `D:/ComfyUI`, `C:/ComfyUI`, `~/ComfyUI`) | PASS/WARN/FAIL: Python, ffmpeg/VP9, GPU, CUDA/PyTorch, ComfyUI, модели, DAZ, диски, SDK (`cli.py:1414-1422`) | IMPL |
-| `pipeline models` | `--pull`, `--all`, `--only <ids>`, `--comfyui` | Статус моделей по `tools/comfyui-models.yaml`; `--pull` — загрузка (`cli.py:1680-1461`) | IMPL — **грабля:** условие `if pull or only_set` (`cli.py:1697`), поэтому `--only` **сам по себе запускает скачивание**, а не фильтрует список |
+| `pipeline doctor` | `--comfyui` (def `VN_COMFYUI`, затем `D:/ComfyUI`, `C:/ComfyUI`, `~/ComfyUI`) | PASS/WARN/FAIL: Python, ffmpeg/VP9, GPU, CUDA/PyTorch, ComfyUI, модели, DAZ, диски, SDK (`cli.py`) | IMPL |
+| `pipeline models` | `--pull`, `--all`, `--only <ids>`, `--comfyui` | Статус моделей по `tools/comfyui-models.yaml`; `--pull` — загрузка (`cli.py`) | IMPL — **грабля:** условие `if pull or only_set` (`cli.py`), поэтому `--only` **сам по себе запускает скачивание**, а не фильтрует список |
 
-### 2.11 `vn release` (`cli.py:1466-1468`)
+### 2.11 `vn release` (`cli.py`)
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
 | `release changelog` | `--force` | Обновляет `docs/CHANGELOG.md` и `ci/release-manifest.json` по диффу реестров, штампует `id_registry` (G7). Отказывается писать на уже выпущенную версию (раздел в CHANGELOG или тег `v<version>`): прогон без бампа СЪЕДАЕТ дифф — манифест становится базой следующего сравнения, и сцены, добавленные после релиза, в блок следующей версии не попадут. `--force` — для перезаписи после ручной правки | PART — нет `--from/--audience`; главы паков видит с 2026-08-18 (в changelog помечены `(pack <id>)`) |
-| `release validate` | `--flavor` (**required**) | Предрелизный гейт: 21 проверка PASS/WARN/FAIL (`cli.py:1492-1505`) | IMPL |
-| `release build` | `--flavor` (**required**), `--patron-token`, `--package` (multiple), `--timeout` (def 900) | `vn build` → гейт → `game/build_id.json` → `vn package` с суффиксом `-<flavor>` → `build-info.json`; `build_id.json` и скопированный `THIRD-PARTY-NOTICES.md` снимаются в `finally` (`cli.py:1508-1562`) | IMPL — `--patron-token` это **вход**: наружу уходит только производная метка `patron_tag` (ADR-0011, см. ниже) |
+| `release validate` | `--flavor` (**required**) | Предрелизный гейт: 21 проверка PASS/WARN/FAIL (`cli.py`) | IMPL |
+| `release build` | `--flavor` (**required**), `--patron-token`, `--package` (multiple), `--timeout` (def 900) | `vn build` → гейт → `game/build_id.json` → `vn package` с суффиксом `-<flavor>` → `build-info.json`; `build_id.json` и скопированный `THIRD-PARTY-NOTICES.md` снимаются в `finally` (`cli.py`) | IMPL — `--patron-token` это **вход**: наружу уходит только производная метка `patron_tag` (ADR-0011, см. ниже) |
 | `release preflight` | `--flavor` | Готовность к Steam-поставке ДО App ID: депоты, редистрибутивы, артефакты, список ачивок для партнёрки, DLC-маппинг, корень Auto-Cloud (`release.py: steam_preflight`) | IMPL — пустой `appid` даёт `TODO`, а не провал |
 | `release steam` | `--flavor` (**required**), `--branch` | Steam-поставка ([ADR-0014](../adr/0014-platform-services.md)): рендерит `build/steam/app_build_<flavor>.vdf` из `ci/steam/app_build.vdf.tmpl` и распаковывает архивы distribute в `build/steam/content/<flavor>/<platform>/` — zip для windows/mac, `tar.bz2` для linux, только для платформ с объявленным депотом; предупреждает про отсутствующие steam_api-библиотеки (`release.py:151-326`) | PARTIAL — раскладка депотов и VDF работают ([40](40-steamworks.md) §4.3), но это **не аплоад** (`steamcmd` запускает человек, credentials вне репозитория), а в этом чекауте команда останавливается на первом шаге: `platform.steam.appid: null` и ключа `depots` в `project.yaml` нет |
 | `release android setup` | `STEP` = `sdk`\|`keys`\|`config` (обязателен), `--download-rapt` | Подготовка тулчейна **ИНТЕРАКТИВНО**: запускает движок с dev-командой `vn_android_toolchain`, которая зовёт те же функции RAPT, что кнопки лаунчера (`install_sdk` / `generate_keys` / `configure`). `--download-rapt` тянет `renpy-<ver>-rapt.zip` с renpy.org (в архив SDK RAPT не входит) | **IMPL** (2026-08-18) — все три шага пройдены на этой машине, [39](39-platforms.md) §2.1.1 |
@@ -202,18 +202,18 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | `release android preflight` | `--bundle` | Предпосылки поставки: размер `game/` минус `@N` + накладные против потолка 2 ГБ (80 % — предупреждение), пофайловый лимит 500 МБ для Play-бандла, мобильная модель памяти образов, утечка `*.keystore` в git, иконки/пресплэш | **IMPL** — гоняется в `ci.yml` на каждый пуш |
 | `release android build` | `--bundle`, `--install`, `--launch`, `--timeout` (def 3600) | `status` → `vn build` → штатная команда лаунчера `renpy.sh <SDK>/launcher android_build <проект> --destination …`. Вывод gradle/RAPT **не перехватывается**: молчащая сборка неотличима от зависшей | **IMPL** — 2026-08-18 собраны APK (52,1 МБ) и `.aab` (51,6 МБ), вес сверен с потолком канала по факту файла; `--install`/`--launch` не прогонялись — устройства нет, [39](39-platforms.md) §2.1.1 |
 
-Сборка идёт **до** гейта осознанно: в свежем чекауте генерата нет вовсе, и проверка «генерат свеж» валила бы каждый релиз (комментарий `cli.py:1526-1528`). См. [Сборка и релиз](29-build-and-release.md).
+Сборка идёт **до** гейта осознанно: в свежем чекауте генерата нет вовсе, и проверка «генерат свеж» валила бы каждый релиз (комментарий `cli.py`). См. [Сборка и релиз](29-build-and-release.md).
 
 **`--patron-token` ≠ то, что уедет игроку (ADR-0011, 2026-08-08).** `game/build_id.json` целиком лежит внутри дистрибутива — он нужен рантайму (`060_build_info.rpy`) и ни одно правило `build.classify` его не исключает. Поэтому до `build_info@2` в поле `patron_token` уезжал сам секрет (в CI — `secrets.PATRON_TOKEN`). Теперь `compute_build_info` (`release.py:479-506`) кладёт в документ поле `patron_tag` = `release.patron_tag(token)` (`release.py:455-476`) — `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex. Вотермарка = `build_id + " · " + patron_tag` (`060_build_info.rpy:42-45`). Схема бампнута `build_info@1` → `build_info@2`; `build_info@1` осталась в реестре с пометкой «устарела» — чтобы читались `build-info.json` сборок до 0.1.5. Проверено сквозным прогоном: в patron-дистрибутиве 1663 файла, токен не встречается ни в одном.
 
 **Требование к процессу:** токен-метка получателя обязана быть случайной (`secrets.token_hex(16)` и подобное). Короткий низкоэнтропийный токен подбирается перебором по 8-символьной метке — это единственное, что метка не защищает.
 
-### 2.12 `vn pack` — «DLC/voice-паки (G9/G10)» (`cli.py:1568-1570`)
+### 2.12 `vn pack` — «DLC/voice-паки (G9/G10)» (`cli.py`)
 
 | Команда | Аргументы | Что делает | Статус |
 |---|---|---|---|
-| `pack validate` | — | Схема манифестов паков + `api_level` против фасада `VN_API_LEVEL` (`cli.py:1573-1597`) | IMPL / **UNDOCUMENTED** |
-| `pack build PACK_ID` | `PACK_ID` | Zip: `packs/<id>/manifest.yaml` + `game/generated/scenes/<ch>/*` → `build/packs/<id>.zip` (`cli.py:1600-1639`) | PART — охранник починен (`cli.py:1624-1626`): сцены считаются отдельно от манифеста, «главы объявлены, а генерата нет» = exit 1 **до** создания zip; пак-контейнер без глав (`packs/nsfw`) собирается штатно и печатает предупреждение «не объявляет глав» (`cli.py:1635-1637`). Остаётся: в архив идут только сцены и манифест (ни ассетов, ни `tl/`), и охранник требует «хоть одну сцену на весь пак», а не по каждой объявленной главе |
+| `pack validate` | — | Схема манифестов паков + `api_level` против фасада `VN_API_LEVEL` (`cli.py`) | IMPL / **UNDOCUMENTED** |
+| `pack build PACK_ID` | `PACK_ID` | Zip: `packs/<id>/manifest.yaml` + `game/generated/scenes/<ch>/*` → `build/packs/<id>.zip` (`cli.py`) | PART — охранник починен (`cli.py`): сцены считаются отдельно от манифеста, «главы объявлены, а генерата нет» = exit 1 **до** создания zip; пак-контейнер без глав (`packs/nsfw`) собирается штатно и печатает предупреждение «не объявляет глав» (`cli.py`). Остаётся: в архив идут только сцены и манифест (ни ассетов, ни `tl/`), и охранник требует «хоть одну сцену на весь пак», а не по каждой объявленной главе |
 
 См. [Паки и DLC](30-packs-and-dlc.md).
 
@@ -227,7 +227,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | `vn validate --schemas` / `--budgets` | `../ARCHITECTURE.md` | NOT IMPLEMENTED — группы `vn validate` не существует |
 | `vn content lint --strict/--arch/--schemas` | `../ARCHITECTURE.md` | NOT IMPLEMENTED — есть только `--layout/--no-layout` |
 | `vn content who-writes`, `vn content rename`, `vn content compile --watch`, `vn content graph --chapter` | `../ARCHITECTURE.md` | NOT IMPLEMENTED |
-| `vn play --scene <id>` | `../ARCHITECTURE.md` | NOT IMPLEMENTED — `play` не принимает опций (`cli.py:183-184`) |
+| `vn play --scene <id>` | `../ARCHITECTURE.md` | NOT IMPLEMENTED — `play` не принимает опций (`cli.py`) |
 | `vn bootstrap --role <role>` | `../ARCHITECTURE.md`, `../../README.md:11` | NOT IMPLEMENTED — `bootstrap` без опций |
 | `vn loc screenshots`, `vn loc report --gate`, `vn loc extract --push` | `../ARCHITECTURE.md` | NOT IMPLEMENTED |
 | `vn char report`, `vn assets sheet` | `../ARCHITECTURE.md` | NOT IMPLEMENTED |
@@ -240,14 +240,14 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 ## 3. Контракт кодов возврата
 
-Объявлен в docstring корневой группы (`cli.py:46-47`) и соблюдается:
+Объявлен в docstring корневой группы (`cli.py`) и соблюдается:
 
 | Код | Значение | Где реализовано | Что это значит для CI/скрипта |
 |---|---|---|---|
 | `0` | успех | нормальный выход | продолжать |
-| `1` | ошибка проверки или сборки | `_fail()` (`cli.py:22-24`): `ошибка: <msg>` красным в **stderr** | красный билд, чинить |
-| `2` | usage error | резервирует click; сам код 2 никогда не возвращает (комментарий `cli.py:37`) | опечатка в команде/флаге, а не поломка проекта |
-| `3` | не реализовано в этой фазе | `_stub()` (`cli.py:34-38`): жёлтое `эта команда появится в фазе {phase} (раздел 8 ARCHITECTURE.md)` в **stdout**, затем `sys.exit(3)` | **НЕ провал.** Честная заглушка |
+| `1` | ошибка проверки или сборки | `_fail()` (`cli.py`): `ошибка: <msg>` красным в **stderr** | красный билд, чинить |
+| `2` | usage error | резервирует click; сам код 2 никогда не возвращает (комментарий `cli.py`) | опечатка в команде/флаге, а не поломка проекта |
+| `3` | не реализовано в этой фазе | `_stub()` (`cli.py`): жёлтое `эта команда появится в фазе {phase} (раздел 8 ARCHITECTURE.md)` в **stdout**, затем `sys.exit(3)` | **НЕ провал.** Честная заглушка |
 
 Практическое следствие: в shell-обвязке и в CI отделяйте 3 от 1.
 
@@ -263,9 +263,9 @@ if [ "${rc:-0}" -eq 3 ]; then echo "ещё не фаза — пропускае�
 | `vn doctor` | `run_doctor()` — 1 при любом hard-fail, иначе 0 (`doctor.py:144-153`) |
 | `vn pipeline doctor` | `run_pipeline_doctor()` — 1 при любом FAIL |
 | `vn pipeline models --pull` | `pull_models()` — 1 если какая-то загрузка провалилась; ручные шаги (auth `manual`) провалом **не** считаются |
-| `vn play` | код выхода самого движка: `sys.exit(subprocess.run(cmd).returncode)` (`cli.py:199`) |
+| `vn play` | код выхода самого движка: `sys.exit(subprocess.run(cmd).returncode)` (`cli.py`) |
 
-`vn build` дополнительно оборачивает любое неожиданное исключение компилятора в exit 1 с сообщением `внутренняя ошибка компилятора: <Type>: <msg>` и трёхкадровым трейсбеком (`cli.py:119-123`) — контракт «exit 1 всегда с сообщением» соблюдается даже при внутреннем баге.
+`vn build` дополнительно оборачивает любое неожиданное исключение компилятора в exit 1 с сообщением `внутренняя ошибка компилятора: <Type>: <msg>` и трёхкадровым трейсбеком (`cli.py`) — контракт «exit 1 всегда с сообщением» соблюдается даже при внутреннем баге.
 
 Проверено прогоном 2026-08-08: `vn char new` → 3; `vn voice tts` → 3; `vn char new x` (лишний аргумент) → 2; `vn build` вне репозитория → 1.
 
@@ -293,7 +293,7 @@ main.command(name="migrate", help="Миграции схем деклараци�
 _stub_group("char", "Персонажи: new, validate, sheet (раздел 4).", {"new": 1, "validate": 1, "sheet": 2})  # группа
 ```
 
-`_stub_group` (`cli.py:523-527`) создаёт `click.Group` и вешает на каждую подкоманду `_stub(phase)` с автоматическим help-текстом. Одиночная заглушка внутри живой группы — `voice.command(name="tts", ...)(_stub(2))` (`cli.py:1278-1281`).
+`_stub_group` (`cli.py`) создаёт `click.Group` и вешает на каждую подкоманду `_stub(phase)` с автоматическим help-текстом. Одиночная заглушка внутри живой группы — `voice.command(name="tts", ...)(_stub(2))` (`cli.py`).
 
 ---
 
@@ -317,7 +317,7 @@ def find_root(start: Path | None = None) -> Path:
 | Идёт от CWD **вверх** по `parents`, первое совпадение | Можно вызывать `vn` из `content/chapters/ch01_awakening/` — найдётся тот же корень |
 | Не смотрит на аргументы команды | Нельзя «указать корень флагом»: только `cd` |
 
-Вне репозитория: `RepoError` → `_root()` (`cli.py:27-31`) → `_fail()` → красное `ошибка: не найден корень репозитория…` в stderr, **exit 1**. Исключение — `vn doctor`: он вызывает `find_root()` в собственном `try` (`doctor.py:80-84`), продолжает с `root = None` и печатает полный отчёт, помечая отсутствие корня как hard-fail. То есть `vn doctor` осмысленно работает откуда угодно, всё остальное — нет.
+Вне репозитория: `RepoError` → `_root()` (`cli.py`) → `_fail()` → красное `ошибка: не найден корень репозитория…` в stderr, **exit 1**. Исключение — `vn doctor`: он вызывает `find_root()` в собственном `try` (`doctor.py:80-84`), продолжает с `root = None` и печатает полный отчёт, помечая отсутствие корня как hard-fail. То есть `vn doctor` осмысленно работает откуда угодно, всё остальное — нет.
 
 Прочие помощники `repo.py`: `load_yaml(path)` (всегда `encoding="utf-8"`, `:26-28`), `load_project(root)` (`:31-32`), `git_sha(root)` = `git rev-parse --short HEAD` с глухим `except Exception: return "nogit"` (`:35-43`) — именно поэтому сборка без git не падает, а помечает генерат как `nogit`.
 
@@ -329,7 +329,7 @@ def find_root(start: Path | None = None) -> Path:
 
 ### 6.1 Кодировка консоли — главная аккомодация
 
-Колбэк корневой группы (`cli.py:49-55`):
+Колбэк корневой группы (`cli.py`):
 
 ```python
 # Windows-консоль/пайп по умолчанию в locale-кодировке (cp1251): без этого
@@ -347,11 +347,11 @@ for stream in (sys.stdout, sys.stderr):
 
 ### 6.2 Выбор исполняемого файла SDK
 
-`renpy.exe` на win32, иначе `renpy.sh` — шесть мест: `cli.py:194-198` (`play`), `264` (`dev`), `337` (`package`), `1313` (`_autopilot_run`), `tools/vn/src/vn/content/analyze.py:31`.
+`renpy.exe` на win32, иначе `renpy.sh` — шесть мест: `cli.py` (`play`), `264` (`dev`), `337` (`package`), `1313` (`_autopilot_run`), `tools/vn/src/vn/content/analyze.py:31`.
 
 ### 6.3 Убийство дерева процессов по таймауту
 
-`renpy.exe` — лаунчер: убить только его недостаточно, игра переживёт (`cli.py:1322-1335`):
+`renpy.exe` — лаунчер: убить только его недостаточно, игра переживёт (`cli.py`):
 
 ```python
 popen = subprocess.Popen(cmd, env=env, start_new_session=(sys.platform != "win32"))
@@ -364,8 +364,8 @@ else:
 
 ### 6.4 Пути
 
-- `vn assets lock` нормализует пользовательский ввод: `rel_path.replace("\\", "/")` (`cli.py:937`) — можно скопировать путь из проводника.
-- В выводе пути всегда через `.as_posix()` (`cli.py:352, 458, 479, 820, 1210, 1627`), чтобы вывод не зависел от платформы.
+- `vn assets lock` нормализует пользовательский ввод: `rel_path.replace("\\", "/")` (`cli.py`) — можно скопировать путь из проводника.
+- В выводе пути всегда через `.as_posix()` (`cli.py, 458, 479, 820, 1210, 1627`), чтобы вывод не зависел от платформы.
 - Анализ сцен нормализует ключи от build-bridge через `.replace("\\", "/")` с fallback на исходную форму (`tools/vn/src/vn/content/compile.py:749-750`).
 
 ### 6.5 Реестр Windows и `setx`
@@ -374,11 +374,11 @@ else:
 
 ### 6.6 Имя слота сейва в Ren'Py 8.5
 
-Слот получил токен локации (`1-1-LT1.save`), поэтому `save corpus` кладёт в временный savedir **оба** варианта имени, `1-1-LT1.save` и `1-1.save` (`cli.py:1228-1231`), и ищет фикстуру по маске `1-1*.save` (`cli.py:1195`).
+Слот получил токен локации (`1-1-LT1.save`), поэтому `save corpus` кладёт в временный savedir **оба** варианта имени, `1-1-LT1.save` и `1-1.save` (`cli.py`), и ищет фикстуру по маске `1-1*.save` (`cli.py`).
 
 ### 6.7 Явный UTF-8 везде
 
-Каждый `read_text`/`write_text` в тулинге передаёт `encoding="utf-8"`; чтение трейсбеков и ini добавляет `errors="replace"` (`cli.py:1253, 1375, 1397`).
+Каждый `read_text`/`write_text` в тулинге передаёт `encoding="utf-8"`; чтение трейсбеков и ini добавляет `errors="replace"` (`cli.py, 1375, 1397`).
 
 ---
 
@@ -434,7 +434,7 @@ tools/vn/                   34 .py-файла / 11 122 строки (wc -l по 
 
 ### 7.2 Ленивые импорты
 
-На уровне модуля `cli.py` импортирует только `json, os, subprocess, sys, pathlib.Path, click`, `__version__` и `repo` (`cli.py:8-19`). Все остальные импорты — **внутри тел команд**: 58 таких строк.
+На уровне модуля `cli.py` импортирует только `json, os, subprocess, sys, pathlib.Path, click`, `__version__` и `repo` (`cli.py`). Все остальные импорты — **внутри тел команд**: 58 таких строк.
 
 ```python
 @main.command()
@@ -453,13 +453,13 @@ def doctor():
 | `vn doctor`, `vn content lint`, `vn content graph`, `vn loc *`, `vn assets *` (кроме сборок с новыми сценами) | нет | — |
 | `vn build` / `vn content compile` | **да, если в `content/` есть сцены** | `analyze_scene_files` → `renpy.exe <root> vn_analyze` (`tools/vn/src/vn/content/analyze.py:37-70`) |
 | `vn play`, `vn dev`, `vn package`, `vn release build` | да | прямой запуск `renpy.exe` |
-| `vn test smoke`, `vn save corpus` | да | `_autopilot_run` (`cli.py:1285-1344`) |
+| `vn test smoke`, `vn save corpus` | да | `_autopilot_run` (`cli.py`) |
 
 SDK ищется **только** через переменную окружения: `sdk_path()` читает `RENPY_SDK` и требует наличия `<path>/renpy.py` (`doctor.py:24-30`). Ни поиска по PATH, ни дефолтных путей установки нет. Все потребители SDK в CLI ходят через эту функцию, кроме `tools/vn/src/vn/content/analyze.py:23-34` (`sdk_renpy_exe()`), где та же проверка сделана отдельно и с другим сообщением.
 
 ### 7.4 Реестр схем
 
-`SchemaRegistry` (`schemas.py:16-51`) строится **на каждый вызов заново** — синглтона нет; 12 мест в `tools/vn/src/vn/` создают собственный экземпляр (`doctor.py:99`, `tools/vn/src/vn/content/lint.py:114`, `tools/vn/src/vn/content/compile.py:591`, `release.py:293,292`, `cli.py:1580`, `pipeline.py:264`, шесть модулей в `assets/` — включая `assets/pipeline.py:450`, где с 2026-08-08 валидируется манифест сборки). Внутри экземпляра валидаторы `Draft202012Validator` мемоизируются по schema-id (`schemas.py:22, 43-46`). Правила именования и `const`-проверка — в [Контентный конвейер §8](08-content-pipeline.md).
+`SchemaRegistry` (`schemas.py:16-51`) строится **на каждый вызов заново** — синглтона нет; 12 мест в `tools/vn/src/vn/` создают собственный экземпляр (`doctor.py:99`, `tools/vn/src/vn/content/lint.py:114`, `tools/vn/src/vn/content/compile.py:591`, `release.py:293,292`, `cli.py`, `pipeline.py:264`, шесть модулей в `assets/` — включая `assets/pipeline.py:450`, где с 2026-08-08 валидируется манифест сборки). Внутри экземпляра валидаторы `Draft202012Validator` мемоизируются по schema-id (`schemas.py:22, 43-46`). Правила именования и `const`-проверка — в [Контентный конвейер §8](08-content-pipeline.md).
 
 В `tools/schemas/` **39 схем** (было 34 до 2026-08-08): добавлены `assets_manifest@1` — под манифест `.vncache/assets-manifest.json`, и `build_info@2` — замена `build_info@1` по ADR-0011. `build_info@1` из реестра не удалена: она нужна, чтобы читались артефакты сборок до 0.1.5.
 
@@ -634,8 +634,8 @@ python -X importtime -m vn.cli --version 2>&1 | tail -20   # что тянетс
 - **Не брать синтаксис команд из `../ARCHITECTURE.md`.** `--use-artifact`, `vn validate`, `--role`, `--gate` не существуют (§2.13). Источник истины — `--help` и `cli.py`.
 - **Не искать SDK «где-нибудь».** Только `RENPY_SDK`, и только с `renpy.py` внутри. После `setx` обязательно **новый** терминал.
 - **Не полагаться на `vn content graph` для паков** — главы из `packs/` в граф не попадают.
-- **Не использовать `vn pipeline models --only <ids>` как фильтр статуса** — этот флаг сам по себе запускает скачивание (`cli.py:1697`).
-- **Не ожидать, что `vn assets watch` подхватит правку `content/`** — эти события выбрасываются (`cli.py:566`). Для полного цикла — `vn dev`.
+- **Не использовать `vn pipeline models --only <ids>` как фильтр статуса** — этот флаг сам по себе запускает скачивание (`cli.py`).
+- **Не ожидать, что `vn assets watch` подхватит правку `content/`** — эти события выбрасываются (`cli.py`). Для полного цикла — `vn dev`.
 - **Не менять `tools/vn.lock` мимоходом** — теперь он действительно определяет версии в CI (§8): каждая правка меняет тулчейн всех пяти пайплайнов. И наоборот: не добавляйте зависимость в `pyproject.toml`, не дописав пин в лок — editable-установка молча дотянет её с PyPI.
 - **Не ставить editable раньше лока** в новой джобе — пины окажутся декоративными, и `test_ci_config.py` покраснеет с объяснением.
 - **Не менять текст сообщений об ошибках бездумно** — часть из них ловится тестами и глазами в CI-логах.

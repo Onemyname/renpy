@@ -3,7 +3,7 @@
 > **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 136/136; на те же say-id опирается озвучка (`voice@1`, см. [23-audio.md](23-audio.md) §8). **Но:** RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам. Номера say-id больше НЕ переиспользуются: ledger стал журналом (`ledger@2`, high-watermark — 2026-08-19).
 > **Отвечает на вопрос:** «Как добавить язык, как перевести новую строку, как не сломать переводы правкой сцены и что проверит релизный гейт».
 
-Локализация — единственная подсистема, которая пишет **в авторские исходники** (`vn loc keys` дописывает `id` прямо в `content/**/scenes/*.scene.rpy`) и полностью генерирует зону `game/tl/` (gitignored, `.gitignore:4`). Тулинг: `tools/vn/src/vn/loc/keys.py` (249 строк) и `tools/vn/src/vn/loc/po.py` (610 строк), CLI-группа `tools/vn/src/vn/cli.py:962-1086`. Рантайм: `game/framework/00_core/040_localization.rpy` (named stores `vn_lang` и `vn_loc`). Норматив — `../ARCHITECTURE.md` §5 (строки 2448-2916), архитектурное решение — `../adr/0005-language-packages-and-runtime-registry.md`.
+Локализация — единственная подсистема, которая пишет **в авторские исходники** (`vn loc keys` дописывает `id` прямо в `content/**/scenes/*.scene.rpy`) и полностью генерирует зону `game/tl/` (gitignored, `.gitignore:4`). Тулинг: `tools/vn/src/vn/loc/keys.py` (249 строк) и `tools/vn/src/vn/loc/po.py` (610 строк), CLI-группа `tools/vn/src/vn/cli.py`. Рантайм: `game/framework/00_core/040_localization.rpy` (named stores `vn_lang` и `vn_loc`). Норматив — `../ARCHITECTURE.md` §5 (строки 2448-2916), архитектурное решение — `../adr/0005-language-packages-and-runtime-registry.md`.
 
 ## Быстрый ответ
 
@@ -23,7 +23,7 @@ vn loc keys --check               # то же гоняет CI: .github/workflows
 vn build --check                  # среди прочего валидирует разметку переводов
 ```
 
-`game/tl/` **никогда не правят руками** — это генерат, перезаписывается на каждом `vn build` (`cli.py:151` → `_loc_import`, `cli.py:156-169`).
+`game/tl/` **никогда не правят руками** — это генерат, перезаписывается на каждом `vn build` (`cli.py` → `_loc_import`, `cli.py`).
 
 ## Round-trip: что создаётся на каждом шаге
 
@@ -99,7 +99,7 @@ release_coverage_min: 0.98
 vn loc add de --name Deutsch      # --name можно опустить для 43 кодов из NATIVE_NAMES
 ```
 
-`vn loc add` (`cli.py:996-1016` → `po.py:139-165`):
+`vn loc add` (`cli.py` → `po.py:139-165`):
 1. валидирует код по `^[a-z][a-z0-9_]{1,15}$`; явно отвергает `pseudo` («его создаёт vn loc pseudo»); отвергает существующий пакет;
 2. пишет `loc/po/de/language.yaml`, причём `name` — JSON-строкой, чтобы `:` или `#` в названии не порвали YAML;
 3. **сразу вызывает `extract(root)`** — заготовки PO появляются той же командой.
@@ -210,7 +210,7 @@ Ledger — **единственный** источник для PO-экстра�
 - **меню — всё-или-ничего**: `VN_MENUS_TL[menu_id]` пишется, только если переведены и не-fuzzy **все** пункты (`po.py:406-417`); полупереведённое меню целиком показывается на исходном языке;
 - экранирование в `.rpy` — `_rpy_str` (`po.py:289-291`): `\`, `"`, `\n`, `\t`.
 
-**Валидация разметки** (`_validate_markup`, `po.py:305-336`) — гоняется и на `vn loc import`, и на `vn build --check` (`cli.py:131-141`), при ошибках импорт **прерывается** до записи:
+**Валидация разметки** (`_validate_markup`, `po.py:305-336`) — гоняется и на `vn loc import`, и на `vn build --check` (`cli.py`), при ошибках импорт **прерывается** до записи:
 - сначала снимаются эскейпы `{{` и `[[`;
 - незакрытая `[` или `{` после вырезания валидных конструкций → ошибка;
 - парность тегов через стек; самозакрывающиеся — `{w p nw fast done clear space vspace image # _}` (`po.py:298-299`), любой `{#...}` пропускается;
@@ -219,7 +219,7 @@ Ledger — **единственный** источник для PO-экстра�
 
 ## Псевдолокализация
 
-**Статус: IMPLEMENTED.** `vn loc pseudo` (`cli.py:1055-1071` → `po.py:516-552`) генерирует synthetic-пакет `pseudo` и сразу делает `import`.
+**Статус: IMPLEMENTED.** `vn loc pseudo` (`cli.py` → `po.py:516-552`) генерирует synthetic-пакет `pseudo` и сразу делает `import`.
 
 Что делает трансформация с каждым msgid:
 
@@ -293,7 +293,7 @@ def t(key):
 
 **Статус: PARTIALLY IMPLEMENTED** — считается корректно, но гейт живёт не в `vn loc report`.
 
-`vn loc report` (`po.py:555-566`, печать `cli.py:1073-1086`) выводит по строке на язык:
+`vn loc report` (`po.py:555-566`, печать `cli.py`) выводит по строке на язык:
 
 ```
 de: 136/136 (100%), fuzzy: 0
@@ -436,13 +436,13 @@ python -m pytest tools/vn/tests -q                # 373 теста целико�
 
 Ручная проверка в игре: запустить, переключить язык в настройках, убедиться что меняются **и диалоги, и интерфейс**. На `pseudo` (виден только при `config.developer`) вся видимая строка должна быть акцентирована и обрамлена `[...]`; не изменившийся текст = литерал мимо `vn_loc.t()`.
 
-Автопрогон на языке: `vn test smoke --picks 0,1 --lang en`. Команда откажется стартовать, если языка нет в `game/tl/` (`cli.py:1358-1366`) — иначе `change_language` молча показал бы исходный язык и дал ложно-зелёный прогон. Исходный язык (`ru`) маппится в сентинел `@source`, который автопилот трактует как явный `renpy.change_language(None)` (`game/framework/00_core/030_flow.rpy:155-160`).
+Автопрогон на языке: `vn test smoke --picks 0,1 --lang en`. Команда откажется стартовать, если языка нет в `game/tl/` (`cli.py`) — иначе `change_language` молча показал бы исходный язык и дал ложно-зелёный прогон. Исходный язык (`ru`) маппится в сентинел `@source`, который автопилот трактует как явный `renpy.change_language(None)` (`game/framework/00_core/030_flow.rpy:155-160`).
 
 ## Для AI-агента
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/loc/keys.py`, `tools/vn/src/vn/loc/po.py`, `tools/vn/src/vn/cli.py:962-1086`, `game/framework/00_core/040_localization.rpy`, `docs/adr/0005-language-packages-and-runtime-registry.md`, `tools/schemas/{loc@2,ledger@1,language@1,strings@1}.schema.json` |
+| **Читать перед изменением** | `tools/vn/src/vn/loc/keys.py`, `tools/vn/src/vn/loc/po.py`, `tools/vn/src/vn/cli.py`, `game/framework/00_core/040_localization.rpy`, `docs/adr/0005-language-packages-and-runtime-registry.md`, `tools/schemas/{loc@2,ledger@1,language@1,strings@1}.schema.json` |
 | **Не трогать** | `game/tl/**` (генерат `vn loc import`, gitignored), `loc/ledger/*.json` (зеркало сцен, пересобирается), `game/generated/registry/menus.gen.rpy` (генерат компилятора). Правки здесь бесполезны — перезапишет сборка |
 | **Зависимости** | `content/ui/strings.yaml` → `VN_STRINGS` в `menus.gen.rpy` → `vn_loc.t()` во всех экранах `game/framework/20_ui/`; `loc/ledger/` → PO → `game/tl/` → движок; `loc/loc.yaml source` → `VN_SOURCE_LANG` → `vn_lang._source()` → `vn test smoke --lang`; покрытие → `release.py:447-473` → exit-код `vn release validate` |
 | **Валидация** | `vn loc keys --check` → `vn build --check` → `vn loc report` → `python -m pytest tools/vn/tests/test_loc.py -q` |

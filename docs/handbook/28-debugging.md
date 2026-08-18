@@ -37,7 +37,7 @@ cat errors.txt                   # ошибки парсинга скрипта 
 |---|---|---|---|---|
 | `log.txt` (корень проекта) | движок + наш `vn_log` | **перезаписывается при каждом запуске** (`renpy/display/__init__.py:61` — `open("log", developer=False, append=False)`) | нет (`.gitignore:15`) | тайминги старта, инфо о GPU/дисплее, строки `[vn] …` |
 | `errors.txt` | движок | перезапись при ошибке парсинга | нет (`.gitignore:16`) | ошибки разбора `.rpy` — игра до рантайма не доходит |
-| `traceback.txt` | движок | перезапись при необработанном исключении | нет (`.gitignore:17`) | последний трейсбек; `vn test smoke` удаляет файл ДО прогона (`cli.py:1318-1320`), поэтому его появление = сигнал падения |
+| `traceback.txt` | движок | перезапись при необработанном исключении | нет (`.gitignore:17`) | последний трейсбек; `vn test smoke` удаляет файл ДО прогона (`cli.py`), поэтому его появление = сигнал падения |
 | `<savedir>/crash/crash-*.txt` | наш `070_crash.rpy` | новый файл на каждое исключение, хранятся 10 последних | нет (вне репозитория) | build id, флейвор, версия, **breadcrumbs меток** + трейсбек |
 | `.vncache/smoke/**` | `vn test smoke` | каталог полностью пересоздаётся | нет (`.gitignore:21`) | скриншоты, `RESULT.txt`, `picks.log`, `state.json`, `gallery.json`, `startup.txt` |
 | `.vncache/analyze-*.json` | build-bridge | контентно-адресуемый кэш | нет | результат разбора авторских `.rpy` парсером Ren'Py |
@@ -88,7 +88,7 @@ Interface start took 91 ms
 - **`Loading script`** растёт от количества `.rpy`/`.rpyc` — сюда бьют новые главы и генерат.
 - **`Running init code`** — суммарное время всех `init`-блоков; сюда бьют тяжёлые вычисления в `init python`.
 - **`Creating interface object`** — инициализация окна/рендерера, от кода проекта почти не зависит.
-- Эти тайминги — **не** бюджет `cold_start_s`. Бюджет считает автопилот: от инициализации store `vn_qa` (`_T0`, `030_flow.rpy:96`) до первого тика, и пишет секунды в `.vncache/smoke/startup.txt` (`030_flow.rpy:115-118`). Гейт — в `cli.py:1384-1392` против `project.yaml: budgets.cold_start_s` (сейчас `30`; на RTX 5080 реальное значение **1.13 c**, комментарий в `project.yaml:9` даёт референс CI-раннера ~14 c).
+- Эти тайминги — **не** бюджет `cold_start_s`. Бюджет считает автопилот: от инициализации store `vn_qa` (`_T0`, `030_flow.rpy:96`) до первого тика, и пишет секунды в `.vncache/smoke/startup.txt` (`030_flow.rpy:115-118`). Гейт — в `cli.py` против `project.yaml: budgets.cold_start_s` (сейчас `30`; на RTX 5080 реальное значение **1.13 c**, комментарий в `project.yaml:9` даёт референс CI-раннера ~14 c).
 
 ### 1.3. Дополнительные логи движка (не включены)
 
@@ -116,7 +116,7 @@ Ren'Py умеет писать ещё несколько файлов, ни од
 | **Shift+O** | консоль Ren'Py (eval/exec в контексте игры) | `config.console or config.developer` (`00console.rpy:427`) | `../../game/framework/90_debug/010_dev.rpy:7-8` — `config.console = True` **безусловно** |
 | **Shift+D** | Developer Menu | `config.developer` | движок, `renpy/common/_developer/developer.rpym:27` |
 | **Shift+J** | наше QA-меню прыжка по сценам | `config.developer` | `../../game/framework/90_debug/020_jump_menu.rpy:5-11` |
-| **Shift+R** | перезагрузка скрипта на месте | `config.developer` | движок; в `vn dev` это основной цикл (`cli.py:229-230`) |
+| **Shift+R** | перезагрузка скрипта на месте | `config.developer` | движок; в `vn dev` это основной цикл (`cli.py`) |
 | **Shift+I** / **Alt+Shift+I** | инспектор displayable / полный инспектор | `config.developer` | `00keymap.rpy:48-49` |
 | **F4** | Image Load Log | `config.developer` | `00keymap.rpy:156` |
 | **Shift+E** | открыть текущую строку в редакторе | `config.developer` | `00keymap.rpy:45` |
@@ -210,16 +210,16 @@ Traceback (most recent call last):
 | `vn doctor` | «у меня вообще правильно настроена машина?» | 8 проверок: Python ≥ 3.10, git, git-lfs, корень репозитория, `project.yaml/min_tools`, реестр схем, шрифты UI (детект LFS-указателей по магическим байтам), SDK + сверка с пином `renpy_sdk`. Девятая строка (`!`, warning) появляется, только если существует `.vnstorage.local.yaml` (`doctor.py:104-106`). Каждая неудача печатает рецепт `→ …` (`doctor.py:69-153`) | IMPLEMENTED |
 | `vn pipeline doctor` | «почему не рендерится / не кодируется?» | PASS/WARN/FAIL по ffmpeg+VP9, GPU/VRAM, CUDA/PyTorch, ComfyUI и моделям, DAZ, дискам, SDK (`pipeline.py`) | IMPLEMENTED |
 | `vn content lint` | «декларации валидны?» | схемы, конвенции имён, структура глав, битые `exits`, бюджет бинарей `assets_src/` (ADR-0004). `--layout` (по умолчанию вкл.) сверяет структуру каталогов (`tools/vn/src/vn/content/lint.py`) | IMPLEMENTED |
-| `vn build --check` | «мой генерат отстал от `content/`?» | lint → `build_assets(check=True)` → `compile_content(check=True)` → разметка PO → бюджеты G19. **Ничего не пишет.** Печатает `устарело: <файл>` по каждому расхождению (`cli.py:101-144`) | IMPLEMENTED |
-| `vn content compile --check` | то же, но **без lint и без ассетов** | быстрее, ловит контракт авторских `.rpy` (метки, `return`↔`exits`) (`cli.py:399-422`) | IMPLEMENTED |
+| `vn build --check` | «мой генерат отстал от `content/`?» | lint → `build_assets(check=True)` → `compile_content(check=True)` → разметка PO → бюджеты G19. **Ничего не пишет.** Печатает `устарело: <файл>` по каждому расхождению (`cli.py`) | IMPLEMENTED |
+| `vn content compile --check` | то же, но **без lint и без ассетов** | быстрее, ловит контракт авторских `.rpy` (метки, `return`↔`exits`) (`cli.py`) | IMPLEMENTED |
 | `vn content graph` | «куда вообще ведут переходы?» | Mermaid-граф сцен с условиями и тупиками; главы паков включены и подписаны паком (`repo.chapter_zones`) | IMPL |
-| `vn assets validate` | «почему картинка/трек не подхватились?» | два уровня: сырцы (конвенции, обязательные `base.png`, свежесть выходов) + контент (реестр образов, треки). Несвежесть выхода — **warning**, не ошибка (`cli.py:522-547`) | IMPLEMENTED |
-| `vn assets video inspect <файл>` | «что за видео у меня собралось?» | контейнер/кодек/pix_fmt/размер/fps/длительность/размер + дамп сайдкаров `*.meta.json` и `*.provenance.json` (`cli.py:630-647`) | IMPLEMENTED / UNDOCUMENTED в `docs/` |
-| `vn assets video validate [пути]` | «луп рвётся / бюджет превышен?» | строгая проверка кодека, пикселей, fps, шва лупа, бюджета `video_file_mb` (`cli.py:586-627`) | IMPLEMENTED |
-| `vn assets cache --dry-run --gc` | «почему `.vncache` распух?» | размер `.vncache/assets` + mark&sweep от манифеста сборки; `--dry-run` только показывает (`cli.py:744-764`) | IMPLEMENTED |
-| `vn loc keys --check` | «текст поменяли, а id не выдали?» | все ли say/menu имеют id и свеж ли ledger; печатает `расхождение: …` (`cli.py:966-993`). Это гейт CI (`ci.yml:70`) | IMPLEMENTED |
+| `vn assets validate` | «почему картинка/трек не подхватились?» | два уровня: сырцы (конвенции, обязательные `base.png`, свежесть выходов) + контент (реестр образов, треки). Несвежесть выхода — **warning**, не ошибка (`cli.py`) | IMPLEMENTED |
+| `vn assets video inspect <файл>` | «что за видео у меня собралось?» | контейнер/кодек/pix_fmt/размер/fps/длительность/размер + дамп сайдкаров `*.meta.json` и `*.provenance.json` (`cli.py`) | IMPLEMENTED / UNDOCUMENTED в `docs/` |
+| `vn assets video validate [пути]` | «луп рвётся / бюджет превышен?» | строгая проверка кодека, пикселей, fps, шва лупа, бюджета `video_file_mb` (`cli.py`) | IMPLEMENTED |
+| `vn assets cache --dry-run --gc` | «почему `.vncache` распух?» | размер `.vncache/assets` + mark&sweep от манифеста сборки; `--dry-run` только показывает (`cli.py`) | IMPLEMENTED |
+| `vn loc keys --check` | «текст поменяли, а id не выдали?» | все ли say/menu имеют id и свеж ли ledger; печатает `расхождение: …` (`cli.py`). Это гейт CI (`ci.yml:70`) | IMPLEMENTED |
 | `vn loc report` | «перевод отстал?» | покрытие и fuzzy по языкам. Флагов `--gate/--format` нет — гейтинг живёт только в релизном гейте (`release.py:475-501`) | PARTIAL |
-| `vn save check` | «фикстуры сейвов целы?» | оффлайн, без unpickle: zip → член `json` → `vn_save_schema`/`vn_version`/`vn_scene` (`cli.py:1099-1124`) | IMPLEMENTED |
+| `vn save check` | «фикстуры сейвов целы?» | оффлайн, без unpickle: zip → член `json` → `vn_save_schema`/`vn_version`/`vn_scene` (`cli.py`) | IMPLEMENTED |
 | `"$RENPY_SDK/renpy.exe" . lint` | «движок ругается на скрипт/стили?» | родной lint Ren'Py по `game/**` (framework + генерат). В CI — `ci.yml:73` | IMPLEMENTED (движок) |
 
 Реальные выводы (прогон 2026-08-08):
@@ -258,7 +258,7 @@ vn test smoke --picks 0,1 --lang en       # другая ветка + друго
 vn test smoke --picks 1 --timeout 300     # длинный прогон
 ```
 
-Флаги ровно три: `--picks`, `--lang`, `--timeout` (по умолчанию 180 с) — `cli.py:1347-1350`. После прогона `.vncache/smoke/` содержит (реальный прогон):
+Флаги ровно три: `--picks`, `--lang`, `--timeout` (по умолчанию 180 с) — `cli.py`. После прогона `.vncache/smoke/` содержит (реальный прогон):
 
 | Артефакт | Содержимое живого прогона | Как читать |
 |---|---|---|
@@ -273,8 +273,8 @@ vn test smoke --picks 1 --timeout 300     # длинный прогон
 ### 5.2. Семантика `--picks` и `--lang`
 
 - `--picks` — **по одному индексу на меню, в порядке появления** (`030_flow.rpy:137-141`). Кончились — дальше берётся `0`. Индекс клампится `min(idx, len(items)-1)`; если выбранный пункт недоступен, берётся первый доступный.
-- `--lang` требует существующего `game/tl/<code>/`, иначе команда падает с явным сообщением — «`change_language` молча показал бы исходный язык — ложно-зелёный прогон» (`cli.py:1365-1367`).
-- Исходный язык (`ru`) переписывается в сентинел `@source` (`cli.py:1361-1364`), который в рантайме означает `renpy.change_language(None)` (`030_flow.rpy:156-159`) — явный сброс языка, оставшегося от прошлых прогонов в `persistent`. Сентинел **нигде в `docs/` не документирован**.
+- `--lang` требует существующего `game/tl/<code>/`, иначе команда падает с явным сообщением — «`change_language` молча показал бы исходный язык — ложно-зелёный прогон» (`cli.py`).
+- Исходный язык (`ru`) переписывается в сентинел `@source` (`cli.py`), который в рантайме означает `renpy.change_language(None)` (`030_flow.rpy:156-159`) — явный сброс языка, оставшегося от прошлых прогонов в `persistent`. Сентинел **нигде в `docs/` не документирован**.
 
 ### 5.3. Скриншоты экранов меню — IMPLEMENTED / UNDOCUMENTED
 
@@ -310,10 +310,10 @@ vn test smoke --picks 0,0 --lang pseudo
 
 ### 5.6. Грабли автопилота
 
-- Прогон **пишет** `game/generated/qa/autopilot.gen.rpy` и удаляет его в `finally` (`cli.py:1336-1343`). Осиротевший `.rpyc` от жёстко убитого прогона обезврежен двумя слоями: пречистка каталога и гейт `VN_AUTOPILOT` внутри самого файла.
-- Не запускайте `vn test smoke` параллельно со своей игрой: по таймауту убивается **всё дерево процессов** (`taskkill /T /F` на Windows, `killpg` на POSIX — `cli.py:1328-1334`).
+- Прогон **пишет** `game/generated/qa/autopilot.gen.rpy` и удаляет его в `finally` (`cli.py`). Осиротевший `.rpyc` от жёстко убитого прогона обезврежен двумя слоями: пречистка каталога и гейт `VN_AUTOPILOT` внутри самого файла.
+- Не запускайте `vn test smoke` параллельно со своей игрой: по таймауту убивается **всё дерево процессов** (`taskkill /T /F` на Windows, `killpg` на POSIX — `cli.py`).
 - Автопилот кликает меню **таймером**, а не выражением экрана (`choice.rpy:53-54`), и `autopilot_choose` обязан вернуть `renpy.run(action)` — иначе интеракция меню не завершается и прогон висит до таймаута (`030_flow.rpy:148-150`). Не «оптимизируйте» этот блок.
-- Автопилот подменяет `label main_menu` (`cli.py:1268-1282`): движок вызывает `main_menu` в **отдельном контексте**, и `return` из него означает «стартуем игру» (`renpy/common/00start.rpy:294-306,336-337`). Поэтому оверлей-таймер автопилота живёт уже в игровом контексте, а не в меню.
+- Автопилот подменяет `label main_menu` (`cli.py`): движок вызывает `main_menu` в **отдельном контексте**, и `return` из него означает «стартуем игру» (`renpy/common/00start.rpy:294-306,336-337`). Поэтому оверлей-таймер автопилота живёт уже в игровом контексте, а не в меню.
 
 ---
 
@@ -402,7 +402,7 @@ vn build
 **Симптом: на экране написано `ui.gallery.locked` вместо текста.** Это не баг движка, а штатный fallback: `vn_loc.t(key)` возвращает **сам ключ**, если его нет ни в переводе, ни в исходнике (`040_localization.rpy:151-157`). Причины ровно две:
 
 1. Ключа нет в `content/ui/strings.yaml` → добавить и `vn build`.
-2. Ключ есть, но `game/tl/` не пересобран → `vn loc import` (или просто `vn build` — он вызывает импорт сам, `cli.py:151`).
+2. Ключ есть, но `game/tl/` не пересобран → `vn loc import` (или просто `vn build` — он вызывает импорт сам, `cli.py`).
 
 **Симптом: выбор не переводится.** Проверьте, что экран зовёт `vn_loc.choice_text(vn_menu, idx, i.caption)`, а не `i.caption` (`choice.rpy:47`). Fallback здесь — авторский caption, то есть исходный язык: поломка выглядит как «частично перевелось».
 
@@ -430,7 +430,7 @@ vn save check
 #  ✓ schema2-demo.save: schema 2, версия 0.1.0+48d19a3, сцена ch01_s020
 ```
 
-Команда открывает `.save` как zip и читает член `json` — **без unpickle** (`cli.py:1099-1124`). Ключи туда кладёт `config.save_json_callbacks` (`001_boot.rpy:31-36`): `vn_save_schema`, `vn_version`, `vn_scene`. Тот же трюк работает руками для любого слота игрока:
+Команда открывает `.save` как zip и читает член `json` — **без unpickle** (`cli.py`). Ключи туда кладёт `config.save_json_callbacks` (`001_boot.rpy:31-36`): `vn_save_schema`, `vn_version`, `vn_scene`. Тот же трюк работает руками для любого слота игрока:
 
 ```bash
 python -c "import zipfile,json,sys; print(json.loads(zipfile.ZipFile(sys.argv[1]).read('json')))" \
@@ -446,14 +446,14 @@ vn save corpus
 #  ✓ schema2-demo.save: OK: vn_end_of_content; schema после загрузки: 2 (цель 2)
 ```
 
-Каждая фикстура кладётся во временный `--savedir`, загружается настоящей игрой, миграции идут в `label after_load` (`020_state.rpy:83-107`), автопилот доигрывает до конца. Критерий прохода (`cli.py:1243-1244`): не таймаут **и** `RESULT.txt` начинается с `OK` **и** `state.json["vn_save_schema"] == project.yaml: save_schema`.
+Каждая фикстура кладётся во временный `--savedir`, загружается настоящей игрой, миграции идут в `label after_load` (`020_state.rpy:83-107`), автопилот доигрывает до конца. Критерий прохода (`cli.py`): не таймаут **и** `RESULT.txt` начинается с `OK` **и** `state.json["vn_save_schema"] == project.yaml: save_schema`.
 
 **Что здесь важно знать при отладке:**
 
 - Фикстура валидна только против той «линии statement-имён», с которой создана. Носитель линии — `ci/fixtures/rpyc-line/` (52 `.rpyc`, **единственные `.rpyc` в git**, негативное правило `.gitignore:14`). `vn save corpus` восстанавливает линию перед прогоном, `--add` её пересоздаёт. Линия пересобрана 2026-08-08 (было 34 файла): старая снималась до галереи, ачивок и UI-панелей.
 - Фикстур **две**, и `schema1-demo.save` — на **старой** схеме 1. На ней ветка «загружаем старый сейв и мигрируем» (`020_state.rpy:95-106`) исполняется по-настоящему: в `log.txt` появляется `[vn] migration 0002`, а прогон печатает `schema после загрузки: 2 (цель 2)`. Если отлаживаете миграцию — смотрите именно эту фикстуру; `schema2-demo.save` ветку миграции не трогает.
 - Фикстуру на старой схеме можно снять **только до** бампа `save_schema` (`vn save corpus --add` пишет сейв текущей игрой). Для будущих переходов схемы её опять придётся заводить заранее — см. [27-testing.md §9.8](27-testing.md).
-- `vn save migrate` — заглушка фазы 3 (`cli.py:1259-1260`, exit 3).
+- `vn save migrate` — заглушка фазы 3 (`cli.py`, exit 3).
 - Сейв из **будущей** схемы не мигрируется вниз: `after_load` делает `block_rollback()` до `say`, показывает `ui.flow.save_from_newer` и `full_restart()` (`020_state.rpy:87-94`). Именно так выглядит «игра выкидывает меня в меню при загрузке чужого сейва».
 - Ren'Py 8 подписывает сейвы per-machine токеном — чужой `.save` при загрузке даёт модальный confirm движка. Это не поломка проекта.
 
@@ -547,7 +547,7 @@ vn_scene, vn_menu      # где мы и какое меню последним �
 Приоритетные, дешёвые и полезные доработки — по возрастанию стоимости:
 
 1. **Рантайм-гейт консоли.** В `../../game/framework/90_debug/010_dev.rpy` перенести включение в `init 999` и написать `config.console = bool(config.developer)` — к этому моменту `developer` уже разрешён движком из `"auto"`. Снимает зависимость безопасности релиза от одной строки `build.classify`.
-2. **Флаг `--screens` у `vn test smoke`.** Пробросить `VN_AUTOPILOT_SCREENS` из CLI (`cli.py:1347-1371`) — механика в рантайме уже есть и работает (`030_flow.rpy:166-184`), не хватает только флага и строки в nightly.
+2. **Флаг `--screens` у `vn test smoke`.** Пробросить `VN_AUTOPILOT_SCREENS` из CLI (`cli.py`) — механика в рантайме уже есть и работает (`030_flow.rpy:166-184`), не хватает только флага и строки в nightly.
 3. **Убрать шум снапшота.** В `020_state.rpy:39-45` отфильтровать `__future__._Feature` и `basestring` до `vn_log` — 12 строк мусора на каждый снапшот прячут настоящие сообщения.
 4. **`vn build --use-artifact <sha>`.** Аварийный режим из runbook: скачать артефакт `generated-<sha>` и распаковать в `game/generated/`. Сейчас делается руками.
 
@@ -600,7 +600,7 @@ vn release build --flavor public --package win
 
 | | |
 |---|---|
-| **Читать перед изменением** | `game/framework/00_core/070_crash.rpy` (breadcrumbs + репорт), `game/framework/00_core/001_boot.rpy` (`vn_log`, `save_json_callbacks`), `game/framework/20_ui/screens/crash_screen.rpy`, `game/framework/90_debug/010_dev.rpy` и `020_jump_menu.rpy`, `game/options.rpy:17-26` (`build.classify`), `game/framework/00_core/030_flow.rpy:91-211` (`vn_qa`), `tools/vn/src/vn/cli.py:1268-1401` (`_autopilot_run`, `test smoke`), `tools/vn/src/vn/doctor.py`, `tools/vn/src/vn/content/analyze.py` |
+| **Читать перед изменением** | `game/framework/00_core/070_crash.rpy` (breadcrumbs + репорт), `game/framework/00_core/001_boot.rpy` (`vn_log`, `save_json_callbacks`), `game/framework/20_ui/screens/crash_screen.rpy`, `game/framework/90_debug/010_dev.rpy` и `020_jump_menu.rpy`, `game/options.rpy:17-26` (`build.classify`), `game/framework/00_core/030_flow.rpy:91-211` (`vn_qa`), `tools/vn/src/vn/cli.py` (`_autopilot_run`, `test smoke`), `tools/vn/src/vn/doctor.py`, `tools/vn/src/vn/content/analyze.py` |
 | **Не трогать** | `game/generated/**`, `game/assets/**`, `game/tl/**` (генерат — перезапишется), `*.rpyc`, `log.txt` / `errors.txt` / `traceback.txt` (пишет движок), `.vncache/**` (кэш и артефакты прогонов), `ci/fixtures/rpyc-line/**` (линия statement-имён; меняется только через `vn save corpus --add`), `ci/fixtures/saves/*.save` |
 | **Зависимости** | Удаление строки `build.classify("game/framework/90_debug/**", None)` (`options.rpy:24`) → консоль и Shift+J уезжают игроку (рантайм-гейта у консоли нет). Правка `030_flow.rpy:91-211` или блока автопилота в `choice.rpy:53-54` → виснет `vn test smoke` и, следом, `vn save corpus` и вся ночная матрица. Правка `050_build_bridge.rpy` → инвалидируется весь кэш `.vncache/analyze-*.json` (мост входит в ключ). Правка `001_boot.rpy:31-36` → меняется JSON-заголовок слота, ломается `vn save check` |
 | **Валидация** | `vn doctor && vn build && vn build --check && vn test smoke --picks 0,0 && vn save check && python -m pytest tools/vn/tests -q`; для UI дополнительно `vn test smoke --lang pseudo` и просмотр `.vncache/smoke/shot*.png` |

@@ -55,3 +55,17 @@ init -950 python in vn_compat:
             if where and os.path.abspath(where).startswith(gamedir):
                 out.add(name)
         return out
+
+    def gui_rebuild():
+        """Пересчитать производные значения gui.* после смены масштаба интерфейса.
+
+        `gui.rebuild()` объявлен в шаблоне SDK (`gui.rpy`), а не в документированном
+        API движка: это функция ШАБЛОНА, которую проект может и переопределить.
+        Поэтому вызов живёт здесь, а не в 20_ui (G18), и отсутствие функции не
+        валит переключение масштаба — просто ничего не пересчитывается.
+        КОНТРАКТ-ТЕСТ: test_engine_compat::test_gui_rebuild_exists."""
+        fn = getattr(renpy.store.gui, "rebuild", None)
+        if fn is None:
+            return False
+        fn()
+        return True

@@ -117,7 +117,7 @@ define VN_STEAM_DLC = {}
 | Генерат | `game/generated/platform.gen.rpy` | `define config.steam_appid = …`, `define VN_STEAM_DLC = {…}` — **править нельзя** |
 | Рантайм | `../../game/framework/00_core/035_platform.rpy` | единственная точка касания: `vn_platform` (`init -960`, `:16`) + подключение провайдеров (`init 999`, `:71-89`) |
 | Поставка | `../../tools/vn/src/vn/release.py:151-326` | `steam_config` (`:187`), `steam_app_build` (`:197`), `steam_stage_content` (`:238`), `steam_libs_status` (`:275`); форматы архивов по платформам — `_DIST_SUFFIX` (`:159`), `_find_dist_archive` (`:166`), `_extract_archive` (`:174`) |
-| Поставка | `../../tools/vn/src/vn/cli.py:1819-1852` | команда `vn release steam` |
+| Поставка | `../../tools/vn/src/vn/cli.py` | команда `vn release steam` |
 | Шаблон | `../../ci/steam/app_build.vdf.tmpl` | VDF с подстановками `{APPID} {DESC} {BRANCH} {CONTENT_ROOT} {BUILD_OUTPUT} {DEPOTS}` |
 | Норматив | `../../ci/steam/README.md` | что где живёт, процесс релиза, Cloud, правило ачивок |
 | Норматив | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) | решение и его последствия |
@@ -179,15 +179,15 @@ SteamPipe — механизм выкладки Valve: вы описываете
 
 ### 4.2 Что делает `vn release steam`
 
-`../../tools/vn/src/vn/cli.py:1819-1852`, пять локальных шагов, ни один не ходит в сеть:
+`../../tools/vn/src/vn/cli.py`, пять локальных шагов, ни один не ходит в сеть:
 
 | Шаг | Функция | Поведение при проблеме |
 |---|---|---|
 | 1. Прочитать `platform.steam` | `steam_config` (`release.py:215-222`) | нет `appid` → **exit 1**. Сегодня прогон останавливается ровно здесь: в `../../project.yaml:15` стоит `appid: null` |
 | 2. Отрендерить VDF | `steam_app_build` (`release.py:225-263`) | пустые `depots` → exit 1; депот платформы не задан → `warning`, платформа не уедет |
 | 3. Проверить steam_api в SDK | `steam_libs_status` (`release.py:312-326`) | `warning` на каждую недостающую библиотеку — сборка валидна, просто standalone |
-| 4. Распаковать дистрибутив в раскладку депотов | `steam_stage_content` (`release.py:266-309`) | нет `build/dist/<version>-<flavor>/` → error «сначала vn release build»; у платформы **с объявленным депотом** нет артефакта → error с подсказкой `--package <plat>`; любая ошибка → **exit 1 до записи VDF** (`cli.py:1843-1846`) |
-| 5. Записать VDF | `cli.py:1847-1849` | — |
+| 4. Распаковать дистрибутив в раскладку депотов | `steam_stage_content` (`release.py:266-309`) | нет `build/dist/<version>-<flavor>/` → error «сначала vn release build»; у платформы **с объявленным депотом** нет артефакта → error с подсказкой `--package <plat>`; любая ошибка → **exit 1 до записи VDF** (`cli.py`) |
+| 5. Записать VDF | `cli.py` | — |
 
 Шаг 4 ожидает по умолчанию **только те платформы, у которых в `platform.steam.depots` есть номер** (`release.py:287-288`): собирать все три ради одного депота незачем, и «нет артефакта» для платформы, которую вы не отгружаете, — не ошибка, а шум. Явный список можно передать аргументом `platforms=` при вызове из кода.
 
@@ -276,7 +276,7 @@ steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 - **Успех — это ещё не публикация.** При пустом `SetLive` билд загружен и виден в Steamworks → Builds, но ни в одной ветке не активен.
 - **Логи и чанки** окажутся в `build/steam/output/` (см. §4.1) — это мусор сборки, `build/` уже в `.gitignore`.
 
-Steam-проверок в релизном гейте нет ни одной: `vn release validate` о Steam не знает (см. полный список из 21 проверки в [29-build-and-release.md](29-build-and-release.md)), а `steam_libs_status` (`release.py:311`) вызывается ровно из одного места — `cli.py:1839`, и только как предупреждение. Практический вывод: **префлайт делает человек по этому разделу.**
+Steam-проверок в релизном гейте нет ни одной: `vn release validate` о Steam не знает (см. полный список из 21 проверки в [29-build-and-release.md](29-build-and-release.md)), а `steam_libs_status` (`release.py:311`) вызывается ровно из одного места — `cli.py`, и только как предупреждение. Практический вывод: **префлайт делает человек по этому разделу.**
 
 ### 4.5 Ветки и `SetLive`: почему release переключают руками
 
@@ -580,7 +580,7 @@ achievement.sync()                         # сводит бэкенды и ба
 
 | Файл/маска | В Cloud? | Почему |
 |---|---|---|
-| `*.save` | **да** | Слоты. **Маску надо писать именно `*.save`**: полное имя файла — `<slot>-LT1.save`, потому что `renpy.savegame_suffix = "-LT1.save"` (`$RENPY_SDK/renpy/__init__.py:144`), и суффикс зависит от версии движка (наш тулинг это уже учитывает: `cli.py:1418`, «Ren'Py 8.5 добавляет к имени слота токен локации») |
+| `*.save` | **да** | Слоты. **Маску надо писать именно `*.save`**: полное имя файла — `<slot>-LT1.save`, потому что `renpy.savegame_suffix = "-LT1.save"` (`$RENPY_SDK/renpy/__init__.py:144`), и суффикс зависит от версии движка (наш тулинг это уже учитывает: `cli.py`, «Ren'Py 8.5 добавляет к имени слота токен локации») |
 | `persistent` | **да** | Открытая галерея, ачивки, настройки качества и масштаба, `_seen_images`. Файл **без расширения** — нужно отдельное правило, маской `*.save` он не покрывается (`$RENPY_SDK/renpy/savelocation.py:136-137`) |
 | `persistent.new`, `*.<epoch>.tmp` | **нет** | Транзиентные файлы атомарной записи (`savelocation.py:46`, `:411-431`) |
 | `crash/crash-*.txt` | **нет** | Наши крэш-отчёты в подкаталоге savedir (`../../game/framework/00_core/070_crash.rpy:27-34`) — диагностика, а не состояние игрока |
@@ -613,7 +613,7 @@ vn save corpus                # каждая фикстура ЗАГРУЖАЕТ
 vn save corpus --add my_case  # новая фикстура из прогона (сохранение на тике 4)
 ```
 
-`vn save check` (`cli.py:1323-1348`) читает `json`-запись из zip-слота без unpickle и проверяет `vn_save_schema` (заголовок пишет `config.save_json_callbacks`, `../../game/framework/00_core/001_boot.rpy:31-36`). `vn save corpus` (`cli.py:1391-1480`) поднимает игру с `--savedir`, грузит слот, прогоняет `after_load` и сверяет фактическую пост-миграционную схему с `project.yaml: save_schema`. Обе гоняются в nightly (`../../.github/workflows/nightly.yml:64-65`).
+`vn save check` (`cli.py`) читает `json`-запись из zip-слота без unpickle и проверяет `vn_save_schema` (заголовок пишет `config.save_json_callbacks`, `../../game/framework/00_core/001_boot.rpy:31-36`). `vn save corpus` (`cli.py`) поднимает игру с `--savedir`, грузит слот, прогоняет `after_load` и сверяет фактическую пост-миграционную схему с `project.yaml: save_schema`. Обе гоняются в nightly (`../../.github/workflows/nightly.yml:64-65`).
 
 Ручная проверка «перенос на другую машину» = скопировать каталог из §7.1 на другой ПК и запустить. Именно это и делает Auto-Cloud, только руками.
 
@@ -697,7 +697,7 @@ vn save check && vn save corpus
 
 | | |
 |---|---|
-| **Читать перед изменением** | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) (**норматив**, целиком), `../../ci/steam/README.md`, `../../ci/steam/app_build.vdf.tmpl`, `../../project.yaml:13-15`, `../../tools/vn/src/vn/release.py:150-326`, `../../tools/vn/src/vn/cli.py:1819-1852`, `../../tools/vn/src/vn/content/compile.py:133-152`, `../../game/framework/00_core/035_platform.rpy` (весь, 89 строк), `../../game/framework/00_core/080_achievements.rpy`, `../../game/framework/20_ui/screens/achievements.rpy`, `$RENPY_SDK/renpy/common/00steam.rpy` (`962-1071` — инициализация; `887-950` — SteamBackend), `$RENPY_SDK/renpy/ast.py:61-75` (`EARLY_CONFIG`), `$RENPY_SDK/renpy.py:95-203` (`path_to_saves`) |
+| **Читать перед изменением** | [`../adr/0014-platform-services.md`](../adr/0014-platform-services.md) (**норматив**, целиком), `../../ci/steam/README.md`, `../../ci/steam/app_build.vdf.tmpl`, `../../project.yaml:13-15`, `../../tools/vn/src/vn/release.py:150-326`, `../../tools/vn/src/vn/cli.py`, `../../tools/vn/src/vn/content/compile.py:133-152`, `../../game/framework/00_core/035_platform.rpy` (весь, 89 строк), `../../game/framework/00_core/080_achievements.rpy`, `../../game/framework/20_ui/screens/achievements.rpy`, `$RENPY_SDK/renpy/common/00steam.rpy` (`962-1071` — инициализация; `887-950` — SteamBackend), `$RENPY_SDK/renpy/ast.py:61-75` (`EARLY_CONFIG`), `$RENPY_SDK/renpy.py:95-203` (`path_to_saves`) |
 | **Не трогать** | `game/generated/platform.gen.rpy` — генерат; `build/steam/**` — артефакт `vn release steam`; `$RENPY_SDK/**` — пиннованный движок (G18), только чтение; steam_api-библиотеки и Steamworks SDK — их в репозитории нет и добавлять нельзя; id уже выпущенных ачивок |
 | **Зависимости (что ломается ниже по течению)** | `project.yaml: platform.steam` → `platform.gen.rpy` → `config.steam_appid` (early-define) → `steam_init` → варианты Deck/BP, `SteamBackend`, `dlc_installed`. `steam_dlc_appid` в манифесте пака → `VN_STEAM_DLC` → `owned()` → карточки глав в `chapter_select`, элементы галереи, видимость ачивок. `content/achievements/*.yaml` → `VN_ACHIEVEMENTS` → `achievement.register` → **имена в Steamworks**. `config.save_directory` → путь сейвов → корень Auto-Cloud |
 | **Валидация** | `python -m pytest tools/vn/tests/test_platform.py -q` (13 passed) → `python -m pytest tools/vn/tests -q` → `vn build && cat game/generated/platform.gen.rpy` → `vn release validate --flavor public` → `vn save check && vn save corpus` → (при заполненном appid) `vn release steam --flavor public` → предрелизная приёмка [43-steam-qa.md](43-steam-qa.md) |

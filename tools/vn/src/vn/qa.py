@@ -323,10 +323,20 @@ def replay_diff(root: Path, rec: dict, art: RunArtifacts) -> list[str]:
 
 
 def _current_version(root: Path) -> str | None:
-    """config.version из генерата (version.gen.rpy) — версия контента прогона."""
+    """Версия ПОСТАВКИ из генерата (`build.version`) — с ней сверяется запись.
+
+    Не `config.version`: та несёт git-sha сборки и меняется на КАЖДОМ коммите, то
+    есть сверка по ней обнуляла бы все записи после любой правки, а ночная джоба
+    была бы вечно красной. Смена контента внутри одной версии всплывёт честнее —
+    расхождением трассы или состояния, которое запись как раз и сторожит."""
     path = root / "game" / "generated" / "version.gen.rpy"
     if not path.is_file():
         return None
-    m = re.search(r'define config\.version = "([^"]+)"',
-                  path.read_text(encoding="utf-8"))
+    text = path.read_text(encoding="utf-8")
+    m = re.search(r'define build\.version = "([^"]+)"', text)
+    if m:
+        return m.group(1)
+    # Генерат старше разделения версий (см. compile._emit_version): берём semver из
+    # config.version, отбрасывая +sha — иначе запись нельзя сверить вовсе.
+    m = re.search(r'define config\.version = "([^"+]+)', text)
     return m.group(1) if m else None

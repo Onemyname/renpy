@@ -288,8 +288,13 @@ def load_render_config(root: Path | None = None, project: dict | None = None) ->
 
                 try:
                     project = load_yaml(path) or {}
-                except Exception:
-                    project = {}
+                except Exception as e:
+                    # Молча взять дефолтный профиль нельзя: конвейер соберёт ассеты
+                    # в чужом разрешении и формате, а сборка при этом будет зелёной.
+                    raise RenderConfigError(
+                        f"project.yaml не читается ({e}) — render-профиль неизвестен; "
+                        f"собирать ассеты на дефолтном профиле значит отгрузить чужое "
+                        f"разрешение при зелёной сборке")
     merged = _merge(DEFAULTS, project.get("render") or {})
     screen = (int(merged["screen"][0]), int(merged["screen"][1]))
     classes = {

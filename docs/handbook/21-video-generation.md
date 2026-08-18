@@ -4,7 +4,7 @@
 > **Отвечает на вопрос:** «Как получить движущийся кадр, превратить его в `.webm`, который Ren'Py гарантированно играет, и не выйти за бюджет».
 > **Обновлено ADR-0012:** появились склейка PNG-секвенции (`vn assets video seq`), постер-кадр (`Movie(image=)` + превью в галерее) и оверсэмпл-варианты видео; бюджеты подняты до production-масштаба.
 
-Видео-трек — это один модуль `../../tools/vn/src/vn/assets/video.py` (326 строк) плюс ветка discovery в `../../tools/vn/src/vn/assets/pipeline.py:170-201` и группа команд `vn assets video` (`../../tools/vn/src/vn/cli.py:573-647`). Нормируется ADR-0006, а не ARCHITECTURE.md: слова «DAZ», «Comfy», «Wan» в ARCHITECTURE.md не встречаются ни разу, и её видео-раздел описывает **другой, непостроенный** дизайн (см. §10). Всё про статику, кэш и зоны — в [Ассеты](16-assets.md); здесь только видео.
+Видео-трек — это один модуль `../../tools/vn/src/vn/assets/video.py` (326 строк) плюс ветка discovery в `../../tools/vn/src/vn/assets/pipeline.py:170-201` и группа команд `vn assets video` (`../../tools/vn/src/vn/cli.py`). Нормируется ADR-0006, а не ARCHITECTURE.md: слова «DAZ», «Comfy», «Wan» в ARCHITECTURE.md не встречаются ни разу, и её видео-раздел описывает **другой, непостроенный** дизайн (см. §10). Всё про статику, кэш и зоны — в [Ассеты](16-assets.md); здесь только видео.
 
 ## Быстрый ответ
 
@@ -175,7 +175,7 @@ opts, opt_errors = videomod.load_opts(sidecar)      # tools/vn/src/vn/assets/pip
 Ветка `registry` — мёртвый код. Практические следствия:
 
 - битый или невалидный sidecar (опечатка в ключе, `crf: 200`, отсутствующий `schema:`) **соберётся молча** под `vn assets video build`;
-- поймает его только `vn content lint` — он сметает `assets_src/**/*.yaml` через реестр схем (`tools/vn/src/vn/content/lint.py:96-102`), а значит и `vn build`, который начинается с линта (`cli.py:93-100`);
+- поймает его только `vn content lint` — он сметает `assets_src/**/*.yaml` через реестр схем (`tools/vn/src/vn/content/lint.py:96-102`), а значит и `vn build`, который начинается с линта (`cli.py`);
 - вывод для процесса: **`vn assets video build` — не проверка. Перед коммитом гоняйте `vn build` или как минимум `vn content lint`.**
 
 ## 5. `.webm.meta.json` — схема `mov_meta@1`
@@ -286,7 +286,7 @@ ffmpeg -y -hide_banner -loglevel error -i <src>
 
 ### 7.1 `vn assets video validate` — полный список условий
 
-`validate_output(path, opts, workdir, file_budget_mb)` (`video.py:200-249`) возвращает `(errors, warnings, summary)`. **Errors валят сборку** (`pipeline.py:373-375`) и валят команду с exit 1 (`cli.py:625-626`).
+`validate_output(path, opts, workdir, file_budget_mb)` (`video.py:200-249`) возвращает `(errors, warnings, summary)`. **Errors валят сборку** (`pipeline.py:373-375`) и валят команду с exit 1 (`cli.py`).
 
 Errors (красное):
 
@@ -321,7 +321,7 @@ Warnings (жёлтое, никогда не валят):
 
 ### 7.2 `vn assets video inspect <файл>`
 
-`cli.py:630-647`. Печатает поля `summarize()` — `container, codec, pix_fmt, width, height, fps, duration_s, size_bytes, has_audio` — и затем **дописывает содержимое сайдкаров, если они есть**: `<file>.meta.json` (метка `meta`) и `<file>.provenance.json` (метка `provenance`). Второго в репозитории пока не бывает. Команда только читает, ничего не валидирует и не пишет. В ADR-0006 она не описана — IMPLEMENTED / UNDOCUMENTED.
+`cli.py`. Печатает поля `summarize()` — `container, codec, pix_fmt, width, height, fps, duration_s, size_bytes, has_audio` — и затем **дописывает содержимое сайдкаров, если они есть**: `<file>.meta.json` (метка `meta`) и `<file>.provenance.json` (метка `provenance`). Второго в репозитории пока не бывает. Команда только читает, ничего не валидирует и не пишет. В ADR-0006 она не описана — IMPLEMENTED / UNDOCUMENTED.
 
 ### 7.3 Бюджеты
 
@@ -337,7 +337,7 @@ budgets:
 | Бюджет | Где проверяется | Кем |
 |---|---|---|
 | `video_file_mb` | **дважды**: внутри `validate_output` (`video.py:234-236`) и в `budget_failures` (`release.py:48-53`) | `vn build`, `vn assets video build/validate`, релизный гейт |
-| `video_total_mb` | **только** `budget_failures` (`release.py:43-47`) | `vn build` (`cli.py:146, 156` → `_check_budgets`) и релизный гейт (`release.py:563`) |
+| `video_total_mb` | **только** `budget_failures` (`release.py:43-47`) | `vn build` (`cli.py, 156` → `_check_budgets`) и релизный гейт (`release.py:563`) |
 
 То есть `vn assets video validate` про суммарный бюджет **не знает** — его ловит `vn build`. И держите в голове вложенность: `assets_total_mb` считает `game/assets` целиком, mov внутри. 300 МБ видео оставляют 200 МБ на всю статику.
 
@@ -518,7 +518,7 @@ vn release validate --flavor public    # 21 проверка, среди них 
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/assets/video.py` (весь, 326 строк), `../../tools/vn/src/vn/assets/pipeline.py:170-201` (discovery) и `:286-389` (кэш, энкод, валидация, meta), `../../tools/vn/src/vn/cli.py:573-647` (группа `vn assets video`), `../../tools/schemas/video_src@1.schema.json`, `../../tools/schemas/mov_meta@1.schema.json`, `../../tools/vn/src/vn/content/images.py:89-99`, `../../tools/vn/src/vn/release.py:28-53` и `:312-321`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md` §3.5–§4, `../conventions/naming.md` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/assets/video.py` (весь, 326 строк), `../../tools/vn/src/vn/assets/pipeline.py:170-201` (discovery) и `:286-389` (кэш, энкод, валидация, meta), `../../tools/vn/src/vn/cli.py` (группа `vn assets video`), `../../tools/schemas/video_src@1.schema.json`, `../../tools/schemas/mov_meta@1.schema.json`, `../../tools/vn/src/vn/content/images.py:89-99`, `../../tools/vn/src/vn/release.py:28-53` и `:312-321`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md` §3.5–§4, `../conventions/naming.md` |
 | **Не трогать** | `game/assets/mov/**` (генерат, не в git — перезапишет `vn assets build`), `game/generated/registry/images.gen.rpy` (эмитит компилятор), `.vncache/assets-manifest.json` и `.vncache/video-tmp/**` (кэш и tmp; ручная правка манифеста ломает удаление осиротевших) |
 | **Зависимости (что ломается ниже по течению)** | `tools/vn/src/vn/content/images.py:89-99` строит `image mov …` **по факту собранных файлов** и читает `meta.loop`; `tools/vn/src/vn/content/compile.py:142-145, 200-203` резолвит галерейные `mov/`-ссылки; `release.py:28-53` считает `video_total_mb`/`video_file_mb`; `release.py:349-358` гоняет `validate_all`; `release.py:441-452` строит NSFW-глобы из существующих каталогов `mov/nsfw/**` |
 | **Валидация** | `vn pipeline doctor` → `vn assets video build` → `vn assets video validate` → `vn build` → `python -m pytest tools/vn/tests/test_video.py -q` → `vn release validate --flavor public` |

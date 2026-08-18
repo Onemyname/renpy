@@ -409,7 +409,7 @@ vn test smoke --picks 0,0
 cat .vncache/smoke/gallery.json                        # {"unlocked":5,"total":6,"ids":[...]}
 ```
 
-Скриншот самого экрана галереи снимается только при заданной переменной окружения — **`vn test smoke` её не выставляет** (передаются лишь `VN_AUTOPILOT_PICKS` и `VN_AUTOPILOT_LANG`, `tools/vn/src/vn/cli.py:1370`). Чтобы получить `.vncache/smoke/screen_gallery.png`, переменную задают вручную перед прогоном:
+Скриншот самого экрана галереи снимается только при заданной переменной окружения — **`vn test smoke` её не выставляет** (передаются лишь `VN_AUTOPILOT_PICKS` и `VN_AUTOPILOT_LANG`, `tools/vn/src/vn/cli.py`). Чтобы получить `.vncache/smoke/screen_gallery.png`, переменную задают вручную перед прогоном:
 
 ```bash
 VN_AUTOPILOT_SCREENS=gallery,achievements vn test smoke --picks 0,0     # bash

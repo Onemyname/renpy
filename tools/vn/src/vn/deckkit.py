@@ -46,14 +46,6 @@ class ChecklistItem:
     done: str = ""          # непустое = закрыто автоматикой, с фактом в тексте
 
 
-@dataclass
-class KitReport:
-    items: list[ChecklistItem] = field(default_factory=list)
-    summary: dict = field(default_factory=dict)
-    written: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-
-
 def parse_checklist(doc: Path) -> list[ChecklistItem]:
     """Пункты приёмки из 43-steam-qa.md: раздел «## N. LEVEL» -> его «### N.M».
 

@@ -87,7 +87,7 @@ content/locations/beach/location.yaml: day: файла assets/bg/beach/day.webp 
 в game/assets — прогоните vn assets build
 ```
 
-Поэтому порядок в `vn build` именно такой: lint → **assets build** → compile (`tools/vn/src/vn/cli.py:113-116`). Запускать `vn content compile` в одиночку после добавления фона бесполезно — он упадёт, пока `vn assets build` не создаст webp.
+Поэтому порядок в `vn build` именно такой: lint → **assets build** → compile (`tools/vn/src/vn/cli.py`). Запускать `vn content compile` в одиночку после добавления фона бесполезно — он упадёт, пока `vn assets build` не создаст webp.
 
 ### 2. Обвязка сцены — `scene bg <loc> <variant> with dissolve`
 

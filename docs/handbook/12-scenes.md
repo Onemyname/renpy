@@ -186,7 +186,7 @@ label vn_scene_unavailable:
 
 ## `vn scene new` vs `vn scene stub`
 
-Обе команды — `tools/vn/src/vn/content/scaffold.py`, CLI на `cli.py:488-520`. Обе создают **пару** файлов и **не трогают `chapter.yaml`**.
+Обе команды — `tools/vn/src/vn/content/scaffold.py`, CLI на `cli.py`. Обе создают **пару** файлов и **не трогают `chapter.yaml`**.
 
 ### `vn scene new <chapter> <slug>`
 
@@ -216,7 +216,7 @@ label chNN_sNNN__body:
     return
 ```
 
-CLI печатает напоминание `не забудьте: добавить сцену в scene_order главы и связать exits` (`cli.py:481`) — сделайте это руками.
+CLI печатает напоминание `не забудьте: добавить сцену в scene_order главы и связать exits` (`cli.py`) — сделайте это руками.
 
 ### `vn scene stub <chapter> <sNNN>`
 
@@ -243,7 +243,7 @@ label chNN_sNNN__body:
 | RPY | `"…"` + `return` | `"Заглушка: сцена в разработке."` + `return` |
 | Проверка занятости | нет (номер вычисляется) | есть — `сцена sNNN уже существует` |
 
-**Ограничение обеих:** `_find_chapter` смотрит только в `content/chapters/` (`scaffold.py:82`). **Сцену внутри пака (`packs/ep_beach/chapters/…`) скаффолдер создать не может** — там всё руками. Скаффолда для `location.yaml`, `character.yaml`, `*.vars.yaml` не существует вовсе (`vn char new` — заглушка фазы 1, `cli.py:958`).
+**Ограничение обеих:** `_find_chapter` смотрит только в `content/chapters/` (`scaffold.py:82`). **Сцену внутри пака (`packs/ep_beach/chapters/…`) скаффолдер создать не может** — там всё руками. Скаффолда для `location.yaml`, `character.yaml`, `*.vars.yaml` не существует вовсе (`vn char new` — заглушка фазы 1, `cli.py`).
 
 Ещё нюанс: `scaffold.py:10 SLUG_RE` ограничивает слуг 30 символами, а линтер (`lint.py:17`) разрешает до 40. Легальный 35-символьный слуг скаффолдером не создать — только руками.
 

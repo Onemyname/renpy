@@ -97,7 +97,7 @@ EXIT=0
 vn build     # -> build: OK
 ```
 
-Внутри: схемы → lint → сборка ассетов → компиляция контента в `game/generated/` → `vn loc import` в `game/tl/` → бюджеты (`cli.py:88-157`). Ни `game/generated/`, ни `game/assets/`, ни `game/tl/` не хранятся в git — на свежем чекауте их создаёт именно этот шаг.
+Внутри: схемы → lint → сборка ассетов → компиляция контента в `game/generated/` → `vn loc import` в `game/tl/` → бюджеты (`cli.py`). Ни `game/generated/`, ни `game/assets/`, ни `game/tl/` не хранятся в git — на свежем чекауте их создаёт именно этот шаг.
 
 **Проверка шага:** `ls game/generated/manifest.json game/assets/bg` — оба существуют.
 
@@ -215,7 +215,7 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
 
 ### ГРАБЛЯ №4: `vn --help` в Git Bash — кракозябры
 
-Реконфигурация stdout в UTF-8 живёт в callback группы (`cli.py:49-55`), а `--help` — eager-опция click, которая печатает и выходит **до** callback. Проверено: в Git Bash `vn --help` выдаёт мусор вместо русских описаний, при этом `vn doctor` и все остальные команды печатаются корректно. В PowerShell 7 и в macOS/Linux-оболочках проблемы нет. Если нужен `--help` из Git Bash — читайте его через PowerShell или смотрите докстринги в `tools/vn/src/vn/cli.py`.
+Реконфигурация stdout в UTF-8 живёт в callback группы (`cli.py`), а `--help` — eager-опция click, которая печатает и выходит **до** callback. Проверено: в Git Bash `vn --help` выдаёт мусор вместо русских описаний, при этом `vn doctor` и все остальные команды печатаются корректно. В PowerShell 7 и в macOS/Linux-оболочках проблемы нет. Если нужен `--help` из Git Bash — читайте его через PowerShell или смотрите докстринги в `tools/vn/src/vn/cli.py`.
 
 ---
 
@@ -244,7 +244,7 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
 
 `vn doctor` — единственная команда, которая работает вне репозитория: `find_root()` вызывается внутри try, дальше проверки продолжаются с `root = None` (`doctor.py:80-84`).
 
-`vn bootstrap` (PARTIALLY IMPLEMENTED, `cli.py:224-245`) начинается с `run_doctor()` и при exit ≠ 0 останавливается: `bootstrap остановлен: почините окружение по рецептам vn doctor`. Дальше он делает `_assets_build(root, "full")` → `compile_content` → `_loc_import`. Скачивания из remote cache / CI-артефактов (норма G4) в нём **нет** — это прямо написано в его же докстринге. Опции `--role` не существует, хотя `README.md:11` обещает «однокомандный инсталлер по ролям — фаза 1» — **NOT IMPLEMENTED**.
+`vn bootstrap` (PARTIALLY IMPLEMENTED, `cli.py`) начинается с `run_doctor()` и при exit ≠ 0 останавливается: `bootstrap остановлен: почините окружение по рецептам vn doctor`. Дальше он делает `_assets_build(root, "full")` → `compile_content` → `_loc_import`. Скачивания из remote cache / CI-артефактов (норма G4) в нём **нет** — это прямо написано в его же докстринге. Опции `--role` не существует, хотя `README.md:11` обещает «однокомандный инсталлер по ролям — фаза 1» — **NOT IMPLEMENTED**.
 
 ---
 
@@ -301,15 +301,15 @@ vn doctor    # ✓ Ren'Py SDK 8.5.3.26051504: ... ; EXIT=0
 
 | Команда | Что делает | Когда | Статус |
 |---|---|---|---|
-| `vn build` | lint → сборка ассетов → компиляция контента → `vn loc import` → бюджеты (размер G19 **и** память сцены) | после любой правки `content/` или `assets_src/` | IMPLEMENTED (`cli.py:88-157`) |
+| `vn build` | lint → сборка ассетов → компиляция контента → `vn loc import` → бюджеты (размер G19 **и** память сцены) | после любой правки `content/` или `assets_src/` | IMPLEMENTED (`cli.py`) |
 | `vn build --check` | то же без записи: свеж ли генерат + валидация разметки PO + бюджеты. Никогда ничего не пишет | перед коммитом, режим CI | IMPLEMENTED |
-| `vn dev` | запускает игру и watch по `content/` + `assets_src/` (polling 1 с); в игре Shift+R. Профиль ассетов — `draft` | долгая итерация | IMPLEMENTED (`cli.py:247-298`, `devloop.py`) |
-| `vn play` | запускает игру через SDK | быстрая проверка | IMPLEMENTED (`cli.py:205-221`) |
-| `vn content lint` | схемы, именование, структура глав, exits, граф, LFS-покрытие бинарей `assets_src/` | когда `vn build` упал на lint | IMPLEMENTED (`cli.py:404-419`) |
-| `vn loc keys` | дописывает say-id и маркеры меню в авторские `.rpy`, обновляет `loc/ledger/chNN.json` | после правки/добавления реплик | IMPLEMENTED (`cli.py:1105-1132`) |
-| `vn assets memory` | во что обходится худшая сцена и влезает ли она в кэш образов | после тяжёлого шота/фона | IMPLEMENTED (`cli.py:572-604`) |
-| `vn test oversample --scale 2` | **движком** подтверждает, что варианты `@2` реально подхватываются | после правки render-профиля | IMPLEMENTED (`cli.py:1628-1660`) |
-| `vn test smoke` | in-process автопилот: проходит игру, скриншоты в `.vncache/smoke/`, гейт cold-start против бюджета 30 с | перед PR с изменением флоу | IMPLEMENTED (`cli.py:1571-1626`) |
+| `vn dev` | запускает игру и watch по `content/` + `assets_src/` (polling 1 с); в игре Shift+R. Профиль ассетов — `draft` | долгая итерация | IMPLEMENTED (`cli.py`, `devloop.py`) |
+| `vn play` | запускает игру через SDK | быстрая проверка | IMPLEMENTED (`cli.py`) |
+| `vn content lint` | схемы, именование, структура глав, exits, граф, LFS-покрытие бинарей `assets_src/` | когда `vn build` упал на lint | IMPLEMENTED (`cli.py`) |
+| `vn loc keys` | дописывает say-id и маркеры меню в авторские `.rpy`, обновляет `loc/ledger/chNN.json` | после правки/добавления реплик | IMPLEMENTED (`cli.py`) |
+| `vn assets memory` | во что обходится худшая сцена и влезает ли она в кэш образов | после тяжёлого шота/фона | IMPLEMENTED (`cli.py`) |
+| `vn test oversample --scale 2` | **движком** подтверждает, что варианты `@2` реально подхватываются | после правки render-профиля | IMPLEMENTED (`cli.py`) |
+| `vn test smoke` | in-process автопилот: проходит игру, скриншоты в `.vncache/smoke/`, гейт cold-start против бюджета 30 с | перед PR с изменением флоу | IMPLEMENTED (`cli.py`) |
 | `python -m pytest tests -q` (из `tools/vn`) | 373 теста в 27 файлах, ~16 с | при правке `tools/vn/` | IMPLEMENTED |
 | `vn doctor` | самодиагностика | когда «вчера работало» | IMPLEMENTED |
 
@@ -356,7 +356,7 @@ vn play
 ### Что будет, если забыть `vn loc keys`
 
 - **`vn build` останется зелёным.** Проверено: `tools/vn/src/vn/content/lint.py` не знает ни про ledger, ни про say-id (grep по `ledger|say_list` — ноль совпадений). Локально вы ничего не заметите.
-- **CI покраснеет.** Джоба `build-test` в `.github/workflows/ci.yml:83` выполняет `xvfb-run -a vn loc keys --check`, а тот сравнивает пересобранный ledger с диском и падает: `расхождение: loc/ledger/ch01.json устарел (тексты/структура разошлись со сценами)`, затем `ошибка: loc keys --check: есть строки без id или устаревший ledger — выполните vn loc keys` (`cli.py:1120-1125`, `keys.py:189`).
+- **CI покраснеет.** Джоба `build-test` в `.github/workflows/ci.yml:83` выполняет `xvfb-run -a vn loc keys --check`, а тот сравнивает пересобранный ledger с диском и падает: `расхождение: loc/ledger/ch01.json устарел (тексты/структура разошлись со сценами)`, затем `ошибка: loc keys --check: есть строки без id или устаревший ledger — выполните vn loc keys` (`cli.py`, `keys.py:189`).
 - **Если вы добавили НОВУЮ реплику** без `vn loc keys` — у неё вообще нет id, она никогда не попадёт в PO, и в релизе останется на исходном русском во всех языках. `--check` сообщит: `s010_intro.scene.rpy:12: say без id (будет ch01_s010_0002)` (`keys.py:124`).
 
 Аналогично для нового `menu`: `vn loc keys` вставит строку `$ vn_menu = "ch01_s010_m001"` перед ним. После правки файлов команда **перечитывает их парсером заново** и при любом расхождении откатывает изменённые файлы (`keys.py:198-219`) — так что запускать её безопасно. Оговорка: откат идёт **из памяти процесса**, поэтому прерванный Ctrl+C прогон может оставить `.rpy` полуправленными — восстанавливать из git.
@@ -384,11 +384,11 @@ vn play
 | `ошибка: game/generated/ пуст — сначала vn build` (из `vn play`) | нет `game/generated/manifest.json`; генерат не в git | `vn build` (или `vn bootstrap` на свежем чекауте) |
 | `бюджет: game/assets: … МБ > бюджета 20000 МБ` + `ошибка: бюджеты G19 превышены` | превышен размер-бюджет из `project.yaml:57-65` | это предохранитель от аварии (зацикленный экспорт, забытый 8K-вариант), а не потолок игры; [32-performance-and-scalability.md](32-performance-and-scalability.md) |
 | `vn build` зелёный, но `vn doctor` красный по SDK | тёплый кэш анализа (`.vncache/analyze-*.json`) | `rm .vncache/analyze-*.json` и пересоберите — увидите настоящее состояние |
-| Кракозябры вместо русского в `vn --help` под Git Bash | реконфигурация stdout не успевает отработать до eager-опции `--help` (`cli.py:49-55`) | смотрите help из PowerShell |
-| `эта команда появится в фазе N (раздел 8 ARCHITECTURE.md)`, exit **3** | команда — честная заглушка `_stub` (`cli.py:34-38`) | это не поломка. Полный список (9, состав закреплён тестом `test_cli.py`): `vn migrate`, `vn shell` (фаза 2), `vn char new|validate` (фаза 1), `vn char sheet`, `vn test replay`, `vn test paths` (фаза 2), `vn save migrate`, `vn test screens` (фаза 3) |
+| Кракозябры вместо русского в `vn --help` под Git Bash | реконфигурация stdout не успевает отработать до eager-опции `--help` (`cli.py`) | смотрите help из PowerShell |
+| `эта команда появится в фазе N (раздел 8 ARCHITECTURE.md)`, exit **3** | команда — честная заглушка `_stub` (`cli.py`) | это не поломка. Полный список (9, состав закреплён тестом `test_cli.py`): `vn migrate`, `vn shell` (фаза 2), `vn char new|validate` (фаза 1), `vn char sheet`, `vn test replay`, `vn test paths` (фаза 2), `vn save migrate`, `vn test screens` (фаза 3) |
 | `Error: No such command '…'`, exit **2** | команды не существует вовсе | не путать с exit 3: `vn validate`, `vn migrate`, `vn shell`, `vn test perf`, `vn content lint --strict`, `vn bootstrap --role` в CLI отсутствуют — первые четыре выведены из нормы решениями [ADR-0017](../adr/0017-retired-cli-promises.md) и [ADR-0019](../adr/0019-qa-run-family.md) |
 
-Exit-коды CLI: `0` успех, `1` ошибка проверки/сборки (**всегда с сообщением, никогда голым трейсбеком** — `cli.py:22-24`), `2` usage error от click, `3` не реализовано в этой фазе (`cli.py:34-38`).
+Exit-коды CLI: `0` успех, `1` ошибка проверки/сборки (**всегда с сообщением, никогда голым трейсбеком** — `cli.py`), `2` usage error от click, `3` не реализовано в этой фазе (`cli.py`).
 
 Более широкий справочник проблем — [36-troubleshooting.md](36-troubleshooting.md), разбор падений в рантайме — [28-debugging.md](28-debugging.md), «как сделать X» — [44-how-do-i.md](44-how-do-i.md).
 
@@ -445,7 +445,7 @@ vn play                            # игра стартует
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/doctor.py`, `tools/vn/src/vn/repo.py`, `tools/vn/src/vn/cli.py:18-300`, `tools/vn/src/vn/pipeline.py:455-581`, `project.yaml`, `.github/workflows/ci.yml` |
+| **Читать перед изменением** | `tools/vn/src/vn/doctor.py`, `tools/vn/src/vn/repo.py`, `tools/vn/src/vn/cli.py`, `tools/vn/src/vn/pipeline.py:455-581`, `project.yaml`, `.github/workflows/ci.yml` |
 | **Не трогать** | `game/generated/**`, `game/assets/**`, `game/tl/**`, `.vncache/**`, `build/**` — производные зоны, перезаписываются сборкой; `loc/ledger/*.json` правится только через `vn loc keys` |
 | **Зависимости** | `RENPY_SDK` → build-bridge (`game/framework/00_core/050_build_bridge.rpy` + `tools/vn/src/vn/content/analyze.py`) → `compile_content` → `game/generated/` → `vn play` / `vn test smoke` / `vn package` / `vn release build`. Нет SDK и нет тёплого кэша → падает вся цепочка. `project.yaml: renpy_sdk` продублирован как `RENPY_VERSION` в трёх workflow — сверки нет |
 | **Валидация** | `vn doctor && vn build --check && vn content lint && vn loc keys --check && (cd tools/vn && python -m pytest tests -q)` |

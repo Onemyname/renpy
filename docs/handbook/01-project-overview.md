@@ -61,7 +61,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 |---|---|---|
 | `nsfw` | **IMPLEMENTED** | Исключение считается по *реальным* директориям: для каждой категории с подпапкой `nsfw/` эмитится глоб `game/assets/<категория>/nsfw/**` (`release.py:441-452`). Ни у одной категории (`bg cg mov spr ui`) такой подпапки пока нет, поэтому список исключений в `build-info.json` пуст (`"exclude": []`) |
 | `watermark` | **IMPLEMENTED** | Оверлей с build-id — `game/framework/20_ui/screens/build_overlay.rpy`; текст вотермарки — `build_id + " · " + patron_tag` (`060_build_info.rpy:44-45`) |
-| `patron_tag` (не поле флейвора, а поле `build-info`) | **IMPLEMENTED** | Вход остался прежним — флаг `vn release build --patron-token` (`cli.py:1510`), но наружу уезжает только `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex (`release.patron_tag`, `release.py:455-476`). Схема бампнута `build_info@1` → `build_info@2` ([ADR-0011](../adr/0011-patron-tag-instead-of-token.md)); `build_info@1` оставлена в реестре с пометкой «устарела», чтобы читались артефакты сборок до 0.1.5 |
+| `patron_tag` (не поле флейвора, а поле `build-info`) | **IMPLEMENTED** | Вход остался прежним — флаг `vn release build --patron-token` (`cli.py`), но наружу уезжает только `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex (`release.patron_tag`, `release.py:455-476`). Схема бампнута `build_info@1` → `build_info@2` ([ADR-0011](../adr/0011-patron-tag-instead-of-token.md)); `build_info@1` оставлена в реестре с пометкой «устарела», чтобы читались артефакты сборок до 0.1.5 |
 | `packs` (как список разрешённых) | **IMPLEMENTED как рантайм-гейт установленности** | `VN_PACKS` перечисляет все паки независимо от флейвора (скрипты уезжают всегда, G9), но `pack_registry.installed()` сверяет их со списком поставки `vn_build.packs` (`030_flow.rpy:77-91`) — в `public`-сборке пак `nsfw` невидим |
 | `early_content` | **IMPLEMENTED как релизный гейт** | Проверка «зрелость контента» в `vn release validate` (`early_content_checks`, `release.py:403-438`); самоактивирующаяся — до первой главы `status: release` это WARN, с её появлением `draft` становится FAIL. В `game/` флаг по-прежнему не читает никто |
 
@@ -122,7 +122,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 
 **Грабли этих документов** (учитывайте, читая их): `localizer.md` помечен «конвейер появится в фазе 2» —
 конвейер работает; `writer.md` говорит «`vn scene new` — с фазы 1» — команда реализована
-(`cli.py:467`); `artist.md` обещает сырцы в S3 — реально `.vnstorage.yaml` объявляет
+(`cli.py`); `artist.md` обещает сырцы в S3 — реально `.vnstorage.yaml` объявляет
 `type: file, path: "~/vn-assets-store"`, каталог не создан, а PNG временно легализованы в git
 [ADR-0004](../adr/0004-local-png-sources-in-git.md); карта модулей в `tools-engineer.md`
 покрывает 11 из ~28 модулей тулинга.
@@ -138,7 +138,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 
 | Подсистема | Статус | Главное «но» |
 |---|---|---|
-| CLI `vn` — 20 доменов, exit-коды 0/1/2/3 | **IMPLEMENTED** | Module-docstring `cli.py:4-5` до сих пор врёт про «фазу 0» |
+| CLI `vn` — 20 доменов, exit-коды 0/1/2/3 | **IMPLEMENTED** | Module-docstring `cli.py` до сих пор врёт про «фазу 0» |
 | Content Compiler `content/**` → 19 `*.gen.rpy` | **IMPLEMENTED** | Свежесть считается сравнением байт выходов; `manifest["inputs"]` пишется, но никогда не читается |
 | `vn content lint` (33 диагностики, строгость по статусу главы) | **IMPLEMENTED** | Нет `--strict/--arch/--schemas` из ARCHITECTURE.md — только `--layout/--no-layout` |
 | Реестр схем `tools/schemas/` (39 схем, `@N`) | **IMPLEMENTED** | Дыра G16 закрыта: `assets_manifest@1` заведена, и `.vncache/assets-manifest.json` валидируется ею при записи (`assets/pipeline.py:441-450`) |
@@ -151,7 +151,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 | Достижения | **IMPLEMENTED** | Бэкенд, экран `achievements`, пункты **главного меню и рельсы**, прогресс отдельной ачивки (`goal: {total, step}` → `stat_max`/`stat_modulo` в Steam), тост о выдаче и кнопка синхронизации в настройках (`achievement.Sync()`). Ни ADR, ни раздела в нормативе — одно упоминание в `ARCHITECTURE.md:2720`; канон — [15](15-gallery.md) |
 | Релизный гейт `vn release validate --flavor` | **IMPLEMENTED** | 21 проверка; своих правил почти нет — агрегирует чужие. Исключение — «зрелость контента» (`early_content` vs `status` глав), у неё нет другого владельца; она самоактивирующаяся — на этом дереве даёт WARN (ни одной `release`-главы), оба флейвора зелёные, строгость включится с первой `release`-главой |
 | Флейворы `public`/`patron` | **IMPLEMENTED** | Все четыре рычага гейтят: `nsfw` (исключение ассетов + рантайм), `watermark`/`patron_tag`, `packs` (рантайм-гейт установленности: `VN_PACKS ∩ vn_build.packs`), `early_content` (проверка зрелости контента в релизном гейте). Build-time-исключения скриптов паков нет и не будет — гейт логический (G9) |
-| Паки/DLC | **PARTIALLY IMPLEMENTED** | `pack build` кладёт в zip только манифест и сцены. **Установленность** пака теперь честная: `installed()` сверяет `VN_PACKS` со списком поставки `vn_build.packs`, поэтому в `public`-сборке пак `nsfw` невидим. Провайдер **владения** подключён (ADR-0014, `035_platform.rpy:75`), но работает только при живом Steam и только для пака с `steam_dlc_appid`. Охранник «главы объявлены, а генерата нет» ожил и падает ДО создания zip (`cli.py:1624-1627`), но проверяет «хоть одна сцена на весь пак», а не по каждой главе |
+| Паки/DLC | **PARTIALLY IMPLEMENTED** | `pack build` кладёт в zip только манифест и сцены. **Установленность** пака теперь честная: `installed()` сверяет `VN_PACKS` со списком поставки `vn_build.packs`, поэтому в `public`-сборке пак `nsfw` невидим. Провайдер **владения** подключён (ADR-0014, `035_platform.rpy:75`), но работает только при живом Steam и только для пака с `steam_dlc_appid`. Охранник «главы объявлены, а генерата нет» ожил и падает ДО создания zip (`cli.py`), но проверяет «хоть одна сцена на весь пак», а не по каждой главе |
 | Платформы: Steam / Steam Deck / Big Picture | **PARTIALLY IMPLEMENTED** (фасад — IMPLEMENTED) | [ADR-0014](../adr/0014-platform-services.md): единственная точка касания — `00_core/035_platform.rpy` (под гард-тестом), ачивки и DLC-владение через штатный стек движка, controller-first UI и авто-масштаб. Открыто: `vn release steam` готовит VDF и раскладку депотов (включая Linux-`tar.bz2`, [40](40-steamworks.md) §4.3), но в репозитории нет ни `appid`, ни `depots` — до конца команда не доходит; аплоад — ручной `steamcmd`, аплоад автоматизирован ручным workflow `steam-upload`, но без секретов и App ID это no-op; на живом железе не проверено ничего ([43](43-steam-qa.md)), controller-вёрстку теперь ночью снимает CI в двух геймпадных профилях ([42](42-big-picture.md) §5.10). Android — **IMPLEMENTED как канал** с 2026-08-18: `vn release android setup\|status\|preflight\|build`, подготовка тулчейна из CLI через те же функции RAPT, что у лаунчера; APK собран и вскрыт (подписан, без `@N`, без dev-зоны, без ключей, только байткод). Открыто: запуск на живом устройстве, Play-бандл, оформление пакета ([39-platforms.md](39-platforms.md) §2.1) |
 | QA-автопилот `vn test smoke` | **IMPLEMENTED** | `test replay`/`paths` — фаза 2, `test screens` — фаза 3, `test perf` не существует |
 | Сейв-корпус `vn save check` / `save corpus` | **IMPLEMENTED** | 2 фикстуры, и одна из них на **старой** схеме: `schema1-demo.save` (`vn_save_schema=1`) поднимается до 2, в `log.txt` появляется `[vn] migration 0002` — миграция реально исполняется в игре. Линия имён `ci/fixtures/rpyc-line/` пересобрана: 52 `.rpyc` |
@@ -189,7 +189,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 → **IMPLEMENTED.** `vn chapter new <slug>` создаёт скелет, `emit_chapter_registry`
 (`tools/vn/src/vn/content/scenes.py:276`) кладёт главу в `VN_CHAPTERS`, а `screens/chapter_select.gen.rpy`
 рисует её в меню без единой строчки ручной регистрации. Ограничение: у персонажей и локаций
-скаффолда нет — `vn char new` заглушка (`cli.py:958`), `character.yaml` и `location.yaml`
+скаффолда нет — `vn char new` заглушка (`cli.py`), `character.yaml` и `location.yaml`
 пишутся руками.
 
 **2. Кодогенерация вместо runtime-магии.** Компилятор превращает декларации в статический `.rpy`,
@@ -233,7 +233,7 @@ Ren'Py и релизный конвейер — все четыре с `ffmpeg` 
 
 ## Чего НЕ делать
 
-- **Не верьте `README.md:43` («фаза 0») и `cli.py:4-5`** — оба устарели на две фазы.
+- **Не верьте `README.md:43` («фаза 0») и `cli.py`** — оба устарели на две фазы.
 - **Не цитируйте `ARCHITECTURE.md` как описание работающего кода.** Это целевой контракт;
   [ADR-0002](../adr/0002-phase0-schema-subset.md) прямо признаёт, что его примеры внутренне
   противоречивы (раздел 1.5 против 3.4/3.5/4.3), и правка отложена. Канон — профильные разделы

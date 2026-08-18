@@ -167,7 +167,7 @@ capture:
 
 ## 5. Что делает `vn assets vam validate`
 
-Код: `../../tools/vn/src/vn/cli.py:786-808` → `../../tools/vn/src/vn/assets/vam.py` (обёртка, 24 строки) → общий валидатор `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три структурные копии сведены к одному контракту; различия источников — данные (`SourceKind`, `sources.py:47-67`).
+Код: `../../tools/vn/src/vn/cli.py` → `../../tools/vn/src/vn/assets/vam.py` (обёртка, 24 строки) → общий валидатор `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три структурные копии сведены к одному контракту; различия источников — данные (`SourceKind`, `sources.py:47-67`).
 
 | Шаг | Что происходит | Строка |
 |---|---|---|
@@ -315,7 +315,7 @@ python -m pytest tools/vn/tests/test_provenance.py -q   # включая test_va
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/assets/vam.py` (весь, 24 строки) и общий валидатор `../../tools/vn/src/vn/assets/sources.py` (весь, 286 строк), `../../tools/schemas/vam_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/cli.py:781-808`, `../../tools/vn/src/vn/pipeline.py:143-193` (`_steam_libraries`/`vam_path`) и `:544-548` (doctor), `../../tools/vn/src/vn/release.py:587-595`, `../../tools/install-vam.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md` (§2a), `../pipeline/phase-0.md:107-130` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/assets/vam.py` (весь, 24 строки) и общий валидатор `../../tools/vn/src/vn/assets/sources.py` (весь, 286 строк), `../../tools/schemas/vam_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/cli.py`, `../../tools/vn/src/vn/pipeline.py:143-193` (`_steam_libraries`/`vam_path`) и `:544-548` (doctor), `../../tools/vn/src/vn/release.py:587-595`, `../../tools/install-vam.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md` (§2a), `../pipeline/phase-0.md:107-130` |
 | **Не трогать** | `assets_src/vam/.gitkeep` (маркер зоны), `game/assets/**` и `game/generated/**` (производные), `<output>.provenance.json` — сайдкары пишет `vn assets vam validate`, ручная правка ломает `provenance verify` по хэшу |
 | **Зависимости (что ломается ниже по течению)** | Декларация → `provenance@1`-сайдкар → `vn assets provenance verify` → релизный гейт (`release.py:566-574`); `license` → `tools/vn/src/vn/assets/licenses.py:53-109` → гейт (`release.py:654-662`); `output` в `art/cg/**` → `img_cg` + `img_thumb` → `image cg …` от компилятора; `output` в `video_src/**` → `video2webm` + `mov_meta@1` |
 | **Валидация** | `vn assets vam validate` → `vn assets provenance verify` → `vn assets licenses` → `vn content lint` → `vn build` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests/test_provenance.py -q` |

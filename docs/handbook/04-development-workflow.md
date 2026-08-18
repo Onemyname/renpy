@@ -49,7 +49,7 @@ git commit -m "feat(gallery): ..."
 | `assets_src/video_src/**` | `vn assets video build` (или полный `vn assets build`) | несвежее `game/assets/mov`, нет постер-кадра | [21-video-generation.md](21-video-generation.md) |
 | `game/framework/**/*.rpy` | ничего — Ren'Py читает файл напрямую; в игре Shift+R | `renpy … . lint` в CI | [05-renpy-development.md](05-renpy-development.md), [06-frontend.md](06-frontend.md) |
 | `content/ui/panels.yaml` | `vn build` (трансформация `ui_panel`) | несвежие `vn_frame_*` в генерате | [06-frontend.md](06-frontend.md) |
-| `loc/po/**` | `vn loc import` — входит в полный `vn build` (`cli.py:155`) | сборка уедет без переводов: `game/tl/` не в git | [14-localization.md](14-localization.md) |
+| `loc/po/**` | `vn loc import` — входит в полный `vn build` (`cli.py`) | сборка уедет без переводов: `game/tl/` не в git | [14-localization.md](14-localization.md) |
 | `packs/**` | `vn build` (генерат общий) + `vn pack validate` | вотчер `vn dev` пак **не видит** — только руками | [30-packs-and-dlc.md](30-packs-and-dlc.md) |
 | `tools/vn/**` | ничего — установка editable | `pytest` (из `tools/vn`) | [25-custom-engine.md](25-custom-engine.md) |
 | `project.yaml`, `tools/schemas/**` | `vn build` целиком | лавинообразно: lint, компилятор, релизный гейт | [02-architecture.md](02-architecture.md) |
@@ -58,16 +58,16 @@ git commit -m "feat(gallery): ..."
 
 ### `vn dev` — что именно watch'ится — IMPLEMENTED
 
-`cli.py:247-299` + `../../tools/vn/src/vn/devloop.py` (56 строк).
+`cli.py` + `../../tools/vn/src/vn/devloop.py` (56 строк).
 
 - **Корни watch'а зашиты в код:** `root/assets_src` и `root/content` (`devloop.py:33-34`). Больше **ничего**: ни `loc/`, ни `packs/`, ни `game/framework/`, ни `project.yaml`, ни `tools/`. Правку в `packs/ep_beach/chapters/...` вотчер не увидит — пересобирайте руками.
 - **Механизм:** polling без внешних зависимостей. Каждую итерацию `_snapshot()` обходит `rglob("*")` и запоминает `{путь: (mtime, size)}`; неравенство словарей = изменение (`devloop.py:15-28`).
 - **Интервал — 1.0 секунды** (`devloop.py:31`), причём `time.sleep(interval)` выполняется **до** первого сравнения (`devloop.py:40`): первая реакция наступает через секунду после старта, не мгновенно.
-- **Изменился `assets_src/`** → `_assets_build(root, "draft")`, затем `compile_content(root)` — реестр образов зависит от собранных ассетов (`cli.py:265-274`).
-- **Изменился `content/`** → только `compile_content(root)` (`cli.py:276-284`).
+- **Изменился `assets_src/`** → `_assets_build(root, "draft")`, затем `compile_content(root)` — реестр образов зависит от собранных ассетов (`cli.py`).
+- **Изменился `content/`** → только `compile_content(root)` (`cli.py`).
 - **Колбэк не убивает вотчер:** исключение печатается как `[vn watch] пересборка ассетов упала: …` / `[vn watch] компиляция контента упала: …` и цикл продолжается (`devloop.py:46-56`). Залоченный Photoshop'ом файл или битый YAML — не повод перезапускать `vn dev`.
-- **Выход:** закрытие окна игры останавливает вотчер (`stop_check = lambda: game.poll() is not None`, `cli.py:291`), Ctrl+C — тоже.
-- **После пересборки в игре — Shift+R.** Замена пикселей подхватывается по месту; структурные правки (новая сцена, новый слой) могут сбросить позицию (`cli.py:251-252`).
+- **Выход:** закрытие окна игры останавливает вотчер (`stop_check = lambda: game.poll() is not None`, `cli.py`), Ctrl+C — тоже.
+- **После пересборки в игре — Shift+R.** Замена пикселей подхватывается по месту; структурные правки (новая сцена, новый слой) могут сбросить позицию (`cli.py`).
 
 **Важно про качество:** `vn dev` собирает ассеты в профиле `draft`, а не `full`. Разница ровно в трёх местах, и все три — данные, а не код:
 
@@ -81,10 +81,10 @@ git commit -m "feat(gallery): ..."
 
 ### `vn assets watch` теряет события `content/` — PARTIALLY IMPLEMENTED
 
-`cli.py:606-624` использует тот же вотчер, но подставляет пустой колбэк:
+`cli.py` использует тот же вотчер, но подставляет пустой колбэк:
 
 ```python
-watch(root, on_assets, lambda: None)   # cli.py:622
+watch(root, on_assets, lambda: None)   # cli.py
 ```
 
 Вотчер честно снимает снапшот `content/` каждый тик, обнаруживает изменения — и выбрасывает их. Для художника, который только кладёт PNG в папку, это работает; **для полноценного цикла используйте `vn dev`**. Профиль по умолчанию у `assets watch` — `draft` (у `vn assets build` — `full`).
@@ -249,7 +249,7 @@ git status --short         # ничего из game/generated|assets|tl; есл�
 ```bash
 vn build                                        # lint -> ассеты -> компилятор -> loc import -> бюджеты
 vn loc keys --check                             # say-id и ledger свежи (G8)
-xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint   # Linux; на Windows исполняемый файл — renpy.exe (cli.py:286)
+xvfb-run -a bash "$RENPY_SDK/renpy.sh" . lint   # Linux; на Windows исполняемый файл — renpy.exe (cli.py)
 vn test oversample --scale 2                    # движок подтверждает подхват @2
 vn content compile --check                      # генерат свеж, без записи
 (cd tools/vn && python -m pytest tests -q)      # 373 теста, ~16 с
@@ -270,7 +270,7 @@ vn release validate --flavor public       # 21 проверка релизног
 **Про `vn build` vs `vn build --check` vs `vn content compile --check`:**
 
 - `vn build` — пишет генерат и делает `vn loc import`. Единственная команда, чьи сообщения годятся для диагноза.
-- `vn build --check` — ничего не пишет, дополнительно валидирует разметку PO (`cli.py:137-145`) — то, на чём полный build упал бы позже, на импорте `tl`.
+- `vn build --check` — ничего не пишет, дополнительно валидирует разметку PO (`cli.py`) — то, на чём полный build упал бы позже, на импорте `tl`.
 - `vn content compile --check` — **только** свежесть генерата, без линта и без части валидации YAML. Битый файл даст «внутренняя ошибка компилятора», а не осмысленную схемную ошибку. Это проверка для CI, а не инструмент диагностики.
 
 CI использует **обе** формы: сначала пишущий `vn build`, потом `vn content compile --check`.
@@ -281,7 +281,7 @@ CI использует **обе** формы: сначала пишущий `vn
 
 Порядок из `../runbooks/pipeline-broken-at-night.md` плюс то, что подтверждено кодом:
 
-1. **Прочитать, какая джоба и какой шаг.** Сообщения `vn` всегда осмысленные: exit 1 всегда сопровождается строкой `ошибка: …` на stderr, голого трейсбека не бывает — даже внутренняя ошибка компилятора оборачивается (`cli.py:22-24`). Коды: `0` успех, `1` ошибка проверки/сборки, `2` usage error (click), `3` «команда появится в фазе N».
+1. **Прочитать, какая джоба и какой шаг.** Сообщения `vn` всегда осмысленные: exit 1 всегда сопровождается строкой `ошибка: …` на stderr, голого трейсбека не бывает — даже внутренняя ошибка компилятора оборачивается (`cli.py`). Коды: `0` успех, `1` ошибка проверки/сборки, `2` usage error (click), `3` «команда появится в фазе N».
 2. **Воспроизвести локально ровно той же командой** из workflow. Разницы окружений быть не должно, но воспроизводится она только парой шагов: `pip install -r tools/vn.lock`, затем `pip install -e "tools/vn[dev]"` — CI ставит именно так, и одна editable-установка даст вам другие версии пакетов.
 3. **«CI красный, локально зелёно»** → `git stash -u`, затем `vn content lint` на чистом чекауте. Незакоммиченные локальные файлы регулярно «чинят» сборку невидимо. Второй частый источник — профиль: после `vn dev` в `game/assets` лежат draft-байты, и `vn build --check` краснеет.
 4. **`FreetypeError` / шрифты** → LFS: локально `git lfs install && git lfs pull`; в workflow — `with: {lfs: true}`. Проверка есть и в `vn doctor`, и в релизном гейте: она смотрит **содержимое** файла, а не расширение.
@@ -319,7 +319,7 @@ CI использует **обе** формы: сначала пишущий `vn
 | `log.txt`, `errors.txt`, `traceback.txt` | движок | нет | `:15-17` |
 | `build/`, `.vncache/` | `vn package`/`release`/`pack`, тулинг | нет | `:20-21` |
 
-**Единственное исключение** — каталог `ci/fixtures/rpyc-line/` (негативное правило `!ci/fixtures/rpyc-line/**` в `.gitignore:14`): **52** `.rpyc` в git, это линия statement-имён для сейв-корпуса (G6). Не удалять, не «чистить», не пересобирать руками — ими управляют `_rpyc_line_restore` / `_rpyc_line_snapshot` (`cli.py:1354`, `cli.py:1375`), меняются они только через `vn save corpus --add`.
+**Единственное исключение** — каталог `ci/fixtures/rpyc-line/` (негативное правило `!ci/fixtures/rpyc-line/**` в `.gitignore:14`): **52** `.rpyc` в git, это линия statement-имён для сейв-корпуса (G6). Не удалять, не «чистить», не пересобирать руками — ими управляют `_rpyc_line_restore` / `_rpyc_line_snapshot` (`cli.py`, `cli.py`), меняются они только через `vn save corpus --add`.
 
 Правка файла в производной зоне бесполезна дважды: она не попадёт в git **и** будет перезаписана ближайшей сборкой. Ошибку, найденную в `game/generated/scenes/ch01/ch01_s020.gen.rpy`, чинят в `content/`, в `tools/vn/src/vn/content/compile.py` или в `game/framework/` — и только там. Полный перечень выходов генерата (21 файл `*.gen.rpy`, включая `render.gen.rpy` и `platform.gen.rpy`) и точное описание последствий правки — [44-how-do-i.md](44-how-do-i.md) §26.
 
@@ -327,7 +327,7 @@ CI использует **обе** формы: сначала пишущий `vn
 
 ## 9. Как обновлять `docs/CHANGELOG.md` — PARTIAL
 
-Команда: `vn release changelog` (`cli.py:1725-1743` → `release.update_changelog`, `release.py:310-347`).
+Команда: `vn release changelog` (`cli.py` → `release.update_changelog`, `release.py:310-347`).
 
 1. Снимок `content/chapters/` — **только его** — в вид `{ch_id: {status, scenes[]}}` (`release.py:287-307`).
 2. Дифф против `ci/release-manifest.json` (предыдущее состояние).
@@ -367,7 +367,7 @@ CI использует **обе** формы: сначала пишущий `vn
 - **Ускорить локальную итерацию.** `vn build --profile draft` или `vn dev` (там `draft` уже по умолчанию). Помнить про качество: draft — WebP q50 и видео `crf 42` в 720p; и про то, что после draft-сборки `vn build --check` краснеет.
 - **Завести PR-процесс.** Нужны реальные хэндлы в `CODEOWNERS`, branch protection на `main` и осознанное решение по триггеру `pull_request` (§7) — «просто добавить» его нельзя, тесты держат текущее состояние.
 - **Ввести watch для `packs/`.** Корни зашиты в `devloop.py:33-34` — добавляется одной строкой в список; отдельно решить, чем перестраивать пак (`vn build` собирает паки в общий генерат).
-- **Починить `vn assets watch`.** Заменить `lambda: None` (`cli.py:622`) на реальный колбэк компиляции — или удалить команду в пользу `vn dev`.
+- **Починить `vn assets watch`.** Заменить `lambda: None` (`cli.py`) на реальный колбэк компиляции — или удалить команду в пользу `vn dev`.
 - **Ввести pre-commit-хук из `ARCHITECTURE.md:659`.** Скрипт в `tools/` + `git config core.hooksPath`; учитывая, что `.gitignore` уже закрывает производные зоны, приоритет низкий.
 - **Починить root-относительный pytest в `ci.yml:97`** — либо `working-directory: tools/vn`, либо `[tool.pytest.ini_options] pythonpath` в `tools/vn/pyproject.toml`. Сегодня прогон из корня падает на `test_verify_regressions.py:84`.
 
@@ -377,7 +377,7 @@ CI использует **обе** формы: сначала пишущий `vn
 - **Не удалять `ci/fixtures/rpyc-line/`** как «мусорные `.rpyc`» — это единственные `.rpyc` в git, без них сейв-корпус перестанет быть детерминированным (G6).
 - **Не ставить тег, не бампнув `project.yaml`** — `release.yml:47-54` упадёт на первом шаге, ещё до сборки. И наоборот: `v0.1.5` уже занят, следующий релиз начинается с бампа до `0.1.6`.
 - **Не пытаться выпустить `v1.0.0-rc1`** — схема `project@1` запрещает pre-release-суффикс в `version`.
-- **Не полагаться на `vn assets watch` при работе с контентом** — события `content/` он выбрасывает (`cli.py:622`).
+- **Не полагаться на `vn assets watch` при работе с контентом** — события `content/` он выбрасывает (`cli.py`).
 - **Не ставить тулчейн одной командой `pip install -e "tools/vn[dev]"`** — так вы отрезолвите свободные `>=` из `pyproject.toml` и получите не то окружение, что в CI. Сначала `pip install -r tools/vn.lock`, потом editable — порядок обязателен, обратный лок не применит.
 - **Не рассчитывать на `vn build --use-artifact <sha>`, `vn validate`, `vn content lint --strict`** — этих команд не существует, `vn` ответит usage error (exit 2).
 - **Не забывать `export RENPY_SDK=...`** в bash-сессиях: переменная не наследуется, а `vn doctor` при наличии `content/chapters/ch*` считает отсутствие SDK жёсткой ошибкой.

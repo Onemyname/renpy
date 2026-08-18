@@ -2,6 +2,7 @@
 покрыто проверкой против пиннованного SDK. Без SDK — skip (canary-джоба CI гоняет с SDK)."""
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -117,3 +118,24 @@ def test_defined_screens_registry(repo_root):
     assert "from renpy.display.screen import screens" in compat
     assert 'getattr(screen, "location", None)' in compat, \
         "фильтр по месту объявления пропал — тур начнёт требовать экраны движка"
+
+
+@requires_sdk
+def test_gui_rebuild_exists(repo_root):
+    """G18: `gui.rebuild()` — функция ШАБЛОНА SDK (gui.rpy), а не API движка.
+    Контракт: она в шаблоне есть, вызывается только из engine_compat, и её
+    отсутствие не валит переключение масштаба."""
+    # Фактическое место объявления в 8.5.3 — renpy/common/00gui.rpy (store gui):
+    # это общий слой движка, но НЕ документированный API, поэтому контракт держим.
+    common_gui = Path(SDK) / "renpy" / "common" / "00gui.rpy"
+    assert "def rebuild" in common_gui.read_text(encoding="utf-8", errors="ignore"), \
+        "gui.rebuild пропал из 00gui.rpy — правьте vn_compat.gui_rebuild"
+    compat = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
+              / "000_compat.rpy").read_text(encoding="utf-8")
+    assert 'getattr(renpy.store.gui, "rebuild", None)' in compat
+    # Ищем ВЫЗОВ в начале стейтмента, а не упоминание: комментарии и докстринги,
+    # объясняющие механику, — это документация, а не нарушение правила.
+    call = re.compile(r"^\s*(\$\s*)?(renpy\.store\.)?gui\.rebuild\(\)", re.M)
+    direct = [f.name for f in (repo_root / "game" / "framework" / "20_ui").rglob("*.rpy")
+              if call.search(f.read_text(encoding="utf-8"))]
+    assert direct == [], f"прямой вызов gui.rebuild в {direct} — только через фасад (G18)"

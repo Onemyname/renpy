@@ -55,12 +55,12 @@ echo $RENPY_SDK           # bash-сессии агента НЕ наследую
 
 **Установка:** скачать zip с https://www.renpy.org/latest.html, распаковать, переменную окружения указать на корень. У нас: `C:\Users\Vadim\renpy-sdk\renpy-8.5.3-sdk`. Установщика/PATH нет — путь задаёте вы. *(Совет сообщества, не из официальных доков: распаковывать в путь без пробелов и не-ASCII.)*
 
-**Конфигурация:** **единственный способ найти SDK — переменная `RENPY_SDK`**, и она обязана содержать `renpy.py` (`doctor.py:24-30`). Никакого автопоиска по реестру и по PATH нет; все потребители SDK (`tools/vn/src/vn/content/analyze.py:23-31`, `cli.py:195,264,337,1313`) ходят через эту функцию.
+**Конфигурация:** **единственный способ найти SDK — переменная `RENPY_SDK`**, и она обязана содержать `renpy.py` (`doctor.py:24-30`). Никакого автопоиска по реестру и по PATH нет; все потребители SDK (`tools/vn/src/vn/content/analyze.py:23-31`, `cli.py,264,337,1313`) ходят через эту функцию.
 **Грабля:** `setx RENPY_SDK ...` виден только НОВЫМ процессам; в bash-сессиях AI-агента переменная часто не наследуется — экспортируйте руками перед запуском.
 
 **Где используется:**
 - `tools/vn/src/vn/content/analyze.py:37-70` → `renpy.exe <root> vn_analyze` — собственная команда, зарегистрированная нашим мостом `game/framework/00_core/050_build_bridge.rpy:98-144`. Это единственный парсер `.rpy` в проекте (G24).
-- `cli.py:264` — `vn play`; `cli.py:337` — `vn package` (`launcher distribute`); `cli.py:1313` — `vn test smoke` (in-process автопилот).
+- `cli.py` — `vn play`; `cli.py` — `vn package` (`launcher distribute`); `cli.py` — `vn test smoke` (in-process автопилот).
 - CI: `.github/workflows/ci.yml:57-64` качает SDK по пину, `:72-73` гоняет движковый `lint`.
 
 **Когда использовать / когда НЕ использовать:** используйте CLI SDK как бэкенд сборки; **не** дёргайте GUI-лаунчер из автоматизации. Не поднимайте минорную версию посреди продакшена без прогона `vn test smoke` и pytest: 8.4 перешёл на Python 3.12, 8.5 выпилил внешний `pygame_SDL2` — большая часть сниппетов с форумов старше 2024 требует аудита.
@@ -87,7 +87,7 @@ echo $RENPY_SDK           # bash-сессии агента НЕ наследую
 
 **Конфигурация:** конфигов нет — поведение задают `project.yaml`, `.vnstorage.yaml` и содержимое `content/`. Корень репозитория определяется как первый предок, где лежат **одновременно** `project.yaml` и `tools/schemas/` (`repo.py:15-23`) — `.git` не участвует, поэтому CLI работает и в worktree, и в распакованном архиве.
 
-**Где используется:** везде. 20 команд/групп верхнего уровня: `assets bootstrap build chapter char content dev doctor loc migrate pack package pipeline play release save scene shell test voice`. Контракт кодов возврата (`cli.py:22-38`): `0` — ок; `1` — ошибка валидации/сборки (всегда с сообщением); `2` — ошибка использования (click); `3` — «не реализовано в этой фазе» (честная заглушка `_stub`).
+**Где используется:** везде. 20 команд/групп верхнего уровня: `assets bootstrap build chapter char content dev doctor loc migrate pack package pipeline play release save scene shell test voice`. Контракт кодов возврата (`cli.py`): `0` — ок; `1` — ошибка валидации/сборки (всегда с сообщением); `2` — ошибка использования (click); `3` — «не реализовано в этой фазе» (честная заглушка `_stub`).
 
 **Когда использовать / когда НЕ использовать:** любой шаг сборки — через `vn`. **Не** пишите ad-hoc скрипты рядом: логика, не попавшая в CLI, не попадёт и в CI. Не полагайтесь на команды из ARCHITECTURE.md, которых нет в `vn --help` (`vn validate`, `vn build --use-artifact`, `vn content lint --strict` — NOT IMPLEMENTED, см. [Архитектура §7](02-architecture.md)).
 
@@ -191,7 +191,7 @@ echo $RENPY_SDK           # bash-сессии агента НЕ наследую
 vn pipeline doctor                 # детекция + проверка обязательных моделей
 vn pipeline models                 # статус по манифесту
 vn pipeline models --pull          # скачать (только auth: none)
-vn pipeline models --only <id>     # ⚠ тоже СКАЧИВАЕТ, а не «показывает» (cli.py:1697-1698)
+vn pipeline models --only <id>     # ⚠ тоже СКАЧИВАЕТ, а не «показывает» (cli.py)
 ```
 Манифест сегодня — 10 записей, 6 из них `required: true`:
 
@@ -281,7 +281,7 @@ https://www.ea.com/legal/user-agreement · https://help.ea.com/en/articles/secur
 
 **1. Движковый `lint` в CI сейчас декоративный.** Оба конфига гоняют `renpy.sh . lint` (`.github/workflows/ci.yml:86`, `canary.yml:53`) — **без `--error-code` и без `--all-problems`**. По официальным докам Ren'Py (https://www.renpy.org/doc/html/cli.html) `lint` возвращает 0, если не передать `--error-code`, и **обрезает вывод десятью проблемами каждого вида** без `--all-problems`. То есть красный движковый lint нашу сборку сегодня не остановит. Это единственный пункт в списке, который является не улучшением, а починкой.
 
-**2. Ren'Py 8.5 принёс собственный фреймворк тестов** — https://www.renpy.org/doc/html/testcases.html: блоки `testcase` со стейтментами (`advance`, `click`, `keysym`, `assert`, `screenshot`, `repeat`, `until`), сьюты, параметризация. Ключевая для нас часть — `screenshot` **сравнивает с эталоном**: «если файл уже существует, текущий скриншот сравнивается с существующим; если различие больше `max_pixel_difference` пикселей, поднимается `RenpyTestScreenshotError`». Для конвейера, где спрайты перегенерируются AI, baseline-дифф скриншотов — самая высокорычажная вещь в 8.5. Наш `vn test smoke` (in-process автопилот, `cli.py:1268-1401`) решает другую задачу — проход по веткам, — и одно другому не мешает. См. [Тесты](27-testing.md).
+**2. Ren'Py 8.5 принёс собственный фреймворк тестов** — https://www.renpy.org/doc/html/testcases.html: блоки `testcase` со стейтментами (`advance`, `click`, `keysym`, `assert`, `screenshot`, `repeat`, `until`), сьюты, параметризация. Ключевая для нас часть — `screenshot` **сравнивает с эталоном**: «если файл уже существует, текущий скриншот сравнивается с существующим; если различие больше `max_pixel_difference` пикселей, поднимается `RenpyTestScreenshotError`». Для конвейера, где спрайты перегенерируются AI, baseline-дифф скриншотов — самая высокорычажная вещь в 8.5. Наш `vn test smoke` (in-process автопилот, `cli.py`) решает другую задачу — проход по веткам, — и одно другому не мешает. См. [Тесты](27-testing.md).
 
 **3–4. Воспроизводимость генерации.** Сейчас у нас: `sha256: null` у всех моделей, ноль workflow-JSON в git, ноль зафиксированных сидов. Дисциплина, которую стоит завести до того, как накопится 200 ассетов: `workflow_api.json` в git по одному на класс ассета; фиксированные сиды в имени файла или сайдкаре; **хеши моделей**, потому что «flux2-klein-4b» — это не версия, версия — это SHA256, а репозитории моделей молча перезаливают; заморозка окружения через Snapshot-Manager (https://github.com/Comfy-Org/ComfyUI-Manager) на отдельном «боевом» инстансе. У нас уже есть куда это положить: `tools/vn/src/vn/assets/provenance.py` умеет вытаскивать метаданные из PNG ComfyUI и собирать цепочку — код написан, сайдкаров ноль.
 

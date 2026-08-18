@@ -22,7 +22,7 @@ vn build                              # + генерат: image cg ch01 kiss
 vn release validate --flavor patron   # 21 проверка, из них 3 про DAZ/провенанс/лицензии
 ```
 
-Сегодня все пять команд выше отработают на пустом множестве: `vn assets daz validate` напечатает «деклараций нет (assets_src/daz/\*\*/\<name\>.render.yaml)» (`../../tools/vn/src/vn/cli.py:674-677`).
+Сегодня все пять команд выше отработают на пустом множестве: `vn assets daz validate` напечатает «деклараций нет (assets_src/daz/\*\*/\<name\>.render.yaml)» (`../../tools/vn/src/vn/cli.py`).
 
 **Легенда статусов** в этом файле: `IMPLEMENTED` — код есть и работает; `PARTIAL` — код есть, но покрывает не то, что обещано; `UNEXERCISED` — код есть, но в этом репозитории ни разу не исполнялся на реальных данных; `NOT IMPLEMENTED` — кода нет.
 
@@ -58,7 +58,7 @@ DAZ-кадр (PNG)  ──Wan 2.2 I2V в ComfyUI──>  клип .mp4  ──> 
 | Декларация `*.render.yaml` | человек, руками | IMPLEMENTED (схема+валидатор), UNEXERCISED | `tools/schemas/daz_render@1.schema.json`, `../../tools/vn/src/vn/assets/sources.py:145-206` |
 | Провенанс шага `daz_render` | `vn assets daz validate` | IMPLEMENTED, UNEXERCISED | `../../tools/vn/src/vn/assets/provenance.py:279-304` |
 | AI-полировка/анимация в ComfyUI | человек, GUI | вызов ComfyUI — **NOT IMPLEMENTED** | [20-image-generation.md](20-image-generation.md), [21-video-generation.md](21-video-generation.md) |
-| Провенанс шага `comfyui` | `vn assets provenance record` | IMPLEMENTED, UNEXERCISED | `../../tools/vn/src/vn/cli.py:934-959` |
+| Провенанс шага `comfyui` | `vn assets provenance record` | IMPLEMENTED, UNEXERCISED | `../../tools/vn/src/vn/cli.py` |
 | PNG → WebP, видео → WebM | `vn assets build` | IMPLEMENTED | [16-assets.md](16-assets.md) |
 | Ren'Py-имена образов | `vn build` (компилятор) | IMPLEMENTED | [08-content-pipeline.md](08-content-pipeline.md) |
 
@@ -414,7 +414,7 @@ render:
 
 ### 10.2 Что делает `vn assets daz validate` — по шагам
 
-`../../tools/vn/src/vn/cli.py:756-778` → `../../tools/vn/src/vn/assets/daz.py` (тонкая обёртка, 31 строка) → общий валидатор источников `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три структурные копии (DAZ/VaM/Sims 4) сведены к одному контракту в `sources.py`; различия источников — данные (`SourceKind`, `sources.py:47-67`).
+`../../tools/vn/src/vn/cli.py` → `../../tools/vn/src/vn/assets/daz.py` (тонкая обёртка, 31 строка) → общий валидатор источников `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три структурные копии (DAZ/VaM/Sims 4) сведены к одному контракту в `sources.py`; различия источников — данные (`SourceKind`, `sources.py:47-67`).
 
 1. Рекурсивный обход `assets_src/daz/**/*.render.yaml` (`sources.py:154`). Каталога нет → пустой отчёт молча (`sources.py:151-152`).
 2. Валидация JSON-схемой через `SchemaRegistry` (`sources.py:160-163`). **При ошибке схемы декларация пропускается целиком** (`continue`) — остальные проверки по ней не идут.
@@ -527,7 +527,7 @@ assets:
     invoice: "free-with-studio"
 ```
 
-Проверка — `vn assets licenses` (`../../tools/vn/src/vn/cli.py:767-786` → `tools/vn/src/vn/assets/licenses.py:53-109`), она же входит в релизный гейт (`release.py:475-484`). Что блокирует релиз (**FAIL**):
+Проверка — `vn assets licenses` (`../../tools/vn/src/vn/cli.py` → `tools/vn/src/vn/assets/licenses.py:53-109`), она же входит в релизный гейт (`release.py:475-484`). Что блокирует релиз (**FAIL**):
 
 | Условие | Код |
 |---|---|
@@ -605,7 +605,7 @@ assets:
 | Требовать `license:` обязательно | `tools/vn/src/vn/assets/licenses.py:104-108` (WARN → ERROR) | заполнить реестр до включения, иначе релиз встанет |
 | Требовать провенанс у каждого PNG в `art/cg/**` | новая проверка рядом с `provenance.verify` (`provenance.py:317-378`), вызов из `release.py` | закрывает дыру «PNG без сайдкара проходит гейт» (§10.5) |
 | Завести автоматизацию рендера | новый модуль (`.dsa` + драйвер), §9; выход обязан ложиться в `output` деклараций | [26-automation.md](26-automation.md); статус в этом файле поменять с NOT IMPLEMENTED |
-| Сгенерировать декларации пачкой | одиночный скаффолд уже есть — `vn assets new daz <logical_id> --scene …` (`../../tools/vn/src/vn/cli.py:843-881` → `sources.scaffold:102-142`); пачка = обход списка id поверх него | тест уровня CLI (сейчас CLI-тестов ровно один прецедент — `test_release.py:141-146`, `CliRunner` на `vn pack build`) |
+| Сгенерировать декларации пачкой | одиночный скаффолд уже есть — `vn assets new daz <logical_id> --scene …` (`../../tools/vn/src/vn/cli.py` → `sources.scaffold:102-142`); пачка = обход списка id поверх него | тест уровня CLI (сейчас CLI-тестов ровно один прецедент — `test_release.py:141-146`, `CliRunner` на `vn pack build`) |
 | Поднять хранилище сырцов | `.vnstorage.yaml` → `path` на внешний диск/NAS; затем `vn assets lock` + `vn assets push` | закрыть ADR-0004; манифесты коммитятся, бинари удаляются из git |
 
 ---
@@ -681,7 +681,7 @@ python -m pytest tools/vn/tests/test_provenance.py tools/vn/tests/test_licenses.
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/schemas/daz_render@1.schema.json` (93 строки, `additionalProperties: false` на обоих уровнях), `../../tools/vn/src/vn/assets/daz.py` (31 строка — обёртка) и `../../tools/vn/src/vn/assets/sources.py` (286 строк — весь валидатор), `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/assets/licenses.py:53-109`, `../../tools/vn/src/vn/pipeline.py:82-141` (`_dim_settings`, `daz_studio_path`, `daz_content_library`), `../../tools/vn/src/vn/cli.py:751-778` (группа `vn assets daz`), `../../tools/vn/src/vn/release.py:576-584,584-592` (гейты), `../../tools/install-daz.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md:84-106`, `../conventions/naming.md:22`, `content/licenses.yaml` |
+| **Читать перед изменением** | `../../tools/schemas/daz_render@1.schema.json` (93 строки, `additionalProperties: false` на обоих уровнях), `../../tools/vn/src/vn/assets/daz.py` (31 строка — обёртка) и `../../tools/vn/src/vn/assets/sources.py` (286 строк — весь валидатор), `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/assets/licenses.py:53-109`, `../../tools/vn/src/vn/pipeline.py:82-141` (`_dim_settings`, `daz_studio_path`, `daz_content_library`), `../../tools/vn/src/vn/cli.py` (группа `vn assets daz`), `../../tools/vn/src/vn/release.py:576-584,584-592` (гейты), `../../tools/install-daz.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md:84-106`, `../conventions/naming.md:22`, `content/licenses.yaml` |
 | **Не трогать** | `game/assets/**`, `game/generated/**`, `.vncache/**` — производные зоны, перезапишет сборка. `assets_src/**/*.provenance.json` руками не правят: их пишут `vn assets daz validate` и `vn assets provenance record`; ручная правка ломает сверку хэшей в `vn release validate`. `D:\DAZ3D\**` — вне репозитория, скриптами проекта не управляется |
 | **Зависимости (что ломается ниже по течению)** | `output` декларации → путь PNG → `tools/vn/src/vn/assets/pipeline.py:351-368` (`img_cg` + `img_thumb`) → `game/assets/cg/**` → `tools/vn/src/vn/content/images.py` эмитит `image cg …` **по факту собранных файлов**, а не по декларациям: удалённый PNG даёт битую ссылку в рантайме, а не ошибку валидатора. Thumb-файлы читает галерея (`tools/vn/src/vn/content/compile.py:139-227`). NSFW-путь читает `release.py:441-452` при distribute. Бюджеты — `release.py:28-53`. Бинарь в `assets_src/` считает `tools/vn/src/vn/content/lint.py:371-399` (ADR-0004, 30/50 МБ) |
 | **Валидация** | `vn pipeline doctor` → `vn assets daz validate` → `vn assets licenses` → `vn assets provenance verify` → `vn assets build` → `vn content lint` → `vn build` → `vn release validate --flavor patron` → `python -m pytest tools/vn/tests -q` (373 теста) |

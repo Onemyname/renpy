@@ -246,6 +246,17 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                         pair = f.parent / (f.name[: -len(".rpy")] + ".yaml")
                         if not pair.is_file():
                             rep.error(f"{_rel(root, f)}: нет парного .scene.yaml (сцена = ПАРА файлов, G3)")
+            # Столкновение номера главы между ядром и паком: раньше вторая запись
+            # молча затирала первую, и по затёртой главе не выполнялись ни проверка
+            # достижимости, ни сверка exits — то есть половина линта исчезала без
+            # единого сообщения. Номер главы обязан быть уникальным на дерево: id
+            # сцен (chNN_sNNN) плоские, и две главы chNN дали бы одинаковые id.
+            if ch_id in chapters:
+                rep.error(
+                    f"{_rel(root, d)}: номер главы {ch_id} уже занят "
+                    f"({chapters[ch_id]['dir']}) — id сцен плоские (chNN_sNNN), и две "
+                    f"главы с одним номером дают одинаковые id: переименуйте одну")
+                continue
             chapters[ch_id] = {"scenes": scenes, "status": status, "dir": d.name}
 
             # порядок и вход

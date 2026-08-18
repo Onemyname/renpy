@@ -1056,19 +1056,27 @@ def cache_gc(root: Path, dry_run: bool = False) -> tuple[int, int]:
         return 0, 0
     manifest_path = root / ".vncache" / MANIFEST
     live: set[str] = set()
-    if manifest_path.is_file():
-        try:
-            outputs = json.loads(manifest_path.read_text(encoding="utf-8"))["outputs"]
-        except Exception:
-            outputs = {}
-        for info in outputs.values():
-            src_hash = info.get("src_hash")
-            transform = (info.get("transform") or "@").split("@")[0]
-            version = (info.get("transform") or "@").split("@")[-1]
-            profile = info.get("profile", "full")
-            if src_hash and transform in TRANSFORMS:
-                live.add(_b3_bytes(
-                    f"{src_hash}:{transform}:{version}:{profile}".encode()))
+    # Без манифеста или с битым манифестом «живых» блобов НОЛЬ, то есть sweep снёс бы
+    # кэш целиком — часы перекодирования на ровном месте. Это отказ, а не уборка:
+    # манифест восстанавливается одной сборкой (vn assets build).
+    if not manifest_path.is_file():
+        raise AssetError(
+            f"нет .vncache/{MANIFEST} — по нему определяются живые блобы кэша; без "
+            f"него уборка снесла бы весь кэш. Сначала vn assets build")
+    try:
+        outputs = json.loads(manifest_path.read_text(encoding="utf-8"))["outputs"]
+    except (ValueError, KeyError, OSError) as e:
+        raise AssetError(
+            f".vncache/{MANIFEST} не читается ({e}) — уборка кэша отменена: она "
+            f"удалила бы все блобы. Пересоберите манифест: vn assets build")
+    for info in outputs.values():
+        src_hash = info.get("src_hash")
+        transform = (info.get("transform") or "@").split("@")[0]
+        version = (info.get("transform") or "@").split("@")[-1]
+        profile = info.get("profile", "full")
+        if src_hash and transform in TRANSFORMS:
+            live.add(_b3_bytes(
+                f"{src_hash}:{transform}:{version}:{profile}".encode()))
     removed = freed = 0
     for blob in cache_dir.rglob("*"):
         if not blob.is_file() or blob.name in {MANIFEST}:

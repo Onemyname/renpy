@@ -157,7 +157,7 @@ def _vn_save_json(d):
 config.save_json_callbacks.append(_vn_save_json)
 ```
 
-Зачем: оффлайн-инструменты обязаны понимать сейв, не поднимая игру. Потребитель ровно один — `vn save check` (`tools/vn/src/vn/cli.py:1099-1124`), который открывает слот как zip, читает `json`, требует целочисленный `vn_save_schema` и печатает `schema / версия / сцена`. Фикстур в корпусе **две**, вот их реальные заголовки:
+Зачем: оффлайн-инструменты обязаны понимать сейв, не поднимая игру. Потребитель ровно один — `vn save check` (`tools/vn/src/vn/cli.py`), который открывает слот как zip, читает `json`, требует целочисленный `vn_save_schema` и печатает `schema / версия / сцена`. Фикстур в корпусе **две**, вот их реальные заголовки:
 
 ```json
 // ci/fixtures/saves/schema2-demo.save — сейв текущей схемы
@@ -295,7 +295,7 @@ reserved:
 3. Займите номер: в `content/migrations/registry.yaml` добавьте `- {number: 3, slug: <slug>, by: "@вы"}`.
 4. Создайте `content/migrations/0003_<slug>.py` с функцией `migrate(state)`. Только простые типы, только `.get()`, ключи вида `"store.var"`.
 5. `vn build` — компилятор проверит резервирование и непрерывность цепочки и вошьёт исходник в `game/generated/state/migrations.gen.rpy`.
-6. Проверьте: `vn save corpus`. Критерий прохода (`cli.py:1243-1244`): прогон не по таймауту **и** `RESULT.txt` начинается с `OK` **и** `state.json["vn_save_schema"] == project["save_schema"]`.
+6. Проверьте: `vn save corpus`. Критерий прохода (`cli.py`): прогон не по таймауту **и** `RESULT.txt` начинается с `OK` **и** `state.json["vn_save_schema"] == project["save_schema"]`.
 
 ### Когда бампать `save_schema`
 
@@ -310,7 +310,7 @@ reserved:
 
 ### Ограничения, о которых надо знать заранее
 
-* **PARTIALLY IMPLEMENTED:** внешнего прогона миграций нет. `vn save migrate` — стаб фазы 3 (`cli.py:1259-1260`, exit 3), `vn migrate` (миграции схем деклараций — другая сущность) — стаб фазы 2 (`cli.py:371`). Цепочку можно проверить только запуском игры.
+* **PARTIALLY IMPLEMENTED:** внешнего прогона миграций нет. `vn save migrate` — стаб фазы 3 (`cli.py`, exit 3), `vn migrate` (миграции схем деклараций — другая сущность) — стаб фазы 2 (`cli.py`). Цепочку можно проверить только запуском игры.
 * **Корпус теперь гоняет настоящую миграцию — IMPLEMENTED.** Фикстур две. `schema2-demo.save` создана на схеме 2 при `save_schema: 2` и всегда идёт в ветку «схемы равны»; `schema1-demo.save` несёт `vn_save_schema: 1` (сцена `ch01_s010`) и попадает в ветку `loaded < target`. Прогон `vn save corpus` печатает по ней `schema после загрузки: 2 (цель 2)`, а в `log.txt` появляется строка `[vn] migration 0002` — то есть `run_migrations` действительно исполняется в игре, а не только в юнит-тесте. Подробнее — [27-testing.md](27-testing.md).
 
 ---
