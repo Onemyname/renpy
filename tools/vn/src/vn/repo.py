@@ -58,6 +58,20 @@ def load_project(root: Path) -> dict:
     return load_yaml(root / "project.yaml")
 
 
+def git_tag_exists(root: Path, tag: str) -> bool:
+    """Есть ли такой git-тег. Недоступный git (архив без истории, чужая песочница)
+    трактуется как «тега нет»: проверка, которая падает без git, заблокировала бы
+    работу там, где git и не нужен."""
+    try:
+        out = subprocess.run(
+            ["git", "tag", "-l", tag],
+            cwd=root, capture_output=True, text=True, check=True,
+        )
+        return bool(out.stdout.strip())
+    except Exception:
+        return False
+
+
 def git_sha(root: Path) -> str:
     try:
         out = subprocess.run(

@@ -192,7 +192,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
-| `release changelog` | — | Обновляет `docs/CHANGELOG.md` и `ci/release-manifest.json` по диффу реестров, штампует `id_registry` (G7) (`cli.py:1471-1489`) | PART — нет `--from/--audience`; главы паков видит с 2026-08-18 (в changelog помечены `(pack <id>)`) |
+| `release changelog` | `--force` | Обновляет `docs/CHANGELOG.md` и `ci/release-manifest.json` по диффу реестров, штампует `id_registry` (G7). Отказывается писать на уже выпущенную версию (раздел в CHANGELOG или тег `v<version>`): прогон без бампа СЪЕДАЕТ дифф — манифест становится базой следующего сравнения, и сцены, добавленные после релиза, в блок следующей версии не попадут. `--force` — для перезаписи после ручной правки | PART — нет `--from/--audience`; главы паков видит с 2026-08-18 (в changelog помечены `(pack <id>)`) |
 | `release validate` | `--flavor` (**required**) | Предрелизный гейт: 21 проверка PASS/WARN/FAIL (`cli.py:1492-1505`) | IMPL |
 | `release build` | `--flavor` (**required**), `--patron-token`, `--package` (multiple), `--timeout` (def 900) | `vn build` → гейт → `game/build_id.json` → `vn package` с суффиксом `-<flavor>` → `build-info.json`; `build_id.json` и скопированный `THIRD-PARTY-NOTICES.md` снимаются в `finally` (`cli.py:1508-1562`) | IMPL — `--patron-token` это **вход**: наружу уходит только производная метка `patron_tag` (ADR-0011, см. ниже) |
 | `release preflight` | `--flavor` | Готовность к Steam-поставке ДО App ID: депоты, редистрибутивы, артефакты, список ачивок для партнёрки, DLC-маппинг, корень Auto-Cloud (`release.py: steam_preflight`) | IMPL — пустой `appid` даёт `TODO`, а не провал |

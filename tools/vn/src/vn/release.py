@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .content.compile import CHAPTER_DIR_RE, SCENE_YAML_RE
-from .repo import chapter_zones, git_sha, load_project, load_yaml
+from .repo import chapter_zones, git_sha, git_tag_exists, load_project, load_yaml
 
 MANIFEST_REL = "ci/release-manifest.json"
 BUILD_INFO_REL = "game/build_id.json"
@@ -506,9 +506,34 @@ def snapshot_content(root: Path) -> dict:
     return chapters
 
 
-def update_changelog(root: Path) -> ReleaseReport:
+def released_version_conflict(root: Path, version: str) -> str | None:
+    """Причина, по которой changelog нельзя писать на эту версию, или None.
+
+    Раздел changelog и манифест — ОДНОРАЗОВЫЕ на версию: манифест после прогона
+    становится базой следующего диффа, поэтому прогон на уже выпущенной версии не
+    просто дублирует заголовок, а СЪЕДАЕТ дифф — сцены, добавленные после релиза,
+    в блок следующей версии уже не попадут, потому что «они и так в базе».
+    Проверяется и changelog, и git-тег: тег есть даже когда файл кто-то поправил
+    руками, а раздел есть даже там, где тегов не ставят."""
+    changelog = root / "docs" / "CHANGELOG.md"
+    if changelog.is_file():
+        for line in changelog.read_text(encoding="utf-8").splitlines():
+            if line.strip() == f"## {version}":
+                return (f"в docs/CHANGELOG.md уже есть раздел «## {version}» — "
+                        f"бампните project.yaml: version до следующей и повторите")
+    if git_tag_exists(root, f"v{version}"):
+        return (f"версия {version} уже выпущена (тег v{version}) — бампните "
+                f"project.yaml: version до следующей и повторите")
+    return None
+
+
+def update_changelog(root: Path, force: bool = False) -> ReleaseReport:
     rep = ReleaseReport()
     project = load_project(root)
+    if not force:
+        conflict = released_version_conflict(root, project["version"])
+        if conflict:
+            raise ReleaseError(conflict)
     manifest_path = root / MANIFEST_REL
     prev = {}
     if manifest_path.is_file():
@@ -536,6 +561,9 @@ def update_changelog(root: Path) -> ReleaseReport:
             lines.append("Удалены сцены (см. renames.yaml): " + ", ".join(rep.removed_scenes))
         lines.append("")
         changelog = root / "docs" / "CHANGELOG.md"
+        # Каталог создаём наравне с ci/: команда, которая умеет завести манифест и
+        # не умеет завести changelog, падает на пустом дереве по пути записи.
+        changelog.parent.mkdir(parents=True, exist_ok=True)
         old = changelog.read_text(encoding="utf-8") if changelog.is_file() else "# Changelog\n\n"
         head, _, tail = old.partition("\n")
         # Пустая строка перед следующим заголовком обязательна: без неё markdown

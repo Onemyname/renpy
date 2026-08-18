@@ -627,3 +627,70 @@ def test_snapshot_content_sees_pack_chapters(tmp_path):
     assert set(snap) == {"ch01", "ch90"}
     assert snap["ch01"]["pack"] == "core" and snap["ch90"]["pack"] == "ep_beach"
     assert snap["ch90"]["scenes"] == ["ch90_s010"]
+
+# ── Changelog: раздел версии одноразовый ─────────────────────────────────────
+
+def _chapter(root, base_rel, ch, scene="s010_intro"):
+    base = root / base_rel / ch
+    (base / "scenes").mkdir(parents=True)
+    (base / "chapter.yaml").write_text("status: draft\n", encoding="utf-8")
+    (base / "scenes" / f"{scene}.scene.yaml").write_text("id: s010\n", encoding="utf-8")
+
+
+def test_changelog_refuses_version_already_in_file(tmp_path):
+    """Прогон на уже выпущенной версии не просто дублирует заголовок — он СЪЕДАЕТ
+    дифф: манифест становится базой следующего сравнения, и сцены, добавленные
+    после релиза, в блок следующей версии уже не попадут."""
+    from vn.release import ReleaseError, update_changelog
+
+    root = _mk_root(tmp_path)
+    _chapter(root, "content/chapters", "ch01_core")
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs" / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## 0.2.0\n\nТехнический выпуск.\n", encoding="utf-8")
+    with pytest.raises(ReleaseError, match="уже есть раздел"):
+        update_changelog(root)
+    assert not (root / "ci" / "release-manifest.json").exists(), \
+        "манифест не должен обновиться на отказе — иначе дифф уже съеден"
+
+
+def test_changelog_refuses_released_tag(tmp_path, monkeypatch):
+    """Тег есть даже когда CHANGELOG кто-то поправил руками: вторая половина
+    проверки нужна ровно для этого случая."""
+    from vn import release as rel
+
+    root = _mk_root(tmp_path)
+    _chapter(root, "content/chapters", "ch01_core")
+    monkeypatch.setattr(rel, "git_tag_exists", lambda r, tag: tag == "v0.2.0")
+    with pytest.raises(rel.ReleaseError, match="уже выпущена"):
+        rel.update_changelog(root)
+
+
+def test_changelog_force_overrides_the_guard(tmp_path, monkeypatch):
+    """--force оставлен для перезаписи после ручной правки: запрет обязан быть
+    снимаемым, иначе починка кривого CHANGELOG упрётся в собственный гейт."""
+    from vn import release as rel
+
+    root = _mk_root(tmp_path)
+    _chapter(root, "content/chapters", "ch01_core")
+    monkeypatch.setattr(rel, "git_tag_exists", lambda r, tag: True)
+    rep = rel.update_changelog(root, force=True)
+    assert rep.added_chapters == ["ch01"]
+
+
+def test_changelog_writes_on_a_bumped_version(tmp_path, monkeypatch):
+    """Штатный порядок: версия побампана, тега нет, раздела нет — команда пишет
+    и раздел, и манифест, и дифф считается от прошлого манифеста."""
+    from vn import release as rel
+
+    root = _mk_root(tmp_path)
+    _chapter(root, "content/chapters", "ch01_core")
+    monkeypatch.setattr(rel, "git_tag_exists", lambda r, tag: False)
+    rep = rel.update_changelog(root)
+    text = (root / "docs" / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "## 0.2.0" in text and "ch01" in text and rep.added_scenes == ["ch01_s010"]
+    manifest = json.loads((root / "ci" / "release-manifest.json").read_text(encoding="utf-8"))
+    assert manifest["chapters"]["ch01"]["pack"] == "core"
+    # Повторный прогон на той же версии обязан упереться в гейт, а не съесть дифф.
+    with pytest.raises(rel.ReleaseError):
+        rel.update_changelog(root)

@@ -8,13 +8,6 @@
     "ch01_s030"
    ],
    "status": "draft"
-  },
-  "ch90": {
-   "pack": "ep_beach",
-   "scenes": [
-    "ch90_s010"
-   ],
-   "status": "draft"
   }
  },
  "schema": "release_manifest@1",

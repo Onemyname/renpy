@@ -1895,11 +1895,21 @@ def release():
 
 
 @release.command("changelog")
-def release_changelog():
-    """Обновить docs/CHANGELOG.md и ci/release-manifest.json по диффу реестров."""
-    from .release import update_changelog
+@click.option("--force", is_flag=True,
+              help="Писать раздел даже на уже выпущенную версию (перезапись после "
+                   "ручной правки CHANGELOG; дифф при этом СЪЕДАЕТСЯ).")
+def release_changelog(force: bool):
+    """Обновить docs/CHANGELOG.md и ci/release-manifest.json по диффу реестров.
 
-    rep = update_changelog(_root())
+    Порядок обязателен: сначала бамп `project.yaml: version`, потом эта команда.
+    Прогон на уже выпущенной версии съедает дифф — добавленные после релиза сцены
+    в блок следующей версии не попадут, потому что манифест их уже помнит."""
+    from .release import ReleaseError, update_changelog
+
+    try:
+        rep = update_changelog(_root(), force=force)
+    except ReleaseError as e:
+        _fail(str(e))
     if rep.stamped:
         click.echo(f"id_registry: занесено {rep.stamped} выпущенных id (G7)")
     if not rep.changed:
