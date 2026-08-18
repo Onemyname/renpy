@@ -41,6 +41,16 @@ screen choice(items):
                 style ("choice_button_chosen" if i.chosen else "choice_button")
                 at vn_choice_in(idx * 0.05)
                 action i.action
+                # default_focus первого пункта (42-big-picture.md §5.2): без него
+                # на первом кадре выбора не подсвечен НИКТО — с пада стек
+                # выглядел мёртвым, и только dpad показывал, что это кнопки.
+                # Мышь не страдает: движок применяет default focus только если
+                # последним событием были не мышь/тач (focus.py:445) — курсор
+                # фокус не увозит и не «прыгает». Ярлыки 1–9 ниже к фокусу не
+                # привязаны и работают как раньше. Случайного выбора одним A
+                # тоже нет: нажатие, добившее реплику, — это один keydown, и его
+                # съедает та интеракция; стек появляется в следующей.
+                default_focus (gui.focus_content if idx == 0 else 0)
                 side "l c r":
                     spacing gui.sp_m
                     text "[_num]" style "choice_num"
@@ -69,6 +79,11 @@ style choice_button:
 
 style choice_button_chosen is choice_button:
     background vn_frame_choice_chosen
+    # hover_ приходится повторять: беспрефиксный background наследника задаёт ВСЕ
+    # состояния, включая hover (style_properties.html, «implications»), и без этой
+    # строки фокус на уже выбранном ранее пункте не виден вообще — то есть на
+    # повторном прохождении §5.2 возвращался бы вместе с default_focus.
+    hover_background vn_frame_choice_hover
 
 style choice_num:
     min_width 26

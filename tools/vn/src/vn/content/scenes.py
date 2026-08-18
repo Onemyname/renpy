@@ -466,6 +466,10 @@ def emit_chapter_select(header: str) -> str:
 # Сетка — vpgrid со скролл-пресетом vn_scroll_props (аудит ui.md P1 №9):
 # прежний hbox с переносом молча терял главы за низом экрана при росте
 # корпуса. Карточки докручивают сетку к фокусу через vn_ui.reveal (row/rows).
+#
+# focus_default у первой карточки (42-big-picture.md §5.1): контент перебивает
+# левую рельсу по приоритету gui.focus_content > gui.focus_rail, иначе слепой A
+# уходил в Start() рельсы — то есть экран выбора глав начинал игру с первой.
 screen chapter_select():
     tag menu
     use vn_game_menu(vn_loc.t("ui.nav.chapters")):
@@ -479,5 +483,5 @@ screen chapter_select():
             spacing gui.sp_l
             ysize gui.scroll_height
             for _i, ch in enumerate(_chs):
-                use vn_chapter_card(ch, _i // 3, _rows)
+                use vn_chapter_card(ch, _i // 3, _rows, focus_default=(_i == 0))
 '''

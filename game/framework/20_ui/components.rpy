@@ -124,6 +124,15 @@ init -990 python in vn_ui:
         if value != adj.value:
             adj.change(max(0, min(value, rng)))
 
+    def menu_screen():
+        """Имя экрана меню, открытого сейчас (все они делят tag "menu"), или
+        None. Нужно рельсе навигации: её резервный default focus садится на
+        пункт ТЕКУЩЕГО экрана, а не на первый (42-big-picture.md §5.1).
+        Спрашиваем движок по тегу, а не держим список экранов, — иначе новый
+        экран меню пришлось бы дописывать и здесь."""
+        sd = renpy.get_screen("menu")
+        return sd.name if sd is not None else None
+
 
 ## ── vn_modal_dialog: каркас модалки (аудит ui.md §2) ─────────────────────────
 ##    modal/zorder при use НЕ наследуются (свойства показанного экрана) —
@@ -196,6 +205,18 @@ style vn_btn_danger_text is vn_btn_secondary_text:
     hover_color gui.danger_color
 
 ## ── vn_game_menu: каркас игрового меню (рельса слева + контент) ──────────────
+##    Первый фокус (42-big-picture.md §5.1). Рельса рисуется ДО контента, но
+##    порядок тут ни при чём: движок берёт НАИБОЛЬШИЙ default_focus. Поэтому
+##    приоритет и решает, и решает он один раз здесь, а не в каждом экране:
+##      * контент объявляет default_focus gui.focus_content (2) на безопасном
+##        элементе — и всегда перебивает рельсу;
+##      * рельса объявляет gui.focus_rail (1) и только на пункте ТЕКУЩЕГО
+##        экрана (navigation, core_screens.rpy) — если контент промолчал,
+##        слепой A переоткрывает то же меню, то есть не делает ничего.
+##    Почему не «параметр focus_content у каркаса»: параметр надо передать из
+##    каждого экрана, и забытый параметр возвращает дефект. Здесь забытый
+##    default_focus в контенте деградирует до безвредного no-op'а рельсы —
+##    новый экран меню безопасен по построению, править его не обязательно.
 
 screen vn_game_menu(title):
     add Solid(gui.menu_bg)
@@ -217,7 +238,11 @@ style vn_menu_content:
 
 ## ── vn_save_slot: карточка сейва (скриншот, время, имя, удаление) ────────────
 
-screen vn_save_slot(slot, is_save):
+## focus_default: первый слот страницы забирает default focus у рельсы (§5.1).
+## Безопасно: FileSave(slot) на занятый слот сам спрашивает подтверждение, а у
+## пустого слота в «Загрузке» кнопка insensitive — движок такую в фокус-лист не
+## берёт (behavior.py:1100), и фокус штатно откатывается на рельсу.
+screen vn_save_slot(slot, is_save, focus_default=False):
     $ _loadable = FileLoadable(slot)
     # Загрузка в игре теряет прогресс — подтверждаем СВОИМ текстом (движковый
     # confirm у FileLoad — английская layout-строка); confirm_selected — от FileLoad.
@@ -229,6 +254,7 @@ screen vn_save_slot(slot, is_save):
             style "vn_slot"
             action _action
             sensitive (True if is_save else _loadable)
+            default_focus (gui.focus_content if focus_default else 0)
             vbox:
                 fixed:
                     xsize gui.slot_width
@@ -337,11 +363,15 @@ style vn_slider:
 ## ── vn_chapter_card: карточка главы (использует эмиттер chapter_select) ──────
 ##    row/rows — координаты в сетке chapter_select для vn_ui.reveal (прокрутка
 ##    к фокусу); None — карточка вне скролла, колбэк не вешается.
+##    focus_default: первая карточка забирает default focus у рельсы (§5.1) —
+##    иначе слепой A на экране выбора глав уходил в Start() рельсы, то есть
+##    начинал игру с первой главы вместо выбранной.
 
-screen vn_chapter_card(ch, row=None, rows=None):
+screen vn_chapter_card(ch, row=None, rows=None, focus_default=False):
     button:
         style "vn_chapter_card"
         action Start(ch["entry_label"])
+        default_focus (gui.focus_content if focus_default else 0)
         if row is not None:
             hovered Function(vn_ui.reveal, "chapter_select", "vp_chapters", row, rows)
         vbox:

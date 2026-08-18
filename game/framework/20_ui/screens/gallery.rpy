@@ -59,7 +59,10 @@ screen gallery():
                     spacing gui.sp_m
                     ysize gui.scroll_height
                     for _i, (_iid, _spec) in enumerate(_items):
-                        use vn_gal_cell(_iid, _spec, _i // 3, _rows)
+                        # Первая ячейка забирает default focus у рельсы (§5.1):
+                        # иначе слепой A уводил из галереи в «Сохранение».
+                        use vn_gal_cell(_iid, _spec, _i // 3, _rows,
+                                        focus_default=(_i == 0))
 
 
 # ── Ячейка сетки: открытая (превью) или закрытая (заглушка без контента) ──────
@@ -67,11 +70,12 @@ screen gallery():
 # отклонён): выпади целый ряд закрытых из фокус-цепочки — следующий открытый
 # ряд за фолдом стал бы недостижим (reveal некому дёрнуть).
 
-screen vn_gal_cell(item_id, spec, row=None, rows=None):
+screen vn_gal_cell(item_id, spec, row=None, rows=None, focus_default=False):
     $ _open = vn_gal.is_unlocked(item_id)
     button:
         style ("vn_gal_cell" if _open else "vn_gal_cell_locked")
         action (Show("gallery_viewer", item_id=item_id) if _open else NullAction())
+        default_focus (gui.focus_content if focus_default else 0)
         if row is not None:
             hovered Function(vn_ui.reveal, "gallery", "vp_gallery", row, rows)
         fixed:

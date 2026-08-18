@@ -304,8 +304,10 @@ def test_emit_chapter_select_scrolls_with_pad():
     assert 'vpgrid id "vp_chapters"' in text
     assert "properties vn_scroll_props" in text
     assert "ysize gui.scroll_height" in text
-    # Карточка получает row/rows — без них vn_ui.reveal не докрутит сетку к фокусу
-    assert "use vn_chapter_card(ch, _i // 3, _rows)" in text
+    # Карточка получает row/rows — без них vn_ui.reveal не докрутит сетку к фокусу,
+    # и focus_default на первой — без него default focus достаётся левой рельсе,
+    # где слепой A = Start() (42-big-picture.md §5.1)
+    assert "use vn_chapter_card(ch, _i // 3, _rows, focus_default=(_i == 0))" in text
     assert "box_wrap" not in text
 
 

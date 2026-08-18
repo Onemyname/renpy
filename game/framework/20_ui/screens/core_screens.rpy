@@ -69,13 +69,26 @@ screen input(prompt):
 ## ── Навигация: рельса игрового меню / колонна главного меню ─────────────────
 
 screen navigation():
+    # Рельса — РЕЗЕРВНЫЙ владелец первого фокуса (42-big-picture.md §5.1):
+    # приоритет gui.focus_rail ниже контентного gui.focus_content, поэтому
+    # экран, объявивший свой default focus, забирает его себе. И резерв садится
+    # на пункт ТЕКУЩЕГО экрана, а не на первый: слепой A тогда переоткрывает
+    # то же меню (no-op) вместо «Загрузка -> Сохранение» и вместо Start() на
+    # экране выбора глав. Экран без своего пункта в рельсе остаётся без default
+    # focus — это безопасно (A не делает ничего), лечится default_focus'ом
+    # gui.focus_content в его контенте.
+    $ _here = vn_ui.menu_screen()
     frame:
         style "vn_rail"
         fixed:
             add Solid(gui.panel_border) xsize 1 xalign 1.0
             vbox:
                 spacing gui.sp_xl + gui.sp_m
-                xpos gui.sp_l - gui.sp_xs
+                # Safe-area ТВ (§5.6): содержимое рельсы отодвигается от кромки
+                # на gui.overscan_pad — это ОСНОВНОЙ способ ходить по меню, и
+                # обрезанные слева пункты дороже всего. Фон (style vn_rail,
+                # xsize 336) остаётся у кромки: обрезаться ему не мешает.
+                xpos gui.sp_l - gui.sp_xs + gui.overscan_pad
                 ypos gui.sp_xl - 12
                 hbox:
                     spacing gui.sp_m - gui.sp_xs
@@ -83,29 +96,28 @@ screen navigation():
                     add Solid(gui.accent_color) xysize (22, 4) yalign 0.8
                 vbox:
                     spacing gui.sp_xs
-                    # default_focus: первый A с пада попадает в первый пункт
-                    # рельсы, а не «в пустоту» (аудит ui.md §3); модалки
-                    # поверх перебивают его своим default focus.
                     if main_menu:
-                        textbutton vn_loc.t("ui.nav.start") action Start() style "vn_nav_button" default_focus True
+                        textbutton vn_loc.t("ui.nav.start") action Start() style "vn_nav_button"
                         if vn_registry.chapters():
-                            textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select") style "vn_nav_button"
+                            textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select") style "vn_nav_button" default_focus (gui.focus_rail if _here == "chapter_select" else 0)
                     else:
-                        textbutton vn_loc.t("ui.nav.save") action ShowMenu("save") style "vn_nav_button" default_focus True
-                    textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_nav_button"
-                    textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_nav_button"
+                        textbutton vn_loc.t("ui.nav.save") action ShowMenu("save") style "vn_nav_button" default_focus (gui.focus_rail if _here == "save" else 0)
+                    textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_nav_button" default_focus (gui.focus_rail if _here == "load" else 0)
+                    textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_nav_button" default_focus (gui.focus_rail if _here == "preferences" else 0)
                     # Галерея (ADR-0010): доступна из обоих контекстов; пункт
                     # исчезает, если галерея пуста или её элементы скрыты
                     # флейвором/владением — гейт в vn_gal, не здесь.
                     if vn_gal.categories():
-                        textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_nav_button"
+                        textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_nav_button" default_focus (gui.focus_rail if _here == "gallery" else 0)
                     if not main_menu:
-                        textbutton vn_loc.t("ui.nav.history") action ShowMenu("history") style "vn_nav_button"
+                        textbutton vn_loc.t("ui.nav.history") action ShowMenu("history") style "vn_nav_button" default_focus (gui.focus_rail if _here == "history" else 0)
             vbox:
                 spacing gui.sp_xs
-                xpos gui.sp_l - gui.sp_xs
+                xpos gui.sp_l - gui.sp_xs + gui.overscan_pad
                 yanchor 1.0
-                ypos 1080 - gui.sp_l
+                # Safe-area ТВ (§5.6): «Выход»/«Главное меню» и строка версии
+                # уезжают из полосы overscan вместе с содержимым рельсы.
+                ypos 1080 - gui.sp_l - gui.overscan_pad
                 add Solid(gui.panel_border) xsize 248 ysize 1
                 null height gui.sp_m
                 if main_menu:
@@ -135,6 +147,11 @@ style vn_nav_button:
     background None
     hover_background Solid(gui.panel_bg)
     selected_background Solid(gui.panel_bg)
+    # selected_hover обязателен, иначе фокус НА ТЕКУЩЕМ пункте не виден: префиксы
+    # hover_ и selected_ оба задают состояние selected_hover, и последний
+    # выигрывает (style_properties.html, «implications»). Резервный фокус рельсы
+    # (§5.1) садится ровно на текущий пункт — без своего фона он неотличим.
+    selected_hover_background Solid(gui.panel_bg_hover)
 
 style vn_nav_button_text:
     font gui.interface_text_font
@@ -248,7 +265,9 @@ screen file_menu(title, is_save):
         grid 3 2:
             spacing gui.sp_l - gui.sp_s
             for i in range(1, 7):
-                use vn_save_slot(i, is_save)
+                # Первый слот забирает default focus у рельсы (§5.1): с пада
+                # сразу видно, что сетка слотов интерактивна.
+                use vn_save_slot(i, is_save, focus_default=(i == 1))
 
 style vn_page_button:
     padding (gui.sp_m - 1, gui.sp_s)
@@ -279,8 +298,19 @@ screen preferences():
                     text _g style "vn_group"
                     hbox:
                         spacing gui.sp_xs
-                        textbutton vn_loc.t("ui.prefs.windowed") action Preference("display", "window") style "vn_seg_button"
-                        textbutton vn_loc.t("ui.prefs.fullscreen") action Preference("display", "fullscreen") style "vn_seg_button"
+                        # Контент забирает default focus у рельсы (§5.1), но
+                        # садится на УЖЕ выбранный сегмент: слепой A тогда
+                        # переустанавливает текущий режим экрана (no-op), а не
+                        # выбивает игрока из полноэкранного режима на ТВ.
+                        $ _fs = _preferences.fullscreen
+                        textbutton vn_loc.t("ui.prefs.windowed"):
+                            action Preference("display", "window")
+                            style "vn_seg_button"
+                            default_focus (0 if _fs else gui.focus_content)
+                        textbutton vn_loc.t("ui.prefs.fullscreen"):
+                            action Preference("display", "fullscreen")
+                            style "vn_seg_button"
+                            default_focus (gui.focus_content if _fs else 0)
                 vbox:
                     spacing gui.sp_m
                     $ _g2 = vn_loc.t("ui.prefs.text").upper()
@@ -362,6 +392,10 @@ style vn_seg_button:
     background Solid(gui.panel_bg_deep)
     hover_background Solid(gui.panel_bg)
     selected_background Solid(gui.panel_bg_hover)
+    # Первый фокус настроек садится на ВЫБРАННЫЙ сегмент (§5.1), а состояние
+    # selected_hover без своего фона выглядит как обычный selected — фокуса не
+    # видно. Тот же приём, что у hover_-вариантов vn_slider.
+    selected_hover_background Solid(gui.panel_border2)
 
 style vn_seg_button_text:
     font gui.interface_text_font
@@ -465,8 +499,11 @@ screen notify(message):
     timer 3.25 action Hide("notify")
 
 style vn_toast:
-    xpos 36
-    ypos 32
+    # Safe-area ТВ (§5.6): тост прижат к левому верхнему углу и попадал в полосу
+    # overscan целиком — уведомление «открыт новый материал» срезалось. Базовые
+    # 36/32 px собраны из шкалы отступов, чтобы в стиле не осталось литералов.
+    xpos gui.sp_l + gui.sp_xs + gui.overscan_pad
+    ypos gui.sp_l + gui.overscan_pad
     background Solid("#18181bf2")
     padding (gui.sp_m + 6, gui.sp_m - 2)
 
