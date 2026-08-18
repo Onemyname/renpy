@@ -162,7 +162,7 @@ steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 
 Что нужно знать про ветку: `--branch` подставляется в `"SetLive"` VDF-шаблона (`release.py:168-234`) и публикует билд **в существующую** ветку. Ветку `beta` заводит человек в Steamworks (App Admin → Builds → Betas); в несуществующую ветку `SetLive` не публикует. Переключение default-ветки — тоже вручную в Steamworks, **после** прогона на живом Deck.
 
-Полезное, чего мы не используем: движок умеет спросить у Steam текущее имя беты — `achievement.steam.get_current_beta_name()` (`00steam.rpy:227`). Одна строка в `035_platform.rpy` дала бы «какую ветку я запустил» в `log.txt` и в крэш-отчёт. STATUS: NOT IMPLEMENTED.
+Имя беты движок отдаёт через `achievement.steam.get_current_beta_name()` (`00steam.rpy:227`), у нас это `vn_platform.beta_branch()`: на release-ветке и без Steam — `None`, иначе имя ветки, по которому `screen vn_beta_overlay` рисует плашку «BETA: <ветка>». Зачем это на Deck отдельно: тестовая ветка на устройстве запускается тем же ярлыком, что release, и без плашки перепутать их — вопрос времени. STATUS: IMPLEMENTED (на живом Steam не проверялось — нет App ID).
 
 ### 3.2 Путь Б: скопировать архив на Deck и добавить как Non-Steam Game
 

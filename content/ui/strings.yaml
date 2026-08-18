@@ -39,6 +39,8 @@ strings:
   ui.gallery.cat.cg: "CG"
   ui.gallery.cat.videos: "Видео"
   ui.gallery.cat.extras: "Бонусы"
+  ui.ach.granted_one: "Достижение получено: [name]"
+  ui.ach.granted_many: "Получено достижений: [n]"
   ui.gallery.unlocked_one: "Открыт новый материал в галерее"
   ui.gallery.unlocked_many: "Открыто новых материалов: [n]"
 
@@ -121,6 +123,8 @@ strings:
   ui.prefs.graphics: "Качество текстур"
   ui.prefs.quality_auto: "Авто"
   ui.prefs.quality_eco: "Экономное"
+  ui.prefs.achievements: "Достижения"
+  ui.prefs.ach_sync: "Синхронизировать с платформой"
   ui.prefs.language: "Язык"
   ui.prefs.ui_scale: "Масштаб интерфейса"
   ui.prefs.scale_auto: "Авто"

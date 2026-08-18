@@ -403,6 +403,17 @@ screen preferences():
                             action Function(vn.set_ui_scale, "normal")
                             selected vn.ui_scale_pref() == "normal"
                             style "vn_seg_button"
+                # Синхронизация достижений: движковый Sync доталкивает локально
+                # выданные ачивки в платформенный бэкенд (типовой случай — Steam
+                # был офлайн). Кнопка sensitive только при фактическом
+                # рассинхроне, поэтому в standalone она просто неактивна.
+                vbox:
+                    spacing gui.sp_m
+                    $ _g7 = vn_loc.t("ui.prefs.achievements").upper()
+                    text _g7 style "vn_group"
+                    textbutton vn_loc.t("ui.prefs.ach_sync"):
+                        action achievement.Sync()
+                        style "vn_toggle_button"
                 use language_picker
 
 # Ряд «подпись + слайдер»: bar со штатным value-действием Preference(...)

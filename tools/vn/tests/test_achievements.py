@@ -324,3 +324,17 @@ def test_progress_is_not_shown_for_hidden_achievement(repo_root):
            / "achievements.rpy").read_text(encoding="utf-8")
     card = src.split("screen vn_ach_card(", 1)[1]
     assert "None if _spoiler else vn_ach.goal_of(ach_id)" in card
+
+def test_grant_notifies_player(repo_root):
+    """«Получил достижение и не заметил» — худший исход для ачивки: она вся про
+    обратную связь. Под Steam попап рисует оверлей, но он есть не у всех
+    (standalone, оверлей выключен), поэтому уведомляем сами — тем же штатным
+    каналом, что у галереи."""
+    flow = (repo_root / "game" / "framework" / "00_core"
+            / "030_flow.rpy").read_text(encoding="utf-8")
+    assert "def _ach_notify(" in flow
+    # Все три якоря выдачи проходят через уведомление, иначе часть ачивок молчит
+    assert flow.count("_ach_notify(renpy.store.vn_ach.check(") == 3
+    store = (repo_root / "game" / "framework" / "00_core"
+             / "080_achievements.rpy").read_text(encoding="utf-8")
+    assert "def names(" in store, "уведомление обязано показывать НАЗВАНИЕ, а не id"

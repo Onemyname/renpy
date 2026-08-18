@@ -33,7 +33,7 @@ build/
 # лежат В git (G6). cache/ целиком, а не *.rpyb: движок пишет туда и shaders.txt.
 tools/vn/saves/
 tools/vn/cache/
-# Ключи подписи Android: лаунчер (Android -> Generate Keys) создаёт android.keystore
+# Ключи подписи Android: `vn release android setup keys` создаёт android.keystore
 # и bundle.keystore в КОРНЕ проекта, рядом с project.yaml. Игнор стоит ДО генерации
 # ключей, а не после: ключ в истории git считается скомпрометированным навсегда
 # (история переписывается только силой и у всех клонов), а его потеря = невозможность

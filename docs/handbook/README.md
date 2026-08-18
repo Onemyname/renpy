@@ -208,7 +208,7 @@ vn play                                  # запуск игры (нужен REN
 | Добавить схему | [08](08-content-pipeline.md) §8, [45](45-architecture-rules.md) | `tools/schemas/<id>@N.schema.json` (сейчас 39 файлов) |
 | Добавить тест | [27](27-testing.md) | `tools/vn/tests/test_*.py` |
 | Выпустить релиз | [29](29-build-and-release.md), приёмка — [43](43-steam-qa.md) | `vn release validate --flavor public` → тег `v<X.Y.Z>` |
-| Собрать мобильную поставку (APK/AAB) | [39](39-platforms.md) §2.1 | `vn release android status` → шаги в лаунчере Ren'Py → `vn release android preflight --bundle` → `build` |
+| Собрать мобильную поставку (APK/AAB) | [39](39-platforms.md) §2.1 | `vn release android setup {sdk,keys,config}` (один раз на машину) → `status` → `preflight --bundle` → `build` |
 | Проверить, выдержит ли конвейер N глав | [32](32-performance-and-scalability.md) §7.5 | `vn test corpus --scenes 2000 --images 2000 --dest /tmp/corp` |
 | Починить красный CI | [36](36-troubleshooting.md) §8, [04](04-development-workflow.md) | воспроизвести локально: `vn build --check` |
 | Понять, почему не собирается | [36](36-troubleshooting.md) §2, [28](28-debugging.md) | `vn content lint`, затем `errors.txt` |
@@ -341,9 +341,9 @@ round-trip, галерея, сейвы и миграции внутри игры
 звук (тракт, канал `ambient` и озвучка `voice@1`/`vn voice` живые целиком, включая TTS-черновики `vn voice tts` — но музыки/SFX ноль, `content/audio/*.yaml` пусты),
 CODEOWNERS (все хэндлы — плейсхолдеры).
 **Нет вообще:** автоматизации рендера и ComfyUI, автоматического Steam-аплоада (`steamcmd`
-запускается руками, джобы `steam-publish` нет) и каналов dev/beta/release, ни одной фактической
-сборки APK/AAB (тулчейн Android ставится только лаунчером), `vn validate` /
-`vn build --use-artifact` из `ARCHITECTURE.md`, `CLAUDE.md`/`AGENTS.md`.
+запускается руками, джобы `steam-publish` нет) и каналов dev/beta/release, Play-бандла (`.aab`)
+и запуска мобильной сборки на живом устройстве (APK собран и вскрыт — [39](39-platforms.md) §2.1.1),
+`vn validate` / `vn build --use-artifact` из `ARCHITECTURE.md`, `CLAUDE.md`/`AGENTS.md`.
 
 Три главных пункта из [37-roadmap.md](37-roadmap.md): **P0-1** закрыть ADR-0008 (единственный
 непринятый ADR — правовой статус NSFW-стека); **P0-2** пройти пилот контента насквозь

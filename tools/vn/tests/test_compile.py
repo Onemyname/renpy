@@ -114,6 +114,21 @@ def test_chapters_require_sdk(repo_root, tmp_path, monkeypatch):
         compile_content(root, out_dir=tmp_path / "gen")
 
 
+# ── Версия: диагностическая против поставочной ────────────────────────────────
+
+def test_emitted_build_version_is_clean_semver():
+    """build.version уходит в versionName Android-пакета, а RAPT выбрасывает из
+    версии всё нечисловое (rapt/build.py) — из "0.1.5+sha" вышло бы "0.1", то есть
+    патч терялся бы молча. Поэтому sha живёт только в config.version."""
+    from vn.content.compile import _emit_version
+
+    out = _emit_version({"version": "0.1.5"}, "c88ca5c", [])
+    assert 'define config.version = "0.1.5+c88ca5c"' in out
+    assert 'define build.version = "0.1.5"' in out
+    build_line = [ln for ln in out.splitlines() if "build.version" in ln][0]
+    assert "+" not in build_line.split("=", 1)[1]
+
+
 # ── Свежесть генерата против волатильного git sha ────────────────────────────
 
 def test_stale_key_ignores_git_sha_in_version():

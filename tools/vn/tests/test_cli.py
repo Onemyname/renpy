@@ -49,6 +49,7 @@ def test_stub_inventory_matches_frozen_list():
 
 
 @pytest.mark.parametrize("name", ["voice tts", "test corpus",
+                                  "release android setup",
                                   "release android status",
                                   "release android preflight",
                                   "release android build"])
@@ -82,15 +83,26 @@ def _fake_sdk(tmp_path):
     return sdk
 
 
-def test_android_status_names_launcher_step_and_fails(tmp_path, monkeypatch, repo_root):
-    """Без RAPT команда обязана назвать штатный шаг лаунчера и упасть кодом 1:
-    CLI-пути установки тулчейна у Ren'Py нет, и делать вид, что он есть, нельзя."""
+def test_android_status_names_the_fix_and_fails(tmp_path, monkeypatch, repo_root):
+    """Без RAPT команда обязана упасть кодом 1 и назвать КОМАНДУ, которая это
+    лечит: гейт, который только запрещает, отправляет читать документацию."""
     monkeypatch.setenv("RENPY_SDK", str(_fake_sdk(tmp_path)))
     monkeypatch.chdir(repo_root)
 
     res = CliRunner().invoke(cli.release_android_status, [])
     assert res.exit_code == 1
-    assert "RAPT" in res.output and "лаунчер" in res.output
+    assert "RAPT" in res.output and "setup sdk --download-rapt" in res.output
+
+
+def test_android_setup_rejects_unknown_step(tmp_path, monkeypatch, repo_root):
+    """Шаги подготовки — закрытый список: опечатка в шаге обязана отбиваться
+    разбором аргументов, а не запуском движка с мусором."""
+    monkeypatch.setenv("RENPY_SDK", str(_fake_sdk(tmp_path)))
+    monkeypatch.chdir(repo_root)
+
+    res = CliRunner().invoke(cli.release_android_setup, ["everything"])
+    assert res.exit_code == 2
+    assert "everything" in res.output
 
 
 def test_android_build_checks_toolchain_before_full_build(tmp_path, monkeypatch, repo_root):

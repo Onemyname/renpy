@@ -2060,6 +2060,43 @@ def release_android():
     """Мобильный канал: готовность тулчейна, предпосылки поставки, сборка APK/AAB."""
 
 
+@release_android.command("setup")
+@click.argument("step", type=click.Choice(["sdk", "keys", "config"]))
+@click.option("--download-rapt", is_flag=True,
+              help="Перед шагом sdk скачать RAPT с renpy.org (в архив SDK он не входит).")
+def release_android_setup(step: str, download_rapt: bool):
+    """Довести проект до готовности собирать Android-пакет: STEP = sdk | keys | config.
+
+    \b
+    sdk     — RAPT + Android SDK/NDK в пиннованный SDK (нужен интернет)
+    keys    — android.keystore и bundle.keystore в корне проекта
+    config  — android.json: имя пакета, ориентация, магазин, permissions
+
+    Шаги ИНТЕРАКТИВНЫЕ и вызывают те же функции RAPT, что и лаунчер: sdk просит
+    принять Android SDK Terms and Conditions, keys — подтвердить, что вы сделаете
+    копию ключа. Ключ подписи не заменяем и не восстанавливаем: его потеря =
+    невозможность обновить опубликованное приложение. Отвечайте в приглашениях сами."""
+    from .android import AndroidError, install_rapt, setup_step
+    from .doctor import sdk_path
+    from .repo import load_project
+
+    root = _root()
+    sdk = sdk_path()
+    if sdk is None:
+        _fail("RENPY_SDK не задан — тулчейн живёт внутри пиннованного SDK (vn doctor)")
+    try:
+        if download_rapt:
+            for msg in install_rapt(sdk, load_project(root)["renpy_sdk"]):
+                click.secho(msg, fg="green")
+        rc = setup_step(root, sdk, step)
+    except AndroidError as e:
+        _fail(str(e))
+    if rc != 0:
+        _fail(f"шаг {step} вернул {rc} — см. вывод выше")
+    click.secho(f"android setup {step}: OK (что осталось — vn release android status)",
+                fg="green")
+
+
 @release_android.command("status")
 def release_android_status():
     """Чего не хватает для сборки: RAPT, Android SDK, JDK, ключи подписи, конфиг.

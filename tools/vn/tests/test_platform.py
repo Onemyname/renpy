@@ -241,3 +241,63 @@ def test_control_hints_declare_both_key_variants(repo_root):
             assert key + suffix in strings, (
                 f"{key}{suffix}: нет в content/ui/strings.yaml — "
                 f"{sorted(where)} покажет игроку сам ключ вместо подсказки")
+
+# ── Платформенные возможности, добавленные 2026-08-18 ────────────────────────
+
+def test_beta_badge_is_driven_by_platform(repo_root):
+    """Плашка «BETA» берёт имя ветки у платформы, а не у флейвора: тестер обязан
+    видеть бету в ЛЮБОЙ сборке, а вотермарка включена только у patron."""
+    overlay = (repo_root / "game" / "framework" / "20_ui" / "screens"
+               / "build_overlay.rpy").read_text(encoding="utf-8")
+    assert "vn_platform.beta_branch()" in overlay
+    assert 'config.overlay_screens.append("vn_beta_overlay")' in overlay
+    facade = (repo_root / "game" / "framework" / "00_core"
+              / "035_platform.rpy").read_text(encoding="utf-8")
+    assert "def beta_branch(" in facade and "get_current_beta_name" in facade
+
+
+def test_store_offer_never_leaves_dead_button(repo_root):
+    """Непринадлежащая глава показывается ТОЛЬКО когда платформа умеет открыть
+    магазин: иначе карточка была бы кнопкой, которая ничего не делает."""
+    facade = (repo_root / "game" / "framework" / "00_core"
+              / "035_platform.rpy").read_text(encoding="utf-8")
+    assert "def store_page(" in facade and "activate_overlay_to_store" in facade
+    # None при отсутствии Steam/маппинга/оверлея — три причины, все проверяются
+    store = facade.split("def store_page(", 1)[1].split("def ", 1)[0]
+    assert "overlay_enabled()" in store and "VN_STEAM_DLC" in store
+
+    card = (repo_root / "game" / "framework" / "20_ui"
+            / "components.rpy").read_text(encoding="utf-8")
+    assert "vn_platform.store_page(ch[\"pack\"])" in card
+
+    emitter = (repo_root / "tools" / "vn" / "src" / "vn" / "content"
+               / "scenes.py").read_text(encoding="utf-8")
+    assert "vn_platform.store_page(ch[\"pack\"]) is not None" in emitter
+
+
+def test_crash_report_records_platform_profile(repo_root):
+    """Мобильная и Deck-ветки отличаются от десктопной только вариантами —
+    без строки платформы «на телефоне мелкий шрифт» неотличимо по трейсбеку."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "070_crash.rpy").read_text(encoding="utf-8")
+    assert "vn_platform.describe()" in src
+
+
+def test_save_name_feeds_slots_and_timeline(repo_root):
+    """save_name — штатное «где я в игре»: движок кладёт его в заголовок слота и
+    открывает по нему фазу Steam Timeline. Значение — локализованный заголовок
+    главы, а не служебный id."""
+    flow = (repo_root / "game" / "framework" / "00_core"
+            / "030_flow.rpy").read_text(encoding="utf-8")
+    assert "renpy.store.save_name = renpy.store.vn_registry.chapter_title(" in flow
+    registry = (repo_root / "game" / "framework" / "00_core"
+                / "010_registry.rpy").read_text(encoding="utf-8")
+    assert "def chapter_title(" in registry and "vn_loc.t(row[\"title_key\"])" in registry
+
+
+def test_achievement_sync_button_uses_engine_action(repo_root):
+    """Синхронизацию делает движковый achievement.Sync: своей логики «доталкивания»
+    в платформу мы не пишем — она уже есть и знает про все бэкенды."""
+    src = (repo_root / "game" / "framework" / "20_ui" / "screens"
+           / "core_screens.rpy").read_text(encoding="utf-8")
+    assert "achievement.Sync()" in src

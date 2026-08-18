@@ -396,9 +396,15 @@ style vn_slider:
 ##    начинал игру с первой главы вместо выбранной.
 
 screen vn_chapter_card(ch, row=None, rows=None, focus_default=False):
+    # Непринадлежащая глава попадает сюда только тогда, когда платформа умеет
+    # открыть её страницу в магазине (эмиттер chapter_select проверяет это до
+    # карточки). Тогда карточка — предложение купить, а не мёртвая кнопка:
+    # прежде такая глава просто исчезала, и игрок не знал, что она существует.
+    $ _owned = vn.pack_registry.owned(ch["pack"])
+    $ _store = None if _owned else vn_platform.store_page(ch["pack"])
     button:
         style "vn_chapter_card"
-        action Start(ch["entry_label"])
+        action (Start(ch["entry_label"]) if _owned else _store)
         default_focus (gui.focus_content if focus_default else 0)
         if row is not None:
             hovered Function(vn_ui.reveal, "chapter_select", "vp_chapters", row, rows)

@@ -626,6 +626,26 @@ msgctxt "string:ui.ach.progress_of"
 msgid "[done] из [total]"
 msgstr "[done] of [total]"
 
+#. UI/мета-строка
+msgctxt "string:ui.ach.granted_many"
+msgid "Получено достижений: [n]"
+msgstr "Achievements unlocked: [n]"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.granted_one"
+msgid "Достижение получено: [name]"
+msgstr "Achievement unlocked: [name]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.ach_sync"
+msgid "Синхронизировать с платформой"
+msgstr "Sync with platform"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.achievements"
+msgid "Достижения"
+msgstr "Achievements"
+
 #~ msgctxt "string:ui.history.hint"
 #~ msgid "Esc — закрыть"
 #~ msgstr "Esc — close"

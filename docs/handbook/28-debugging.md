@@ -182,6 +182,7 @@ build: 0.1.1+99e50a9.public.202608081032
 flavor: public
 version: 0.1.1+99e50a9
 renpy: Ren'Py 8.5.3.26051504
+platform: local deck=False bigpicture=False touch=False mobile=False android=False phone=False
 time: 2026-08-08 13:35:36
 
 Последние метки (breadcrumbs):
@@ -192,7 +193,7 @@ Traceback (most recent call last):
   …
 ```
 
-Что это даёт при разборе жалобы игрока: строка `build:` однозначно привязывает падение к сборке и флейвору (формат `<version>+<sha>.<flavor>.<YYYYmmddHHMM>`, `release.py:278`), breadcrumbs дают путь по меткам, которого в голом трейсбеке нет.
+Что это даёт при разборе жалобы игрока: строка `build:` однозначно привязывает падение к сборке и флейвору (формат `<version>+<sha>.<flavor>.<YYYYmmddHHMM>`, `release.py:278`), breadcrumbs дают путь по меткам, которого в голом трейсбеке нет, а строка `platform:` — профиль окружения от фасада (`vn_platform.describe()`: бэкенд ачивок, Deck, Big Picture, тач, мобильный/Android/телефон). Без неё мобильная и Deck-ветки UI и памяти неотличимы от десктопной по одному трейсбеку; пишется она через свой `try`, чтобы падение самого фасада не съело весь отчёт.
 
 **Что просить у игрока:** файл из `crash/` — этого достаточно; `log.txt` бесполезен, если игра уже перезапускалась (перезаписывается).
 

@@ -285,7 +285,7 @@ Steam-проверок в релизном гейте нет ни одной: `v
 - Ветка **должна существовать** в Steamworks (Steamworks → приложение → Builds/Betas). `SetLive` в несуществующую ветку публикацию не сделает.
 - **Дефолтную ветку (`default`, то есть то, что видят все покупатели) мы через `--branch` не трогаем.** Норма проекта (`../../ci/steam/README.md`): выкладка идёт в бета-ветку, а `default` переключает человек в Steamworks — **после прогона на живом Steam Deck** ([43-steam-qa.md](43-steam-qa.md) §1).
 - Каналов `dev`/`beta`/`release` как сущностей конвейера у нас нет, и pre-release-теги невозможны: `project@1` требует `version` вида `^\d+\.\d+\.\d+$`, поэтому тегов `v0.1.6-rc1` не бывает. Различие «что в beta, что в default» живёт только в Steamworks.
-- Движок умеет спросить текущую ветку из игры: `achievement.steam.get_current_beta_name()` (`$RENPY_SDK/renpy/common/00steam.rpy:227`). **У нас не используется** (grep по `game/` — 0) и не нужно, пока нет ветвлений по каналу. Если понадобится «показать плашку BETA» — это новый capability-метод в `035_platform.rpy`, а не `if` в экране (см. [39-platforms.md](39-platforms.md) §9).
+- Движок умеет спросить текущую ветку из игры: `achievement.steam.get_current_beta_name()` (`$RENPY_SDK/renpy/common/00steam.rpy:227`). **Используется** — через метод фасада `vn_platform.beta_branch()` (Steam нет / release-ветка → `None`), поверх него `screen vn_beta_overlay` рисует плашку «BETA: <ветка>». Экран гейтит себя сам, поэтому в `config.overlay_screens` он добавляется всегда: `if` по платформе в вёрстке был бы вторым местом знания о Steam (ADR-0014).
 
 ---
 
@@ -365,7 +365,7 @@ vn release steam --flavor public   # печатает warning на каждую 
 | Позиция тостов ачивок | `00steam.rpy:1047`; переопределяется `achievement.steam_position` (`00steam.rpy:885`, применяется на `init 1500`, `:1074-1085`) | `steam_position` не задаём (grep — 0) → дефолт top-right. OPTIONAL |
 | Прокачка Steam-callbacks | `config.periodic_callbacks` (`00steam.rpy:1045`) | ничего не делаем |
 | Ограничение фреймрейта на время Steam-операций (15 fps, `steam_maximum_framerate`) | `00steam.rpy:881` (`steam_maximum_framerate = 15`), `:899`, `:910` | ничего не делаем |
-| Steam Timeline | `00steam.rpy:707-727` | включён по умолчанию, но мы его не кормим — §5.6 |
+| Steam Timeline | `00steam.rpy:707-727` | включён по умолчанию и кормится названием главы — §5.6 |
 | `steam_appid.txt` в dev | `00steam.rpy:962-984` | §5.4 |
 
 ### 5.4 `steam_appid.txt`: dev-режим и защита от чужого App ID
@@ -385,7 +385,7 @@ vn release steam --flavor public   # печатает warning на каждую 
 | API | Где | У нас |
 |---|---|---|
 | `is_overlay_enabled()` | `00steam.rpy:305-313` | обёрнут в `vn_platform.overlay_enabled()` (`035_platform.rpy:43-48`) — **ни одного потребителя** |
-| `activate_overlay_to_store(appid, flag)` | `00steam.rpy:375-393` | **не используем.** Это прямой путь «пак не куплен → предложить купить»: сейчас при `owned() == False` карточка главы просто исчезает, а `screen vn_content_unavailable` купить не предлагает. **OPTIONAL/FUTURE** |
+| `activate_overlay_to_store(appid, flag)` | `00steam.rpy:375-393` | **используем** через `vn_platform.store_page(pack_id)`: карточка главы из невладеемого пака не исчезает, а ведёт в оверлей Steam на страницу DLC. Без Steam, без оверлея или без маппинга `steam_dlc_appid` метод возвращает `None`, и карточка остаётся неактивной — деградация вместо мёртвой кнопки |
 | `activate_overlay_to_web_page(url)` | `00steam.rpy:366-373` | не используем |
 | `set_overlay_notification_position` | `00steam.rpy:340`, через `achievement.steam_position` | не задаём → top-right |
 
@@ -400,9 +400,9 @@ vn release steam --flavor public   # печатает warning на каждую 
 - ставит Timeline Game Mode `MENUS` или `PLAYING` по `store._menu`;
 - открывает/закрывает **game phase** по строковой переменной `save_name`: `start_game_phase(save_name)` при смене значения, `end_game_phase()` перед этим. Changelog 8.5 прямо советует считать `save_name` именем главы (`$RENPY_SDK/doc/changelog.html:803`).
 
-В нашем проекте `save_name` **не присваивается нигде** (grep по `game/`, `tools/vn/src/`, `content/` — 0 вхождений). Итог: у игрока в Timeline будет корректное «в меню / в игре» и ни одной фазы с человеческим названием.
+В нашем проекте `save_name` присваивается в `vn.checkpoint` — единственной точке, через которую проходит вход в любую сцену (`030_flow.rpy`): `save_name = vn_registry.chapter_title(scene_id[:4])`, то есть **локализованное** название главы из реестра (`010_registry.rpy: chapter_title` → `vn_loc.t(title_key)`). Итог: в Timeline у игрока фазы с человеческими названиями, и то же имя движок кладёт в метаданные сейва.
 
-**RECOMMENDED FUTURE STATE:** одна строка в обвязке сцены или в `vn.checkpoint` — `save_name = <название главы>` (локализованное `title_key` главы). Это же значение движок включает в метаданные сейва («A save name that is included with saves», `$RENPY_SDK/doc/store_variables.html`), так что улучшение двойное. Работа мелкая, но она меняет обвязку генерата — то есть требует правки эмиттера (`scenes.py`) и прогона `vn build`, а не ручной вставки.
+**Почему в `vn.checkpoint`, а не в эмиттере сцен.** Значение зависит от главы, а не от сцены, и должно пережить загрузку сейва — присваивание в рантайме на входе в сцену даёт это бесплатно, тогда как строка в генерате копировалась бы в каждую сцену (тысячи копий одной и той же локализованной строки) и требовала бы пересборки при правке перевода названия. Побочная выгода: то же имя видно в слотах сохранений («A save name that is included with saves», `$RENPY_SDK/doc/store_variables.html`) — без Steam оно тоже полезно.
 
 ### 5.7 DLC и владение паком
 
@@ -534,14 +534,14 @@ achievement.sync()                         # сводит бэкенды и ба
 - `achievement.grant` сам проверяет `has()` и ничего не делает повторно (`00achievement.rpy:193-201`), поэтому догон безопасен на каждом старте.
 - `achievement.sync()` (`00achievement.rpy:293-304`) идёт по `persistent._achievements` и выдаёт в те бэкенды, где ачивки нет. Наш локальный список хранится **отдельно** — в `persistent.vn_achievements`, поэтому догон делается нашим циклом, а `sync()` подчищает штатное хранилище движка.
 - Ошибка провайдера не роняет игру: `vn_ach.grant` оборачивает вызов в `try/except` и пишет в лог (`080_achievements.rpy:59-62`).
-- Готовое screen-action **`achievement.Sync()`** (`00achievement.rpy:306-322`) чувствительно только при расхождении бэкендов — кнопка «синхронизировать достижения» в настройках делается им, без своего кода. У нас её нет. **OPTIONAL.**
+- Готовое screen-action **`achievement.Sync()`** (`00achievement.rpy:306-322`) чувствительно только при расхождении бэкендов — кнопка «синхронизировать достижения» в настройках сделана им, без своего кода (`core_screens.rpy`, группа «Достижения»). В standalone она безвредна: движок синхронизирует локальный бэкенд сам с собой. **IMPLEMENTED.**
 
 ### 6.6 Чего у ачивок нет (честно)
 
 | Возможность | Движок даёт | У нас | Комментарий |
 |---|---|---|---|
 | **UI достижений в игре** | — | **есть** | Экран `achievements` (`20_ui/screens/achievements.rpy`), пункт рельсы рядом с «Галереей». В standalone игрок видит прогресс в игре, под Steam — ещё и в оверлее/профиле. Скрытые (`hidden: true`) до получения показываются как «???» |
-| **Прогресс-ачивки** («открыто 10 из 30 CG») | `register(..., stat_max=, stat_modulo=)`, `achievement.progress/grant_progress`, `steam.indicate_achievement_progress` (`00achievement.rpy:160-190`, `00steam.rpy:125-140`) | **нет**: регистрируем без kwargs, `vn_ach` знает только `grant/has/all_ids/visible`, а поля `progress` нет ни в схеме `achievements@1`, ни в эмиттере, ни на экране | **OPTIONAL/FUTURE**. Нужны сразу три правки: схема + `_emit_achievements` + счётчик в `vn_ach`. Плюс требует, чтобы `SteamBackend.progress` нашёл ачивку в `self.stats` — иначе в dev-режиме бросит исключение (`00steam.rpy:932-936`) |
+| **Прогресс-ачивки** («открыто 10 из 30 CG») | `register(..., stat_max=, stat_modulo=)`, `achievement.progress` (`00achievement.rpy:160-190`, `:248`) | **есть**: блок `goal: {total, step}` в `achievements@1` → эмиттер → регистрация с `stat_max`/`stat_modulo` в фасаде, счётчик и порог уведомления в `vn_ach`, полоса в карточке экрана | **IMPLEMENTED** (2026-08-18). Прогресс шлётся в движок провайдером `achievement.progress`, который фасад отдаёт стору на `init 999`: без Steam это локальный бэкенд, с ним — статы Steam ([15-gallery.md](15-gallery.md)) |
 | **Steam-статы** | `get_int_stat`/`set_int_stat`, `retrieve_stats`/`store_stats` | **нет** | Отдельная сущность Steamworks, заводится там же, где ачивки |
 | **Сброс ачивок для тестов** | `SteamBackend.clear_all()` (`00steam.rpy:920-924`) | не выведено в наш UI | Для QA проще удалить `persistent` и сбросить статистику в клиенте Steam |
 
@@ -629,8 +629,6 @@ vn save corpus --add my_case  # новая фикстура из прогона 
 | Отгружать не все три платформы | `project.yaml: platform.steam.depots` — оставить только нужные номера; раскладка сама ожидает ровно объявленные платформы (`release.py:288-289`) | `vn release steam --flavor <f>`: платформы без депота не должны давать `error` |
 | Добавить ачивку | `content/achievements/*.yaml` + `content/ui/strings.yaml` — экран `achievements` правок не требует, он читает реестр | `vn build`, `VN_AUTOPILOT_SCREENS=achievements vn test smoke --picks 0,0` и просмотр `screen_achievements.png`, завести API Name в Steamworks (§6.4) |
 | Привязать пак к DLC | `packs/<id>/manifest.yaml: steam_dlc_appid` | `vn pack validate`, `vn build`; проверить, что `owned()` даёт `False` без DLC |
-| Кормить Steam Timeline | присваивание `save_name` в обвязке сцены — то есть эмиттер `scenes.py` | `vn build`, `vn content compile --check`, прогон под живым Steam |
-| Предлагать покупку DLC из игры | новый метод фасада (`035_platform.rpy`) поверх `activate_overlay_to_store` + кнопка в `unavailable.rpy` | гард-тест `test_platform.py:183` должен остаться зелёным |
 | Кнопка «синхронизировать достижения» | `achievement.Sync()` как action в `core_screens.rpy` (или на экране достижений) | без своего кода синхронизации |
 | Выложить сборку из CI | `.github/workflows/steam-upload.yml` — ручной запуск; секреты `STEAM_USERNAME` + `STEAM_CONFIG_VDF` (base64 сентри Steam Guard, снимается один раз вручную) | процедура в `../../ci/steam/README.md` §2; без секретов шаг аплоада — зелёный no-op |
 | Steam-префлайт в релизном гейте | `validate_release` (`release.py:525-750`): appid/depots заполнены, шаблон VDF на месте, `steam_libs_status` пуст, для каждого депота есть артефакт **ожидаемого формата** | обновить счётчик проверок в [29-build-and-release.md](29-build-and-release.md) |
@@ -703,7 +701,7 @@ vn save check && vn save corpus
 | **Не трогать** | `game/generated/platform.gen.rpy` — генерат; `build/steam/**` — артефакт `vn release steam`; `$RENPY_SDK/**` — пиннованный движок (G18), только чтение; steam_api-библиотеки и Steamworks SDK — их в репозитории нет и добавлять нельзя; id уже выпущенных ачивок |
 | **Зависимости (что ломается ниже по течению)** | `project.yaml: platform.steam` → `platform.gen.rpy` → `config.steam_appid` (early-define) → `steam_init` → варианты Deck/BP, `SteamBackend`, `dlc_installed`. `steam_dlc_appid` в манифесте пака → `VN_STEAM_DLC` → `owned()` → карточки глав в `chapter_select`, элементы галереи, видимость ачивок. `content/achievements/*.yaml` → `VN_ACHIEVEMENTS` → `achievement.register` → **имена в Steamworks**. `config.save_directory` → путь сейвов → корень Auto-Cloud |
 | **Валидация** | `python -m pytest tools/vn/tests/test_platform.py -q` (13 passed) → `python -m pytest tools/vn/tests -q` → `vn build && cat game/generated/platform.gen.rpy` → `vn release validate --flavor public` → `vn save check && vn save corpus` → (при заполненном appid) `vn release steam --flavor public` → предрелизная приёмка [43-steam-qa.md](43-steam-qa.md) |
-| **Частые ошибки** | 1) Считать, что `depots` можно оставить как `appid: null` — ключа в файле нет вовсе, и ошибка вылезет только вторым запуском (§1.1). 2) Ждать от `--package linux` зипа: движок отдаёт `tar.bz2` — раскладка это знает и распаковывает (§4.3), но всё, что вы пишете рядом руками, должно исходить из фактического формата. И не читать «раскладка работает» как «поставка пройдена»: `appid` пуст, аплоад ручной, живого прогона не было. 3) Читать `vn release steam` как аплоад — она готовит VDF и раскладку. 4) Переносить VDF без каталога `content/` — пути в нём относительны самого VDF (§4.1). 5) Выключать Steam через `config.enable_steam` вместо `RENPY_NO_STEAM` (§5.3). 6) Настраивать Auto-Cloud на `%LOCALAPPDATA%` — Ren'Py пишет в `%APPDATA%` (§7.1); и включать там Recursive — затянет `crash/` (§7.2). 7) Синхронизировать `persistent` маской `*.save` — файл без расширения, нужно отдельное правило (§7.2). 8) Ждать Steam-проверок от релизного гейта — их нет (§4.4). 9) Считать Steam Timeline сломанным: движок его включил сам, просто `save_name` мы не присваиваем (§5.6). 10) Считать Steam Cloud недоделкой — кода нет осознанно (§7). 11) Задавать Launch Options через имя каталога-обёртки (`vn-<версия>-win/vn.exe`) — обёртки в депоте больше нет, путь пишется от корня и не зависит от версии (§4.3.1). 12) Писать, что UI достижений нет — экран `achievements` есть с этой итерации (§6.6) |
+| **Частые ошибки** | 1) Считать, что `depots` можно оставить как `appid: null` — ключа в файле нет вовсе, и ошибка вылезет только вторым запуском (§1.1). 2) Ждать от `--package linux` зипа: движок отдаёт `tar.bz2` — раскладка это знает и распаковывает (§4.3), но всё, что вы пишете рядом руками, должно исходить из фактического формата. И не читать «раскладка работает» как «поставка пройдена»: `appid` пуст, аплоад ручной, живого прогона не было. 3) Читать `vn release steam` как аплоад — она готовит VDF и раскладку. 4) Переносить VDF без каталога `content/` — пути в нём относительны самого VDF (§4.1). 5) Выключать Steam через `config.enable_steam` вместо `RENPY_NO_STEAM` (§5.3). 6) Настраивать Auto-Cloud на `%LOCALAPPDATA%` — Ren'Py пишет в `%APPDATA%` (§7.1); и включать там Recursive — затянет `crash/` (§7.2). 7) Синхронизировать `persistent` маской `*.save` — файл без расширения, нужно отдельное правило (§7.2). 8) Ждать Steam-проверок от релизного гейта — их нет (§4.4). 9) Искать код Timeline: движок включает его сам, а мы только присваиваем `save_name` в `vn.checkpoint` (§5.6). 10) Считать Steam Cloud недоделкой — кода нет осознанно (§7). 11) Задавать Launch Options через имя каталога-обёртки (`vn-<версия>-win/vn.exe`) — обёртки в депоте больше нет, путь пишется от корня и не зависит от версии (§4.3.1). 12) Писать, что UI достижений нет — экран `achievements` есть с этой итерации (§6.6) |
 
 ---
 

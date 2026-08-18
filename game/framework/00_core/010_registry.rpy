@@ -9,6 +9,15 @@ init -999 python in vn_registry:
         Пустой проект -> пустой список: игра запускается и честно говорит, что контента нет."""
         return list(getattr(renpy.store, "VN_CHAPTERS", ()))
 
+    def chapter_title(chapter_id):
+        """Локализованный заголовок главы по её id (для save_name: список сейвов и
+        фазы Steam Timeline). Неизвестная глава -> её id: в заголовке слота лучше
+        служебная строка, чем пустое место."""
+        for row in chapters():
+            if row["id"] == chapter_id:
+                return renpy.store.vn_loc.t(row["title_key"])
+        return chapter_id
+
     def menus():
         """Реестр choice-id (define VN_MENUS, generated/registry/menus.gen.rpy)."""
         return getattr(renpy.store, "VN_MENUS", {})

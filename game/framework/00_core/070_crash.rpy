@@ -60,6 +60,13 @@ init -950 python:
                 f.write("flavor: %s\n" % getattr(build, "flavor", "dev"))
                 f.write("version: %s\n" % config.version)
                 f.write("renpy: %s\n" % renpy.version())
+                # Профиль платформы (ADR-0014): по нему видно, какой UI и какая
+                # модель памяти были активны — мобильная и Deck-ветки иначе
+                # неотличимы от десктопной по одному трейсбеку.
+                try:
+                    f.write("platform: %s\n" % renpy.store.vn_platform.describe())
+                except Exception:
+                    pass
                 f.write("time: %s\n\n" % time.strftime("%Y-%m-%d %H:%M:%S"))
                 f.write("Последние метки (breadcrumbs):\n")
                 for ts, label in _vn_crash_breadcrumbs:

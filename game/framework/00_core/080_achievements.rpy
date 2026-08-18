@@ -151,6 +151,12 @@ init -980 python in vn_ach:
                 granted.append(ach_id)
         return granted
 
+    def names(ids):
+        """Локализованные названия по списку id — для уведомления о выдаче.
+        Скрытые ачивки к этому моменту уже получены, поэтому раскрывать нечего."""
+        reg = _registry()
+        return [renpy.store.vn_loc.t((reg.get(i) or {}).get("name_key") or i) for i in ids]
+
     def all_ids():
         return sorted(_registry())
 

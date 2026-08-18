@@ -27,6 +27,7 @@ from vn.android import (
     oversample_suffixes,
     preflight,
     rapt_status,
+    setup_step,
 )
 from vn.assets.render_config import load_render_config
 
@@ -94,12 +95,13 @@ def test_rapt_status_without_sdk_names_the_env_var():
     assert len(gaps) == 1 and "RENPY_SDK" in gaps[0]
 
 
-def test_rapt_status_empty_sdk_points_at_launcher(tmp_path):
-    """Без rapt/ остальные проверки бессмысленны: ровно один пункт, и он объясняет
-    единственный существующий способ установки — лаунчер."""
+def test_rapt_status_empty_sdk_names_the_setup_command(tmp_path):
+    """Без rapt/ остальные проверки бессмысленны: ровно один пункт, и он называет
+    команду, которая это лечит (и лаунчер как второй путь)."""
     gaps = rapt_status(_mk_sdk(tmp_path, rapt=False), tmp_path / "repo")
     assert len(gaps) == 1
-    assert "RAPT" in gaps[0] and "лаунчер" in gaps[0]
+    assert "RAPT" in gaps[0] and "setup sdk --download-rapt" in gaps[0]
+    assert "лаунчер" in gaps[0]
 
 
 def test_rapt_status_hash_mismatch_is_reported(tmp_path):
@@ -111,7 +113,7 @@ def test_rapt_status_hash_mismatch_is_reported(tmp_path):
 
 def test_rapt_status_missing_android_sdk(tmp_path):
     gaps = rapt_status(_mk_sdk(tmp_path, adb=False))
-    assert any("adb" in g and "Install SDK" in g for g in gaps)
+    assert any("adb" in g and "setup sdk" in g for g in gaps)
 
 
 def test_rapt_status_accepts_external_sdk_via_sdk_txt(tmp_path):
@@ -133,7 +135,7 @@ def test_rapt_status_project_side_gaps(tmp_path):
     root = mk_root(tmp_path)
     gaps = _topics(rapt_status(sdk, root))
     assert "android.keystore" in gaps and "bundle.keystore" in gaps
-    assert "Configure" in gaps
+    assert "setup keys" in gaps and "setup config" in gaps
     assert "android.keystore" not in _topics(rapt_status(sdk))
 
 
@@ -246,6 +248,20 @@ def test_render_config_for_mobile_changes_only_the_cache(tmp_path):
     assert mob.cache_limit_px < cfg.cache_limit_px
     assert (mob.screen, mob.cache_generations, mob.classes) == (
         cfg.screen, cfg.cache_generations, cfg.classes)
+
+
+def test_mobile_cache_limit_reaches_the_engine(tmp_path):
+    """Мобильный лимит кэша обязан доезжать до движка, а не только до preflight:
+    на телефоне десктопный потолок означает вытеснение образов под давлением ОС.
+    Ветка — условие по варианту, а не второй define на тот же config."""
+    from vn.content.compile import _emit_render
+
+    root = mk_root(tmp_path, render_extra={"mobile": {"image_cache_mb": 32}})
+    out = _emit_render(root, [])
+    assert "define config.image_cache_size_mb = 64" in out
+    assert "if renpy.variant('mobile'):" in out
+    assert "config.image_cache_size_mb = 32" in out
+    assert out.count("define config.image_cache_size_mb") == 1
 
 
 # ── Секреты: ключей подписи нет ни в git, ни в конфиге ────────────────────────
@@ -372,7 +388,71 @@ def test_build_apk_without_sdk_names_the_env_var(tmp_path):
         build_apk(mk_root(tmp_path), None)
 
 
-def test_build_apk_without_rapt_explains_launcher_steps(tmp_path):
+def test_build_apk_without_rapt_explains_the_setup_path(tmp_path):
     root = mk_root(tmp_path)
-    with pytest.raises(AndroidError, match="лаунчер"):
+    with pytest.raises(AndroidError, match="setup"):
         build_apk(root, _mk_sdk(tmp_path, rapt=False))
+
+
+# ── Подготовка тулчейна: те же функции RAPT, что у лаунчера, но без GUI ────────
+
+def test_setup_step_rejects_unknown_step(tmp_path):
+    with pytest.raises(AndroidError, match="неизвестный шаг"):
+        setup_step(mk_root(tmp_path), _mk_sdk(tmp_path), "everything")
+
+
+def test_setup_step_without_rapt_points_at_the_download(tmp_path):
+    with pytest.raises(AndroidError, match="--download-rapt"):
+        setup_step(mk_root(tmp_path), _mk_sdk(tmp_path, rapt=False), "sdk")
+
+
+@no_windows
+def test_setup_step_without_engine_names_the_env_var(tmp_path):
+    """Шаг живёт ВНУТРИ движка: без renpy.sh запускать нечего, и сказать об этом
+    надо до попытки выполнить шаг."""
+    with pytest.raises(AndroidError, match="RENPY_SDK"):
+        setup_step(mk_root(tmp_path), _mk_sdk(tmp_path), "keys")
+
+
+@no_windows
+def test_setup_step_runs_the_engine_command_from_rapt(tmp_path, monkeypatch):
+    """Контракт запуска: движок + КОРЕНЬ ПРОЕКТА + движковая команда + шаг, и cwd =
+    rapt/ (RAPT строит пути к buildlib и android-sdk от текущего каталога).
+    Ни stdout, ни stdin не перехватываются: шаги интерактивные."""
+    sdk = _mk_sdk(tmp_path)
+    (sdk / "renpy.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+    root = mk_root(tmp_path)
+    seen = {}
+
+    def fake_call(cmd, cwd=None, **kwargs):
+        seen["cmd"], seen["cwd"], seen["kwargs"] = cmd, cwd, kwargs
+        return 0
+
+    monkeypatch.setattr(android.subprocess, "call", fake_call)
+    assert setup_step(root, sdk, "config") == 0
+    assert seen["cmd"] == [str(sdk / "renpy.sh"), str(root),
+                           android.TOOLCHAIN_COMMAND, str(sdk / "rapt"), "config"]
+    assert seen["cwd"] == sdk / "rapt"
+    assert not seen["kwargs"], "перехват потоков убил бы интерактивность шага"
+
+
+def test_setup_step_returns_the_engine_exit_code(tmp_path, monkeypatch):
+    """Провал шага обязан доехать до CLI кодом выхода: иначе упавшая подготовка
+    отрапортует OK (движковая команда падает через SystemExit ровно за этим)."""
+    sdk = _mk_sdk(tmp_path)
+    (sdk / ("renpy.exe" if sys.platform == "win32" else "renpy.sh")).write_text(
+        "#!/bin/sh\n", encoding="utf-8")
+    monkeypatch.setattr(android.subprocess, "call", lambda *a, **k: 1)
+    assert setup_step(mk_root(tmp_path), sdk, "keys") == 1
+
+
+def test_engine_step_names_match_the_dev_command(repo_root):
+    """Шаги CLI и шаги движковой команды — один список. Разъехались бы — CLI
+    предлагал бы шаг, которого в движке нет, и падал бы на аргументах."""
+    src = (repo_root / "game" / "framework" / "90_debug"
+           / "040_android_toolchain.rpy").read_text(encoding="utf-8")
+    assert f'register_command("{android.TOOLCHAIN_COMMAND}"' in src
+    for step in android.SETUP_STEPS:
+        assert f'"{step}": _vn_android_step_' in src, f"шаг {step} не объявлен в движке"
+    declared = src.count('": _vn_android_step_')
+    assert declared == len(android.SETUP_STEPS), "в движке шагов больше, чем знает CLI"

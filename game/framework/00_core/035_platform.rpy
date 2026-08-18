@@ -69,12 +69,37 @@ init -960 python in vn_platform:
         (gui/game/screens.rpy: `if renpy.variant("pc")`)."""
         return renpy.variant("pc")
 
+    def beta_branch():
+        """Имя бета-ветки Steam или None (release-ветка и standalone тоже None).
+
+        Нужно вотермарке: тестер обязан видеть, что играет в бету, иначе баг-репорт
+        «у меня всё сломано» невозможно сопоставить с веткой (43-steam-qa)."""
+        s = steam()
+        try:
+            name = s.get_current_beta_name() if s is not None else None
+        except Exception:
+            return None
+        return name or None
+
     def overlay_enabled():
         s = steam()
         try:
             return bool(s is not None and s.is_overlay_enabled())
         except Exception:
             return False
+
+    def store_page(pack_id):
+        """Открыть страницу DLC в оверлее Steam или None, если это невозможно.
+
+        Возвращает screen action (или None), а не «делает»: решение показывать
+        предложение — за UI, но знание про оверлей и appid остаётся здесь.
+        Без Steam, без маппинга пака на DLC или с выключенным оверлеем — None,
+        и UI просто не рисует кнопку (никаких мёртвых элементов)."""
+        s = steam()
+        dlc = (getattr(renpy.store, "VN_STEAM_DLC", None) or {}).get(pack_id)
+        if s is None or dlc is None or not overlay_enabled():
+            return None
+        return renpy.store.Function(s.activate_overlay_to_store, dlc)
 
     def describe():
         """Одна строка для крэш-репорта и дебага: по ней видно, какой профиль UI

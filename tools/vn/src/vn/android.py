@@ -9,15 +9,18 @@ doc/cli.html, раздел «Android Build»):
     <SDK>/renpy.sh <SDK>/launcher android_build <root> [--bundle] [--install]
                                                 [--launch] [--destination DIR]
 
-Установки тулчейна из командной строки НЕ существует: RAPT приезжает апдейтером
-лаунчера (`add_dlc("rapt")`, launcher/game/android.rpy: label android), Android SDK
-ставится кнопкой Install SDK (rapt.install_sdk), ключи подписи — Generate Keys
-(rapt.keys), конфиг приложения — Configure (rapt.configure). Это интерактивные
-GUI-шаги; подменять их своими вызовами внутренностей RAPT — верный способ получить
-нештатную сборку, которая разойдётся с лаунчером на следующем апдейте SDK. Поэтому
-модуль делает ровно две вещи: честно перечисляет, чего не хватает и каким штатным
-шагом это ставится (`rapt_status`), и запускает штатную команду, когда всё на месте
-(`build_apk`).
+Подготовка (`vn release android setup <шаг>`) у Ren'Py тоже есть, только не в CLI:
+RAPT приезжает апдейтером лаунчера (`add_dlc("rapt")`), Android SDK ставится
+кнопкой Install SDK, ключи подписи — Generate Keys, конфиг приложения — Configure.
+Мы не переписываем эти шаги, а вызываем ТЕ ЖЕ функции RAPT, что и лаунчер
+(`rapt.install_sdk.install_sdk`, `rapt.keys.generate_keys`,
+`rapt.configure.configure` — launcher/game/android.rpy, label android_installsdk /
+android_keys / android_configure), просто без GUI: `setup_step` запускает движок с
+командой `vn_android_toolchain` (game/framework/90_debug/040_android_toolchain.rpy).
+Так шаг автоматизируется и остаётся штатным: на апдейте SDK меняется реализация
+RAPT, а не наша обвязка. Интерактивность шагов сохранена намеренно — установщик
+Android SDK требует принять Terms and Conditions, а генератор ключей — подтвердить,
+что владелец сделает бэкап; за человека такое не отвечают.
 
 Секретов в репозитории нет и быть не может: android.keystore / bundle.keystore
 создаёт лаунчер, они остаются у владельца. Что они не уедут в git — проверяет
@@ -62,7 +65,7 @@ MOBILE_SCALE = 1
 # но узнать об этом до часа gradle-сборки дешевле.
 JDK_REQUIRED = 21
 
-# Ключи подписи (лаунчер: Android -> Generate Keys). Лежат в КОРНЕ проекта:
+# Ключи подписи (vn release android setup keys). Лежат в КОРНЕ проекта:
 # launcher/game/android.rpy: rapt.keys.keys_exist(project.current.path), и
 # NO_KEY_TEXT «copy android.keystore and bundle.keystore to the base directory».
 KEYSTORES = {
@@ -70,7 +73,7 @@ KEYSTORES = {
     "bundle.keystore": "Play-бандла (.aab)",
 }
 
-# Конфиг приложения (лаунчер: Android -> Configure): имя пакета, версия,
+# Конфиг приложения (vn release android setup config): имя пакета, версия,
 # ориентация, permissions. Обе раскладки имени штатные — 00build.rpy классифицирует
 # и android.json, и .android.json в список "android".
 ANDROID_CONFIG_NAMES = ("android.json", ".android.json")
@@ -170,13 +173,69 @@ def find_adb(sdk: Path) -> Path | None:
     return None
 
 
+RAPT_URL = "https://www.renpy.org/dl/{version}/renpy-{version}-rapt.zip"
+
+# Команда движка, проводящая подготовительные шаги RAPT: они работают ТОЛЬКО
+# внутри процесса Ren'Py (game/framework/90_debug/040_android_toolchain.rpy —
+# dev-зона, в дистрибутив не попадает). Порядок шагов = порядок прохождения:
+# без Android SDK нет keytool для ключей.
+TOOLCHAIN_COMMAND = "vn_android_toolchain"
+SETUP_STEPS = ("sdk", "keys", "config")
+
+
+def install_rapt(sdk: Path, version: str) -> list[str]:
+    """Скачать и распаковать RAPT в <SDK>/rapt. Возвращает список сообщений.
+
+    RAPT в архив SDK не входит: renpy.org отдаёт его отдельным zip той же
+    версии. Лаунчер качает его своим апдейтером по кнопке; здесь — то же самое
+    из CLI, чтобы шаг «поставить тулчейн» не требовал GUI."""
+    import io
+    import urllib.request
+    import zipfile
+
+    dest = sdk / "rapt"
+    if dest.is_dir():
+        return [f"RAPT уже установлен: {dest}"]
+    url = RAPT_URL.format(version=version)
+    with urllib.request.urlopen(url) as resp:          # noqa: S310 — фиксированный host renpy.org
+        data = resp.read()
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        # В архиве один верхний каталог rapt/ — распаковываем в SDK как есть.
+        zf.extractall(sdk)
+    if not dest.is_dir():
+        raise AndroidError(f"{url}: в архиве нет каталога rapt/")
+    return [f"RAPT установлен из {url}"]
+
+
+def setup_step(root: Path, sdk: Path, step: str) -> int:
+    """Провести подготовительный шаг RAPT внутри движка, ИНТЕРАКТИВНО.
+
+    Интерактивность принципиальна: шаг `sdk` просит принять Android SDK Terms and
+    Conditions, шаг `keys` — подтвердить, что владелец сохранит копию ключа. Это
+    решения человека, поэтому stdin/stdout не перехватываются — команда отдаёт
+    управление RAPT и возвращает его код выхода."""
+    import os
+
+    if step not in SETUP_STEPS:
+        raise AndroidError(f"неизвестный шаг {step!r} — есть {', '.join(SETUP_STEPS)}")
+    rapt = sdk / "rapt"
+    if not rapt.is_dir():
+        raise AndroidError(f"нет {rapt} — сначала vn release android setup sdk --download-rapt")
+    exe = sdk / ("renpy.exe" if os.name == "nt" else "renpy.sh")
+    if not exe.is_file():
+        raise AndroidError(f"нет {exe} — проверьте RENPY_SDK")
+    # cwd = rapt/: RAPT строит пути к buildlib, android-sdk и project от текущего
+    # каталога (rapt/android.py делает то же самое своим chdir).
+    return subprocess.call([str(exe), str(root), TOOLCHAIN_COMMAND, str(rapt), step],
+                           cwd=rapt)
+
+
 def rapt_status(sdk: Path | None, root: Path | None = None) -> list[str]:
     """Чего не хватает для сборки Android-пакета; пустой список = можно собирать.
 
-    Каждая строка говорит И что отсутствует, И каким штатным шагом это ставится:
-    установка тулчейна живёт только в лаунчере, и CLI обязан это сказать, а не
-    делать вид, что умеет её выполнить. `root` (корень проекта) не обязателен:
-    без него проверяется только SDK-часть."""
+    Каждая строка говорит И что отсутствует, И какой командой это ставится: гейт,
+    который только запрещает, заставляет искать шаг по документации. `root`
+    (корень проекта) не обязателен: без него проверяется только SDK-часть."""
     if sdk is None:
         return ["RENPY_SDK не задан — Android-тулчейн живёт внутри SDK (vn doctor подскажет)"]
 
@@ -185,16 +244,19 @@ def rapt_status(sdk: Path | None, root: Path | None = None) -> list[str]:
     launcher = sdk / ("renpy.exe" if sys.platform == "win32" else "renpy.sh")
     if not rapt.is_dir():
         # Дальше проверять нечего: без rapt/ нет ни Android SDK, ни keytool-обвязки.
-        return [f"нет {rapt} — RAPT (тулчейн Android) не установлен: запустите лаунчер "
-                f"({launcher}), раздел Android — он предложит скачать RAPT"]
+        return [f"нет {rapt} — RAPT (тулчейн Android) не установлен: "
+                f"vn release android setup sdk --download-rapt (или лаунчер "
+                f"{launcher}, раздел Android)"]
     if not rapt_hash_matches(sdk):
         gaps.append(f"RAPT в {rapt} собран для другой версии SDK "
                     f"(launcher/game/rapt_hash.txt != rapt/hash.txt) — лаунчер его не "
                     f"импортирует; переустановите RAPT под этот SDK")
     if find_adb(sdk) is None:
-        gaps.append(f"не найден adb — Android SDK не установлен: лаунчер, Android -> "
-                    f"Install SDK (нужен интернет), либо положите {rapt / 'sdk.txt'} с "
-                    f"путём к уже установленному Android SDK (doc/android.html, Step 2)")
+        gaps.append(f"не найден adb — Android SDK не установлен: "
+                    f"vn release android setup sdk (нужен интернет; шаг попросит "
+                    f"принять Android SDK Terms and Conditions), либо положите "
+                    f"{rapt / 'sdk.txt'} с путём к уже установленному Android SDK "
+                    f"(doc/android.html, Step 2)")
     jdk = jdk_major()
     if jdk is None:
         gaps.append(f"javac не найден ни в JAVA_HOME, ни в PATH — нужен JDK "
@@ -208,14 +270,16 @@ def rapt_status(sdk: Path | None, root: Path | None = None) -> list[str]:
     if root is not None:
         for name, channel in KEYSTORES.items():
             if not (root / name).is_file():
-                gaps.append(f"нет {name} — ключ подписи {channel}: лаунчер, Android -> "
-                            f"Generate Keys. Ключ остаётся у владельца: ни в git, ни в "
-                            f"дистрибутив он не уезжает, а его потеря = невозможность "
-                            f"обновить опубликованное приложение")
+                gaps.append(f"нет {name} — ключ подписи {channel}: "
+                            f"vn release android setup keys. Ключ остаётся у "
+                            f"владельца: ни в git, ни в дистрибутив он не уезжает, а "
+                            f"его потеря = невозможность обновить опубликованное "
+                            f"приложение")
         if not any((root / name).is_file() for name in ANDROID_CONFIG_NAMES):
             gaps.append("проект не сконфигурирован под Android (нет "
-                        f"{' / '.join(ANDROID_CONFIG_NAMES)}): лаунчер, Android -> "
-                        "Configure — имя пакета, версия, ориентация, permissions")
+                        f"{' / '.join(ANDROID_CONFIG_NAMES)}): "
+                        "vn release android setup config — имя пакета, ориентация, "
+                        "магазин, permissions")
     return gaps
 
 
@@ -397,8 +461,8 @@ def build_apk(root: Path, sdk: Path | None, *, bundle: bool = False,
         raise AndroidError("Ren'Py SDK не найден (RENPY_SDK) — vn doctor подскажет")
     gaps = rapt_status(sdk, root)
     if gaps:
-        raise AndroidError("Android-тулчейн не готов (шаги выполняются в лаунчере):\n  - "
-                           + "\n  - ".join(gaps))
+        raise AndroidError("Android-тулчейн не готов (подготовка — vn release android "
+                           "setup):\n  - " + "\n  - ".join(gaps))
     rep = preflight(root, bundle=bundle)
     if not rep.ok:
         raise AndroidError("проект не готов к мобильной поставке:\n  - "

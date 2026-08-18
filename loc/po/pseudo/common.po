@@ -127,6 +127,16 @@ msgid "Достижений в этой сборке нет."
 msgstr "[[Дǫстįжęнįй в этǫй сбǫркę нęт.~~~~~~~~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.ach.granted_many"
+msgid "Получено достижений: [n]"
+msgstr "[[Пǫлųчęнǫ дǫстįжęнįй: [n]~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.granted_one"
+msgid "Достижение получено: [name]"
+msgstr "[[Дǫстįжęнįę пǫлųчęнǫ: [name]~~~~~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.ach.hidden"
 msgid "Скрытое достижение"
 msgstr "[[Скрытǫę дǫстįжęнįę~~~~~~~]"
@@ -478,6 +488,16 @@ msgstr "[[Сǫхрąнįть~~~]"
 msgctxt "string:ui.nav.start"
 msgid "Начать игру"
 msgstr "[[Нąчąть įгрų~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.ach_sync"
+msgid "Синхронизировать с платформой"
+msgstr "[[Сįнхрǫнįзįрǫвąть с плąтфǫрмǫй~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.achievements"
+msgid "Достижения"
+msgstr "[[Дǫстįжęнįя~~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.prefs.auto_forward"

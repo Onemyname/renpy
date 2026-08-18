@@ -517,7 +517,7 @@ $ vn assets memory
 
 - `.gitlab-ci.yml` — 3 джобы (`lint`, `build`, `test`), **ни релиза, ни флейворов, ни LFS, ни ffmpeg, ни кэша `.rpyc`**. `../../CODEOWNERS` покрывает `/.gitlab-ci.yml` и **не покрывает `/.github/`** — релизный workflow формально ничей.
 - `canary.yml` не имеет `continue-on-error`: красный canary валит workflow. Это строже, чем `allow_failure: true` из `../ARCHITECTURE.md`, и это осознанное расхождение.
-- Не существует ни одной из джоб `rpyc-compat`, `screens`, `nightly-paths`, `nightly-perf`, `steam-publish`, матрицы `PLATFORM: [win, mac, linux, android]` и шага `vn validate --budgets --dist dist/` — всё NOT IMPLEMENTED (команды `vn validate` нет вовсе). Мобильный канал в CI присутствует, но **только арифметикой**: `vn release android preflight --bundle` считает предпосылки по `game/`, а самой сборки APK/AAB в CI нет и быть не может — RAPT ставит только апдейтер лаунчера ([39 §2.1](39-platforms.md)).
+- Не существует ни одной из джоб `rpyc-compat`, `screens`, `nightly-paths`, `nightly-perf`, `steam-publish`, матрицы `PLATFORM: [win, mac, linux, android]` и шага `vn validate --budgets --dist dist/` — всё NOT IMPLEMENTED (команды `vn validate` нет вовсе). Мобильный канал в CI присутствует, но **только арифметикой**: `vn release android preflight --bundle` считает предпосылки по `game/`, а сборки APK/AAB в CI нет. Причина не техническая — тулчейн ставится командой (`vn release android setup sdk --download-rapt`), — а в цене и в секретах: ~700 МБ Android SDK на каждый пуш и ключ подписи в раннере. Локально APK собран и вскрыт ([39 §2.1.1](39-platforms.md)).
 - **QA на живом железе не автоматизировано ничем**: ни Windows-, ни mac-, ни Deck-прогона в CI нет; всё это стадии 5-7 §13, и все они ручные.
 
 ---

@@ -95,10 +95,19 @@ def _stale_key(rel: str, data: bytes) -> bytes:
 
 
 def _emit_version(project: dict, sha: str, sources) -> str:
-    version = f"{project['version']}+{sha}"
+    """config.version — диагностическая версия (semver + sha сборки),
+    build.version — ВЕРСИЯ ПОСТАВКИ (чистый semver).
+
+    Разделять обязательно. build.version уходит в имена дистрибутивов и, главное,
+    в versionName Android-пакета, а RAPT выбрасывает из версии всё, что не число
+    (rapt/build.py: `[i for i in version.split(".") if i.isdigit()]`): из
+    "0.1.5+abc1234" получался APK версии 0.1.5 -> "0.1", то есть патч терялся
+    молча. По умолчанию движок берёт build.version из config.version
+    (00build.rpy, init 1500), поэтому задаём его здесь явно."""
     return _header(sources) + (
         "init offset = -900\n\n"
-        f'define config.version = "{version}"\n'
+        f'define config.version = "{project["version"]}+{sha}"\n\n'
+        f'define build.version = "{project["version"]}"\n'
     )
 
 
@@ -120,6 +129,13 @@ def _emit_render(root: Path, sources) -> str:
         "# Пиксельный лимит кэша образов: cache_limit = value * 1024 * 1024 // 4\n"
         "# (renpy/display/im.py: Cache.init). Источник — project.yaml: render.\n"
         f"define config.image_cache_size_mb = {cfg.image_cache_mb}\n\n"
+        "# Мобильный профиль (project.yaml: render.mobile.image_cache_mb): в пакете\n"
+        "# нет @N-вариантов, а память делится с ОС, которая приложение просто снимет.\n"
+        "# Присваивание, а не define: значение зависит от варианта окружения, и\n"
+        "# define на один и тот же config дважды — переопределение, а не условие.\n"
+        "init python:\n"
+        "    if renpy.variant('mobile'):\n"
+        f"        config.image_cache_size_mb = {cfg.mobile_image_cache_mb}\n\n"
         "# Автоподбор оверсэмпл-вариантов (<name>@2/@4) под физический экран.\n"
         "# Фиксируем явно: от него зависит, увидит ли игрок 4K-ассеты вообще.\n"
         "# Это ПОТОЛОК СБОРКИ (project.yaml: render.max_oversampling); настройка\n"

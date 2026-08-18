@@ -13,27 +13,50 @@ init -999 python in vn:
         """Вход в сцену: якорь восстановления позиции сейва (раздел 6) и
         триггер достижений/галереи, привязанных к сцене."""
         renpy.store.vn_scene = scene_id
+        # save_name — штатное имя текущего места в игре: движок кладёт его в
+        # заголовок сейв-слота И открывает по нему фазу Steam Timeline
+        # (config.automatic_steam_timeline, 00steam.rpy: periodic). Значение —
+        # локализованный заголовок главы, а не служебный id: и в списке сейвов,
+        # и в записи Steam игрок видит человеческий текст.
+        renpy.store.save_name = renpy.store.vn_registry.chapter_title(scene_id[:4])
         # Счётчик прохождения: СПИСОК посещённых сцен, а не число — только так
         # повторный вход в сцену не накручивает прогресс, а сейв остаётся из
         # простых типов (G5). Прогрессивные ачивки считают его длину.
         seen = renpy.store.g.scenes_seen
         if scene_id not in seen:
             seen.append(scene_id)
-        renpy.store.vn_ach.check(scene_id=scene_id)
+        _ach_notify(renpy.store.vn_ach.check(scene_id=scene_id))
         _gallery_notify(renpy.store.vn_gal.check(scene_id=scene_id))
 
     def beat(beat_id=None):
         """Мелкий якорь внутри сцены: триггер достижений/галереи и точка
         расширения для телеметрии/автотестов (фаза 2)."""
         if beat_id is not None:
-            renpy.store.vn_ach.check(beat_id=beat_id)
+            _ach_notify(renpy.store.vn_ach.check(beat_id=beat_id))
             _gallery_notify(renpy.store.vn_gal.check(beat_id=beat_id))
 
     def chapter_done(chapter_id):
         """Глава пройдена: якорь для галереи/достижений «за прохождение».
         Зовётся обвязкой финальной сцены главы (компилятор) и вручную не нужен."""
-        renpy.store.vn_ach.check(beat_id="chapter_done:%s" % chapter_id)
+        _ach_notify(renpy.store.vn_ach.check(beat_id="chapter_done:%s" % chapter_id))
         _gallery_notify(renpy.store.vn_gal.check(chapter_done=chapter_id))
+
+    def _ach_notify(granted):
+        """Уведомление о выданном достижении — тем же штатным каналом, что у
+        галереи. Под Steam попап рисует оверлей, но он есть не у всех игроков
+        (standalone, оверлей выключен настройкой), а «получил и не заметил» —
+        худший исход для ачивки: она вся про обратную связь."""
+        if not granted:
+            return
+        names = renpy.store.vn_ach.names(granted)
+        n = len(granted)
+        key = "ui.ach.granted_one" if n == 1 else "ui.ach.granted_many"
+        text = renpy.store.vn_loc.t(key)
+        if n == 1:
+            text = text.replace("[name]", names[0])
+        else:
+            text = text.replace("[n]", str(n))
+        renpy.notify(text)
 
     def _gallery_notify(opened):
         """Уведомление о новом контенте галереи — через штатный notify-экран

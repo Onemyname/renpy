@@ -473,8 +473,13 @@ def emit_chapter_select(header: str) -> str:
 screen chapter_select():
     tag menu
     use vn_game_menu(vn_loc.t("ui.nav.chapters")):
-        # Владение паком — логический гейт (G9): непокупные главы не видны
-        $ _chs = [ch for ch in VN_CHAPTERS if vn.pack_registry.owned(ch["pack"])]
+        # Владение паком — логический гейт (G9). Непринадлежащая глава ПОКАЗЫВАЕТСЯ
+        # только если платформа умеет открыть её страницу в магазине
+        # (vn_platform.store_page): «купить» полезно, а карточка, которая просто
+        # ничего не делает, — нет. Вне Steam список как раньше: только своё.
+        $ _chs = [ch for ch in VN_CHAPTERS
+                  if vn.pack_registry.owned(ch["pack"])
+                  or vn_platform.store_page(ch["pack"]) is not None]
         $ _rows = (len(_chs) + 2) // 3
         vpgrid id "vp_chapters":
             properties vn_scroll_props

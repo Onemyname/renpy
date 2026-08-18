@@ -704,10 +704,12 @@ steamcmd +login <build-account> +run_app_build build/steam/app_build_public.vdf 
 
 ```bash
 vn release android status          # что мешает: RAPT, Android SDK, JDK 21, ключи, android.json
-#   -> код 1 и перечень штатных шагов лаунчера. CLI-пути установки тулчейна
-#      у Ren'Py НЕТ: RAPT ставит апдейтер лаунчера, SDK — кнопка Install SDK,
-#      ключи — Generate Keys, конфиг приложения — Configure
-"$RENPY_SDK/renpy.sh"              # ^ выполнить эти четыре шага в лаунчере, раздел Android
+#   -> код 1 и КОМАНДА на каждый пробел. Один раз на машину:
+vn release android setup sdk --download-rapt   # RAPT с renpy.org + Android SDK/NDK
+#      ^ спросит про Android SDK Terms and Conditions — отвечает человек
+vn release android setup keys      # android.keystore + bundle.keystore в корень проекта
+#      ^ спросит имя для сертификата; сделайте бэкап ВНЕ репозитория
+vn release android setup config    # android.json: пакет, ориентация, магазин, permissions
 
 vn release android preflight --bundle   # предпосылки: потолок канала 2 ГБ, лимит 500 МБ
                                         # на файл в Play-бандле, мобильный кэш образов,
@@ -716,16 +718,19 @@ vn release android build [--bundle] [--install] [--launch] [--timeout 3600]
                                         # status -> vn build -> launcher android_build
 ```
 
-**Что делает `build`:** проверяет тулчейн **до** долгой сборки, затем зовёт штатную команду лаунчера `renpy.sh <SDK>/launcher android_build <проект> --destination …`. Лог gradle/RAPT идёт живьём — молчащая сборка неотличима от зависшей.
+**Что делает `build`:** проверяет тулчейн **до** долгой сборки, затем зовёт штатную команду лаунчера `renpy.sh <SDK>/launcher android_build <проект> --destination …`. Лог gradle/RAPT идёт живьём — молчащая сборка неотличима от зависшей. Результат — `build/android/<package>-<version>-<numeric>-release.apk`; фактический прогон 2026-08-18 дал 52,1 МБ из 2,8 МБ `game/` за 52 с gradle.
+
+**Что делает `setup`:** запускает движок с dev-командой `vn_android_toolchain`, а та зовёт **те же функции RAPT**, что кнопки лаунчера. Своей реализации шагов нет намеренно — на апдейте SDK меняется RAPT, а не наша обвязка. Шаги интерактивные: юридическое согласие (Terms and Conditions) и обещание хранить ключ даёт человек.
 
 **Подробнее:** [39-platforms.md](39-platforms.md) §2.1.
 
 **Типичные ошибки**
 
 - Искать `vn package --package android`: мобильный канал — **другая команда лаунчера**, со своим тулчейном и своими потолками, поэтому он живёт в `vn release android`, а не в `vn package`.
-- Коммитить `android.keystore` / `bundle.keystore`: ключ в истории git = скомпрометированный ключ навсегда, а потеря = невозможность обновить опубликованное приложение. `preflight` называет это блокером; бэкап — **вне** репозитория. (В `.gitignore` их пока нет — добавьте `*.keystore` до генерации ключей.)
+- Коммитить `android.keystore` / `bundle.keystore`: ключ в истории git = скомпрометированный ключ навсегда, а потеря = невозможность обновить опубликованное приложение. `preflight` называет это блокером; в `.gitignore` они есть (`*.keystore`), бэкап — **вне** репозитория.
+- Пересоздавать ключ «чтобы обновить»: `setup keys` НЕ перегенерирует существующий `android.keystore` (RAPT его пропускает), и это защита. Сменить сертификат у уже опубликованного приложения нельзя — нужен новый ключ и новое приложение.
 - Ждать `@N`-вариантов на телефоне: `build.classify("**@[2-9].*", "windows linux mac")` их отсекает, движок берёт безсуффиксный референс — это осознанная экономия веса при потолке 2 ГБ.
-- Считать `preflight` измерением веса пакета: он оценивает `game/` + накладные ~150 МБ **сверху**; фактический вес APK узнаётся только первой реальной сборкой, которой ещё не было.
+- Считать `preflight` измерением веса пакета: он оценивает `game/` + накладные ~150 МБ **сверху**. Факт первой сборки — ≈49 МБ накладных (движок, CPython, нативные библиотеки трёх ABI), то есть оценка консервативна намеренно.
 
 ## 21.2. Как прогнать корпус масштаба
 
@@ -995,7 +1000,7 @@ vn release validate --flavor patron        # 21 строка, 0 FAIL, 1 WARN —
 | **Не трогать** | `game/generated/**`, `game/assets/**`, `game/tl/**`, `game/build_id.json`, `*.rpyc`, `.vncache/**`, `build/**` — производные зоны (§26); `ci/fixtures/rpyc-line/**` — линия statement-имён (G6), только через `vn save corpus`; `loc/ledger/*.json` — только через `vn loc keys` |
 | **Зависимости** | `assets_src/` → `vn assets build` → `game/assets/` → `vn build` (реестр образов зависит от собранных ассетов) → `game/generated/` → `vn play` / `vn test smoke` / `vn package` / `vn release build`. Правка авторского `.rpy` → `vn loc keys` → `loc/ledger/` → `vn loc extract` → `loc/po/` → `vn loc import` → `game/tl/`. Правка `project.yaml: save_schema` → миграция в `content/migrations/` + запись в `registry.yaml` |
 | **Валидация** | `vn doctor && vn content lint && vn build && vn content compile --check && (cd tools/vn && python -m pytest -q)`; для рантайма/сейвов дополнительно `vn test smoke --picks 0,0` и `vn save corpus`; для релизного пути `vn release validate --flavor public` |
-| **Частые ошибки** | 1) правка генерата вместо источника (§26); 2) выдуманные флаги — их нет, `exit 2`; 3) забытый `export RENPY_SDK` в bash-вызове; 4) забытый `vn loc keys` после правки реплик — локально зелено, CI красный; 5) `@2` в ссылке на ассет вместо референсного имени; 6) переменная шота/галереи/exits вне Variable Registry; 7) `vn release steam` считается пройденной поставкой — раскладку депотов она делает (включая linux-`tar.bz2`), но в репозитории нет `appid`/`depots`, аплоад ручной, живого прогона не было (§16); 8) ожидание, что WARN в релизном гейте означает поломку; 9) `vn release android build` считается проверенным путём — ни одного APK/AAB ещё не собрано, тулчейн ставится только лаунчером (§21.1) |
+| **Частые ошибки** | 1) правка генерата вместо источника (§26); 2) выдуманные флаги — их нет, `exit 2`; 3) забытый `export RENPY_SDK` в bash-вызове; 4) забытый `vn loc keys` после правки реплик — локально зелено, CI красный; 5) `@2` в ссылке на ассет вместо референсного имени; 6) переменная шота/галереи/exits вне Variable Registry; 7) `vn release steam` считается пройденной поставкой — раскладку депотов она делает (включая linux-`tar.bz2`), но в репозитории нет `appid`/`depots`, аплоад ручной, живого прогона не было (§16); 8) ожидание, что WARN в релизном гейте означает поломку; 9) `vn release android build` считается проверенным до конца — APK собран и вскрыт, но на устройстве не запускался, а `.aab` не собирался вовсе (§21.1) |
 
 ---
 
