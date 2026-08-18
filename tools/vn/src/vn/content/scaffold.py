@@ -1,4 +1,4 @@
-"""vn chapter new / vn scene new — скаффолдинг контента по конвенциям (раздел 1.4)."""
+"""vn chapter new / vn scene new / vn char new — скаффолдинг по конвенциям (раздел 1.4)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,10 @@ import re
 from pathlib import Path
 
 CHAPTER_DIR_RE = re.compile(r"^ch(\d{2})_")
+# id персонажа: та же форма, что в character@1 (tools/schemas/character@1.schema.json).
+CHAR_ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,23}$")
+TOKEN_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 SCENE_FILE_RE = re.compile(r"^s(\d{3})_")
 SLUG_RE = re.compile(r"^[a-z][a-z0-9_]{2,30}$")
 
@@ -135,3 +139,84 @@ def new_scene(root: Path, chapter: str, slug: str) -> Path:
     yaml_path.write_text(_scene_yaml(short_id), encoding="utf-8")
     (scenes / f"{short_id}_{slug}.scene.rpy").write_text(_scene_rpy(full_id), encoding="utf-8")
     return yaml_path
+
+
+def _character_color(char_id: str) -> str:
+    """Цвет реплик по id — детерминированно и различимо.
+
+    Зачем вообще: `color` в character@1 обязателен, а «выберите сами» на скаффолде
+    означает, что первые пять персонажей получат один и тот же дефолт из примера.
+    Тон берётся из хеша id (стабильно между машинами), насыщенность и яркость
+    фиксированы — цвет обязан читаться на тёмном текстбоксе, а не быть случайным.
+    """
+    import colorsys
+
+    from blake3 import blake3
+
+    hue = int.from_bytes(blake3(char_id.encode("utf-8")).digest()[:2], "big") % 360
+    r, g, b = colorsys.hsv_to_rgb(hue / 360.0, 0.45, 0.85)
+    return "#%02x%02x%02x" % (int(r * 255), int(g * 255), int(b * 255))
+
+
+def _character_yaml(char_id: str, name: str, color: str, pose: str, outfit: str,
+                    emotion: str) -> str:
+    import json
+
+    return (
+        "schema: character@1\n"
+        f"id: {char_id}\n"
+        f"name: {json.dumps(name, ensure_ascii=False)}"
+        "        # исходный язык; перевод — vn loc extract\n"
+        f'color: "{color}"'
+        "                    # цвет имени в текстбоксе\n"
+        f"voice_tag: {char_id}\n"
+        "# canvas: [1200, 2200]                # ХОЛСТ МАСТЕРОВ (ADR-0012): все слои\n"
+        "#                                     # позы обязаны лежать на одном холсте.\n"
+        "#                                     # Фактический размер назовёт\n"
+        "#                                     # vn char validate — впишите его сюда.\n"
+        "matrix:\n"
+        f"  poses: [{pose}]\n"
+        f"  outfits: [{outfit}]\n"
+        f"  emotions: [{emotion}]\n"
+        "  required:\n"
+        f"    - {{pose: {pose}, outfits: [{outfit}], emotions: [{emotion}]}}\n"
+    )
+
+
+def new_character(root: Path, char_id: str, name: str = "", color: str = "",
+                  pose: str = "a", outfit: str = "casual",
+                  emotion: str = "neutral") -> list[Path]:
+    """content/characters/<id>/character.yaml + каталог мастеров. Возвращает пути.
+
+    Каталог позы НЕ создаётся намеренно: папка позы без `base.*` мгновенно валит
+    `vn assets build` («поза не собрана»), то есть скаффолд оставлял бы дерево в
+    красном состоянии. Художник создаёт папку позы вместе с первым файлом.
+    """
+    if not CHAR_ID_RE.match(char_id):
+        raise ScaffoldError(f"id персонажа {char_id!r} вне конвенции {CHAR_ID_RE.pattern} "
+                            f"(character@1: 2-24 символа, латиница со строчных)")
+    for label, token in (("поза", pose), ("наряд", outfit), ("эмоция", emotion)):
+        if not TOKEN_RE.match(token):
+            raise ScaffoldError(f"{label} {token!r} вне конвенции {TOKEN_RE.pattern}")
+    if color and not COLOR_RE.match(color):
+        raise ScaffoldError(f"цвет {color!r} — ожидается #RRGGBB")
+    if len({pose, outfit, emotion}) != 3:
+        raise ScaffoldError("имена позы, наряда и эмоции обязаны различаться: атрибуты "
+                            "layeredimage уникальны между группами")
+
+    decl = root / "content" / "characters" / char_id / "character.yaml"
+    if decl.is_file():
+        raise ScaffoldError(f"{decl.relative_to(root).as_posix()} уже есть — скаффолд "
+                            f"никогда не перезаписывает декларацию")
+    decl.parent.mkdir(parents=True, exist_ok=True)
+    decl.write_text(_character_yaml(char_id, name or char_id.capitalize(),
+                                    color or _character_color(char_id),
+                                    pose, outfit, emotion), encoding="utf-8")
+    created = [decl]
+    masters = root / "assets_src" / "art" / "characters" / char_id
+    if not masters.is_dir():
+        masters.mkdir(parents=True, exist_ok=True)
+        keep = masters / ".gitkeep"
+        keep.write_text("", encoding="utf-8")
+        created.append(keep)
+    return created

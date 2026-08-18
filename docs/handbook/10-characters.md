@@ -1,6 +1,6 @@
 # 10. Персонажи
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — декларация → layeredimage работает сквозным конвейером (`character.yaml` → `vn assets build` → `vn build` → `game/generated/registry/{characters,images}.gen.rpy`), **но** всё заведение персонажа делается руками: `vn char new` / `vn char validate` / `vn char sheet` — заглушки (exit 3). Поле `animated` есть в схеме и не читается ни одной строкой кода. **Обновлено ADR-0012:** `canvas` стал контрактом (холст мастеров проверяется сборкой), `overlays` эмитятся независимыми атрибутами, ветка `side/` реализована (портреты say-окна).
+> **Статус подсистемы:** IMPLEMENTED — декларация → layeredimage работает сквозным конвейером (`character.yaml` → `vn assets build` → `vn build` → `game/generated/registry/{characters,images}.gen.rpy`), и с 2026-08-18 у персонажа есть свои команды: `vn char new` (скаффолд валидной декларации + каталог мастеров), `vn char validate` (та же проверка матрицы, что в сборке, но без сборки и без SDK), `vn char sheet` (лист арт-ревью `build/review/<id>/index.html`). Урезание против нормы зафиксировано в [ADR-0018](../adr/0018-vn-char-scope.md). Поле `animated` есть в схеме и не читается ни одной строкой кода. **Обновлено ADR-0012:** `canvas` стал контрактом (холст мастеров проверяется сборкой), `overlays` эмитятся независимыми атрибутами, ветка `side/` реализована (портреты say-окна).
 > **Отвечает на вопрос:** «Как завести нового персонажа, чтобы он показался в сцене и не сломал сборку».
 
 Персонаж живёт в трёх зонах одновременно: декларация `content/characters/<id>/character.yaml` (git, человек), сырцы слоёв `assets_src/png/characters/<id>/<pose>/**` (git, ADR-0004), собранные слои `game/assets/spr/<id>/<pose>/**` (не в git, пишет `vn assets build`). Кодоген связывает их в `define <id> = Character(...)` и `layeredimage <id>`. Сегодня в репозитории **один** персонаж — `mira`, одна поза `a`, 2 наряда, 3 эмоции, 6 файлов слоёв.
@@ -257,9 +257,9 @@ label ch01_s020__body:
 
 | Механизм | Статус | Детали |
 |---|---|---|
-| `vn char new` | NOT IMPLEMENTED (фаза 1) | `_stub_group("char", …, {"new": 1, …})` — `cli.py:958`; печатает «эта команда появится в фазе 1» и выходит с кодом 3 (`cli.py:34-38`) |
-| `vn char validate` | NOT IMPLEMENTED (фаза 1) | там же. Валидация фактически живёт в `vn content lint` + `vn build` |
-| `vn char sheet` (лист персонажа) | NOT IMPLEMENTED (фаза 2) | там же |
+| `vn char new <id>` | **IMPLEMENTED** (2026-08-18) | `scaffold.new_character`: декларация, валидная по `character@1` сразу, плюс `assets_src/art/characters/<id>/`. Каталог позы НЕ создаётся (папка позы без `base.*` валит сборку); цвет реплик — стабильный из хеша id; `--name/--color/--pose/--outfit/--emotion` |
+| `vn char validate [<id>\|--all]` | **IMPLEMENTED** (2026-08-18) | `content.characters.validate`: схема, `id` == имени папки, геометрия мастеров (`pipeline.character_jobs`) и полнота матрицы (`images.check_matrix` — ТА ЖЕ функция, что у эмиттера). Без сборки ассетов и без SDK; ни один байт не пишется |
+| `vn char sheet [<id>\|--all]` | **IMPLEMENTED** (2026-08-18) | `build/review/<id>/index.html`: ячейки-композиции допустимых комбинаций в z-порядке layeredimage, серая подложка, запрещённые декларацией пары пропущены, замечания валидатора на той же странице |
 | Группа `overlays` | PARTIAL | сканируется (`pipeline.py:493`), собирается в `game/assets/spr/<id>/<pose>/overlays/*@2.webp`, но `emit_images` её **не эмитит** — только warning (`images.py:178-182`). Собранные overlay-слои = мёртвый вес в дистрибутиве |
 | `side/<emotion>@2.webp` (side images для say-окна) | NOT IMPLEMENTED | нормативно в `docs/conventions/naming.md:18` и `docs/ARCHITECTURE.md:144,454,922`; в `tools/vn/src/vn/` — ноль совпадений `side/` |
 | `canvas` | IMPLEMENTED (ADR-0012) | контракт холста мастеров |
@@ -296,9 +296,20 @@ label ch01_s020__body:
 
 ---
 
-## 9. Как завести персонажа руками (подробный рецепт)
+## 9. Как завести персонажа (рецепт)
 
-`vn char new` не существует — делаем по шагам. Пример: `lena`.
+Быстрый путь — командой:
+
+```bash
+vn char new lena --name "Лена"      # декларация + каталог мастеров
+#   положить мастера: assets_src/art/characters/lena/a/{base.png,outfits/,faces/}
+vn assets build && vn char validate lena   # назовёт фактический холст для canvas
+vn char sheet lena                          # лист арт-ревью: build/review/lena/index.html
+vn build                                    # layeredimage в генерат
+```
+
+Ниже — те же шаги руками: полезно понимать, что именно создаёт скаффолд, и обязательно,
+когда персонажа заводят не с нуля (перенос из другого проекта, пак). Пример: `lena`.
 
 **1. Проверить id.** `^[a-z][a-z0-9_]{1,23}$` (`lint.py:18`, `naming.md:16`). Id **неизменяем навсегда** и механизма переименования у персонажей нет (см. §7). Выбирайте на 5 лет вперёд: не `lena_v2`, не `heroine`, не `girl1`.
 
@@ -395,7 +406,7 @@ vn loc report            # покрытие по языкам
 | Варианты тела / возраст / «до и после» | Отдельного измерения нет | Отдельная **поза** (полный набор слоёв) или отдельный персонаж с новым id (см. §11) |
 | Side-image в say-окне | `side/` NOT IMPLEMENTED | Ничего; не создавайте каталог `side/` — `_discover` его не знает, файлы просто не соберутся |
 | Персонаж, приходящий с DLC | Компилятор не видит `packs/*/characters/` | Объявлять персонажа в `content/characters/`, а гейтить контентом главы пака |
-| Автоматический лист персонажа (контактный лист поз/эмоций) | `vn char sheet` — заглушка фазы 2 | Смотреть глазами в `vn play` или собрать контактный лист вручную |
+| ~~Автоматический лист персонажа~~ | `vn char sheet <id>` (2026-08-18) | — |
 
 Подробнее про бюджеты и рост — [32-performance-and-scalability.md](32-performance-and-scalability.md).
 

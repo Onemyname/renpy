@@ -278,6 +278,113 @@ def _emit_shots(root: Path, shots_docs: list[tuple[str, str, dict]],
     return out
 
 
+# z-порядок слоёв персонажа: его задаёт эмиттер layeredimage, и лист арт-ревью
+# (vn char sheet) обязан склеивать ячейки в том же порядке — иначе ревью смотрит не
+# на то, что увидит игрок.
+LAYER_ORDER = ("base", "outfits", "faces", "overlays")
+
+
+def check_matrix(rel: str, doc: dict, poses_files: dict, rep) -> list[str]:
+    """Контракт полноты матрицы персонажа: возвращает позы, пригодные к эмиссии.
+
+    Один носитель контракта на двух потребителей: эмиттер layeredimage (здесь же) и
+    `vn char validate`, который зовёт эту же функцию без сборки ассетов. Копия
+    разошлась бы с оригиналом на первой правке — а расхождение здесь означает
+    «сборка зелёная, а у игрока слой ссылается в пустоту».
+
+    `poses_files` — срез собранных слоёв персонажа (`assets.pipeline.sprite_tree`),
+    `rep` — любой отчёт с полями `errors`/`warnings`.
+    """
+    matrix = doc.get("matrix")
+    char_id = doc["id"]
+    if not matrix:
+        if poses_files:
+            rep.warnings.append(
+                f"{rel}: спрайты собраны, но в character.yaml нет блока matrix — "
+                f"layeredimage не эмитится"
+            )
+        return []
+    if not poses_files:
+        rep.warnings.append(
+            f"{rel}: объявлен matrix, но в game/assets/spr/{char_id}/ пусто — "
+            f"layeredimage не эмитится (статика появится после vn assets build)"
+        )
+        return []
+
+        # Дизъюнктность имён групп: одинаковый токен в двух группах ломает гейтинг.
+    names = [set(matrix["poses"]), set(matrix["outfits"]), set(matrix["emotions"])]
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            for clash in sorted(a & b):
+                rep.errors.append(
+                    f"{rel}: имя {clash!r} используется в двух группах matrix — "
+                    f"атрибуты layeredimage обязаны быть уникальны между группами"
+                )
+
+    # Валидация: required-комбинации обязаны существовать в собранных слоях.
+    for req in matrix.get("required", []):
+        pose = req["pose"]
+        have = poses_files.get(pose)
+        if have is None or not have["base"]:
+            rep.errors.append(f"{rel}: matrix.required: нет base для позы {pose!r}")
+            continue
+        for outfit in req.get("outfits", []):
+            if outfit not in have["outfits"]:
+                rep.errors.append(
+                    f"{rel}: matrix.required: нет слоя outfits/{outfit} для позы {pose!r}"
+                )
+        for emotion in req.get("emotions", []):
+            if emotion not in have["faces"]:
+                rep.errors.append(
+                    f"{rel}: matrix.required: нет слоя faces/{emotion} для позы {pose!r}"
+                )
+    # forbidden-комбинации ОБЯЗАНЫ отсутствовать в собранных слоях — иначе
+    # запрещённый арт молча уезжает в layeredimage (смысл декларации).
+    for forb in matrix.get("forbidden", []):
+        pose = forb["pose"]
+        have = poses_files.get(pose, {"outfits": [], "faces": []})
+        for outfit in forb.get("outfits", []):
+            if outfit in have["outfits"]:
+                rep.errors.append(
+                    f"{rel}: matrix.forbidden: слой outfits/{outfit} для позы {pose!r} "
+                    f"собран, но комбинация запрещена — удалите арт или декларацию"
+                )
+        for emotion in forb.get("emotions", []):
+            if emotion in have["faces"]:
+                rep.errors.append(
+                    f"{rel}: matrix.forbidden: слой faces/{emotion} для позы {pose!r} "
+                    f"собран, но комбинация запрещена — удалите арт или декларацию"
+                )
+
+    # Слои вне matrix — предупреждение (осиротевший арт).
+    for pose, have in poses_files.items():
+        if pose not in matrix["poses"]:
+            rep.warnings.append(f"{rel}: поза {pose!r} есть в assets, но не в matrix")
+            continue
+        for o in have["outfits"]:
+            if o not in matrix["outfits"]:
+                rep.warnings.append(f"{rel}: outfits/{o} ({pose}) вне matrix")
+        for e in have["faces"]:
+            if e not in matrix["emotions"]:
+                rep.warnings.append(f"{rel}: faces/{e} ({pose}) вне matrix")
+        for o in have["overlays"]:
+            if o not in (matrix.get("overlays") or []):
+                rep.warnings.append(f"{rel}: overlays/{o} ({pose}) вне matrix")
+
+    # Поза без base не эмитится: always-слой ссылался бы в пустоту (рантайм-краш).
+    poses = []
+    for p in matrix["poses"]:
+        if p not in poses_files:
+            continue
+        if not poses_files[p]["base"]:
+            rep.errors.append(f"{rel}: у позы {p!r} нет base@2.webp — поза не собрана")
+            continue
+        poses.append(p)
+    if not poses:
+        rep.errors.append(f"{rel}: ни одна поза из matrix не собрана в assets")
+    return poses
+
+
 def emit_images(root: Path, locations: dict[str, dict],
                 char_docs: list[tuple[str, dict]], rep: ImagesReport, header: str,
                 shots_docs: list[tuple[str, str, dict]] | None = None) -> str:
@@ -361,91 +468,8 @@ def emit_images(root: Path, locations: dict[str, dict],
         char_id = doc["id"]
         matrix = doc.get("matrix")
         poses_files = tree.get(char_id, {})
-        if not matrix:
-            if poses_files:
-                rep.warnings.append(
-                    f"{rel}: спрайты собраны, но в character.yaml нет блока matrix — "
-                    f"layeredimage не эмитится"
-                )
-            continue
-        if not poses_files:
-            rep.warnings.append(
-                f"{rel}: объявлен matrix, но в game/assets/spr/{char_id}/ пусто — "
-                f"layeredimage не эмитится (статика появится после vn assets build)"
-            )
-            continue
-
-        # Дизъюнктность имён групп: одинаковый токен в двух группах ломает гейтинг.
-        names = [set(matrix["poses"]), set(matrix["outfits"]), set(matrix["emotions"])]
-        for i, a in enumerate(names):
-            for b in names[i + 1:]:
-                for clash in sorted(a & b):
-                    rep.errors.append(
-                        f"{rel}: имя {clash!r} используется в двух группах matrix — "
-                        f"атрибуты layeredimage обязаны быть уникальны между группами"
-                    )
-
-        # Валидация: required-комбинации обязаны существовать в собранных слоях.
-        for req in matrix.get("required", []):
-            pose = req["pose"]
-            have = poses_files.get(pose)
-            if have is None or not have["base"]:
-                rep.errors.append(f"{rel}: matrix.required: нет base для позы {pose!r}")
-                continue
-            for outfit in req.get("outfits", []):
-                if outfit not in have["outfits"]:
-                    rep.errors.append(
-                        f"{rel}: matrix.required: нет слоя outfits/{outfit} для позы {pose!r}"
-                    )
-            for emotion in req.get("emotions", []):
-                if emotion not in have["faces"]:
-                    rep.errors.append(
-                        f"{rel}: matrix.required: нет слоя faces/{emotion} для позы {pose!r}"
-                    )
-        # forbidden-комбинации ОБЯЗАНЫ отсутствовать в собранных слоях — иначе
-        # запрещённый арт молча уезжает в layeredimage (смысл декларации).
-        for forb in matrix.get("forbidden", []):
-            pose = forb["pose"]
-            have = poses_files.get(pose, {"outfits": [], "faces": []})
-            for outfit in forb.get("outfits", []):
-                if outfit in have["outfits"]:
-                    rep.errors.append(
-                        f"{rel}: matrix.forbidden: слой outfits/{outfit} для позы {pose!r} "
-                        f"собран, но комбинация запрещена — удалите арт или декларацию"
-                    )
-            for emotion in forb.get("emotions", []):
-                if emotion in have["faces"]:
-                    rep.errors.append(
-                        f"{rel}: matrix.forbidden: слой faces/{emotion} для позы {pose!r} "
-                        f"собран, но комбинация запрещена — удалите арт или декларацию"
-                    )
-
-        # Слои вне matrix — предупреждение (осиротевший арт).
-        for pose, have in poses_files.items():
-            if pose not in matrix["poses"]:
-                rep.warnings.append(f"{rel}: поза {pose!r} есть в assets, но не в matrix")
-                continue
-            for o in have["outfits"]:
-                if o not in matrix["outfits"]:
-                    rep.warnings.append(f"{rel}: outfits/{o} ({pose}) вне matrix")
-            for e in have["faces"]:
-                if e not in matrix["emotions"]:
-                    rep.warnings.append(f"{rel}: faces/{e} ({pose}) вне matrix")
-            for o in have["overlays"]:
-                if o not in (matrix.get("overlays") or []):
-                    rep.warnings.append(f"{rel}: overlays/{o} ({pose}) вне matrix")
-
-        # Поза без base не эмитится: always-слой ссылался бы в пустоту (рантайм-краш).
-        poses = []
-        for p in matrix["poses"]:
-            if p not in poses_files:
-                continue
-            if not poses_files[p]["base"]:
-                rep.errors.append(f"{rel}: у позы {p!r} нет base@2.webp — поза не собрана")
-                continue
-            poses.append(p)
+        poses = check_matrix(rel, doc, poses_files, rep)
         if not poses:
-            rep.errors.append(f"{rel}: ни одна поза из matrix не собрана в assets")
             continue
 
         # Расширение референсного варианта: класс spr может отгружаться не в webp

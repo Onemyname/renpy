@@ -1143,7 +1143,102 @@ def assets_status():
         return
     _sync_report(rep, "assets status")
 
-_stub_group("char", "Персонажи: new, validate, sheet (раздел 4).", {"new": 1, "validate": 1, "sheet": 2})
+# ── vn char ───────────────────────────────────────────────────────────────────
+
+@main.group()
+def char():
+    """Персонажи: скаффолд декларации, проверка матрицы, лист арт-ревью (раздел 4)."""
+
+
+@char.command("new")
+@click.argument("char_id")
+@click.option("--name", default="", help="Имя в текстбоксе (исходный язык); по умолчанию — Id.")
+@click.option("--color", default="", help="Цвет имени #RRGGBB; по умолчанию — стабильный из id.")
+@click.option("--pose", default="a", show_default=True, help="Первая поза матрицы.")
+@click.option("--outfit", default="casual", show_default=True, help="Первый наряд.")
+@click.option("--emotion", default="neutral", show_default=True, help="Первая эмоция.")
+def char_new(char_id: str, name: str, color: str, pose: str, outfit: str, emotion: str):
+    """Завести персонажа: декларация + каталог мастеров."""
+    from .assets.sources import output_for_id
+    from .content.scaffold import ScaffoldError, new_character
+
+    root = _root()
+    try:
+        created = new_character(root, char_id, name=name, color=color, pose=pose,
+                                outfit=outfit, emotion=emotion)
+    except ScaffoldError as e:
+        _fail(str(e))
+    for path in created:
+        click.secho(f"создано: {path.relative_to(root).as_posix()}", fg="green")
+    master = output_for_id(f"spr/{char_id}/{pose}/base")
+    click.echo("дальше:")
+    click.echo(f"  1) положите мастер позы: assets_src/{master} (плюс "
+               f"outfits/{outfit}, faces/{emotion} рядом)")
+    click.echo("  2) vn assets build && vn char validate " + char_id
+               + "   # впишет фактический холст в canvas")
+    click.echo("  3) vn build                                 # layeredimage в генерат")
+    if not name:
+        click.secho("warning: имя не задано (--name) — в текстбоксе будет "
+                    f"{char_id.capitalize()!r}; после правки прогоните vn loc extract",
+                    fg="yellow")
+
+
+@char.command("validate")
+@click.argument("char_id", required=False)
+@click.option("--all", "all_chars", is_flag=True, help="Проверить всех персонажей.")
+def char_validate(char_id: str | None, all_chars: bool):
+    """Декларация, геометрия мастеров и полнота матрицы — БЕЗ сборки ассетов.
+
+    Проверки те же, что в `vn build` (одна функция контракта на два потребителя),
+    но без перекодирования дерева и без Ren'Py SDK: цикл «поправил слой -> узнал,
+    что не так» измеряется секундами."""
+    from .content.characters import CharError, validate
+
+    if not char_id and not all_chars:
+        raise click.UsageError("укажите персонажа или --all")
+    root = _root()
+    try:
+        rep = validate(root, only=None if all_chars else char_id)
+    except CharError as e:
+        _fail(str(e))
+    for row in rep.rows:
+        click.echo(row)
+    _echo_warnings(rep.warnings)
+    if rep.errors:
+        for e in rep.errors:
+            click.secho(f"error: {e}", fg="red")
+        _fail(f"char validate: {len(rep.errors)} ошибок")
+    click.secho(f"char validate: OK ({len(rep.rows)} персонажей)", fg="green")
+
+
+@char.command("sheet")
+@click.argument("char_id", required=False)
+@click.option("--all", "all_chars", is_flag=True, help="Листы всех персонажей + индекс.")
+@click.option("--out", "out_dir", type=click.Path(path_type=Path),
+              help="Куда писать (по умолчанию build/review/<id>/).")
+@click.option("--max-side", type=int, help="Сторона ячейки, px (по умолчанию render.thumb).")
+def char_sheet(char_id: str | None, all_chars: bool, out_dir: Path | None,
+               max_side: int | None):
+    """Лист арт-ревью: все допустимые комбинации поза+наряд+эмоция одной страницей.
+
+    Ячейки склеиваются в том же z-порядке, что эмитирует layeredimage, — ревьюер
+    смотрит на то, что увидит игрок."""
+    from .content.characters import CharError, char_dirs, sheet, sheet_index
+
+    if not char_id and not all_chars:
+        raise click.UsageError("укажите персонажа или --all")
+    root = _root()
+    ids = [d.name for d in char_dirs(root)] if all_chars else [char_id]
+    pages: dict[str, Path] = {}
+    try:
+        for cid in ids:
+            pages[cid] = sheet(root, cid, out_dir=out_dir, max_side=max_side)
+            click.secho(f"лист: {pages[cid].relative_to(root).as_posix()}", fg="green")
+        if all_chars and pages:
+            index = sheet_index(root, pages)
+            click.secho(f"индекс: {index.relative_to(root).as_posix()}", fg="green")
+    except CharError as e:
+        _fail(str(e))
 # ── vn loc ────────────────────────────────────────────────────────────────────
 
 @main.group()

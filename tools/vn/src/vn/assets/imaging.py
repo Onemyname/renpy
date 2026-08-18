@@ -126,12 +126,14 @@ def encode(src: Path, target: tuple[int, int] | None, quality: int,
 
 
 def composite(layers: list[Path], quality: int, out_format: str = "webp",
-              max_side: int | None = None) -> bytes:
+              max_side: int | None = None,
+              background: tuple[int, int, int] | None = None) -> bytes:
     """Слои (снизу вверх) -> байты СОБРАННОГО кадра.
 
     Нужно там, где кадр существует только как композиция и плоского мастера у него
     нет: послойные шоты (ADR-0013) собираются движком в рантайме, а сетке галереи
-    нужна одна картинка. Склейка — alpha_over ровно как у layeredimage: слои
+    нужна одна картинка; лист арт-ревью персонажа (`vn char sheet`) — тот же случай.
+    `background` — непрозрачная подложка для слоёв БЕЗ своего фона (спрайт). Склейка — alpha_over ровно как у layeredimage: слои
     лежат на одном холсте и кладутся в (0,0), поэтому превью совпадает с кадром,
     который игрок видел в игре."""
     from PIL import Image
@@ -140,6 +142,12 @@ def composite(layers: list[Path], quality: int, out_format: str = "webp",
         raise ImagingError("композиция без слоёв: нечего склеивать")
     with _open(layers[0]) as base:
         out = base.convert("RGBA")
+    if background is not None:
+        # Слои спрайта — вырезы с альфой, подложки у них нет (в отличие от шота, где
+        # первый слой — env). Без непрозрачного фона сплющивание в RGB положило бы
+        # персонажа на чёрное, и лист арт-ревью показывал бы силуэты.
+        out = Image.alpha_composite(
+            Image.new("RGBA", out.size, (*background, 255)), out)
     for path in layers[1:]:
         with _open(path) as im:
             layer = im.convert("RGBA")

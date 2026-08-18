@@ -61,6 +61,20 @@ def mk_root(tmp_path: Path, **kwargs) -> Path:
     return root
 
 
+def mk_root_with_schemas(tmp_path: Path, repo_root: Path, **kwargs) -> Path:
+    """То же плюс РЕАЛЬНЫЕ схемы из репозитория.
+
+    Нужно всем тестам, которые проходят через `SchemaRegistry`: подделывать схемы
+    в тесте — значит проверять подделку, а не контракт проекта."""
+    import shutil
+
+    root = mk_root(tmp_path, **kwargs)
+    (root / "tools").mkdir(exist_ok=True)
+    if not (root / "tools" / "schemas").exists():
+        shutil.copytree(repo_root / "tools" / "schemas", root / "tools" / "schemas")
+    return root
+
+
 def img(path: Path, size, mode="RGBA", fmt=None, color=(200, 100, 50, 255),
         transparent_border: bool = True):
     """Мастер заданного размера/формата. У RGBA по умолчанию делаем реальную

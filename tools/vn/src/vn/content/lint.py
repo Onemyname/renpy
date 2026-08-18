@@ -330,19 +330,17 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                 )
 
     # ── 4. Персонажи: id == имени папки ──────────────────────────────────────
-    chars_dir = root / "content" / "characters"
-    if chars_dir.is_dir():
-        for d in sorted(p for p in chars_dir.iterdir() if p.is_dir()):
-            if not CHAR_DIR_RE.match(d.name):
-                rep.error(f"{_rel(root, d)}: ключ персонажа вне конвенции ^[a-z][a-z0-9_]{{1,23}}$")
-                continue
-            c_yaml = d / "character.yaml"
-            if not c_yaml.is_file():
-                rep.error(f"{_rel(root, d)}: нет character.yaml")
-                continue
-            cmeta = docs.get(_rel(root, c_yaml), {})
-            if cmeta.get("id") and cmeta["id"] != d.name:
-                rep.error(f"{_rel(root, c_yaml)}: id ({cmeta['id']}) != имени папки ({d.name})")
+    # Правило одно и живёт в characters.declaration_errors: те же слова говорит
+    # `vn char validate`, иначе два места отвечали бы на один вопрос по-разному.
+    from .characters import char_dirs, declaration_errors
+
+    for d in char_dirs(root):
+        if not CHAR_DIR_RE.match(d.name):
+            rep.error(f"{_rel(root, d)}: ключ персонажа вне конвенции ^[a-z][a-z0-9_]{{1,23}}$")
+            continue
+        doc = docs.get(_rel(root, d / "character.yaml"), {})
+        for e in declaration_errors(root, d, doc):
+            rep.error(e)
 
     # ── 5. vars.yaml глав: store == id главы ─────────────────────────────────
     for rel, data in docs.items():

@@ -310,15 +310,19 @@ def _shot_thumb_jobs(rep: AssetBuildResult, cfg: RenderConfig, shot_dir: Path,
 
 # ── Discovery ────────────────────────────────────────────────────────────────
 
-def _discover(root: Path, rep: AssetBuildResult,
-              cfg: RenderConfig | None = None) -> tuple[list[Job], set[Path]]:
-    """Задания сборки + множество ФАКТИЧЕСКИ ПОТРЕБЛЁННЫХ файлов-мастеров.
-    Второе нужно, чтобы поймать мастер, который никуда не поехал: раньше файл
-    неподдерживаемого формата или в неожиданной папке исчезал молча."""
-    cfg = cfg or load_render_config(root)
-    jobs: list[Job] = []
-    consumed: set[Path] = set()
+def character_jobs(root: Path, rep: AssetBuildResult, cfg: RenderConfig,
+                   consumed: set[Path], only: str | None = None) -> list[Job]:
+    """Задания сборки слоёв персонажей (+ пополнение `consumed`).
 
+    Вынесено из `_discover` ради `vn char validate`: та команда обязана проверить
+    геометрию мастеров одного персонажа — формат, альфу, source_min и ЕДИНСТВО
+    ХОЛСТА — но не имеет права звать `build_assets(check=True)`. Полный проход тянет
+    видео-ветку, которая без ffmpeg объявляет ошибку: проверка персонажа краснела бы
+    из-за тракта, к персонажу не относящегося.
+
+    `only` — ограничить одним персонажем (его каталогом мастеров).
+    """
+    jobs: list[Job] = []
     # ── Персонажи: ручной экспорт + staging PSD-нарезки, одна конвенция ──────
     canvases = _declared_canvases(root)
     char_bases = [p / "characters" for p in _art_roots(root)]
@@ -327,6 +331,8 @@ def _discover(root: Path, rep: AssetBuildResult,
         if not chars.is_dir():
             continue
         for key_dir in sorted(p for p in chars.iterdir() if p.is_dir()):
+            if only is not None and key_dir.name != only:
+                continue
             # side/ — зарезервированный каталог портретов для say-окна (naming.md),
             # а не поза: у него свой холст и своё имя образа (image side <char> …).
             side_dir = key_dir / SIDE_DIR
@@ -389,6 +395,19 @@ def _discover(root: Path, rep: AssetBuildResult,
                             rep, cfg, _rel(root, f), f, "spr",
                             f"spr/{key_dir.name}/{pose_dir.name}/{group}/{f.stem}",
                             expect_size=canvas)
+    return jobs
+
+
+def _discover(root: Path, rep: AssetBuildResult,
+              cfg: RenderConfig | None = None) -> tuple[list[Job], set[Path]]:
+    """Задания сборки + множество ФАКТИЧЕСКИ ПОТРЕБЛЁННЫХ файлов-мастеров.
+    Второе нужно, чтобы поймать мастер, который никуда не поехал: раньше файл
+    неподдерживаемого формата или в неожиданной папке исчезал молча."""
+    cfg = cfg or load_render_config(root)
+    jobs: list[Job] = []
+    consumed: set[Path] = set()
+
+    jobs += character_jobs(root, rep, cfg, consumed)
 
     # ── Фоны и CG: произвольная вложенность каталогов ───────────────────────
     # Вложенность — организационная (apartment/living_room/), id локации при этом
@@ -696,16 +715,21 @@ def _video_jobs(root: Path, rep: AssetBuildResult, cfg: RenderConfig,
     return jobs
 
 
-def _orphan_masters(root: Path, consumed: set[Path], rep: AssetBuildResult) -> None:
+def orphan_masters(root: Path, consumed: set[Path], rep: AssetBuildResult,
+                   zones: list[Path] | None = None) -> None:
     """Файл в зоне мастеров, который не взяла ни одна ветка конвейера.
 
     Это главный источник «тихой потери»: JPG в спрайтах, лишний уровень
-    вложенности, опечатка в имени папки — раньше всё это просто исчезало."""
-    zones = [*_art_roots(root)]
-    for extra in ("audio_stems", "video_src", "voice"):
-        d = root / "assets_src" / extra
-        if d.is_dir():
-            zones.append(d)
+    вложенности, опечатка в имени папки — раньше всё это просто исчезало.
+
+    `zones` — ограничить проверку (у `vn char validate` это каталог мастеров одного
+    персонажа): полный набор зон там дал бы ошибки про чужие файлы."""
+    if zones is None:
+        zones = [*_art_roots(root)]
+        for extra in ("audio_stems", "video_src", "voice"):
+            d = root / "assets_src" / extra
+            if d.is_dir():
+                zones.append(d)
     for zone in zones:
         for f in sorted(zone.rglob("*")):
             if not f.is_file() or _is_sidecar(f) or f in consumed:
@@ -782,7 +806,7 @@ def build_assets(root: Path, profile: str = "full", check: bool = False,
         slice_all_psd(root, rep)
 
     jobs, consumed = _discover(root, rep, cfg)
-    _orphan_masters(root, consumed, rep)
+    orphan_masters(root, consumed, rep)
     if rep.errors:
         return rep
 

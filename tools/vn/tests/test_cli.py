@@ -21,9 +21,6 @@ from vn import cli
 # Список ЗАМОРОЖЕН здесь, потому что его цитируют docs/handbook/25-custom-engine.md
 # и docs/handbook/37-roadmap.md: реализовали команду — обновите и доку.
 EXPECTED_STUBS = {
-    "char new": 1,
-    "char validate": 1,
-    "char sheet": 2,
     "save migrate": 3,
     "test replay": 2,
     "test screens": 3,
@@ -63,6 +60,7 @@ def test_retired_commands_stay_retired():
 
 
 @pytest.mark.parametrize("name", ["voice tts", "test corpus",
+                                  "char new", "char validate", "char sheet",
                                   "release android setup",
                                   "release android status",
                                   "release android preflight",
