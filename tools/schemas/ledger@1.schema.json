@@ -1,37 +1,68 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "vn:schemas/ledger@1",
-  "title": "ledger@1 — реестр локализуемых строк главы (loc/ledger/chNN.json, G8); шардирован по главам против merge-конфликтов",
+  "title": "ledger@1 — журнал строк главы ДО появления retired (историческая версия): остаётся в реестре, чтобы шард из старой ветки читался и мигрировался",
   "type": "object",
   "properties": {
-    "schema": {"const": "ledger@1"},
-    "chapter": {"type": "string", "pattern": "^ch\\d{2}$"},
+    "schema": {
+      "const": "ledger@1"
+    },
+    "chapter": {
+      "type": "string",
+      "pattern": "^ch\\d{2}$"
+    },
     "says": {
       "type": "object",
-      "propertyNames": {"pattern": "^ch\\d{2}_s\\d{3}_\\d{4}$"},
+      "propertyNames": {
+        "pattern": "^ch\\d{2}_s\\d{3}_\\d{4}$"
+      },
       "additionalProperties": {
         "type": "object",
         "properties": {
-          "who": {"type": ["string", "null"]},
-          "text": {"type": "string"}
+          "who": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
         },
-        "required": ["who", "text"],
+        "required": [
+          "who",
+          "text"
+        ],
         "additionalProperties": false
       }
     },
     "menus": {
       "type": "object",
-      "propertyNames": {"pattern": "^ch\\d{2}_s\\d{3}_m\\d{3}$"},
+      "propertyNames": {
+        "pattern": "^ch\\d{2}_s\\d{3}_m\\d{3}$"
+      },
       "additionalProperties": {
         "type": "object",
         "properties": {
-          "items": {"type": "array", "items": {"type": "string"}}
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
         },
-        "required": ["items"],
+        "required": [
+          "items"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["schema", "chapter", "says", "menus"],
+  "required": [
+    "schema",
+    "chapter",
+    "says",
+    "menus"
+  ],
   "additionalProperties": false
 }

@@ -120,6 +120,11 @@ def _iter_declarations(root: Path):
         if base.is_dir():
             yield from sorted(base.rglob("*.yaml"))
             yield from sorted(base.rglob("*.yml"))
+    # Журнал номеров строк: битая или старая схема означает переиспользованный
+    # номер (то есть перевод, переехавший на чужую реплику), а не косметику.
+    ledger = root / "loc" / "ledger"
+    if ledger.is_dir():
+        yield from sorted(ledger.glob("ch*.json"))
     # Записи повтора (replay@1) — такие же входные данные с ожидаемым результатом,
     # что и фикстуры сейвов: битая запись должна краснеть на lint, а не на прогоне.
     replays = root / "ci" / "fixtures" / "replays"

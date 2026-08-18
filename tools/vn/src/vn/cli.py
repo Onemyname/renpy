@@ -1257,6 +1257,7 @@ def loc_keys(check: bool):
         rep = assign_ids(root, check=check)
     except KeysError as e:
         _fail(str(e))
+    _echo_warnings(rep.warnings)
     if rep.errors:
         for e in rep.errors:
             click.secho(f"error: {e}", fg="red")

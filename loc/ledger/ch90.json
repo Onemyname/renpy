@@ -1,6 +1,7 @@
 {
  "chapter": "ch90",
  "menus": {},
+ "retired": {},
  "says": {
   "ch90_s010_0001": {
    "text": "Море. DLC-эпизод начинается здесь.",
@@ -15,5 +16,5 @@
    "who": null
   }
  },
- "schema": "ledger@1"
+ "schema": "ledger@2"
 }

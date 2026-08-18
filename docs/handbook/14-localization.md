@@ -1,6 +1,6 @@
 # 14. Локализация
 
-> **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 136/136; на те же say-id опирается озвучка (`voice@1`, см. [23-audio.md](23-audio.md) §8). **Но:** номера say-id переиспользуемы после удаления реплики (нет high-watermark), RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам.
+> **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 136/136; на те же say-id опирается озвучка (`voice@1`, см. [23-audio.md](23-audio.md) §8). **Но:** RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам. Номера say-id больше НЕ переиспользуются: ledger стал журналом (`ledger@2`, high-watermark — 2026-08-19).
 > **Отвечает на вопрос:** «Как добавить язык, как перевести новую строку, как не сломать переводы правкой сцены и что проверит релизный гейт».
 
 Локализация — единственная подсистема, которая пишет **в авторские исходники** (`vn loc keys` дописывает `id` прямо в `content/**/scenes/*.scene.rpy`) и полностью генерирует зону `game/tl/` (gitignored, `.gitignore:4`). Тулинг: `tools/vn/src/vn/loc/keys.py` (249 строк) и `tools/vn/src/vn/loc/po.py` (610 строк), CLI-группа `tools/vn/src/vn/cli.py:962-1086`. Рантайм: `game/framework/00_core/040_localization.rpy` (named stores `vn_lang` и `vn_loc`). Норматив — `../ARCHITECTURE.md` §5 (строки 2448-2916), архитектурное решение — `../adr/0005-language-packages-and-runtime-registry.md`.
@@ -187,7 +187,7 @@ Ledger — **единственный** источник для PO-экстра�
 
 `vn loc keys --check` (`keys.py:178-194`) пересобирает ledger в памяти и **байт-в-байт сравнивает с диском**: правка текста реплики id не трогает, но обязана доехать до ledger, иначе переводчики молча работают со старым текстом. Шарды исчезнувших глав: `--check` репортует, обычный прогон `unlink()`-ает (`keys.py:235-249`).
 
-**NOT IMPLEMENTED** (`../ARCHITECTURE.md`:2505, 2781 требуют, схема прямо запрещает): `source_hash`, `first_seen`, `last_changed`, `state: retired`, blake3 по строкам, high-watermark номеров.
+**Частично IMPLEMENTED** (2026-08-19): `state: retired` и high-watermark номеров есть — схема `ledger@2` требует блок `retired`, и счётчик засевается занятыми номерами (живые прошлого прогона + retired). По-прежнему NOT IMPLEMENTED: `source_hash`, `first_seen`, `last_changed`, blake3 по строкам (`../ARCHITECTURE.md`:2505, 2781).
 
 ## PO: merge-семантика и фильтр доставки
 
@@ -394,7 +394,8 @@ vn release validate --flavor public    # среди 21 проверки — ге
 | POT-файлы, `msgmerge`, previous-msgid `#\|` | `../ARCHITECTURE.md`:2698-2707 | NOT IMPLEMENTED — merge написан руками на polib (`po.py:246-268`) |
 | Интеграция с CAT (`--push crowdin`, `--pull --min-status approved`, `--langs`, `--domains`) | `../ARCHITECTURE.md`:2760-2775 | NOT IMPLEMENTED — `extract`/`import` не принимают ни одного флага |
 | `vn loc keys --migrate --from --to` | `../ARCHITECTURE.md`:2554 | NOT IMPLEMENTED — есть только `--check` |
-| Ledger как журнал (high-watermark, `retired`, хеши, `first_seen`) | `../ARCHITECTURE.md`:2505, 2781 | NOT IMPLEMENTED — схема `ledger@1` запрещает эти ключи |
+| Ledger как журнал: high-watermark и `retired` | `../ARCHITECTURE.md`:2505, 2781 | **IMPLEMENTED** (`ledger@2`, 2026-08-19) |
+| Хеши строк и даты в журнале (`source_hash`, `first_seen`, `last_changed`) | `../ARCHITECTURE.md`:2505 | NOT IMPLEMENTED — схема `ledger@2` их не содержит |
 | Строгость по статусу главы (draft = warning) для say без id | `../ARCHITECTURE.md`:2552 | NOT IMPLEMENTED — `keys.py` одинаков для всех глав |
 | `vn loc report --gate/--format/--manifest`, per-domain, `gates:`/`tier:` | `../ARCHITECTURE.md`:2789-2814 | NOT IMPLEMENTED |
 | `vn loc screenshots` + скриншот-референсы в `#.` | `../ARCHITECTURE.md`:2900-2902 | NOT IMPLEMENTED |
@@ -410,7 +411,16 @@ vn release validate --flavor public    # среди 21 проверки — ге
 
 ### Риск, который стоит держать в голове
 
-**Номера say-id переиспользуемы после удаления реплики.** `used_nums` собирается только из id, физически присутствующих в файле (`keys.py:106`), ledger пересобирается с нуля. Удалили последнюю по номеру реплику — её номер освободится и достанется следующей новой. Смягчение: `extract` пометит вернувшийся ctx как `fuzzy`, потому что msgid отличается (`po.py:258-263`), а fuzzy не поставляется. Но если новый текст **байт-в-байт** совпал со старым — старый перевод молча приедет к новой реплике. На объёме в 50 глав это реальный сценарий; `../ARCHITECTURE.md`:2505 и :2781 требуют high-watermark, его нет.
+**Номера say-id больше НЕ переиспользуются** (закрыто 2026-08-19, `ledger@2`). Было: `used_nums` собирался только из id, физически присутствующих в файле, а ledger пересобирался с нуля — удалили последнюю по номеру реплику, её номер освободился и достался следующей новой. Смягчение работало не всегда: `extract` помечает вернувшийся ctx как `fuzzy` по несовпадению msgid, но если новый текст **байт-в-байт** совпал со старым, старый перевод молча приезжал к новой реплике.
+
+Стало: ledger — журнал. Удалённые id переходят в блок `retired`, счётчик засевается **занятыми** номерами (живые прошлого прогона + retired), поэтому метка аллокации только растёт. Детали, которые важны на практике:
+
+- **Миграция шарда с `ledger@1`** досеивает журнал из PO: obsolete-записи `#~` — единственный сохранившийся след id, удалённых до появления журнала. Суффикс индекса пункта у msgctxt меню (`chNN_sNNN_mNNN[i]`) срезается, иначе ключ с `[0]` не прошёл бы `propertyNames` схемы.
+- **Битый или пропавший шард — ошибка, а не «начнём с нуля»**: тихий сброс метки означает повторную выдачу использованных номеров. Сообщение прямо просит восстановить файл из git.
+- **Глава, чей анализ не состоялся** (опечатка в сцене), переносит свой журнал на диск без изменений: иначе одна ошибка отправила бы всю главу в `retired` и сожгла её номера навсегда.
+- **Возврат id из `retired`** (например, `git revert` реплики) — предупреждение, а не ошибка: перевод корректно вернётся из obsolete. Если же реплика новая, команда прямо советует удалить клаузу `id` и получить новый номер.
+- **Потолок разрядности стал достижим**: номера не переиспользуются, поэтому `vn loc keys` отказывается выдать 10000-й say-id в одной сцене (и 1000-е меню) — пятизначный номер молча испортил бы исходник.
+- **Осиротевший шард исчезнувшей главы по-прежнему удаляется** (`_reconcile_stale_ledgers`): список шардов означает «существующие главы», и на это опираются компилятор, озвучка и экстрактор. Журнал такой главы теряется целиком — осознанная дыра, надгробий мы не заводим.
 
 ## Проверка
 
@@ -436,6 +446,6 @@ python -m pytest tools/vn/tests -q                # 373 теста целико�
 | **Не трогать** | `game/tl/**` (генерат `vn loc import`, gitignored), `loc/ledger/*.json` (зеркало сцен, пересобирается), `game/generated/registry/menus.gen.rpy` (генерат компилятора). Правки здесь бесполезны — перезапишет сборка |
 | **Зависимости** | `content/ui/strings.yaml` → `VN_STRINGS` в `menus.gen.rpy` → `vn_loc.t()` во всех экранах `game/framework/20_ui/`; `loc/ledger/` → PO → `game/tl/` → движок; `loc/loc.yaml source` → `VN_SOURCE_LANG` → `vn_lang._source()` → `vn test smoke --lang`; покрытие → `release.py:447-473` → exit-код `vn release validate` |
 | **Валидация** | `vn loc keys --check` → `vn build --check` → `vn loc report` → `python -m pytest tools/vn/tests/test_loc.py -q` |
-| **Частые ошибки** | 1) Правка `game/tl/` вместо `loc/po/` — исчезнет на следующем `vn build`. 2) Литерал в экране вместо `vn_loc.t(key)` — строка не попадёт в PO и не переведётся. 3) Голый `[` в тексте — интерполяция, падение у игрока; эскейп `[[`. 4) Попытка перевести UI через `translate strings` — отменено ADR-0005 §4, работает только для имён персонажей. 5) Опора на `config.change_language_callbacks` — мёртв в Ren'Py 8.5, нужен `config.language_callbacks[lang]`. 6) Пересказ `../ARCHITECTURE.md` §5 как факта: `--gate`, POT/msgmerge, RTL, high-watermark ledger — там описаны, но не реализованы |
+| **Частые ошибки** | 1) Правка `game/tl/` вместо `loc/po/` — исчезнет на следующем `vn build`. 2) Литерал в экране вместо `vn_loc.t(key)` — строка не попадёт в PO и не переведётся. 3) Голый `[` в тексте — интерполяция, падение у игрока; эскейп `[[`. 4) Попытка перевести UI через `translate strings` — отменено ADR-0005 §4, работает только для имён персонажей. 5) Опора на `config.change_language_callbacks` — мёртв в Ren'Py 8.5, нужен `config.language_callbacks[lang]`. 6) Пересказ `../ARCHITECTURE.md` §5 как факта: `--gate`, POT/msgmerge, RTL — там описаны, но не реализованы (high-watermark ledger реализован 2026-08-19) |
 
 **Смежные файлы хендбука:** [12-scenes.md](12-scenes.md) (устройство `*.scene.rpy`), [13-dialogue.md](13-dialogue.md) (меню и `vn_menu`), [06-frontend.md](06-frontend.md) (экраны и `vn_loc.t`), [09-chapters.md](09-chapters.md), [10-characters.md](10-characters.md), [25-custom-engine.md](25-custom-engine.md) (CLI `vn`), [27-testing.md](27-testing.md) (`vn test smoke --lang`), [29-build-and-release.md](29-build-and-release.md) (релизный гейт), [30-packs-and-dlc.md](30-packs-and-dlc.md) (переводы глав пака).

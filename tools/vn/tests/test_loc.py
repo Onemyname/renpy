@@ -469,3 +469,144 @@ def test_e2e_keys_check_detects_stale_ledger(repo_root):
         assert any("ch01.json устарел" in m for m in rep2.missing)
     finally:
         ledger_path.write_text(original, encoding="utf-8")
+
+# ── High-watermark say-id: номер не переиспользуется (P1-8) ───────────────────
+
+def _journal_root(tmp_path, *, retired=None, says=None, menus=None, schema="ledger@2"):
+    root = tmp_path / "repo"
+    (root / "loc" / "ledger").mkdir(parents=True)
+    (root / "content" / "chapters" / "ch01_intro" / "scenes").mkdir(parents=True)
+    doc = {"schema": schema, "chapter": "ch01",
+           "says": says if says is not None else {},
+           "menus": menus if menus is not None else {}}
+    if schema == "ledger@2":
+        doc["retired"] = {i: {"state": "retired"} for i in (retired or ())}
+    (root / "loc" / "ledger" / "ch01.json").write_text(
+        json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    return root
+
+
+def test_journal_seeds_counter_from_retired(tmp_path):
+    """Номер удалённой реплики остаётся ЗАНЯТЫМ: иначе новая реплика получит его id,
+    а вместе с ним — перевод удалённой (msgctxt в PO совпадёт)."""
+    from vn.loc.keys import KeysReport, _journal
+
+    root = _journal_root(tmp_path, retired=["ch01_s010_0002"],
+                         says={"ch01_s010_0001": {"who": None, "text": "Живая"}})
+    rep = KeysReport()
+    known, prior = _journal(root, {"ch01"}, rep)
+    assert known["ch01"] == {"ch01_s010_0001", "ch01_s010_0002"}
+    assert prior["ch01"] == {"ch01_s010_0002"} and rep.errors == []
+
+
+def test_journal_migration_seeds_from_obsolete_po(tmp_path):
+    """Шард на ledger@1: журнала ещё нет, и единственный след удалённых id —
+    obsolete-записи в PO. Без засева миграция сбросила бы метку аллокации."""
+    from vn.loc.keys import KeysReport, _journal
+
+    root = _journal_root(tmp_path, schema="ledger@1",
+                         says={"ch01_s010_0003": {"who": None, "text": "Живая"}})
+    po_dir = root / "loc" / "po" / "en"
+    po_dir.mkdir(parents=True)
+    (po_dir / "ch01.po").write_text(
+        'msgid ""\nmsgstr ""\n\n'
+        '#~ msgctxt "ch01_s010_0001"\n#~ msgid "Удалённая"\n#~ msgstr "Deleted"\n\n'
+        'msgctxt "ch01_s010_m001[0]"\nmsgid "Да"\nmsgstr "Yes"\n',
+        encoding="utf-8")
+    known, _prior = _journal(root, {"ch01"}, KeysReport())
+    assert "ch01_s010_0001" in known["ch01"], "obsolete-id обязан занимать номер"
+    assert "ch01_s010_m001" in known["ch01"], "суффикс индекса пункта срезается"
+    assert not any("[" in i for i in known["ch01"]), \
+        "ключ с [0] не прошёл бы propertyNames схемы ledger@2"
+
+
+def test_journal_broken_shard_is_an_error_not_a_reset(tmp_path):
+    """Битый шард нельзя трактовать как «журнала нет»: это тихий сброс метки, то
+    есть повторная выдача уже использованных номеров."""
+    from vn.loc.keys import KeysReport, _journal
+
+    root = _journal_root(tmp_path)
+    (root / "loc" / "ledger" / "ch01.json").write_text("{битый", encoding="utf-8")
+    rep = KeysReport()
+    known, _prior = _journal(root, {"ch01"}, rep)
+    assert "ch01" not in known
+    assert any("восстановите файл из git" in e for e in rep.errors)
+
+
+def test_ledger2_schema_rejects_menu_context_suffix(repo_root):
+    """Схема журнала обязана отвергать ключ с индексом пункта: если бы засев из PO
+    его пропустил, шард не прошёл бы собственную валидацию."""
+    from vn.schemas import SchemaRegistry
+
+    reg = SchemaRegistry(repo_root / "tools" / "schemas")
+    bad = {"schema": "ledger@2", "chapter": "ch01", "says": {}, "menus": {},
+           "retired": {"ch01_s010_m001[0]": {"state": "retired"}}}
+    assert reg.validate(bad, "ch01.json") != []
+    good = dict(bad, retired={"ch01_s010_m001": {"state": "retired"}})
+    assert reg.validate(good, "ch01.json") == []
+
+
+def test_repo_ledgers_are_on_journal_schema(repo_root):
+    """Миграция прошла и не откатывается: шард на ledger@1 означает, что номера
+    снова переиспользуются."""
+    shards = sorted((repo_root / "loc" / "ledger").glob("ch*.json"))
+    assert shards, "шардов журнала нет — проверка выродилась"
+    for shard in shards:
+        doc = json.loads(shard.read_text(encoding="utf-8"))
+        assert doc["schema"] == "ledger@2", shard.name
+        assert "retired" in doc, shard.name
+
+
+@pytest.mark.skipif(not (_SDK and (Path(_SDK) / "renpy.py").is_file()),
+                    reason="RENPY_SDK не установлен")
+def test_e2e_deleted_line_number_is_not_reused(repo_root, tmp_path):
+    """САМ ДЕФЕКТ, из-за которого нужен журнал: удалить реплику, добавить новую —
+    новая обязана получить СЛЕДУЮЩИЙ номер, а не номер удалённой (иначе к ней
+    приедет перевод удалённой).
+
+    Прогон идёт на копии репозитория: команда физически правит авторские .rpy."""
+    import shutil
+
+    from vn.loc.keys import assign_ids
+
+    root = tmp_path / "copy"
+    for rel in ("project.yaml", "tools/schemas", "content", "loc", "game/framework"):
+        src = repo_root / rel
+        dst = root / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        (shutil.copytree if src.is_dir() else shutil.copy)(src, dst)
+
+    scene = next((root / "content" / "chapters").rglob("s010_*.scene.rpy"))
+    text = scene.read_text(encoding="utf-8")
+    ledger_path = root / "loc" / "ledger" / "ch01.json"
+    before = json.loads(ledger_path.read_text(encoding="utf-8"))
+    ids = sorted(i for i in before["says"] if i.startswith("ch01_s010_"))
+    victim = ids[-1]                      # последняя реплика сцены: её номер и есть метка
+    victim_line = next(l for l in text.splitlines() if f"id {victim}" in l)
+
+    # 1) удалить реплику с самым большим номером
+    scene.write_text(text.replace(victim_line + "\n", ""), encoding="utf-8")
+    rep = assign_ids(root, check=False)
+    assert rep.errors == [], rep.errors
+    mid = json.loads(ledger_path.read_text(encoding="utf-8"))
+    assert victim not in mid["says"], "реплики больше нет"
+    assert victim in mid["retired"], "её номер обязан остаться занятым"
+
+    # 2) добавить новую реплику на её место
+    lines = scene.read_text(encoding="utf-8").splitlines()
+    # Вставляем сразу после ПЕРВОЙ реплики с id: её отступ гарантированно корректен
+    # для тела сцены (вставка после пункта меню сломала бы блок choice).
+    anchor = next(i for i, l in enumerate(lines) if " id ch01_s010_" in l)
+    indent = lines[anchor][: len(lines[anchor]) - len(lines[anchor].lstrip())]
+    lines.insert(anchor + 1, f'{indent}"Новая реплика после удаления."')
+    scene.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    rep2 = assign_ids(root, check=False)
+    assert rep2.errors == [], rep2.errors
+
+    after = json.loads(ledger_path.read_text(encoding="utf-8"))
+    fresh = sorted(set(after["says"]) - set(mid["says"]))
+    assert len(fresh) == 1, fresh
+    assert fresh[0] != victim, (
+        f"номер {victim} переиспользован — новая реплика унаследует перевод удалённой")
+    assert int(fresh[0].rsplit("_", 1)[1]) > int(victim.rsplit("_", 1)[1])
+    assert victim in after["retired"], "журнал не должен терять отставленный номер"

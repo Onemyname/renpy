@@ -322,6 +322,26 @@ def _load_translations(root: Path, lang: str) -> dict[str, tuple[str, bool]]:
     return out
 
 
+def known_contexts(root: Path, domain: str) -> set[str]:
+    """Все msgctxt домена по ВСЕМ языковым пакетам, включая obsolete-записи.
+
+    Единственный сохранившийся след id, удалённых ДО появления журнала retired:
+    polib оставляет их в файле как `#~`-записи, и по ним восстанавливается высокая
+    метка аллокации при миграции шарда с ledger@1."""
+    out: set[str] = set()
+    po_dir = root / "loc" / "po"
+    if not po_dir.is_dir():
+        return out
+    for lang_dir in sorted(p for p in po_dir.iterdir() if p.is_dir()):
+        path = lang_dir / f"{domain}.po"
+        if not path.is_file():
+            continue
+        for e in polib.pofile(str(path)):
+            if e.msgctxt:
+                out.add(e.msgctxt)
+    return out
+
+
 def _rpy_str(s: str) -> str:
     return ('"' + s.replace("\\", "\\\\").replace('"', '\\"')
             .replace("\n", "\\n").replace("\t", "\\t") + '"')

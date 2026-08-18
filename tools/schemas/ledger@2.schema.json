@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/ledger@2",
+  "title": "ledger@2 — журнал строк главы (loc/ledger/chNN.json): живые id -> исходный текст ПЛЮС журнал retired (номера не переиспользуются)",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "ledger@2"
+    },
+    "chapter": {
+      "type": "string",
+      "pattern": "^ch\\d{2}$"
+    },
+    "says": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^ch\\d{2}_s\\d{3}_\\d{4}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "who": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "who",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "menus": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^ch\\d{2}_s\\d{3}_m\\d{3}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "retired": {
+      "type": "object",
+      "description": "Занятые, но больше не живые id: сюда попадает реплика или меню, исчезнувшие из сцены. Номера из этого журнала не выдаются повторно (высокая метка аллокации).",
+      "propertyNames": {
+        "pattern": "^ch\\d{2}_s\\d{3}(_\\d{4}|_m\\d{3})$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "const": "retired"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "chapter",
+    "menus",
+    "retired",
+    "says",
+    "schema"
+  ],
+  "additionalProperties": false,
+  "description": "Ledger — не зеркало сцен, а ЖУРНАЛ: номер, однажды выданный реплике, не достаётся другой реплике никогда. Удалённая реплика уходит в retired, и её номер остаётся занятым — иначе новая реплика унаследовала бы её перевод (msgctxt в PO совпал бы), а fuzzy пометился бы только при несовпадении текста байт в байт."
+}
