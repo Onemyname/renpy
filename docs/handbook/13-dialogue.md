@@ -480,7 +480,7 @@ vn test smoke --lang pseudo --picks 0,0
 6. `vn loc keys` → появится `$ vn_menu = "chNN_sNNN_mNNN"`, в ledger — блок `menus`.
 7. `vn build`; убедиться, что в `game/generated/registry/menus.gen.rpy` новый id и правильные подписи.
 8. `vn content graph` — увидеть развилку в Mermaid (учтите: команда сканирует **только**
-   `content/chapters/`, главы из `packs/*` в граф не попадают, `tools/vn/src/vn/content/graph.py:15`).
+   `content/chapters/` и `packs/*/chapters/` — `repo.chapter_zones`).
 9. `vn test smoke --picks 0,1` — прогнать альтернативную ветку; фактический путь пишется
    в `.vncache/smoke/picks.log`.
 10. Переводы: `vn loc extract` → перевести `loc/po/{en,de}/chNN.po` (ctx `chNN_sNNN_mNNN[i]`)

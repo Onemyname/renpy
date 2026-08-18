@@ -301,3 +301,20 @@ def test_achievement_sync_button_uses_engine_action(repo_root):
     src = (repo_root / "game" / "framework" / "20_ui" / "screens"
            / "core_screens.rpy").read_text(encoding="utf-8")
     assert "achievement.Sync()" in src
+
+def test_every_control_hint_has_both_key_variants(repo_root):
+    """`vn_ui.hint("X")` читает ПАРУ ключей: `X_kbd` и `X_pad`. Забытый суффикс не
+    падает — `vn_loc.t` вернёт сам ключ, и игрок увидит `ui.history.hint_pad`
+    строкой на экране. Механизм парных подсказок есть, страховки к нему не было."""
+    import re
+
+    strings = (repo_root / "content" / "ui" / "strings.yaml").read_text(encoding="utf-8")
+    used = set()
+    for rpy in sorted((repo_root / "game" / "framework").rglob("*.rpy")):
+        used |= set(re.findall(r'vn_ui\.hint\("([a-z0-9_.]+)"\)', rpy.read_text(encoding="utf-8")))
+    assert used, "ни одной подсказки не найдено — проверка выродилась"
+    for key in sorted(used):
+        for suffix in ("_kbd", "_pad"):
+            assert f"{key}{suffix}:" in strings, (
+                f"{key}{suffix} нет в content/ui/strings.yaml — игрок увидит ключ "
+                f"вместо подсказки на {'паде' if suffix == '_pad' else 'клавиатуре'}")

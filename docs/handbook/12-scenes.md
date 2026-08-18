@@ -315,7 +315,7 @@ flowchart TD
     ch01_s030 --> vn_end([конец контента])
 ```
 
-Граф читает **только** `content/chapters/` (`graph.py:15`) — главы из `packs/*/chapters/` в него не попадают (PARTIALLY IMPLEMENTED). `ch90_s010` из `packs/ep_beach` в выводе выше отсутствует именно поэтому.
+Граф читает и `content/chapters/`, и `packs/*/chapters/` (`repo.chapter_zones`, 2026-08-18): `ch90_s010` из `packs/ep_beach` в выводе есть, а её подграф подписан `· pack ep_beach`.
 
 ## Как изменить / Как расширить
 

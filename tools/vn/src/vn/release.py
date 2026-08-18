@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .content.compile import CHAPTER_DIR_RE, SCENE_YAML_RE
-from .repo import git_sha, load_project, load_yaml
+from .repo import chapter_zones, git_sha, load_project, load_yaml
 
 MANIFEST_REL = "ci/release-manifest.json"
 BUILD_INFO_REL = "game/build_id.json"
@@ -443,21 +443,66 @@ def steam_preflight(root: Path, flavor: str) -> list[tuple[str, str]]:
     return checks
 
 
+RPYC_CACHE_REL = "build/rpyc-cache"
+# Линия для прямого `vn package` (без флейвора): ручной прогон не должен затирать
+# релизную линию, из которой следующий релиз возьмёт statement-имена.
+RPYC_LANE_DEV = "dev"
+
+
+def rpyc_cache_lane(root: Path, dest_suffix: str = "") -> tuple[Path, list[Path], bool]:
+    """Линия кэша `.rpyc` и её содержимое: `(каталог линии, версии, взят ли legacy)`.
+
+    Кэш разложен по флейворам — `build/rpyc-cache/<линия>/<версия>/`. Наборы `.rpyc`
+    у флейворов разные (в public нет глав patron-паков), а перенос statement-имён из
+    чужой линии — ровно тот случай, от которого страхует G6: сейв игрока public
+    подцепил бы имена сборки, которой у него нет.
+
+    До 2026-08-18 версии лежали в корне кэша без линий. Такая раскладка читается как
+    запасной вариант (третий элемент — `True`): молча потерять кэш опаснее, чем
+    прочитать не разделённый по флейворам, потому что без переноса имён ломаются
+    сейвы прошлого релиза. Запись всегда идёт уже в линию.
+    """
+    def semver_key(p: Path) -> tuple[int, ...]:
+        try:
+            return tuple(int(x) for x in p.name.split("."))
+        except ValueError:
+            return (0,)
+
+    cache_root = root / RPYC_CACHE_REL
+    lane = cache_root / (dest_suffix.lstrip("-") or RPYC_LANE_DEV)
+    caches = sorted((p for p in lane.iterdir() if p.is_dir()),
+                    key=semver_key) if lane.is_dir() else []
+    if caches:
+        return lane, caches, False
+    legacy = sorted((p for p in cache_root.iterdir()
+                     if p.is_dir() and semver_key(p) != (0,)),
+                    key=semver_key) if cache_root.is_dir() else []
+    return lane, legacy, bool(legacy)
+
+
 def snapshot_content(root: Path) -> dict:
+    """Снимок реестра для changelog и штампа id_registry: главы ядра И паков.
+
+    Главы паков — такой же выпущенный контент: их сцены попадают в сейвы игрока и
+    подпадают под G7 наравне с ядром. Пока снимок обходил только
+    `content/chapters/`, добавление и переименование главы пака не попадало ни в
+    changelog, ни в штамп реестра — то есть сеть, которая ловит «выпущенная сцена
+    исчезла», на паках просто не работала."""
     chapters: dict[str, dict] = {}
-    base = root / "content" / "chapters"
-    for d in sorted(p for p in base.iterdir() if p.is_dir()) if base.is_dir() else []:
-        m = CHAPTER_DIR_RE.match(d.name)
-        if not m:
-            continue
-        ch_id = f"ch{m.group(1)}"
-        meta = load_yaml(d / "chapter.yaml") if (d / "chapter.yaml").is_file() else {}
-        scenes = []
-        for f in sorted((d / "scenes").glob("*.scene.yaml")) if (d / "scenes").is_dir() else []:
-            sm = SCENE_YAML_RE.match(f.name)
-            if sm:
-                scenes.append(f"{ch_id}_s{sm.group(1)}")
-        chapters[ch_id] = {"status": meta.get("status", "draft"), "scenes": scenes}
+    for pack_id, base in chapter_zones(root):
+        for d in sorted(p for p in base.iterdir() if p.is_dir()):
+            m = CHAPTER_DIR_RE.match(d.name)
+            if not m:
+                continue
+            ch_id = f"ch{m.group(1)}"
+            meta = load_yaml(d / "chapter.yaml") if (d / "chapter.yaml").is_file() else {}
+            scenes = []
+            for f in sorted((d / "scenes").glob("*.scene.yaml")) if (d / "scenes").is_dir() else []:
+                sm = SCENE_YAML_RE.match(f.name)
+                if sm:
+                    scenes.append(f"{ch_id}_s{sm.group(1)}")
+            chapters[ch_id] = {"status": meta.get("status", "draft"), "scenes": scenes,
+                               "pack": pack_id}
     return chapters
 
 
@@ -480,7 +525,11 @@ def update_changelog(root: Path) -> ReleaseReport:
     if rep.changed:
         lines = [f"## {project['version']}", ""]
         if rep.added_chapters:
-            lines.append("Новые главы: " + ", ".join(rep.added_chapters))
+            # Пак в скобках: «новая глава» ядра и главы DLC — разные новости для
+            # читателя changelog (вторая уедет только владельцам пака).
+            lines.append("Новые главы: " + ", ".join(
+                ch if cur[ch].get("pack", "core") == "core"
+                else f"{ch} (pack {cur[ch]['pack']})" for ch in rep.added_chapters))
         if rep.added_scenes:
             lines.append(f"Новые сцены ({len(rep.added_scenes)}): " + ", ".join(rep.added_scenes))
         if rep.removed_scenes:
@@ -489,8 +538,10 @@ def update_changelog(root: Path) -> ReleaseReport:
         changelog = root / "docs" / "CHANGELOG.md"
         old = changelog.read_text(encoding="utf-8") if changelog.is_file() else "# Changelog\n\n"
         head, _, tail = old.partition("\n")
-        changelog.write_text(head + "\n\n" + "\n".join(lines) + tail.lstrip("\n"),
-                             encoding="utf-8")
+        # Пустая строка перед следующим заголовком обязательна: без неё markdown
+        # склеивает «## Не выпущено» с последним абзацем нового раздела.
+        changelog.write_text(head + "\n\n" + "\n".join(lines) + "\n"
+                             + tail.lstrip("\n"), encoding="utf-8")
 
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(json.dumps(

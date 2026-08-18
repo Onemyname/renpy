@@ -71,7 +71,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 |---|---|---|---|
 | `content lint` | `--layout/--no-layout` (def **True**) | Схемы, naming-конвенции, структура глав, битые exits; строгость привязана к `status` главы (G15) (`cli.py:382-396`) | IMPL |
 | `content compile` | `--check` | Компиляция деклараций в `game/generated/` **без линта** (`cli.py:399-422`) | IMPL |
-| `content graph` | `--out PATH` (def stdout) | Mermaid-граф сцен: узлы, exits с условиями, тупик `vn_end` (`cli.py:425-437`) | PART — обходит **только** `content/chapters/` (`tools/vn/src/vn/content/graph.py:15`); главы из `packs/*/chapters/` в граф не попадают. Проверено прогоном 2026-08-08: вывод содержит только `ch01`, `ch90` из `packs/ep_beach` отсутствует |
+| `content graph` | `--out PATH` (def stdout) | Mermaid-граф сцен: узлы, exits с условиями, тупик `vn_end` (`cli.py:425-437`) | IMPL — обходит ядро и паки (`repo.chapter_zones`), пак подписан в заголовке подграфа. Проверено прогоном 2026-08-18: в выводе `ch01` и `ch90_beach (draft) · pack ep_beach` |
 
 Подробности компилятора, линта и реестра схем — в [Контентный конвейер](08-content-pipeline.md), здесь не дублируются.
 
@@ -192,7 +192,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
-| `release changelog` | — | Обновляет `docs/CHANGELOG.md` и `ci/release-manifest.json` по диффу реестров, штампует `id_registry` (G7) (`cli.py:1471-1489`) | PART — нет `--from/--audience`; главы из `packs/*/chapters/` не видит |
+| `release changelog` | — | Обновляет `docs/CHANGELOG.md` и `ci/release-manifest.json` по диффу реестров, штампует `id_registry` (G7) (`cli.py:1471-1489`) | PART — нет `--from/--audience`; главы паков видит с 2026-08-18 (в changelog помечены `(pack <id>)`) |
 | `release validate` | `--flavor` (**required**) | Предрелизный гейт: 21 проверка PASS/WARN/FAIL (`cli.py:1492-1505`) | IMPL |
 | `release build` | `--flavor` (**required**), `--patron-token`, `--package` (multiple), `--timeout` (def 900) | `vn build` → гейт → `game/build_id.json` → `vn package` с суффиксом `-<flavor>` → `build-info.json`; `build_id.json` и скопированный `THIRD-PARTY-NOTICES.md` снимаются в `finally` (`cli.py:1508-1562`) | IMPL — `--patron-token` это **вход**: наружу уходит только производная метка `patron_tag` (ADR-0011, см. ниже) |
 | `release preflight` | `--flavor` | Готовность к Steam-поставке ДО App ID: депоты, редистрибутивы, артефакты, список ачивок для партнёрки, DLC-маппинг, корень Auto-Cloud (`release.py: steam_preflight`) | IMPL — пустой `appid` даёт `TODO`, а не провал |

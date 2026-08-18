@@ -28,6 +28,32 @@ def load_yaml(path: Path):
         return yaml.safe_load(f)
 
 
+def chapter_zones(root: Path, packs=None) -> list[tuple[str, Path]]:
+    """[(pack_id, каталог глав)]: ядро (`content/chapters`) плюс главы паков
+    (`packs/<id>/chapters`). Принадлежность паку — по РАСПОЛОЖЕНИЮ (C10): поля
+    `pack:` в `chapter.yaml` не существует.
+
+    `packs` — валидированные id из манифестов; так зоны собирает компилятор, для
+    которого пак без манифеста не существует. Инструменты, которые дерево только
+    читают (граф сцен, снимок реестра, модель памяти), вызывают без аргумента и
+    получают все каталоги `packs/*`: глава, забытая в манифесте, должна быть видна
+    человеку в графе, а не исчезать из него молча.
+
+    Хелпер общий, потому что раньше эта раскладка была скопирована в четыре места
+    и в двух из них отставала — граф и changelog не видели глав паков вовсе.
+    """
+    zones = [("core", root / "content" / "chapters")]
+    if packs is None:
+        pack_dir = root / "packs"
+        ids = sorted(p.name for p in pack_dir.iterdir()
+                     if p.is_dir() and (p / "chapters").is_dir()) \
+            if pack_dir.is_dir() else []
+    else:
+        ids = sorted(packs)
+    zones += [(pid, root / "packs" / pid / "chapters") for pid in ids]
+    return [(pid, d) for pid, d in zones if d.is_dir()]
+
+
 def load_project(root: Path) -> dict:
     return load_yaml(root / "project.yaml")
 

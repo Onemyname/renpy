@@ -50,7 +50,7 @@ vn test smoke --picks 0,1              # прогон конкретной ве�
 | 20 | Сборка | всё дерево | `build/dist/<version>-<flavor>/` | `vn release build --flavor public` | — |
 | 21 | Фиксация id и changelog | `status: release` | `docs/CHANGELOG.md`, `ci/release-manifest.json`, `content/registry/id_registry.json` | `vn release changelog` | — |
 
-Статус: шаги 2–4, 6–17 — **IMPLEMENTED**; шаг 5 (скаффолд персонажа/локации) — **NOT IMPLEMENTED** (фаза 1, `cli.py:958`); шаг 21 слеп к главам паков (`release.py:124-139` смотрит только `content/chapters/`) — **PARTIALLY IMPLEMENTED**.
+Статус: шаги 2–4, 6–17 — **IMPLEMENTED**; шаг 5 (скаффолд персонажа/локации) — **NOT IMPLEMENTED** (фаза 1, `cli.py:958`); шаг 21 видит главы паков с 2026-08-18 (`snapshot_content` → `repo.chapter_zones`, в снимке появилось поле `pack`) — **IMPLEMENTED**.
 
 **Про шаг 12 (звук). Аудио-тракт живой — IMPLEMENTED.** Конвейер читает нормативную зону `assets_src/audio_stems/{bgm,amb,sfx}/` (`tools/vn/src/vn/assets/pipeline.py:159-170`; имя закреплено `docs/ARCHITECTURE.md:392` и `docs/conventions/folder-layout.md:29`, поэтому код пошёл к норме, а не наоборот). Каталоги `assets_src/audio_stems/{bgm,amb,sfx}/` созданы; `.ogg` оттуда копируется трансформацией `copy_audio` в `game/assets/audio/<kind>/<имя>.ogg`. Ветку стережёт тест `test_audio_stems_branch_copies_ogg` (`tools/vn/tests/test_assets.py:52`). Каталога `assets_src/audio/` нет и не должно быть.
 
@@ -418,7 +418,7 @@ flowchart TD
 
 Что видно глазом: сцены без входящих рёбер (недостижимые), сцены с ребром в `vn_end` (терминальные), подписи условий на рёбрах.
 
-**Слепая зона:** `graph.py:15` обходит только `content/chapters/` — главы паков в граф не попадают вовсе (`ch90` из `packs/ep_beach` отсутствует в выводе выше). Межпаковые ссылки отрисуются висящими узлами.
+**Паки в графе есть** (2026-08-18): Граф обходит ядро И главы паков (`repo.chapter_zones`), пак подписан в заголовке подграфа: `ch90_beach (draft) · pack ep_beach`. До этого главы паков в граф не попадали, и межпаковые ссылки выглядели висящими узлами.
 
 ### 10.3. Что именно ловит линт-правило достижимости
 
@@ -564,9 +564,9 @@ vn loc report          # 5. покрытие: "en: 136/136 (100%), fuzzy: 0"
 | `vn scene new` / `vn scene stub` | работает | **не работает** — `_find_chapter` ищет только в `content/chapters/` (`scaffold.py:82`) |
 | Требование сверху | — | `packs/<id>/manifest.yaml` (`pack_manifest@1`): `id` == имени папки, `api_level {min ≤ 1 < below}`, `requires.core` совместим с `project.yaml: version` — иначе пак не собирается (G9, `compile.py:437-471`) |
 | `vn content lint` | полная структурная проверка | структура глав и графа проверяется (`lint.py:194-196` добавляет `packs/*/chapters`), **но** `store` в `vars.yaml` пака не проверяется (`lint.py:348-349`), а персонажи пака структурно не линтуются (`lint.py:332-333`) |
-| `vn content graph` | видит | **не видит** (`graph.py:15`) |
+| `vn content graph` | видит | видит (2026-08-18, `repo.chapter_zones`) |
 | Куда компилируется | `game/generated/scenes/chNN/` | **туда же** — общее пространство имён; конфликт id ядра и пака = ошибка компиляции (`compile.py:727-729`) |
-| `vn release changelog` / `ci/release-manifest.json` | видит | **не видит** (`release.py:124-139`) — глава пака никогда не попадёт в changelog и в `id_registry.json` |
+| `vn release changelog` / `ci/release-manifest.json` | видит | видит (2026-08-18): в changelog глава пака помечена `(pack <id>)`, в манифесте — полем `pack` |
 | Гейт по флейвору | — | **NOT IMPLEMENTED**: `VN_PACKS` перечисляет все паки из `packs/` независимо от `flavors.<f>.packs`. Владение при этом гейтится: провайдер подключён (ADR-0014, `035_platform.rpy:75`), но только под Steam — вне него `owned()` всегда `True` |
 | Поставка | вместе с игрой | `vn pack build <id>` → `build/packs/<id>.zip`: только `manifest.yaml` + скомпилированные `.gen.rpy`/`.rpyc` сцен. Ни ассетов, ни `tl/`, ни персонажей — **PARTIALLY IMPLEMENTED**. Охранник «объявлены главы, но нет ни одной скомпилированной сцены» рабочий и падает до создания zip (`cli.py:1624-1626`); пак без глав собирается штатно с предупреждением. Остаток: проверка идёт «хоть одна сцена на весь пак», не по каждой главе |
 

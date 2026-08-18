@@ -13,9 +13,10 @@
         "type": "object",
         "properties": {
           "status": {"enum": ["draft", "playtest", "release"]},
-          "scenes": {"type": "array", "items": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"}}
+          "scenes": {"type": "array", "items": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"}},
+          "pack": {"type": "string", "pattern": "^(core|[a-z][a-z0-9_]{1,31})$", "description": "Пак-владелец главы по её расположению (C10): core = content/chapters, иначе packs/<id>/chapters. Нужен в снимке, чтобы changelog отличал контент, который уедет не всем"}
         },
-        "required": ["status", "scenes"],
+        "required": ["status", "scenes", "pack"],
         "additionalProperties": false
       }
     }

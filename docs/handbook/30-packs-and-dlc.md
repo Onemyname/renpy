@@ -182,7 +182,7 @@ loc/po/{de,en,pseudo}/ch90.po
 | Механизм | Что происходит | Код |
 |---|---|---|
 | `vn content graph` | пак-главы **не видны** в Mermaid — сканируется только `content/chapters/` | `tools/vn/src/vn/content/graph.py:15` |
-| `vn release changelog` | `snapshot_content` смотрит только `content/chapters/` → `ch90` никогда не попадёт в `ci/release-manifest.json` и в `docs/CHANGELOG.md` | `release.py:124-139` |
+| `vn release changelog` | видит главы паков с 2026-08-18: `ch90` попадает и в `ci/release-manifest.json` (поле `pack`), и в `docs/CHANGELOG.md` с пометкой `(pack ep_beach)` | `release.py: snapshot_content` |
 | `id_registry.json` (G7) | `_released_ids` собирает только главы со `status: "release"`; `ch90` — `draft` | `release.py:69-96` |
 | CODEOWNERS | записи `/packs/` **нет** вообще | `CODEOWNERS:1-26` |
 
@@ -455,7 +455,7 @@ vn build
 | ачивки/галерея с `pack:` | остаются в `content/{achievements,gallery}/`, добавьте поле `pack: ep_winter` | зоны пака не читаются; поле `pack` валидируется (`compile.py:814-817`) |
 | PO и ledger | **ничего не делать** | `loc/ledger/chNN.json` и `loc/po/*/chNN.po` уже привязаны к id главы, а не к зоне (§3.3) |
 
-После переноса проверьте, что глава не пропала из релизного учёта: `vn release changelog` её больше **не увидит** (`release.py:124-139` смотрит только `content/chapters/`) — это известный пробел, а не ваша ошибка.
+После переноса проверьте релизный учёт: `vn release changelog` главу пака увидит (`snapshot_content` → `repo.chapter_zones`) и запишет её в манифест с полем `pack: <id>`, а в changelog — с пометкой `(pack <id>)`.
 
 ---
 

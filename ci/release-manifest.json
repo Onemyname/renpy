@@ -1,10 +1,18 @@
 {
  "chapters": {
   "ch01": {
+   "pack": "core",
    "scenes": [
     "ch01_s010",
     "ch01_s020",
     "ch01_s030"
+   ],
+   "status": "draft"
+  },
+  "ch90": {
+   "pack": "ep_beach",
+   "scenes": [
+    "ch90_s010"
    ],
    "status": "draft"
   }

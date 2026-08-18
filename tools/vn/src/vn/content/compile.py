@@ -22,7 +22,7 @@ from pathlib import Path
 import blake3
 
 from .. import __version__
-from ..repo import git_sha, load_project, load_yaml
+from ..repo import chapter_zones, git_sha, load_project, load_yaml
 from . import scenes as sc
 from .analyze import AnalyzeError, analyze_scene_files
 from .images import ImagesReport, emit_images, load_locations
@@ -738,12 +738,7 @@ def _collect_chapters(root: Path, src, registry, errors: list[str],
     units: list[sc.SceneUnit] = []
     voice_docs: list[tuple[str, str, str, dict]] = []    # (chapter, lang, rel, doc)
     shots_docs: list[tuple[str, str, dict]] = []        # (chapter, rel, doc)
-    zones = [("core", root / "content" / "chapters")]
-    for pack_id in sorted(packs or {}):
-        zones.append((pack_id, root / "packs" / pack_id / "chapters"))
-    for pack_id, chapters_dir in zones:
-        if not chapters_dir.is_dir():
-            continue
+    for pack_id, chapters_dir in chapter_zones(root, packs or {}):
         for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
             _collect_chapter_dir(root, src, registry, errors, chapters, units, d, pack_id)
             _collect_voice_dir(root, src, registry, errors, voice_docs, d)

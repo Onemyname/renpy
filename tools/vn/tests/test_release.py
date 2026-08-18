@@ -564,3 +564,66 @@ def test_steam_preflight_requires_explicit_save_directory(tmp_path, repo_root):
     (root / "game" / "options.rpy").write_text("define config.name = _('VN')\n", encoding="utf-8")
     checks = steam_preflight(root, "public")
     assert any(st == "FAIL" and "save_directory" in m for st, m in checks)
+
+# ── Линии кэша .rpyc: флейворы не делят носитель statement-имён (G6) ──────────
+
+def _rpyc_cache(root, *rel_versions):
+    for rel in rel_versions:
+        (root / "build" / "rpyc-cache" / rel).mkdir(parents=True, exist_ok=True)
+
+
+def test_rpyc_lane_is_per_flavor(tmp_path):
+    """Público и patron не делят кэш: наборы .rpyc у них разные, и перенос имён из
+    чужой линии — тот самый случай, от которого страхует G6."""
+    from vn.release import rpyc_cache_lane
+
+    root = _mk_root(tmp_path)
+    _rpyc_cache(root, "public/0.1.4", "patron/0.1.4", "patron/0.1.5")
+    lane, caches, legacy = rpyc_cache_lane(root, "-public")
+    assert lane.name == "public" and [c.name for c in caches] == ["0.1.4"] and not legacy
+    lane, caches, _ = rpyc_cache_lane(root, "-patron")
+    assert [c.name for c in caches] == ["0.1.4", "0.1.5"], "версии линии сортируются semver"
+
+
+def test_rpyc_lane_without_flavor_is_separate(tmp_path):
+    """Прямой `vn package` пишет в линию dev и НЕ видит релизных: ручной прогон не
+    должен ни затирать релизную линию, ни брать из неё имена."""
+    from vn.release import rpyc_cache_lane
+
+    root = _mk_root(tmp_path)
+    _rpyc_cache(root, "public/0.1.4")
+    lane, caches, legacy = rpyc_cache_lane(root, "")
+    assert lane.name == "dev" and caches == [] and not legacy
+
+
+def test_rpyc_lane_falls_back_to_legacy_layout(tmp_path):
+    """Раскладка до разделения по линиям (версии в корне кэша) читается как
+    запасной вариант с пометкой: молча потерять кэш опаснее — без переноса имён
+    ломаются сейвы прошлого релиза."""
+    from vn.release import rpyc_cache_lane
+
+    root = _mk_root(tmp_path)
+    _rpyc_cache(root, "0.1.0", "0.1.4")
+    lane, caches, legacy = rpyc_cache_lane(root, "-public")
+    assert legacy and [c.name for c in caches] == ["0.1.0", "0.1.4"]
+    assert lane.name == "public", "запись всё равно идёт в линию"
+
+
+def test_snapshot_content_sees_pack_chapters(tmp_path):
+    """Главы паков — такой же выпущенный контент: их сцены едут в сейвы игрока и
+    подпадают под G7. Пока снимок обходил только content/chapters, changelog и
+    штамп реестра о паках не знали вовсе."""
+    from vn.release import snapshot_content
+
+    root = _mk_root(tmp_path)
+    for base, ch, scene in ((root / "content" / "chapters", "ch01_core", "s010_intro"),
+                            (root / "packs" / "ep_beach" / "chapters", "ch90_beach",
+                             "s010_shore")):
+        (base / ch / "scenes").mkdir(parents=True)
+        (base / ch / "chapter.yaml").write_text("status: release\n", encoding="utf-8")
+        (base / ch / "scenes" / f"{scene}.scene.yaml").write_text("id: s010\n",
+                                                                 encoding="utf-8")
+    snap = snapshot_content(root)
+    assert set(snap) == {"ch01", "ch90"}
+    assert snap["ch01"]["pack"] == "core" and snap["ch90"]["pack"] == "ep_beach"
+    assert snap["ch90"]["scenes"] == ["ch90_s010"]

@@ -345,6 +345,7 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     import shutil
 
     from .doctor import sdk_path
+    from .release import rpyc_cache_lane
     from .repo import load_project
 
     root = _root()
@@ -362,15 +363,11 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     # statement-имён, локальные .rpyc таковым не являются -> восстановление
     # С ПЕРЕЗАПИСЬЮ; движок при перекомпиляции изменённых .rpy перенесёт имена.
     # Кэш покрывает весь game/ (framework-метки тоже попадают в сейвы/rollback).
-    def _semver_key(p: Path):
-        try:
-            return tuple(int(x) for x in p.name.split("."))
-        except ValueError:
-            return (0,)
-
-    cache_root = root / "build" / "rpyc-cache"
-    caches = sorted((p for p in cache_root.iterdir() if p.is_dir()),
-                    key=_semver_key) if cache_root.is_dir() else []
+    lane, caches, legacy = rpyc_cache_lane(root, dest_suffix)
+    if legacy:
+        click.secho(f"rpyc-перенос: линии {lane.name} нет, взята старая раскладка "
+                    f"build/rpyc-cache/{caches[-1].name} (до разделения по флейворам) — "
+                    f"эта сборка запишет линию", fg="yellow")
     if caches:
         latest = caches[-1]
         restored = 0
@@ -412,8 +409,9 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     if proc.returncode != 0:
         _fail(f"distribute упал:\n{proc.stdout[-2000:]}\n{proc.stderr[-800:]}")
 
-    # 5) Кэш .rpyc этого релиза — для переноса имён в следующем (G6): весь game/
-    save_dir = cache_root / version
+    # 5) Кэш .rpyc этого релиза — для переноса имён в следующем (G6): весь game/,
+    # в линию своего флейвора (см. пункт 2).
+    save_dir = lane / version
     if save_dir.exists():
         shutil.rmtree(save_dir)
     n = 0
@@ -424,7 +422,8 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
         shutil.copy(rpyc, target)
         n += 1
     artifacts = [p.name for p in dest.iterdir()]
-    click.echo(f"rpyc-кэш релиза: {n} файлов -> build/rpyc-cache/{version}/")
+    click.echo(f"rpyc-кэш релиза: {n} файлов -> "
+               f"{save_dir.relative_to(root).as_posix()}/")
     click.secho(f"package: OK — {', '.join(artifacts)}", fg="green")
 main.command(name="migrate", help="Миграции схем деклараций (фаза 2).")(_stub(2))
 main.command(name="shell", help="Docker-репро CI-окружения (фаза 2).")(_stub(2))

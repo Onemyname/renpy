@@ -202,12 +202,9 @@ def analyze(root: Path, cfg: RenderConfig | None = None,
 
     ui_reserve = int(cfg.screen[0] * cfg.screen[1] * UI_RESERVE_SCREENS * 1.34)
 
-    zones = [root / "content" / "chapters"]
-    if (root / "packs").is_dir():
-        zones += sorted((root / "packs").glob("*/chapters"))
-    for chapters in zones:
-        if not chapters.is_dir():
-            continue
+    from ..repo import chapter_zones
+
+    for _pack_id, chapters in chapter_zones(root):
         for ch_dir in sorted(p for p in chapters.iterdir() if p.is_dir()):
             ch_id = ch_dir.name[:4]
             # Декларации послойных шотов главы: короткий id сцены -> документ
