@@ -396,7 +396,7 @@ vn content lint                              # lint: OK (0 предупрежд�
 vn content compile --check                   # генерат свеж
 vn loc keys --check
 vn test oversample --scale 2                 # oversample: OK
-(cd tools/vn && python -m pytest tests -q)   # 373 passed
+(cd tools/vn && python -m pytest tests -q)   # 400 passed
 
 # Релизный путь цел (то, что ci.yml не гоняет)
 vn test smoke --picks 0,0                    # RESULT.txt = OK: vn_end_of_content

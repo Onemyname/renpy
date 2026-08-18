@@ -548,7 +548,7 @@ $ vn assets memory
 | `vn content lint` | `lint: 0 ошибок, 0 предупреждений` | схемы, графы, id, LFS-покрытие бинарей |
 | `vn loc keys --check` | `loc keys --check: все строки с id, ledger свеж` | say-id и ledger разошлись с текстом (G8) |
 | `vn content compile --check` | `check: генерат свеж` | несвежий генерат, разметка переводов, бюджеты |
-| `python -m pytest tools/vn/tests -q` | `373 passed` | тулинг; **из venv проекта** — системный python без `yaml`/`blake3` даст ошибки коллекции |
+| `python -m pytest tools/vn/tests -q` | `400 passed` | тулинг; **из venv проекта** — системный python без `yaml`/`blake3` даст ошибки коллекции |
 | `bash "$RENPY_SDK/renpy.sh" . lint` | движковый отчёт без ошибок | то, что видит только Ren'Py: битые метки, отсутствующие образы |
 | `vn test oversample --scale 2` | `oversample: OK` | что 4K-варианты реально подхватываются движком (ADR-0012) |
 | `vn loc report` | `de: 136/136 (100%), fuzzy: 0` и так для каждого языка | покрытие переводов (гейт — не здесь, а в `release validate`) |
@@ -715,7 +715,7 @@ SDK, а не из фактической сборки.
 - [ ] `vn build` — `build: OK` (и строка `память: худшая сцена … из …` в рамках)
 - [ ] `vn content lint` — `0 ошибок`
 - [ ] `vn content compile --check` — `check: генерат свеж`
-- [ ] `python -m pytest tools/vn/tests -q` — **373 passed** (из venv проекта: `tools/vn/.venv/bin/python`; с системным python часть тестов не соберётся)
+- [ ] `python -m pytest tools/vn/tests -q` — **400 passed** (из venv проекта: `tools/vn/.venv/bin/python`; с системным python часть тестов не соберётся)
 - [ ] `bash "$RENPY_SDK/renpy.sh" . lint` — движковый lint чист
 - [ ] `vn test oversample --scale 2` — `oversample: OK`
 - [ ] `vn loc keys --check` — `все строки с id, ledger свеж`
@@ -780,7 +780,7 @@ vn content lint                       # должно остаться 0 ошиб
 vn build
 vn loc keys --check
 vn content compile --check
-python -m pytest tools/vn/tests -q    # 373 passed
+python -m pytest tools/vn/tests -q    # 400 passed
 bash "$RENPY_SDK/renpy.sh" . lint
 vn test oversample --scale 2
 vn voice validate

@@ -932,7 +932,7 @@ vn assets validate                     # assets validate: OK
 vn assets video validate               # video validate: OK (N файлов)
 vn loc keys --check                    # все строки с id, ledger свеж
 vn loc report                          # de/en/pseudo — 136/136 (100%), fuzzy 0
-python -m pytest tools/vn/tests -q     # 373 passed
+python -m pytest tools/vn/tests -q     # 400 passed
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (N скриншотов)
 vn save check && vn save corpus        # 2 фикстур: schema1-demo мигрирует 1 -> 2, schema2-demo уже на 2
 vn release validate --flavor public    # 20 строк: 18 PASS + 2 WARN (зрелость контента, драфты озвучки), exit 0

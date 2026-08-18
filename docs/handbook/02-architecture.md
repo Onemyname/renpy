@@ -541,7 +541,7 @@ store `vn` на `init -999` (`030_flow.rpy:4`), остальные **допол�
 vn content lint                        # 33 диагностики + сверка раскладки каталогов
 vn build --check                       # CI-режим: свежесть генерата, ассетов, бюджеты (два класса)
 vn content graph                       # mermaid-граф сцен (только content/, паки не видны)
-cd tools/vn && .venv/bin/python -m pytest -q   # 373 passed; про cwd — 27-testing.md §2
+cd tools/vn && .venv/bin/python -m pytest -q   # 400 passed; про cwd — 27-testing.md §2
 find game/generated -name '*.gen.rpy' | wc -l              # ожидание: 21
 grep -rn "^init " game/framework/ game/generated/ | sort   # ручная сверка init-шкалы с § 5
 grep -rn "ch[0-9][0-9]" game/framework/ --include='*.rpy'  # должны остаться только 2 комментария

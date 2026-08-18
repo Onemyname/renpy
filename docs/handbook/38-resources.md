@@ -580,7 +580,7 @@ ffmpeg -version | head -1                     # 8.1.2-full_build-www.gyan.dev
 
 # Что этот файл описывает как работающее — работает
 vn build                                      # build: OK
-python -m pytest tools/vn/tests -q            # 373 passed
+python -m pytest tools/vn/tests -q            # 400 passed
 vn release validate --flavor patron           # 21 строка: 20 PASS + 1 WARN, exit 0 (у public — 20 строк, 2 WARN, exit 0)
 vn pipeline models                            # статус 10 записей манифеста
 ```

@@ -419,7 +419,7 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True, i
 | Пункт | Как проверить | Статус у нас |
 |---|---|---|
 | **Steam Timeline** показывает осмысленные фазы | пройти главу под Steam, посмотреть таймлайн записи | движок включён по умолчанию, но `save_name` не присваивается → фаз нет ([40-steamworks.md](40-steamworks.md) §5.6) |
-| Прогресс отдельной ачивки на экране достижений | карточка показывает «10 из 30» | нет: поля `progress` нет ни в схеме, ни в эмиттере, ни в сторе ([15-gallery.md](15-gallery.md)) |
+| Прогресс отдельной ачивки на экране достижений | карточка показывает «2 из 3» | **есть**: блок `goal` в `achievements@1`, счётчик в `vn_ach`, полоса в карточке; Steam получает `stat_max`/`stat_modulo` ([15-gallery.md](15-gallery.md)) |
 | Уведомление о выданной ачивке в игре | `renpy.notify` при `grant` | нет: у галереи есть, у ачивок — нет |
 | Предложение купить DLC при `owned() == False` | зайти на закрытую главу | нет: карточка просто исчезает, `activate_overlay_to_store` не используется |
 | Прогресс-ачивки («10 из 30 CG») | ачивка показывает прогресс в оверлее | нет: регистрируем без `stat_max` |
@@ -452,6 +452,20 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True, i
 Итог: **автоматика закрывает «игра собирается, запускается, проходится и грузит сейвы». Всё, что делает Steam-сборку Steam-сборкой, закрывается только руками.**
 
 ---
+
+## 4.1 Комплект для устройства: `vn test deck-kit`
+
+Перечень выше не нужно переписывать вручную: `vn test deck-kit` собирает
+`build/deck-kit/` — скриншоты прогонов в вариантах `steam_deck` и
+`steam_big_picture`, машинную сводку (`summary.json`: масштаб и letterbox Deck,
+кегли в физических пикселях, худшая сцена против бюджета кэша, бюджеты проекта)
+и `checklist.md`, ПОСТРОЕННЫЙ из этого документа. Правьте документ — комплект
+пересобирается; копии перечня в коде нет намеренно (иначе они разъедутся).
+
+Закрытое машиной идёт отдельным блоком с фактическим выводом команд (покрытие
+переводов, релизный гейт, вердикты прогонов). Пункты приёмки остаются пустыми
+чекбоксами: их может закрыть только человек с устройством — ложная галочка здесь
+дороже неудобства.
 
 ## 5. Чего сегодня проверить нельзя (BLOCKED)
 
@@ -542,7 +556,7 @@ steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 # 7. Руками: §1.1-1.2, §1.7-1.8, §1.11-1.12, §2.1-2.8 на живом Deck и на десктопе
 ```
 
-Эталон на 2026-08-18 (HEAD `e3c2842` + текущая итерация): `pytest tools/vn/tests -q` → 373 passed; `test_platform.py` → 13 passed; `vn release validate --flavor public` → 20 строк, 18 PASS + 2 WARN (озвучка-драфты и зрелость контента), 0 FAIL, exit 0; `vn release validate --flavor patron` → 21 строка, 20 PASS + 1 WARN, exit 0; `vn assets memory` → `память: OK`, худшая сцена `ch01_s030` 28.5 из 89.5 Мпикс; `vn release steam --flavor public` → exit 1 (`appid` не задан) — ожидаемо; `vn test oversample --scale 2` → проверено 22, поднято 21 (панели вошли в проверку).
+Эталон на 2026-08-18 (HEAD `e3c2842` + текущая итерация): `pytest tools/vn/tests -q` → 400 passed; `test_platform.py` → 13 passed; `vn release validate --flavor public` → 20 строк, 18 PASS + 2 WARN (озвучка-драфты и зрелость контента), 0 FAIL, exit 0; `vn release validate --flavor patron` → 21 строка, 20 PASS + 1 WARN, exit 0; `vn assets memory` → `память: OK`, худшая сцена `ch01_s030` 28.5 из 89.5 Мпикс; `vn release steam --flavor public` → exit 1 (`appid` не задан) — ожидаемо; `vn test oversample --scale 2` → проверено 22, поднято 21 (панели вошли в проверку).
 
 ---
 

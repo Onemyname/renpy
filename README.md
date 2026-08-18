@@ -71,7 +71,7 @@ vn doctor                        # самодиагностика окружен
 vn build                         # схемы → lint → ассеты → генерат → бюджеты
 vn play                          # запуск игры
 vn test smoke                    # автопрохождение с скриншотами
-(cd tools/vn && python -m pytest -q) # 373 passed
+(cd tools/vn && python -m pytest -q) # 400 passed
 ```
 
 Без `git lfs` шрифты приедут текстовыми указателями и игра упадёт на старте —

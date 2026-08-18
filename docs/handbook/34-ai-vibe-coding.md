@@ -27,7 +27,7 @@
 ```bash
 vn content lint                              # 0 ошибок
 vn build                                     # build: OK
-python -m pytest tools/vn/tests -q           # 373 passed
+python -m pytest tools/vn/tests -q           # 400 passed
 git status --short                           # ни одного файла из game/generated|assets|tl
 ```
 
@@ -259,7 +259,7 @@ git log --oneline --all -S "<строка>"             # когда и заче
 | `vn content lint` | `lint: OK (N предупреждений)`, exit 0 | предупреждения — не ошибка; для главы со `status: draft` граф-проверки понижены до warning (G15) |
 | `vn build` | `build: OK` | — |
 | `vn content compile --check` | `check: генерат свеж` | `устарело: …` = вы правили декларации и не пересобрали |
-| `pytest tools/vn/tests -q` | `373 passed` | — |
+| `pytest tools/vn/tests -q` | `400 passed` | — |
 | `vn test smoke` | `smoke: OK: vn_end_of_content (N скриншотов)` | `cold start … c` печатается всегда; провал — только при превышении бюджета 30 с (G19) |
 | `vn release validate --flavor public` | 20 строк: 18 PASS + 2 WARN («зрелость контента» и драфты озвучки), 0 FAIL, exit 0 (проверок в коде — 21; `--flavor patron` — 21 строка, 1 WARN) | WARN не валят гейт, FAIL валит |
 | `git status --short` | пусто или только ваши файлы | появление `game/generated|assets|tl` = кто-то сделал `git add -f` |
@@ -441,7 +441,7 @@ git log --oneline --all -S "<строка>"             # когда и заче
 # Базовая цепочка после любой правки
 vn content lint                           # lint: OK (N предупреждений)
 vn build                                  # build: OK
-python -m pytest tools/vn/tests -q        # 373 passed
+python -m pytest tools/vn/tests -q        # 400 passed
 git status --short                        # без game/generated|assets|tl
 
 # Если тронут рантайм / UI / локализация / поток сцен

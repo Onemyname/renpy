@@ -235,7 +235,7 @@ grep -n "^image bg" game/generated/registry/images.gen.rpy   # что реаль
 python -m pytest tools/vn/tests -q                            # 373 теста
 ```
 
-Ожидаемо на чистом дереве: `lint: OK (0 предупреждений)`, `build: OK`, `373 passed`.
+Ожидаемо на чистом дереве: `lint: OK (0 предупреждений)`, `build: OK`, `400 passed`.
 
 ## Чеклист новой локации
 

@@ -285,7 +285,7 @@ vn pipeline models --pull                      # ~35 ГБ обязательны
 
 # 8. Проверка
 vn build --check                               # «check: генерат свеж»
-python -m pytest tools/vn/tests -q             # 373 passed
+python -m pytest tools/vn/tests -q             # 400 passed
 vn play
 ```
 

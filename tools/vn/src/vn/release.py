@@ -346,6 +346,103 @@ def steam_libs_status(sdk: Path | None) -> list[str]:
     return missing
 
 
+_SAVE_DIR_RE = re.compile(
+    r"""config\.save_directory\s*=\s*["'](?P<dir>[^"']+)["']""")
+
+
+def steam_preflight(root: Path, flavor: str) -> list[tuple[str, str]]:
+    """Готовность к Steam-поставке ДО получения App ID: [(PASS|WARN|FAIL|TODO, строка)].
+
+    Зачем отдельно от steam_app_build. Та команда честно останавливается на пустом
+    platform.steam.appid — и владелец не узнаёт, что ещё не готово, пока не завёл
+    приложение у Valve. Preflight отвечает на обратный вопрос: «если App ID
+    появится сейчас, что останется сделать?». Поэтому пустой appid здесь — не
+    провал, а пункт TODO: команда обязана быть полезной именно в этом состоянии.
+
+    Своих правил у preflight нет — он агрегирует существующие проверки конвейера
+    (тот же принцип, что у validate_release), плюс печатает данные, которые
+    человек переносит в партнёрку руками: имена ачивок и маски Auto-Cloud."""
+    from .doctor import sdk_path
+
+    project = load_project(root)
+    steam = (project.get("platform") or {}).get("steam") or {}
+    checks: list[tuple[str, str]] = []
+
+    appid = steam.get("appid")
+    checks.append(("PASS", f"App ID: {appid}") if appid else
+                  ("TODO", "App ID: не задан (project.yaml: platform.steam.appid) — "
+                           "остался этот шаг; всё остальное ниже проверено"))
+
+    # Депоты: без них поставка не собирается, но до появления приложения их номеров
+    # ещё нет — поэтому TODO, а не FAIL (иначе preflight бесполезен «до Valve»).
+    depots = {k: v for k, v in (steam.get("depots") or {}).items() if v}
+    if not depots:
+        checks.append(("TODO", "депоты не заданы (platform.steam.depots) — номера "
+                               "выдаёт Steamworks вместе с приложением"))
+    elif len(set(depots.values())) != len(depots):
+        checks.append(("FAIL", f"депоты повторяются: {depots} — один депот на платформу"))
+    else:
+        checks.append(("PASS", "депоты: " + ", ".join(f"{k}={v}" for k, v in sorted(depots.items()))))
+
+    sdk = sdk_path()
+    missing_libs = steam_libs_status(sdk)
+    if sdk is None:
+        checks.append(("WARN", "steam_api-библиотеки: RENPY_SDK не задан — проверить нечем"))
+    elif missing_libs:
+        checks.append(("WARN", f"нет steam_api-библиотек ({', '.join(missing_libs)}) — сборка "
+                               f"будет standalone: лаунчер SDK, preferences -> Install Steam Support"))
+    else:
+        checks.append(("PASS", "steam_api-библиотеки Valve на месте"))
+
+    # Артефакты дистрибутива для объявленных депотов: переиспользуем раскладку,
+    # чтобы preflight и фактическая поставка не расходились в трактовке форматов.
+    if depots:
+        staged, errors = steam_stage_content(root, flavor, platforms=tuple(depots))
+        checks.append(("PASS", f"артефакты distribute: {', '.join(staged)}") if not errors else
+                      ("WARN", f"артефакты не готовы: {errors[0]} (vn release build)"))
+
+    # Ачивки: API Name в Steamworks обязан совпадать с id ПОБУКВЕННО, маппинга
+    # намеренно нет. Печатаем готовый список (с целью прогресса, если объявлена).
+    ach_dir = root / "content" / "achievements"
+    rows: list[str] = []
+    for f in sorted(ach_dir.glob("*.yaml")) if ach_dir.is_dir() else []:
+        for aid, spec in sorted((load_yaml(f).get("achievements") or {}).items()):
+            goal = (spec or {}).get("goal") or {}
+            rows.append(f"{aid} (прогресс до {goal['total']})" if goal.get("total") else aid)
+    checks.append(("PASS", f"ачивки для партнёрки ({len(rows)}): {', '.join(rows)}") if rows else
+                  ("WARN", "ачивок не объявлено — раздел Achievements в Steamworks не нужен"))
+
+    # DLC: пак без steam_dlc_appid гейтится только установленностью (G9) — это
+    # рабочее состояние для DRM-free поставки, но в Steam так пак не продать.
+    packs_dir = root / "packs"
+    with_dlc, without = [], []
+    for d in sorted(p for p in packs_dir.iterdir() if p.is_dir()) if packs_dir.is_dir() else []:
+        mf = d / "manifest.yaml"
+        if not mf.is_file():
+            continue
+        (with_dlc if load_yaml(mf).get("steam_dlc_appid") else without).append(d.name)
+    if with_dlc:
+        checks.append(("PASS", f"паки с DLC App ID: {', '.join(with_dlc)}"))
+    if without:
+        checks.append(("TODO", f"паки без steam_dlc_appid: {', '.join(without)} — в Steam "
+                               f"владение таким паком не проверить (гейт = установленность)"))
+
+    # Auto-Cloud: кода в игре нет (ADR-0014), поэтому единственное, что может
+    # проверить сборка, — что путь сейвов стабилен и объявлен явно.
+    # Значение берём регексом по строковому литералу: строка в options.rpy несёт
+    # хвостовой комментарий («не переименовывать»), и наивный split по = тащил бы
+    # его в имя каталога, то есть в маску Auto-Cloud.
+    options = root / "game" / "options.rpy"
+    save_dir = ""
+    if options.is_file():
+        m = _SAVE_DIR_RE.search(options.read_text(encoding="utf-8"))
+        save_dir = m.group("dir") if m else ""
+    checks.append(("PASS", f"Auto-Cloud: корень сейвов {save_dir!r}, маски *.save и "
+                           f"persistent (ci/steam/README.md)") if save_dir else
+                  ("FAIL", "config.save_directory не задан явно — Auto-Cloud привязать не к чему"))
+    return checks
+
+
 def snapshot_content(root: Path) -> dict:
     chapters: dict[str, dict] = {}
     base = root / "content" / "chapters"

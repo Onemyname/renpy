@@ -13,6 +13,12 @@ init -999 python in vn:
         """Вход в сцену: якорь восстановления позиции сейва (раздел 6) и
         триггер достижений/галереи, привязанных к сцене."""
         renpy.store.vn_scene = scene_id
+        # Счётчик прохождения: СПИСОК посещённых сцен, а не число — только так
+        # повторный вход в сцену не накручивает прогресс, а сейв остаётся из
+        # простых типов (G5). Прогрессивные ачивки считают его длину.
+        seen = renpy.store.g.scenes_seen
+        if scene_id not in seen:
+            seen.append(scene_id)
         renpy.store.vn_ach.check(scene_id=scene_id)
         _gallery_notify(renpy.store.vn_gal.check(scene_id=scene_id))
 

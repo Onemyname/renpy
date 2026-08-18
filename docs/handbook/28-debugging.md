@@ -582,7 +582,7 @@ vn build --check                       # check: генерат свеж
 "$RENPY_SDK/renpy.exe" . lint          # родной lint движка по game/**
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (21 скриншот)
 vn save check && vn save corpus        # 2 фикстуры: целы, грузятся, миграция 0002 исполняется
-python -m pytest tools/vn/tests -q     # 373 passed
+python -m pytest tools/vn/tests -q     # 400 passed
 ```
 
 После правок в `game/framework/90_debug/**` или `game/options.rpy` дополнительно:

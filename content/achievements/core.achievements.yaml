@@ -19,3 +19,12 @@ achievements:
     name_key: ach.reached_rooftop.name
     desc_key: ach.reached_rooftop.desc
     trigger: {scene: ch01_s030}
+
+  # Прогрессивная ачивка (goal): прогресс = ДЛИНА списка посещённых сцен, поэтому
+  # повторный вход в сцену его не накручивает. В демо-главе три сцены, и путь
+  # «через ворота» проходит все три за одно прохождение.
+  chapter_explorer:
+    name_key: ach.chapter_explorer.name
+    desc_key: ach.chapter_explorer.desc
+    trigger: {var: g.scenes_seen}
+    goal: {total: 3}

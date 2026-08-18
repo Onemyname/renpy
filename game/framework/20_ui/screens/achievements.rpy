@@ -77,7 +77,21 @@ screen vn_ach_card(ach_id, spec):
             text _name style ("vn_ach_name" if _got else "vn_ach_name_locked")
             if _desc:
                 text _desc style "vn_ach_desc"
-            if not _got:
+            # Прогрессивная ачивка (goal): вместо «не получено» — сколько
+            # осталось. У скрытой прогресс не показывается вовсе: он выдал бы,
+            # ЧТО именно надо собрать, то есть тот же спойлер, что и описание.
+            $ _goal = None if _spoiler else vn_ach.goal_of(ach_id)
+            if _goal and not _got:
+                $ _done = vn_ach.counter(ach_id)
+                $ _total = _goal["total"]
+                vbox:
+                    spacing gui.sp_xs
+                    bar:
+                        value _done
+                        range _total
+                        style "vn_ach_bar"
+                    text vn_loc.t("ui.ach.progress_of").replace("[done]", str(_done)).replace("[total]", str(_total)) style "vn_ach_state"
+            elif not _got:
                 text vn_loc.t("ui.ach.locked") style "vn_ach_state"
 
 
@@ -85,6 +99,17 @@ style vn_ach_card:
     xysize (gui.ach_card_width, gui.ach_card_height)
     background vn_frame_slot
     padding (gui.sp_m, gui.sp_m)
+
+style vn_ach_bar:
+    # Полоса прогресса ачивки: тонкая, тех же токенов, что слайдеры настроек —
+    # отдельной графики не заводим (ADR-0009: панели рисует конвейер, полосы —
+    # Solid из палитры).
+    ysize gui.sp_s
+    xsize gui.ach_card_width - 2 * gui.sp_m
+    left_bar Solid(gui.accent_color)
+    right_bar Solid(gui.panel_bg_hover)
+    thumb None
+    thumb_shadow None
 
 style vn_ach_name:
     font gui.interface_semibold_font

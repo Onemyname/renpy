@@ -5,6 +5,16 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 
 #. UI/мета-строка
+msgctxt "string:ach.chapter_explorer.desc"
+msgid "Побывать во всех сценах главы"
+msgstr "[[Пǫбывąть вǫ всęх сцęнąх глąвы~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ach.chapter_explorer.name"
+msgid "Исследователь"
+msgstr "[[Įсслęдǫвąтęль~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ach.met_mira.desc"
 msgid "Подойти к воротам и встретить Миру"
 msgstr "[[Пǫдǫйтį к вǫрǫтąм į встрęтįть Мįрų~~~~~~~~~~~~~]"
@@ -70,6 +80,18 @@ msgid "Ветер над городом"
 msgstr "[[Вęтęр нąд гǫрǫдǫм~~~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:gal.shot_ch01_s030_sunset.desc"
+msgid "Послойный кадр: наряд Миры переключается прямо в галерее"
+msgstr ""
+"[[Пǫслǫйный кąдр: нąряд Мįры пęрęключąęтся прямǫ в "
+"гąлęрęę~~~~~~~~~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:gal.shot_ch01_s030_sunset.title"
+msgid "Крыша на закате"
+msgstr "[[Крышą нą зąкąтę~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:meta.chapters.ch01.title"
 msgid "Глава 1. Пробуждение"
 msgstr "[[Глąвą 1. Прǫбųждęнįę~~~~~~~~]"
@@ -118,6 +140,11 @@ msgstr "[[Нę пǫлųчęнǫ~~~~]"
 msgctxt "string:ui.ach.progress"
 msgid "Получено [_done] из [_total]"
 msgstr "[[Пǫлųчęнǫ [_done] įз [_total]~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.progress_of"
+msgid "[done] из [total]"
+msgstr "[[[done] įз [total]~~~~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.chapters.dlc"

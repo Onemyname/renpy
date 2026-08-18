@@ -601,6 +601,31 @@ msgctxt "string:ui.nav.achievements"
 msgid "Достижения"
 msgstr "Achievements"
 
+#. UI/мета-строка
+msgctxt "string:ach.chapter_explorer.desc"
+msgid "Побывать во всех сценах главы"
+msgstr "Visit every scene in the chapter"
+
+#. UI/мета-строка
+msgctxt "string:ach.chapter_explorer.name"
+msgid "Исследователь"
+msgstr "Explorer"
+
+#. UI/мета-строка
+msgctxt "string:gal.shot_ch01_s030_sunset.desc"
+msgid "Послойный кадр: наряд Миры переключается прямо в галерее"
+msgstr "Layered shot: Mira’s outfit switches right in the gallery"
+
+#. UI/мета-строка
+msgctxt "string:gal.shot_ch01_s030_sunset.title"
+msgid "Крыша на закате"
+msgstr "Rooftop at Sunset"
+
+#. UI/мета-строка
+msgctxt "string:ui.ach.progress_of"
+msgid "[done] из [total]"
+msgstr "[done] of [total]"
+
 #~ msgctxt "string:ui.history.hint"
 #~ msgid "Esc — закрыть"
 #~ msgstr "Esc — close"

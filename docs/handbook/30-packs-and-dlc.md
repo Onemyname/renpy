@@ -585,7 +585,7 @@ grep -n "VN_PACKS" game/generated/registry/chapters.gen.rpy
 vn release validate --flavor public     # проверка #3: manifest.yaml каждого пака флейвора
 vn release validate --flavor patron
 vn play                                 # глава ch90 в меню с бейджем DLC
-python -m pytest tools/vn/tests -q      # 373 passed (RENPY_SDK задан; без него часть контракт-тестов skip)
+python -m pytest tools/vn/tests -q      # 400 passed (RENPY_SDK задан; без него часть контракт-тестов skip)
 ```
 
 Эталон на 2026-08-08: 2 пака (`ep_beach` с `ch90`, `nsfw` без глав), `VN_PACKS` из двух записей, `build/packs/ep_beach.zip` — 3522 байта / 3 файла, `build/packs/nsfw.zip` — 1 файл плюс строка `warning:` про отсутствие глав.

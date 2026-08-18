@@ -13,12 +13,20 @@ init -980 python in vn_ach:
     from store import renpy, persistent, vn_log
 
     _provider = None
+    _progress_provider = None
 
     def set_provider(fn):
         """fn(achievement_id) -> None: проброс в платформенный бэкенд (Steam и т.п.).
         Подключается после инициализации платформы, до этого — локальные ачивки."""
         global _provider
         _provider = fn
+
+    def set_progress_provider(fn):
+        """fn(achievement_id, complete) -> None: прогресс прогрессивных ачивок в
+        платформу (в Steam это попап «N из M» через IndicateAchievementProgress).
+        Отдельно от set_provider: выдача и прогресс — разные события бэкенда."""
+        global _progress_provider
+        _progress_provider = fn
 
     def _registry():
         return getattr(renpy.store, "VN_ACHIEVEMENTS", {})
@@ -27,6 +35,33 @@ init -980 python in vn_ach:
         if persistent.vn_achievements is None:
             persistent.vn_achievements = {}
         return persistent.vn_achievements
+
+    def _reported():
+        """Последнее значение прогресса, о котором уже сообщили игроку и платформе.
+        Старый persistent (до появления прогресса) читается как пустой — сейв и
+        persistent прошлых версий обязаны грузиться без ошибок (G5/C9)."""
+        if persistent.vn_ach_progress is None:
+            persistent.vn_ach_progress = {}
+        return persistent.vn_ach_progress
+
+    def goal_of(ach_id):
+        """Цель прогрессивной ачивки или None у обычной (бинарной)."""
+        return (_registry().get(ach_id) or {}).get("goal")
+
+    def counter(ach_id):
+        """Текущий прогресс: значение переменной-счётчика либо ДЛИНА списка —
+        в сейве Ren'Py список это естественный способ считать РАЗНЫЕ вещи
+        (посещённые сцены, открытые CG), а число — однородные. Значение
+        ограничено целью: перебор сверху игроку показывать нечего."""
+        goal = goal_of(ach_id)
+        if not goal:
+            return 0
+        value = _var_value(((_registry().get(ach_id) or {}).get("trigger") or {}).get("var"))
+        if isinstance(value, (list, tuple, set, dict)):
+            value = len(value)
+        elif not isinstance(value, (int, float)) or isinstance(value, bool):
+            value = 0
+        return max(0, min(int(value), int(goal["total"])))
 
     def visible(ach_id):
         """Показывать ли ачивку в UI: NSFW-ачивки скрыты в SFW-сборке, чужие
@@ -67,6 +102,31 @@ init -980 python in vn_ach:
         store = getattr(renpy.store, store_name, None)
         return getattr(store, attr, None) if store is not None else None
 
+    def _note_progress(ach_id):
+        """Обновить прогресс ачивки. Возвращает True, если цель достигнута.
+
+        Порог уведомления (step) считается по УЖЕ сообщённому значению, а не по
+        текущему: check() зовётся после каждой смены состояния, и без этого
+        игрок получал бы попап на каждый чих."""
+        goal = goal_of(ach_id)
+        if not goal:
+            return False
+        value = counter(ach_id)
+        total, step = int(goal["total"]), max(1, int(goal.get("step", 1)))
+        if value >= total:
+            return True
+        reported = int(_reported().get(ach_id, 0))
+        if value > reported and (value // step) > (reported // step):
+            _reported()[ach_id] = value
+            if _progress_provider is not None:
+                try:
+                    _progress_provider(ach_id, value)
+                except Exception as e:
+                    vn_log("achievement progress provider failed for %s: %s" % (ach_id, e))
+        elif value > reported:
+            _reported()[ach_id] = value
+        return False
+
     def check(scene_id=None, beat_id=None):
         """Прогон триггеров: зовётся обвязкой сцены (checkpoint), vn.beat и
         после каждой смены состояния. Дёшево: словарь на десятки записей."""
@@ -80,6 +140,11 @@ init -980 python in vn_ach:
                 hit = True
             elif beat_id is not None and trigger.get("beat") == beat_id:
                 hit = True
+            elif spec.get("goal"):
+                # Прогрессивная: цель достигнута — выдаём; иначе сообщаем шаг,
+                # но только когда он ПЕРЕСЁК границу step (иначе попап Steam и
+                # уведомление игроку дёргались бы на каждой смене состояния).
+                hit = _note_progress(ach_id)
             elif "var" in trigger:
                 hit = _var_value(trigger["var"]) == trigger.get("equals", True)
             if hit and grant(ach_id):
@@ -107,3 +172,6 @@ init -980 python in vn_ach:
         return sum(1 for ach_id in ids if has(ach_id)), len(ids)
 
 default persistent.vn_achievements = {}
+# Сообщённый прогресс прогрессивных ачивок: {id: значение}. Отдельно от
+# vn_achievements, чтобы выданное и «докуда дошли» не путались (C9).
+default persistent.vn_ach_progress = {}

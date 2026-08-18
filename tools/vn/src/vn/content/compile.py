@@ -183,7 +183,10 @@ def _emit_achievements(ach_docs: list[tuple[str, dict]], sources) -> str:
     for _rel, doc in sorted(ach_docs):
         for aid, spec in sorted((doc.get("achievements") or {}).items()):
             trigger = dict(spec["trigger"])
-            if "var" in trigger and "equals" not in trigger:
+            # equals по умолчанию — только у ачивок «по значению». У прогрессивных
+            # (goal) сравнение не участвует вовсе: рантайм считает накопление, и
+            # equals в реестре был бы мёртвым полем.
+            if "var" in trigger and "equals" not in trigger and not spec.get("goal"):
                 trigger["equals"] = True
             rows[aid] = {
                 "name_key": spec["name_key"],
@@ -193,6 +196,12 @@ def _emit_achievements(ach_docs: list[tuple[str, dict]], sources) -> str:
                 "pack": spec.get("pack", "core"),
                 "trigger": trigger,
             }
+            # Прогрессивная ачивка: цель едет в реестр как есть, step по умолчанию 1
+            # (движковый stat_modulo — как часто показывать попап «N из M»).
+            goal = spec.get("goal")
+            if goal:
+                rows[aid]["goal"] = {"total": int(goal["total"]),
+                                     "step": int(goal.get("step", 1))}
     return _header(sources) + (
         "init offset = -100\n\n"
         "# Achievement Registry (achievements@1): читается store vn_ach\n"
@@ -1178,6 +1187,19 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
                         scene_rep.errors.append(msg)
                     else:
                         result.warnings.append(msg + " (главы нет в этой сборке)")
+                # Прогресс — накопление, а не равенство: цель без числового
+                # счётчика (или вместе с equals) означала бы, что игрок никогда
+                # не увидит ни шага прогресса, а ачивка выдалась бы разом.
+                if spec.get("goal"):
+                    if "var" not in trigger:
+                        scene_rep.errors.append(
+                            f"{arel}: достижение {aid}: goal требует trigger.var "
+                            f"(счётчик), а объявлен {sorted(set(trigger) - {'equals'})}")
+                    elif "equals" in (spec.get("trigger") or {}):
+                        scene_rep.errors.append(
+                            f"{arel}: достижение {aid}: goal и trigger.equals "
+                            f"взаимоисключают друг друга — цель считается по "
+                            f"значению переменной, а не по совпадению")
                 pack_id = spec.get("pack", "core")
                 if pack_id not in known_packs:
                     scene_rep.errors.append(

@@ -213,6 +213,15 @@ screen main_menu():
         if vn_registry.chapters():
             textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select") style "vn_main_item"
         textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_main_item"
+        # Галерея и достижения — из ГЛАВНОГО меню тоже, а не только из игрового:
+        # их состояние живёт в persistent и не зависит от сейва, поэтому игрок,
+        # вышедший в меню, обязан видеть открытое, не начиная игру заново.
+        # Гейты — те же, что в рельсе (vn_gal.categories() / vn_ach.visible_ids()):
+        # пустой раздел не показывается, дублирования условий нет.
+        if vn_gal.categories():
+            textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_main_item"
+        if vn_ach.visible_ids():
+            textbutton vn_loc.t("ui.nav.achievements") action ShowMenu("achievements") style "vn_main_item"
         textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_main_item"
         # «Выйти» — только на десктопе (та же причина и тот же гейт, что в рельсе
         # navigation): мобильное приложение закрывает система, а не пункт меню.

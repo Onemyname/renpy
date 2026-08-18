@@ -12,6 +12,9 @@ strings:
   meta.packs.nsfw.title: "Контент 18+"
 
   # ── Достижения (achievements@1) ─────────────────────────────────────────────
+  ach.chapter_explorer.name: "Исследователь"
+  ach.chapter_explorer.desc: "Побывать во всех сценах главы"
+  ui.ach.progress_of: "[done] из [total]"
   ach.met_mira.name: "Знакомство"
   ach.met_mira.desc: "Подойти к воротам и встретить Миру"
   ach.reached_rooftop.name: "Выше крыш"

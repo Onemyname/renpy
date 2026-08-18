@@ -161,7 +161,7 @@
 vn content lint                          # 33 диагностики
 vn build                                 # lint -> ассеты -> компилятор -> loc import -> бюджеты
 vn content compile --check               # «check: генерат свеж»
-python -m pytest tools/vn/tests -q       # 373 passed
+python -m pytest tools/vn/tests -q       # 400 passed
 
 # 2. Дополнительно по зоне правки
 vn loc keys --check                      # трогал реплики/меню в *.scene.rpy
@@ -344,7 +344,7 @@ grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
 |---|---|
 | `vn content lint` | OK, 3 предупреждения (перечислены ниже) |
 | `vn build` | `build: OK`; generated: 2 записано, 17 без изменений |
-| `python -m pytest tools/vn/tests -q` | 373 passed |
+| `python -m pytest tools/vn/tests -q` | 400 passed |
 | `vn test smoke --picks 0,0` | НЕ ЗАПУСКАЛОСЬ: нет RENPY_SDK в этой сессии |
 
 ## Затронутые нормы
@@ -360,7 +360,7 @@ ADR не требуется: раздел 0 ARCHITECTURE.md не менялся.
 
 Требования к содержанию:
 
-- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `373 passed`.
+- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `400 passed`.
 - **Не запускавшаяся проверка называется прямо** («НЕ ЗАПУСКАЛОСЬ: причина»), а не опускается. Типичная причина в этом репозитории — отсутствие `RENPY_SDK` в bash-сессии агента.
 - **Предупреждения линтера перечисляются**, даже если exit 0: `vn content lint` печатает warnings, которые в главе со `status: release` станут ошибками (G15).
 - **Затронутые нормы называются номерами** — это язык ревью в этом проекте.
@@ -445,7 +445,7 @@ git diff --stat                                  # объём правки со�
 vn content lint
 vn build
 vn content compile --check
-python -m pytest tools/vn/tests -q               # 373 passed
+python -m pytest tools/vn/tests -q               # 400 passed
 
 # 4. По зоне правки
 vn loc keys --check                              # реплики/меню

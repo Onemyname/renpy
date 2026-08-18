@@ -32,6 +32,16 @@
               {"required": ["beat"]},
               {"required": ["var"]}
             ]
+          },
+          "goal": {
+            "type": "object",
+            "description": "Прогрессивное достижение: значение переменной триггера И ЕСТЬ прогресс — число либо ДЛИНА списка (в сейве Ren'Py список — естественный способ считать разные вещи, например посещённые сцены). Только вместе с trigger.var и без trigger.equals: цель — накопление, а не равенство",
+            "properties": {
+              "total": {"type": "integer", "minimum": 2, "description": "Значение, при котором достижение выдаётся"},
+              "step": {"type": "integer", "minimum": 1, "description": "Как часто уведомлять игрока и Steam (движковый stat_modulo); по умолчанию 1"}
+            },
+            "required": ["total"],
+            "additionalProperties": false
           }
         },
         "required": ["name_key", "trigger"],

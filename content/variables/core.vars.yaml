@@ -8,3 +8,8 @@ vars:
     default: prologue
     doc: "Активный роут; prologue до первой развилки"
     since: 1
+  scenes_seen:
+    type: list
+    default: []
+    doc: "Посещённые сцены (дедуп, пишет vn.checkpoint); длина = прогресс ачивок «пройти N сцен»"
+    since: 2

@@ -1723,6 +1723,74 @@ def test_oversample(scale: float, timeout_s: int):
         _fail("оверсэмпл не подтверждён движком:\n" + out.strip()[-1200:])
 
 
+@test.command("deck-kit")
+@click.option("--timeout", "timeout_s", default=180, show_default=True,
+              help="Лимит одного автопилотного прогона, сек.")
+def test_deck_kit(timeout_s: int):
+    """Комплект приёмки для ЖИВОГО устройства (Steam Deck / ТВ).
+
+    Всё, что можно проверить на build-машине, уже автоматизировано; на железе
+    остаётся то, что видно только там — читаемость, Steam Input, сон/пробуждение,
+    оверлей, загрузка с eMMC. Команда собирает build/deck-kit/: скриншоты обоих
+    окружений, машинную сводку (в т.ч. кегли в ФИЗИЧЕСКИХ пикселях Deck) и
+    чек-лист, построенный из docs/handbook/43-steam-qa.md."""
+    from .deckkit import KIT_REL, QA_DOC_REL, build_summary, parse_checklist, write_kit
+
+    root = _root()
+    if not (root / "game" / "generated" / "manifest.json").is_file():
+        _fail("генерат не собран — сначала vn build")
+    doc = root / QA_DOC_REL
+    if not doc.is_file():
+        _fail(f"нет документа приёмки {QA_DOC_REL} — из него строится чек-лист")
+
+    # Экраны меню прохождением не открываются, поэтому снимаем их явно; набор —
+    # те, где вёрстка ломается первой (масштаб, safe-area, скролл).
+    screens = "main_menu,preferences,gallery,achievements,history"
+    shots: dict[str, list[Path]] = {}
+    for variant, env_variant in (("deck", "steam_deck medium touch"),
+                                 ("big_picture", "steam_big_picture")):
+        out = root / ".vncache" / f"deck-kit-{variant}"
+        rc, timed_out = _autopilot_run(
+            root, out,
+            {"VN_AUTOPILOT_PICKS": "0", "VN_AUTOPILOT_SCREENS": screens,
+             "VN_AUTOPILOT_LANG": "@source", "RENPY_VARIANT": env_variant},
+            timeout_s)
+        if timed_out or rc != 0:
+            _fail(f"прогон в варианте {env_variant!r} не завершился (код {rc})")
+        shots[variant] = sorted(out.glob("*.png"))
+        if not shots[variant]:
+            _fail(f"прогон {variant} не дал ни одного скриншота")
+
+    summary, warnings = build_summary(root)
+    for w in warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+
+    # Факты автоматики собираем ПРОГОНАМИ, а не декларацией: комплект не должен
+    # утверждать «сейвы мигрируют», если корпус сейчас красный.
+    automated: list[tuple[str, str]] = []
+    from .loc.po import report as loc_report
+    from .release import validate_release
+
+    cov = loc_report(root).coverage
+    if cov:
+        worst = min((c["translated"] / c["total"]) if c["total"] else 1.0
+                    for c in cov.values())
+        automated.append(("покрытие переводов", f"минимум {worst:.0%} по языкам"))
+    checks, ok = validate_release(root, "public")
+    fails = [m for st, m in checks if st == "FAIL"]
+    automated.append(("релизный гейт (public)",
+                      "OK" if ok else f"{len(fails)} FAIL — {fails[0]}"))
+    for variant, files in sorted(shots.items()):
+        automated.append((f"прогон автопилота [{variant}]",
+                          f"{len(files)} скриншотов, вердикт OK"))
+
+    written = write_kit(root, parse_checklist(doc), summary, shots, automated)
+    items = parse_checklist(doc)
+    click.secho(f"deck-kit: {KIT_REL} готов — {len(written)} файлов, "
+                f"{len(items)} пунктов приёмки "
+                f"(скриншоты: {', '.join(sorted(shots))})", fg="green")
+
+
 @test.command("corpus")
 @click.option("--scenes", default=100, help="Сколько сцен сгенерировать (главы набираются по 50).")
 @click.option("--images", default=100, help="Сколько мастеров образов (bg/spr/shot/cg по долям).")
@@ -1919,6 +1987,31 @@ def release_build(flavor: str, patron_token: str | None, packages: tuple, timeou
         (root / "game" / "THIRD-PARTY-NOTICES.md").unlink(missing_ok=True)
     click.secho(f"release build: OK — {info['build_id']} -> "
                 f"build/dist/{info['version']}-{flavor}/", fg="green")
+
+
+@release.command("preflight")
+@click.option("--flavor", default="public", show_default=True,
+              help="Флейвор, чьи артефакты проверять.")
+def release_preflight(flavor: str):
+    """Готовность к Steam-поставке ДО получения App ID.
+
+    Отвечает на вопрос «если App ID появится сейчас, что останется сделать»:
+    депоты, библиотеки Valve, артефакты сборки, готовый список ачивок для
+    партнёрки, DLC-маппинг паков и корень Auto-Cloud. Пустой App ID — пункт
+    TODO, а не провал: команда полезна именно в этом состоянии (exit 0, пока
+    нет настоящих ошибок)."""
+    from .release import steam_preflight
+
+    root = _root()
+    color = {"PASS": "green", "TODO": "cyan", "WARN": "yellow", "FAIL": "red"}
+    checks = steam_preflight(root, flavor)
+    for state, msg in checks:
+        click.secho(f" {state:4} {msg}", fg=color.get(state))
+    failures = [m for st, m in checks if st == "FAIL"]
+    if failures:
+        _fail(f"steam preflight: {len(failures)} ошибок")
+    todo = sum(1 for st, _ in checks if st == "TODO")
+    click.secho(f"steam preflight: OK ({todo} шагов за владельцем аккаунта)", fg="green")
 
 
 @release.command("steam")

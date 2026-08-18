@@ -186,6 +186,21 @@ def test_steam_libs_status_reports_missing(tmp_path):
     assert len(steam_libs_status(tmp_path)) == 2
 
 
+def test_main_menu_exposes_persistent_collections(repo_root):
+    """Галерея и достижения обязаны быть достижимы из ГЛАВНОГО меню, а не только
+    из игрового: их состояние живёт в persistent, и игрок без активного сейва
+    иначе не может посмотреть открытое. Гейты — те же, что в рельсе, чтобы
+    пустой раздел не показывался."""
+    src = (repo_root / "game" / "framework" / "20_ui" / "screens"
+           / "core_screens.rpy").read_text(encoding="utf-8")
+    menu = src.split("screen main_menu():", 1)[1].split("\nstyle ", 1)[0]
+    for screen_name, gate in (("gallery", "vn_gal.categories()"),
+                              ("achievements", "vn_ach.visible_ids()")):
+        assert f'ShowMenu("{screen_name}")' in menu, \
+            f"{screen_name} недостижим из главного меню"
+        assert gate in menu, f"{screen_name} в главном меню без гейта {gate}"
+
+
 def test_platform_facade_is_single_steam_touchpoint(repo_root):
     """Игровой код не знает про Steam: прямые касания _renpysteam/steamapi
     разрешены только фасаду 035_platform.rpy (и генерат-эмиттеру define'ов)."""

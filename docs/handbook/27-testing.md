@@ -12,7 +12,7 @@
 
 ```bash
 vn content lint                          # 1. ~1 с, SDK не нужен: схемы, именование, граф, достижимость
-cd tools/vn && .venv/bin/python -m pytest -q && cd -   # 2. 373 passed (про cwd — §2!)
+cd tools/vn && .venv/bin/python -m pytest -q && cd -   # 2. 400 passed (про cwd — §2!)
 vn build --check                         # 3. свежесть генерата и ассетов, разметка PO, два бюджета
 bash "$RENPY_SDK/renpy.sh" . lint        # 4. движковый lint (Windows: "$RENPY_SDK/renpy.exe" . lint)
 vn test oversample --scale 2             # 5. движок реально подхватывает @2-варианты (ADR-0012)
@@ -93,7 +93,7 @@ def repo_root() -> Path:
 ### 2.1. Рабочая команда — из `tools/vn`, а не из корня
 
 ```bash
-cd tools/vn && .venv/bin/python -m pytest -q                  # 373 passed
+cd tools/vn && .venv/bin/python -m pytest -q                  # 400 passed
 cd tools/vn && .venv/bin/python -m pytest -q tests/test_lint.py   # один файл
 cd tools/vn && .venv/bin/python -m pytest -q -k gallery       # по имени
 ```
@@ -105,7 +105,7 @@ $ python -m pytest tools/vn/tests -q          # из КОРНЯ
 FAILED tools/vn/tests/test_verify_regressions.py::test_check_mode_writes_nothing_and_detects_stale
     from tests.test_compile import BASE_OUTPUTS
     E   ModuleNotFoundError: No module named 'tests'
-1 failed, 372 passed
+1 failed, 399 passed
 ```
 
 Причина механическая, а не логическая. `tools/vn/tests/` — не пакет (`__init__.py` нет), поэтому
@@ -118,9 +118,9 @@ pytest в режиме `prepend` кладёт в `sys.path` **сам катал�
 
 | Команда | Результат |
 |---|---|
-| `cd tools/vn && python -m pytest -q` | 373 passed |
-| `PYTHONPATH=tools/vn python -m pytest tools/vn/tests -q` (из корня) | 373 passed |
-| `python -m pytest tools/vn/tests -q` (из корня) | **1 failed, 372 passed** |
+| `cd tools/vn && python -m pytest -q` | 400 passed |
+| `PYTHONPATH=tools/vn python -m pytest tools/vn/tests -q` (из корня) | 400 passed |
+| `python -m pytest tools/vn/tests -q` (из корня) | **1 failed, 399 passed** |
 
 **Что изменилось 2026-08-18:** CI больше не красный на этом тесте — шаг pytest в `ci.yml` получил
 `working-directory: tools/vn`, а в `canary.yml` команда обёрнута в подоболочку
@@ -151,7 +151,7 @@ pytest в режиме `prepend` кладёт в `sys.path` **сам катал�
 
 | Окружение | Результат |
 |---|---|
-| SDK + ffmpeg | `373 passed` |
+| SDK + ffmpeg | `400 passed` |
 | без `RENPY_SDK`, ffmpeg есть | `363 passed, 10 skipped` |
 | SDK есть, без ffmpeg | `360 passed, 12 skipped, **1 failed**` |
 | без SDK и без ffmpeg | `350 passed, 22 skipped, **1 failed**` |
@@ -182,7 +182,7 @@ E   assert False
 
 **Вывод для чеклистов:** зелёный прогон без SDK и ffmpeg не означает, что путь через движок цел. Все
 гард-тесты по файлам репозитория (`test_ci_config.py`, `test_crash_handler.py`, `test_platform.py:183`,
-`test_ui_panels.py:306,325,369,394`, `test_engine_compat.py:91`) окружения не требуют — они гоняются
+`test_ui_panels.py:306,325,369,400`, `test_engine_compat.py:91`) окружения не требуют — они гоняются
 везде.
 
 ---
@@ -519,7 +519,7 @@ save corpus: OK (2 фикстур загружены и мигрированы)
 
 **Покрыто частично:** `doctor.py` (153) — только `_lfs_pointer_fonts` и `sdk_path`; `vn/pipeline.py` (581 — это внешний конвейер DAZ/ComfyUI, **не** ассет-конвейер) — только `find_ffmpeg`/`find_ffprobe`; `release.py` (736) — `validate_release` целиком **никогда не исполняется в тестах** (нужны SDK, ассеты и хранилище), но вынесенная из него `early_content_checks` исполняется: ради этого её и сделали отдельной функцией; `repo.py` (43) — используется косвенно, своих тестов нет; `assets/imaging.py` (143) и `assets/render_config.py` (280) — только через `build_assets`.
 
-**Целые подсистемы без автоматической проверки:** рантайм `game/framework/**`, включая `vn_qa` — ни один pytest не исполняет его код (до него дотягиваются только **статические** гард-тесты: `test_crash_handler.py`, `test_platform.py:183`, `test_ui_panels.py:325,369,394`, `test_achievements.py`, `test_engine_compat.py:91` — все читают исходники регексом или парсером. Исключение появилось у гейта паков: `test_release.py` **исполняет** блоки `init python in vn` / `in vn_build` из `.rpy` на заглушке `store` — единственный способ проверить рантайм-логику без движка); сами `vn save check`/`vn save corpus`; `vn package`, `vn release build`, `vn release steam`, `vn pack validate`, `vn test oversample`. `vn pack build` покрыт.
+**Целые подсистемы без автоматической проверки:** рантайм `game/framework/**`, включая `vn_qa` — ни один pytest не исполняет его код (до него дотягиваются только **статические** гард-тесты: `test_crash_handler.py`, `test_platform.py:183`, `test_ui_panels.py:325,369,400`, `test_achievements.py`, `test_engine_compat.py:91` — все читают исходники регексом или парсером. Исключение появилось у гейта паков: `test_release.py` **исполняет** блоки `init python in vn` / `in vn_build` из `.rpy` на заглушке `store` — единственный способ проверить рантайм-логику без движка); сами `vn save check`/`vn save corpus`; `vn package`, `vn release build`, `vn release steam`, `vn pack validate`, `vn test oversample`. `vn pack build` покрыт.
 
 **Хрупкие константы** — упадут от несвязанного изменения: набор `BASE_OUTPUTS` из **16** имён (`test_compile.py:11-28`) и его переиспользование в `test_verify_regressions.py:84` (оно же — источник cwd-зависимости, §2.1), `assert cov == {"total": 6, "translated": 5, "fuzzy": 0}` (`test_loc.py:124`), `assert sites == 8` (`test_ci_config.py:90` — число мест установки тулчейна в CI; добавили джобу → поправьте константу), `assert len(reg.schemas) >= 15` (`test_schemas.py:11` — «не меньше», поэтому не ломается при росте до 39).
 
@@ -576,7 +576,7 @@ save corpus: OK (2 фикстур загружены и мигрированы)
 
 ## 9. Чеклисты
 
-Каждый пункт — команда этого проекта. Ожидаемое «зелёное» состояние: `vn doctor` — 8 PASS, `pytest` — 373 passed (из `tools/vn`, § 2.1), `vn release validate --flavor patron` — ни одного FAIL при одном штатном WARN про черновую озвучку. У `--flavor public` FAIL тоже нет (exit 0), но WARN два: к озвучке добавляется зрелость контента — в проекте пока нет ни одной главы `status: release`.
+Каждый пункт — команда этого проекта. Ожидаемое «зелёное» состояние: `vn doctor` — 8 PASS, `pytest` — 400 passed (из `tools/vn`, § 2.1), `vn release validate --flavor patron` — ни одного FAIL при одном штатном WARN про черновую озвучку. У `--flavor public` FAIL тоже нет (exit 0), но WARN два: к озвучке добавляется зрелость контента — в проекте пока нет ни одной главы `status: release`.
 
 ### 9.1. Pre-commit (5-10 с, после любой правки)
 
@@ -776,7 +776,7 @@ vn build                                   # ожидание: build: OK
 vn loc keys --check
 bash "$RENPY_SDK/renpy.sh" . lint
 vn content compile --check                 # ожидание: check: генерат свеж
-(cd tools/vn && .venv/bin/python -m pytest -q)  # ожидание: 373 passed (§2.1!)
+(cd tools/vn && .venv/bin/python -m pytest -q)  # ожидание: 400 passed (§2.1!)
 vn test oversample --scale 2               # ожидание: «oversample @2: проверено 22, поднято 13» + OK
 vn test smoke --picks 0,0                  # ожидание: OK: vn_end_of_content (19 скриншотов, cold start ~1.3 c)
 vn save check                              # ожидание: save check: OK (2 фикстур)

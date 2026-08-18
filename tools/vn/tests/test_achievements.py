@@ -221,3 +221,106 @@ def test_progress_counter_interpolates_screen_locals(repo_root):
         for name in sorted(names):
             assert f"[{name}]" in entry.msgstr, (
                 f"{po_path.parent.name}: перевод счётчика потерял [{name}]")
+
+# ── Прогрессивные достижения (goal) ──────────────────────────────────────────
+
+def test_emit_progressive_achievement_carries_goal_without_equals():
+    """Прогресс = накопление, поэтому equals прогрессивной ачивке не подставляется:
+    иначе в реестре осталось бы мёртвое поле, а рантайму пришлось бы решать, что
+    из двух правил главнее."""
+    docs = _doc(explorer={"name_key": "ach.explorer.name",
+                          "trigger": {"var": "g.scenes_seen"},
+                          "goal": {"total": 3}})
+    text = _emit_achievements(docs, [("src", "deadbeef")])
+    assert "'goal': {'total': 3, 'step': 1}" in text     # step по умолчанию 1
+    assert "'equals'" not in text
+
+
+def test_schema_accepts_goal_and_rejects_broken_goal(repo_root):
+    from vn.schemas import SchemaRegistry
+
+    reg = SchemaRegistry(repo_root / "tools" / "schemas")
+
+    def doc(goal):
+        return {"schema": "achievements@1", "achievements": {
+            "explorer": {"name_key": "a.b", "trigger": {"var": "g.scenes_seen"},
+                         "goal": goal}}}
+
+    assert reg.validate(doc({"total": 3}), "t") == []
+    assert reg.validate(doc({"total": 3, "step": 2}), "t") == []
+    assert reg.validate(doc({"total": 1}), "t") != []          # цель из одного шага — это бинарная ачивка
+    assert reg.validate(doc({"step": 2}), "t") != []           # без total прогресс не определён
+    assert reg.validate(doc({"total": 3, "x": 1}), "t") != []  # additionalProperties: false
+
+
+def test_compiler_rejects_goal_without_counter(repo_root, tmp_path):
+    """goal на scene/beat-триггере или вместе с equals — ачивка выдалась бы разом,
+    и игрок не увидел бы ни одного шага прогресса. Ловит компилятор, не рантайм."""
+    import shutil
+
+    from vn.content.compile import CompileError, compile_content
+    from vn.content.lint import REQUIRED_DIRS
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    for name in ("project.yaml", ".vnstorage.yaml"):
+        shutil.copy(repo_root / name, root / name)
+    shutil.copytree(repo_root / "tools" / "schemas", root / "tools" / "schemas")
+    shutil.copytree(repo_root / "content", root / "content")
+    shutil.rmtree(root / "content" / "chapters")
+    (root / "content" / "chapters").mkdir()
+    shutil.rmtree(root / "content" / "locations")
+    (root / "content" / "locations").mkdir()
+    for d in REQUIRED_DIRS:
+        (root / d).mkdir(parents=True, exist_ok=True)
+
+    ach = root / "content" / "achievements" / "core.achievements.yaml"
+    base = ach.read_text(encoding="utf-8")
+
+    ach.write_text(base + "\n  bad_scene_goal:\n    name_key: ach.met_mira.name\n"
+                          "    trigger: {scene: ch01_s010}\n    goal: {total: 3}\n",
+                   encoding="utf-8")
+    with pytest.raises(CompileError, match="goal требует trigger.var"):
+        compile_content(root, out_dir=tmp_path / "gen")
+
+    ach.write_text(base + "\n  bad_equals_goal:\n    name_key: ach.met_mira.name\n"
+                          "    trigger: {var: g.scenes_seen, equals: 3}\n"
+                          "    goal: {total: 3}\n",
+                   encoding="utf-8")
+    with pytest.raises(CompileError, match="взаимоисключают"):
+        compile_content(root, out_dir=tmp_path / "gen")
+
+
+def test_runtime_progress_contract(repo_root):
+    """Рантайм-контракт прогресса (проверяем исходник ядра, как и остальные тесты
+    этого набора): счётчик читает переменную триггера, длину списка считает
+    прогрессом, значение ограничено целью, а сообщённый прогресс живёт в
+    отдельном persistent — старый persistent обязан читаться как пустой."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "080_achievements.rpy").read_text(encoding="utf-8")
+    assert "def counter(" in src and "def goal_of(" in src
+    assert "len(value)" in src, "длина списка не считается прогрессом"
+    assert "min(int(value), int(goal[\"total\"]))" in src, "прогресс не ограничен целью"
+    assert "default persistent.vn_ach_progress = {}" in src
+    assert "def set_progress_provider(" in src
+    # Порог уведомления считается по уже сообщённому значению, иначе попап
+    # дёргался бы на каждой смене состояния.
+    assert "(value // step) > (reported // step)" in src
+
+
+def test_steam_registers_goal_with_stat_max(repo_root):
+    """Прогрессивную ачивку движок умеет показывать сам («N из M»), но только
+    если при регистрации знает цель и шаг."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "035_platform.rpy").read_text(encoding="utf-8")
+    assert "stat_max=" in src and "stat_modulo=" in src
+    assert "vn_ach.set_progress_provider(achievement.progress)" in src
+
+
+def test_progress_is_not_shown_for_hidden_achievement(repo_root):
+    """Прогресс скрытой ачивки — тот же спойлер, что описание: он выдал бы, ЧТО
+    именно надо собрать."""
+    src = (repo_root / "game" / "framework" / "20_ui" / "screens"
+           / "achievements.rpy").read_text(encoding="utf-8")
+    card = src.split("screen vn_ach_card(", 1)[1]
+    assert "None if _spoiler else vn_ach.goal_of(ach_id)" in card

@@ -104,7 +104,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 
 Проверенные прогоны на машине владельца (Windows 11, RTX 5080, Python 3.12.10):
 `vn doctor` → 8 PASS / 0 FAIL; `vn build` → `build: OK` за ~0.3 с на прогретом кэше;
-`pytest tools/vn/tests -q` → 373 passed; `vn release validate --flavor public` → 20 строк (18 PASS + 2 WARN: зрелость контента и черновые дубли озвучки), exit 0;
+`pytest tools/vn/tests -q` → 400 passed; `vn release validate --flavor public` → 20 строк (18 PASS + 2 WARN: зрелость контента и черновые дубли озвучки), exit 0;
 `vn release validate --flavor patron` → 21 строка (20 PASS + 1 WARN), exit 0 (в том числе `сейв-корпус: 2 фикстур`); `vn save corpus` → OK, обе фикстуры загружены и мигрированы;
 `vn pipeline doctor` → PASS (ffmpeg 8.1.2 VP9, ComfyUI `D:\ComfyUI`, PyTorch 2.11.0+cu128,
 6 обязательных моделей, DAZ Studio 6), WARN на неустановленные Virt-a-Mate и The Sims 4.
@@ -260,7 +260,7 @@ Ren'Py и релизный конвейер — все четыре с `ffmpeg` 
 vn doctor                              # ожидаем 8 PASS, 0 FAIL
 vn build                               # ожидаем "build: OK"
 vn build --check                       # CI-режим: генерат свеж? (упадёт после нового коммита — см. ниже)
-python -m pytest tools/vn/tests -q     # ожидаем 373 passed
+python -m pytest tools/vn/tests -q     # ожидаем 400 passed
 vn release validate --flavor public    # 20 строк: 18 PASS + 2 WARN (зрелость контента, драфты озвучки), exit 0
 vn release validate --flavor patron    # 21 строка: 20 PASS + 1 WARN, exit 0 (в т.ч. «сейв-корпус: 2 фикстур»)
 vn save corpus                         # обе фикстуры грузятся; schema1-demo мигрирует 1 -> 2

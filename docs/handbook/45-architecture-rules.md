@@ -674,7 +674,7 @@ capability-запросы `vn_platform.*` (`is_steam_deck`, `is_big_picture`, `h
 # ── Проверить, что правило соблюдено ───────────────────────────────────────
 vn content lint                                    # 0 ошибок, 0 предупреждений
 vn build                                           # build: OK
-cd tools/vn && .venv/bin/python -m pytest -q       # 373 passed (см. 27 §2 про cwd)
+cd tools/vn && .venv/bin/python -m pytest -q       # 400 passed (см. 27 §2 про cwd)
 vn release validate --flavor public                # без FAIL (сегодня exit 0, 2 штатных WARN)
 
 # ── Ручные проверки правил без автоматического ловца ───────────────────────

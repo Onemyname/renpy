@@ -489,3 +489,78 @@ def test_pack_gate_open_in_dev_checkout(tmp_path, monkeypatch):
     # dev это отсутствие build_id.json (is_release), а не пустота packs.
     info = dict(compute_build_info(_mk_root(tmp_path), "public"), packs=[])
     assert not _pack_registry(monkeypatch, _vn_build_store(monkeypatch, info)).installed("nsfw")
+
+# ── Готовность к Steam-поставке до получения App ID ──────────────────────────
+
+def test_steam_preflight_is_useful_without_appid(repo_root):
+    """Главный сценарий: приложения у Valve ещё нет. Пустой App ID обязан быть
+    пунктом TODO, а не провалом — иначе команда бесполезна ровно тогда, когда
+    она нужнее всего, и владелец не узнает, что остальное готово."""
+    from vn.release import steam_preflight
+
+    checks = steam_preflight(repo_root, "public")
+    states = [st for st, _ in checks]
+    assert "FAIL" not in states, [m for st, m in checks if st == "FAIL"]
+    assert any(st == "TODO" and "App ID" in m for st, m in checks)
+    # Список ачивок для партнёрки печатается по декларациям: API Name = id
+    ach_line = next(m for st, m in checks if "ачивки для партнёрки" in m)
+    for aid in ("met_mira", "reached_rooftop"):
+        assert aid in ach_line
+
+
+def test_steam_preflight_reports_ready_state(tmp_path, repo_root):
+    """С заполненными App ID и депотами пункты TODO по ним исчезают."""
+    import shutil
+
+    import yaml
+
+    from vn.release import steam_preflight
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    shutil.copy(repo_root / "project.yaml", root / "project.yaml")
+    shutil.copytree(repo_root / "game", root / "game",
+                    ignore=shutil.ignore_patterns("assets", "generated", "tl", "saves", "cache"))
+    proj = yaml.safe_load((root / "project.yaml").read_text(encoding="utf-8"))
+    proj["platform"] = {"steam": {"appid": 480, "depots": {"windows": 481, "linux": 482}}}
+    (root / "project.yaml").write_text(yaml.safe_dump(proj, allow_unicode=True, sort_keys=False),
+                                      encoding="utf-8")
+    checks = steam_preflight(root, "public")
+    assert any(st == "PASS" and "App ID: 480" in m for st, m in checks)
+    assert any(st == "PASS" and "депоты" in m for st, m in checks)
+    assert not any(st == "TODO" and "App ID" in m for st, m in checks)
+
+
+def test_steam_preflight_catches_duplicate_depots(tmp_path, repo_root):
+    """Один депот на две платформы — реальная ошибка конфигурации: SteamPipe
+    залил бы содержимое одной платформы поверх другой."""
+    import shutil
+
+    import yaml
+
+    from vn.release import steam_preflight
+
+    root = tmp_path / "repo"
+    root.mkdir()
+    shutil.copy(repo_root / "project.yaml", root / "project.yaml")
+    proj = yaml.safe_load((root / "project.yaml").read_text(encoding="utf-8"))
+    proj["platform"] = {"steam": {"appid": 480, "depots": {"windows": 481, "linux": 481}}}
+    (root / "project.yaml").write_text(yaml.safe_dump(proj, allow_unicode=True, sort_keys=False),
+                                      encoding="utf-8")
+    checks = steam_preflight(root, "public")
+    assert any(st == "FAIL" and "повторяются" in m for st, m in checks)
+
+
+def test_steam_preflight_requires_explicit_save_directory(tmp_path, repo_root):
+    """Auto-Cloud привязывается к каталогу сейвов: неявный save_directory
+    означает, что маски в Steamworks задать не к чему."""
+    import shutil
+
+    from vn.release import steam_preflight
+
+    root = tmp_path / "repo"
+    (root / "game").mkdir(parents=True)
+    shutil.copy(repo_root / "project.yaml", root / "project.yaml")
+    (root / "game" / "options.rpy").write_text("define config.name = _('VN')\n", encoding="utf-8")
+    checks = steam_preflight(root, "public")
+    assert any(st == "FAIL" and "save_directory" in m for st, m in checks)

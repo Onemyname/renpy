@@ -49,7 +49,7 @@ setx RENPY_SDK "C:\Users\<you>\renpy-sdk\renpy-8.5.3-sdk"   # и ОТКРОЙТ�
 vn doctor                                # окружение: сейчас 8 PASS / 0 FAIL
 vn build                                 # lint → ассеты → генерат → game/tl → бюджеты
 vn play                                  # запуск игры (нужен RENPY_SDK)
-(cd tools/vn && python -m pytest -q)     # 373 passed (из tools/vn — см. 27 §2.1)
+(cd tools/vn && python -m pytest -q)     # 400 passed (из tools/vn — см. 27 §2.1)
 ```
 
 `setx` виден только **новым** процессам. В bash-сессии агента `RENPY_SDK` не наследуется —
@@ -275,7 +275,7 @@ flowchart TB
 [ ] vn doctor                                      # 8 PASS / 0 FAIL
 [ ] прочитать 02-architecture.md §2-3 (зоны) и 35-agent-rules.md
 [ ] vn build && vn play                            # игра запустилась
-[ ] (cd tools/vn && python -m pytest -q)           # 373 passed
+[ ] (cd tools/vn && python -m pytest -q)           # 400 passed
 [ ] правка — только в источниках истины (content/, packs/, assets_src/, loc/, game/framework/, tools/)
 [ ] vn content lint && vn build && (cd tools/vn && python -m pytest -q)
 [ ] git status --short — ни одного файла из game/generated | game/assets | game/tl
@@ -388,7 +388,7 @@ DAZ → ComfyUI → provenance → `video_src` → сцена; **P0-3** дове
 ```bash
 vn content lint                              # 0 ошибок
 vn build                                     # build: OK
-(cd tools/vn && python -m pytest -q)         # 373 passed
+(cd tools/vn && python -m pytest -q)         # 400 passed
 git status --short                           # ни одного файла из game/generated|assets|tl
 ```
 

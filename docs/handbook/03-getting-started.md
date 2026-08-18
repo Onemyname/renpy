@@ -114,7 +114,7 @@ vn play      # запуск через SDK; закрытие окна возвр
 ### Шаг 7. `pytest` — 373 теста (1 мин)
 
 ```bash
-cd tools/vn && python -m pytest tests -q; cd -     # -> 373 passed
+cd tools/vn && python -m pytest tests -q; cd -     # -> 400 passed
 ```
 
 **Две тонкости, из-за которых у новичка «тесты не такие»:**
@@ -433,7 +433,7 @@ vn loc report                      # de/en/pseudo — 136/136 (100%), fuzzy 0
 vn voice validate --report         # ch01 [ru]: покрыто 14/14 (100%)
 vn assets memory                   # память: OK
 vn test oversample --scale 2       # oversample: OK
-(cd tools/vn && python -m pytest tests -q)   # 373 passed
+(cd tools/vn && python -m pytest tests -q)   # 400 passed
 vn play                            # игра стартует
 ```
 

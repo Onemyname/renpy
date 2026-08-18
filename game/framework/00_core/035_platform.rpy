@@ -109,8 +109,16 @@ init 999 python:
         # в движковом achievement-модуле (его SteamBackend батчит StoreStats).
         # В Steamworks API Name каждой ачивки обязан совпадать с её id.
         for _vn_aid in vn_ach.all_ids():
-            achievement.register(_vn_aid)
+            # Прогрессивным ачивкам движок сам рисует попап «N из M», если при
+            # регистрации знает цель и шаг (stat_max/stat_modulo — 00achievement.rpy).
+            _vn_goal = vn_ach.goal_of(_vn_aid)
+            if _vn_goal:
+                achievement.register(_vn_aid, stat_max=_vn_goal["total"],
+                                     stat_modulo=_vn_goal.get("step", 1))
+            else:
+                achievement.register(_vn_aid)
         vn_ach.set_provider(achievement.grant)
+        vn_ach.set_progress_provider(achievement.progress)
         # Догон: выданное офлайн/до покупки Steam-версии доезжает при первом
         # запуске под Steam (grant идемпотентен, sync сводит бэкенды).
         for _vn_aid in vn_ach.all_ids():

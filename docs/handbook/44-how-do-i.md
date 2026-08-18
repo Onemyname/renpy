@@ -910,6 +910,55 @@ vn test oversample --scale 2       # ДВИЖОК подтверждает, чт
 
 ---
 
+## 27. Как сделать прогрессивное достижение («3 из 10»)
+
+1. Объявите СЧЁТЧИК в `../../content/variables/*.vars.yaml` — число либо список
+   (список считается по длине и не накручивается повторным входом), `since` =
+   текущая `save_schema`.
+2. В `../../content/achievements/*.achievements.yaml` добавьте блок `goal`:
+
+```yaml
+  chapter_explorer:
+    name_key: ach.chapter_explorer.name
+    desc_key: ach.chapter_explorer.desc
+    trigger: {var: g.scenes_seen}     # значение (или длина) И ЕСТЬ прогресс
+    goal: {total: 3}                  # step: N — как часто уведомлять, по умолчанию 1
+```
+
+3. Строки в `../../content/ui/strings.yaml` → `vn loc extract` → перевод →
+   `vn loc import`. Полосу в карточке и попап Steam рисовать не нужно: карточка
+   умеет, Steam получает `stat_max`/`stat_modulo` сама.
+4. `vn build` — компилятор проверит, что переменная объявлена, а `goal` стоит на
+   счётчике (не на `scene`/`beat` и не вместе с `equals`).
+
+**Типичная ошибка:** счётчик, который никто не увеличивает. Прогресс останется
+нулевым, и это не поймает ни один тест — увеличивать его должен либо рантайм
+(как `vn.checkpoint` для `g.scenes_seen`), либо сцена явным `$`.
+
+## 28. Как проверить готовность к Steam до получения App ID
+
+```bash
+vn release preflight --flavor public
+```
+
+Печатает то, что осталось за владельцем аккаунта (App ID, депоты, редистрибутивы
+Valve), и то, что уже готово: список ачивок для партнёрки (API Name = id
+побуквенно), маппинг DLC для паков, корень Auto-Cloud. Пустой App ID — пункт
+`TODO`, а не провал: команда полезна именно в этом состоянии.
+
+## 29. Как собрать комплект для проверки на живом Steam Deck
+
+```bash
+vn build && vn test deck-kit
+```
+
+В `build/deck-kit/` появятся скриншоты прогонов в вариантах `steam_deck` и
+`steam_big_picture`, `summary.json` (масштаб и letterbox Deck, кегли в
+ФИЗИЧЕСКИХ пикселях, худшая сцена, бюджеты) и `checklist.md`, построенный из
+[43-steam-qa.md](43-steam-qa.md): закрытое машиной отмечено с фактом прогона,
+пункты устройства оставлены пустыми. Правьте документ приёмки, а не сам комплект
+— он собирается заново.
+
 ## Чего НЕ делать
 
 - **Не изобретать команды.** Их нет: `vn validate`, `vn build --use-artifact <sha>`, `vn content lint --strict`, `vn test perf`, `vn bootstrap --role`, `vn release build --channel`. Ответ будет usage error (`exit 2`), а не «не реализовано».
@@ -933,7 +982,7 @@ vn loc report                              # de/en/pseudo — 136/136 (100%), fu
 vn voice validate --report
 vn assets memory                           # память: OK
 vn test oversample --scale 2               # oversample: OK
-(cd tools/vn && python -m pytest -q)       # 373 passed
+(cd tools/vn && python -m pytest -q)       # 400 passed
 vn release validate --flavor public        # 20 строк, 0 FAIL, 2 WARN (зрелость контента, драфты озвучки), exit 0
 vn release validate --flavor patron        # 21 строка, 0 FAIL, 1 WARN — норма
 ```
