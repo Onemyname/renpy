@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/qa_screens@1",
+  "title": "qa_screens@1 — тур автопилота по экранам (content/ui/screens.yaml)",
+  "description": "Какие экраны прогон обязан открыть и снять. Декларация, а не список в коде: тур нужен трём потребителям (vn test screens, ночная джоба controller-first, vn test deck-kit), и хардкод в каждом расходился бы — экран, добавленный в игру, тихо оставался бы непроверенным. Экран, объявленный здесь и отсутствующий в игре (и наоборот), — ошибка vn test screens.",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "qa_screens@1"},
+    "screens": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*$"},
+          "why": {"type": "string", "description": "Зачем этот экран в туре: что именно ломается незамеченным без его кадра"},
+          "kwargs": {
+            "type": "object",
+            "description": "Аргументы экрана (show_screen(name, **kwargs)): экран, требующий параметр, без него не откроется вовсе",
+            "additionalProperties": {"type": ["string", "number", "boolean", "null"]}
+          },
+          "optional": {"type": "boolean", "description": "Экран может отсутствовать в этой сборке (dev-зона, платформенная ветка) — его отсутствие не ошибка"}
+        },
+        "required": ["name", "why"],
+        "additionalProperties": false
+      }
+    },
+    "ignore_defined": {
+      "type": "array",
+      "description": "Экраны игры, которых в туре нет намеренно: движковые контракты (_-префикс покрыт правилом), экраны-компоненты без самостоятельного смысла, экраны краха. Каждая запись обязана нести причину в комментарии YAML",
+      "items": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*$"},
+      "uniqueItems": true
+    }
+  },
+  "required": ["schema", "screens"],
+  "additionalProperties": false
+}

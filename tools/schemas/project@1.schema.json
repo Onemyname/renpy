@@ -46,7 +46,9 @@
       "properties": {
         "assets_total_mb": {"type": "number", "minimum": 0, "description": "Весь game/assets. Игра поставляется автономным билдом без докачки, поэтому лимит ограничивает только аварии (зацикленный экспорт, забытый вариант), а не размер игры"},
         "generated_total_kb": {"type": "number", "minimum": 0},
-        "cold_start_s": {"type": "number", "minimum": 0},
+        "cold_start_s": {"type": "number", "minimum": 0, "description": "Init -> первая интеракция, секунды. Мерит прогон автопилота (startup.txt)"},
+        "baseline_rss_mb": {"type": "number", "minimum": 0, "description": "Пик RSS процесса игры на прогоне автопилота (perf.json). Мерится ВНУТРИ процесса: renpy.sh — скрипт-обёртка, и снаружи виден максимум по дереву процессов"},
+        "rpyc_total_kb": {"type": "number", "minimum": 0, "description": "Суммарный вес game/**/*.rpyc — компактность кодогена (G19). Растёт от развёртки экранов и predict-списков в построчные вызовы"},
         "video_total_mb": {"type": "number", "minimum": 0, "description": "Суммарный бюджет game/assets/mov (ADR-0006)"},
         "video_file_mb": {"type": "number", "minimum": 0, "description": "Бюджет одного видео-файла (ADR-0006)"}
       },

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/qa_coverage@1",
+  "title": "qa_coverage@1 — отчёт покрытия ветвления (.vncache/paths/coverage.json)",
+  "description": "Производный артефакт vn test paths: какие сцены и какие рёбра выбора (menu_id, индекс пункта) были фактически пройдены прогонами, а какие объявлены в декларациях и не пройдены. В git не едет — это результат прогона, а не источник.",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "qa_coverage@1"},
+    "runs": {"type": "integer", "minimum": 1, "description": "Сколько прогонов сложено в это покрытие"},
+    "scenes": {
+      "type": "object",
+      "properties": {
+        "declared": {"type": "array", "items": {"type": "string"}},
+        "visited": {"type": "array", "items": {"type": "string"}},
+        "missing": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["declared", "visited", "missing"],
+      "additionalProperties": false
+    },
+    "choices": {
+      "type": "object",
+      "properties": {
+        "declared": {"type": "array", "items": {"type": "string"}, "description": "Рёбра вида <menu_id>#<индекс пункта>"},
+        "taken": {"type": "array", "items": {"type": "string"}},
+        "missing": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["declared", "taken", "missing"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema", "runs", "scenes", "choices"],
+  "additionalProperties": false
+}

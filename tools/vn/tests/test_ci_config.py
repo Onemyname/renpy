@@ -38,6 +38,9 @@ COMMAND_PLACEMENT = {
     "vn release android build": "ci.yml",
     "vn voice tts": "ci.yml",
     "vn test corpus": "nightly.yml",
+    "vn test screens": "nightly.yml",
+    "vn test paths": "nightly.yml",
+    "vn test replay": "nightly.yml",
 }
 
 # Потолок масштаба ночного корпуса. 7.6 ARCHITECTURE.md приводит замеры (macOS

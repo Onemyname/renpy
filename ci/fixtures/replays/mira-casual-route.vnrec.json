@@ -1,0 +1,40 @@
+{
+ "content_version": "0.1.5+1d140ac",
+ "expect": {
+  "gallery_ids": [
+   "cg_ch01_concept",
+   "cg_ch01_finale",
+   "cg_ch01_rooftop",
+   "mov_ch01_ambient",
+   "shot_ch01_s030_sunset"
+  ],
+  "picks": [
+   "ch01_s010_m001#0",
+   "ch01_s020_m001#1"
+  ],
+  "result": "OK: vn_end_of_content",
+  "state": {
+   "ch01.PY2": false,
+   "ch01.met_mira": true,
+   "g.PY2": false,
+   "g.mira_outfit": "casual",
+   "g.route": "prologue",
+   "g.scenes_seen": [
+    "ch01_s010",
+    "ch01_s020",
+    "ch01_s030"
+   ],
+   "vn_save_schema": 2
+  }
+ },
+ "input": {
+  "picks": [
+   0,
+   1
+  ]
+ },
+ "name": "mira-casual-route",
+ "recorded_at": "2026-08-18T21:33:01Z",
+ "schema": "replay@1",
+ "why": "путь через школьную форму: единственный, где меняется g.mira_outfit и открывается CG"
+}

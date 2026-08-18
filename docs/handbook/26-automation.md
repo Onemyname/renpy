@@ -263,7 +263,7 @@ vn release build --flavor public  # сборка -> гейт (21 проверк�
 
 ### `vn test replay`, `screens`, `perf`
 
-**Current state:** NOT IMPLEMENTED. `replay` — `_stub(2)`, `screens` — `_stub(3)`, `paths` — `_stub(2)` (`cli.py:1657-1658`); `perf` не существует даже заглушкой, хотя `ARCHITECTURE.md:3644` описывает `vn test perf --budgets`. Скриншотный механизм наполовину готов и не документирован: `VN_AUTOPILOT_SCREENS` читается рантаймом (`030_flow.rpy:171`), но **ни один флаг CLI его не выставляет** — файл `.vncache/smoke/screen_gallery.png` доказывает, что переменную кто-то задавал руками.
+**Current state:** IMPLEMENTED (2026-08-19). `vn test screens` — тур по декларации `content/ui/screens.yaml` со структурным гейтом (включая «экран есть в игре, но не назван ни в туре, ни в исключениях»); `vn test paths` — покрытие сцен и рёбер выбора против деклараций, отчёт `.vncache/paths/coverage.json`; `vn test replay` — повтор записи `ci/fixtures/replays/*.vnrec.json`, запись делает `vn test smoke --record`. `vn test perf` **не создаётся** ([ADR-0019](../adr/0019-qa-run-family.md)): три измеримых числа (cold start, пик RSS, вес `.rpyc`) снимает прогон автопилота и гейтят бюджеты `runtime_budget_failures`.
 **Potential automation:** `--screens <names>` у `vn test smoke` (десять строк — переменная уже читается); `screens` с эталонами и сравнением; `replay` поверх записи взаимодействий; `perf` поверх уже существующего замера холодного старта (`cli.py:1386-1392`).
 **Priority:** **P3**
 **Expected benefit:** скриншотные эталоны ловят регрессии вёрстки UI, которые не видит ни один линт. Но экраны в проекте меняются редко, а эталоны требуют постоянного обновления — выигрыш ниже стоимости сопровождения, пока UI не устоялся.
@@ -389,7 +389,7 @@ vn release build --flavor public  # сборка -> гейт (21 проверк�
 - **Не автоматизировать обход логинов, капч и paywall'ов** за моделями и ассетами. Правильное поведение уже реализовано: печать инструкции и целевого пути.
 - **Не добавлять зависимость ради одной автоматизации.** В `pyproject.toml` 7 рантайм-зависимостей, и `tools/vn.lock` их пинует — а с 2026-08-08 лок ещё и ставится в CI первым, то есть новая зависимость без пина приедет случайной версией. HTTP делается `urllib`/`curl` — так уже сделано в `pipeline._download`.
 - **Не чинить проблему в CI, если она в коде.** Флейворный ключ `rpyc-cache` — живой пример: баг в `cli.py:358`, обход в `release.yml:68-73`. Локальная сборка остаётся сломанной.
-- **Не считать `docs/ARCHITECTURE.md` описанием построенного.** `--use-artifact` (14 упоминаний), `vn validate`, `vn test perf`, `rpyc-compat`, каналы dev/beta/release, депоты Steam — всё NOT IMPLEMENTED (`.rpa`-архивы документ больше не требует: россыпь — норма §2.4).
+- **Не считать `docs/ARCHITECTURE.md` описанием построенного.** `rpyc-compat`, каналы dev/beta/release, депоты Steam — NOT IMPLEMENTED; `vn validate`, `vn migrate`, `vn shell`, `vn test perf` — выведены из нормы осознанно (ADR-0017, ADR-0019); `--use-artifact` реализован 2026-08-18 (`.rpa`-архивы документ больше не требует: россыпь — норма §2.4).
 - **Не запускать ComfyUI с `--listen 0.0.0.0`.** Эндпоинт неаутентифицирован, умеет писать файлы и исполнять Python кастом-нод.
 
 ## Проверка

@@ -138,11 +138,6 @@ init -999 python in vn_qa:
 
     _T0 = time.time()    # init-время: точка отсчёта cold start (G19)
 
-    def choice(scene_id, menu_id, idx):
-        """Якорь ветки выбора (C1): эмитится компилятором первым стейтментом каждой ветки.
-        Фаза 2: запись в прогон-лог QA/телеметрию."""
-        pass
-
     # ── Автопилот (vn test smoke, G23): работает ТОЛЬКО внутри процесса игры, ──
     # без синтетического ввода на рабочий стол. Активируется переменной окружения
     # VN_AUTOPILOT; label main_menu-override подкладывает раннер (cli: vn test smoke).
@@ -206,16 +201,40 @@ init -999 python in vn_qa:
         if slot:
             renpy.load(slot)    # не возвращается: контекст перезапускается, затем after_load
 
-    def autopilot_screens():
-        """VN_AUTOPILOT_SCREENS=gallery,preferences — показать перечисленные экраны
-        и снять по скриншоту. Проверка вёрстки меню/галереи в CI: движковый lint
-        не видит визуальных поломок, а прохождение сцен эти экраны не открывает."""
-        names = [s.strip() for s in
-                 os.environ.get("VN_AUTOPILOT_SCREENS", "").split(",") if s.strip()]
-        shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
-        for name in names:
+    def autopilot_tour():
+        """Список экранов тура: [(имя, kwargs)].
+
+        Два источника, и это не дублирование: VN_AUTOPILOT_SCREENS_FILE (JSON от
+        декларации content/ui/screens.yaml, с аргументами экрана) — основной,
+        VN_AUTOPILOT_SCREENS=a,b — короткая форма без аргументов, ею пользуются
+        ночная джоба и deck-kit."""
+        path = os.environ.get("VN_AUTOPILOT_SCREENS_FILE")
+        if path:
             try:
-                renpy.show_screen(name)
+                import json
+                with open(path, encoding="utf-8") as f:
+                    return [(e["name"], e.get("kwargs") or {}) for e in json.load(f)]
+            except Exception as e:
+                vn_log("autopilot tour file failed: %s" % e)
+                return []
+        return [(s.strip(), {}) for s in
+                os.environ.get("VN_AUTOPILOT_SCREENS", "").split(",") if s.strip()]
+
+    def autopilot_screens():
+        """Показать экраны тура и снять по скриншоту каждого.
+
+        Проверка вёрстки меню/галереи в CI: движковый lint не видит визуальных
+        поломок, а прохождение сцен эти экраны не открывает. Результат тура пишется
+        в screens.json — раньше неудача уходила в vn_log, то есть прогон оставался
+        зелёным при экране, который не открылся вовсе."""
+        shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
+        shown, failed, missing = [], {}, []
+        for name, kwargs in autopilot_tour():
+            if not renpy.has_screen(name):
+                missing.append(name)
+                continue
+            try:
+                renpy.show_screen(name, **kwargs)
                 # show_screen лишь помечает экран к показу: кадр рисуется только
                 # интеракцией, а screenshot() пишет последний нарисованный кадр.
                 # Короткая пауза даёт кадр с уже показанным экраном.
@@ -223,8 +242,21 @@ init -999 python in vn_qa:
                 if shots_dir:
                     renpy.screenshot(os.path.join(shots_dir, "screen_%s.png" % name))
                 renpy.hide_screen(name)
+                shown.append(name)
             except Exception as e:
+                failed[name] = "%s: %s" % (type(e).__name__, e)
                 vn_log("autopilot screen %s failed: %s" % (name, e))
+        if shots_dir:
+            try:
+                import json
+                with open(os.path.join(shots_dir, "screens.json"), "w",
+                          encoding="utf-8") as f:
+                    json.dump({"shown": shown, "failed": failed, "missing": missing,
+                               "defined": sorted(renpy.store.vn_compat.defined_screens()
+                                                 - {"vn_autopilot"})}, f,
+                              ensure_ascii=False, indent=1)
+            except Exception as e:
+                vn_log("autopilot screens dump failed: %s" % e)
 
     def autopilot_finish(reason):
         """Конец прогона: маркер результата + снапшот состояния + выход из процесса.
@@ -251,6 +283,22 @@ init -999 python in vn_qa:
                               ensure_ascii=False, indent=1)
             except Exception as e:
                 vn_log("autopilot gallery dump failed: %s" % e)
+            try:
+                # Пик RSS ИМЕННО процесса игры: снаружи его не измерить точно —
+                # renpy.sh это скрипт-обёртка, и getrusage родителя показал бы
+                # максимум по дереву. Единицы разные (macOS — байты, Linux — КБ),
+                # поправка — как в tools/vn/src/vn/corpus.py: _RSS_UNIT.
+                import json
+                import resource
+                import sys as _sys
+                unit = 1 if _sys.platform == "darwin" else 1024
+                rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * unit
+                with open(os.path.join(shots_dir, "perf.json"), "w",
+                          encoding="utf-8") as f:
+                    json.dump({"baseline_rss_mb": round(rss / (1024 * 1024), 1)}, f,
+                              ensure_ascii=False, indent=1)
+            except Exception as e:
+                vn_log("autopilot perf dump failed: %s" % e)
         renpy.quit(save=False)
 
 

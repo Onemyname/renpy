@@ -27,6 +27,33 @@ def _dir_size(path: Path) -> int:
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) if path.is_dir() else 0
 
 
+def runtime_budget_failures(root: Path, *, cold_start_s: float | None = None,
+                            baseline_rss_mb: float | None = None) -> list[str]:
+    """Бюджеты, которые видны только ПРОГОНУ игры (G19): cold start, пик RSS и вес
+    `.rpyc`. Пустой список = всё в рамках.
+
+    Рядом с размерными и в том же стиле: три числа — это всё, что на этой машине и в
+    CI измеримо честно. Референсного слабого железа и Android-эмулятора из нормы нет,
+    поэтому отдельной команды `vn test perf` не существует (ADR-0019): числа снимает
+    тот прогон, который и так делается."""
+    budgets = load_project(root).get("budgets") or {}
+    failures: list[str] = []
+    if cold_start_s is not None and budgets.get("cold_start_s"):
+        if cold_start_s > budgets["cold_start_s"]:
+            failures.append(f"cold start {cold_start_s:.2f} c > бюджета "
+                            f"{budgets['cold_start_s']} c")
+    if baseline_rss_mb is not None and budgets.get("baseline_rss_mb"):
+        if baseline_rss_mb > budgets["baseline_rss_mb"]:
+            failures.append(f"пик RSS игры {baseline_rss_mb:.0f} МБ > бюджета "
+                            f"{budgets['baseline_rss_mb']} МБ")
+    if budgets.get("rpyc_total_kb"):
+        actual = sum(f.stat().st_size for f in (root / "game").rglob("*.rpyc")) / 1024
+        if actual > budgets["rpyc_total_kb"]:
+            failures.append(f"game/**/*.rpyc: {actual:.0f} КБ > бюджета "
+                            f"{budgets['rpyc_total_kb']} КБ")
+    return failures
+
+
 def budget_failures(root: Path) -> list[str]:
     """Размер-бюджеты (G19; видео-бюджеты — ADR-0006). Пустой список = всё в рамках.
     Единая точка: и vn build, и vn release validate проверяют одно и то же."""

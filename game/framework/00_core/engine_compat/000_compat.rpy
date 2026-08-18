@@ -3,6 +3,8 @@
 # покрыто контракт-тестом (tools/vn/tests/, canary-джоба CI гоняет их на свежем Ren'Py).
 
 init -950 python in vn_compat:
+    import os
+
     from store import renpy
 
     def call_stack_depth():
@@ -28,3 +30,28 @@ init -950 python in vn_compat:
         if isinstance(value, set):
             return RevertableSet(revertable(v) for v in value)
         return value
+
+    def defined_screens():
+        """Имена экранов, объявленных ЭТИМ ПРОЕКТОМ (для тура vn test screens).
+
+        `renpy.has_screen(name)` документирован и отвечает про один экран, а
+        перечисления объявленных в публичном API нет: реестр живёт в
+        `renpy.display.screen.screens` — словарь {(имя, вариант): Screen}. Касание
+        внутреннего модуля разрешено только здесь (G18); нужно оно ровно для того,
+        чтобы гейт «экран есть в игре, но его никто не проверяет» вообще был
+        возможен — иначе список экранов пришлось бы поддерживать руками.
+
+        Экраны САМОГО ДВИЖКА (updater, sync_*, director_*, downloader, iconbutton,
+        gallery_navigation…) отфильтрованы по месту объявления: они приходят из
+        renpy/common/, их вёрстку задаёт Ren'Py, и требовать их в нашем туре
+        означало бы держать список чужих экранов в своей декларации.
+        КОНТРАКТ-ТЕСТ: test_engine_compat::test_defined_screens_registry."""
+        from renpy.display.screen import screens
+
+        gamedir = os.path.abspath(renpy.config.gamedir)
+        out = set()
+        for (name, _variant), screen in screens.items():
+            where = (getattr(screen, "location", None) or ("", 0))[0]
+            if where and os.path.abspath(where).startswith(gamedir):
+                out.add(name)
+        return out

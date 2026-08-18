@@ -3,11 +3,52 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
 from ..repo import chapter_zones, load_yaml
 from .compile import CHAPTER_DIR_RE, SCENE_YAML_RE
 from .scenes import _exit_entries, resolve_target
+
+
+@dataclass
+class Edge:
+    """Ребро графа сцен из ДЕКЛАРАЦИЙ (не из генерата: парсить .rpy запрещено, G24)."""
+    pack: str
+    chapter: str
+    scene: str
+    exit_id: str
+    when: str | None
+    target: str
+
+
+def build_edges(root: Path) -> tuple[list[str], list[Edge]]:
+    """(объявленные сцены, рёбра exits) — чистые данные без рендера.
+
+    Второй потребитель после Mermaid — `vn test paths`: покрытие считается против
+    ДЕКЛАРАЦИЙ, иначе непройденной осталась бы сцена, которую забыли объявить."""
+    scenes: list[str] = []
+    edges: list[Edge] = []
+    for pack_id, chapters_dir in chapter_zones(root):
+        for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
+            m = CHAPTER_DIR_RE.match(d.name)
+            if not m:
+                continue
+            ch_id = f"ch{m.group(1)}"
+            scenes_dir = d / "scenes"
+            for f in sorted(scenes_dir.glob("*.scene.yaml")) if scenes_dir.is_dir() else []:
+                sm = SCENE_YAML_RE.match(f.name)
+                if not sm:
+                    continue
+                full_id = f"{ch_id}_s{sm.group(1)}"
+                scenes.append(full_id)
+                smeta = load_yaml(f) or {}
+                for exit_id, spec in (smeta.get("exits") or {}).items():
+                    for e in _exit_entries(spec):
+                        edges.append(Edge(pack=pack_id, chapter=ch_id, scene=full_id,
+                                          exit_id=exit_id, when=e.get("when"),
+                                          target=resolve_target(ch_id, e["to"])))
+    return scenes, edges
 
 
 def build_graph(root: Path) -> str:

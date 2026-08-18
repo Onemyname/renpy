@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/replay@1",
+  "title": "replay@1 — запись прогона для детерминированного повтора (ci/fixtures/replays/*.vnrec.json)",
+  "description": "Всё, из чего в этом движке складывается детерминизм прогона: индексы выборов, язык, вариант окружения. Источника случайности в игре нет (random в game/ не вызывается), свободного текстового ввода нет (ADR-0016), поэтому ни seed, ни ввод в записи не нужны. Ожидаемый результат хранится рядом: повтор сверяет вердикт, трассу выборов, состояние и открытую галерею.",
+  "type": "object",
+  "properties": {
+    "schema": {"const": "replay@1"},
+    "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{1,63}$"},
+    "why": {"type": "string", "description": "Зачем запись существует: какой баг или путь она держит"},
+    "recorded_at": {"type": "string"},
+    "content_version": {"type": "string", "description": "config.version на момент записи: расхождение делает сверку состояния бессмысленной"},
+    "input": {
+      "type": "object",
+      "properties": {
+        "picks": {"type": "array", "items": {"type": "integer", "minimum": 0}},
+        "lang": {"type": "string"},
+        "variant": {"type": "string", "description": "RENPY_VARIANT прогона"}
+      },
+      "required": ["picks"],
+      "additionalProperties": false
+    },
+    "expect": {
+      "type": "object",
+      "properties": {
+        "result": {"type": "string", "description": "Строка RESULT.txt"},
+        "picks": {"type": "array", "items": {"type": "string"}, "description": "Трасса вида <menu_id>#<индекс>"},
+        "state": {"type": "object", "description": "Снапшот управляемых stores (state.json)"},
+        "gallery_ids": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["result", "picks", "state", "gallery_ids"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["schema", "name", "why", "recorded_at", "content_version", "input", "expect"],
+  "additionalProperties": false
+}

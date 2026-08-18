@@ -60,6 +60,20 @@ jobs:
           xvfb-run -a vn test smoke --picks 1
           xvfb-run -a vn test smoke --picks 0,0 --lang pseudo
 
+      # Тур по экранам и покрытие ветвления — в nightly, а не в ci: каждый прогон
+      # поднимает движок под xvfb (десятки секунд), а MR-пайплайн держим под 10
+      # минут (G15). Гейты структурные, поэтому падение здесь читается однозначно:
+      # экран не открылся / ветка playtest-главы не пройдена.
+      - name: Экраны и покрытие ветвления (vn test screens|paths)
+        run: |
+          xvfb-run -a vn test screens
+          xvfb-run -a vn test paths --picks 0,0 --picks 0,1 --picks 1
+
+      # Записанные прогоны: детерминизм пути и состояния между коммитами.
+      # Записи живут в git (ci/fixtures/replays/), поэтому шаг воспроизводим.
+      - name: Повтор записанных прогонов (vn test replay)
+        run: xvfb-run -a vn test replay --all
+
       - name: Корпус сейвов (загрузка + миграции, G5/G6)
         run: |
           xvfb-run -a vn save check

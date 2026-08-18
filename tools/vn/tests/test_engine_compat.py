@@ -100,3 +100,20 @@ def test_api_level_sync():
     m = re.search(r"^\s+API_LEVEL = (\d+)$", flow, re.M)
     assert m, "API_LEVEL не найден в 030_flow.rpy"
     assert int(m.group(1)) == VN_API_LEVEL
+
+@requires_sdk
+def test_defined_screens_registry(repo_root):
+    """G18: перечисления объявленных экранов в публичном API Ren'Py нет, реестр —
+    внутренний `renpy.display.screen.screens`. Контракт-тест держит два допущения:
+    реестр существует и ключуется парой (имя, вариант), а у Screen есть `location`,
+    по которому мы отделяем экраны проекта от экранов движка."""
+    screen_py = (Path(SDK) / "renpy" / "display" / "screen.py").read_text(
+        encoding="utf-8", errors="ignore")
+    assert "screens = {}" in screen_py, "реестр экранов переименован — правьте vn_compat"
+    assert "screens[name[0], v] = self" in screen_py, "ключ реестра изменился"
+    assert "self.location = location" in screen_py, "у Screen пропал location"
+    compat = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
+              / "000_compat.rpy").read_text(encoding="utf-8")
+    assert "from renpy.display.screen import screens" in compat
+    assert 'getattr(screen, "location", None)' in compat, \
+        "фильтр по месту объявления пропал — тур начнёт требовать экраны движка"

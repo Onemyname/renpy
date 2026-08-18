@@ -120,6 +120,11 @@ def _iter_declarations(root: Path):
         if base.is_dir():
             yield from sorted(base.rglob("*.yaml"))
             yield from sorted(base.rglob("*.yml"))
+    # Записи повтора (replay@1) — такие же входные данные с ожидаемым результатом,
+    # что и фикстуры сейвов: битая запись должна краснеть на lint, а не на прогоне.
+    replays = root / "ci" / "fixtures" / "replays"
+    if replays.is_dir():
+        yield from sorted(replays.glob("*.vnrec.json"))
     reg = root / "content" / "registry"
     if reg.is_dir():
         yield from sorted(reg.glob("*.json"))
