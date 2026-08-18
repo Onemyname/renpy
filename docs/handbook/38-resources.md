@@ -123,7 +123,7 @@ echo $RENPY_SDK           # bash-сессии агента НЕ наследую
 | `Pillow` | 12.3.0 | 12.3.0 | PNG→WebP, миниатюры, генерация UI-панелей (`tools/vn/src/vn/assets/ui.py`) | IMPLEMENTED |
 | `psd-tools` | 1.18.0 | 1.18.0 | нарезка PSD в `assets_src/png/**` (`tools/vn/src/vn/assets/psd.py`) | **IMPLEMENTED / UNEXERCISED** — в репозитории ноль `.psd`, ноль тестов, `.vncache/psd_png/` не создавался |
 | `polib` | 1.2.0 | 1.2.0 | PO round-trip локализации (`tools/vn/src/vn/loc/po.py`) | IMPLEMENTED |
-| `pytest` | 9.1.1 | 9.1.1 | 240 тестов в 23 файлах `tools/vn/tests/` | IMPLEMENTED |
+| `pytest` | 9.1.1 | 9.1.1 | 253 теста в 24 файлах `tools/vn/tests/` | IMPLEMENTED |
 
 Полезно знать про **Pillow**: WebP-`quality` по умолчанию **80** (у `cwebp` и ImageMagick — 75), `alpha_quality` — 100, `method` 0–6 (по умолчанию 4); `Image.open()` **ленив** — для QA нужен `.load()`/`.verify()`, иначе обрезанный файл пройдёт молча; Pillow **не** делает цветоуправление при открытии — `info['icc_profile']` это просто bytes.
 Документация: https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html — таблица параметров сохранения по форматам (единственная страница, которая нужна для нашего конвейера). Релизы смотреть на https://github.com/python-pillow/Pillow/releases: внутренний `CHANGES.rst` остановлен на 11.0.0 и отсылает туда же.
@@ -463,7 +463,7 @@ https://www.ea.com/legal/user-agreement · https://help.ea.com/en/articles/secur
 - https://arxiv.org/abs/2506.11022 — 400 сэмплов, 40 раундов «улучшений»: **+37,6 % критичных уязвимостей за пять итераций** без человеческой проверки между ними.
 **Формат инструкций и решения:**
 - https://agents.md/ — вендор-нейтральный аналог CLAUDE.md. Claude Code читает **CLAUDE.md, а не AGENTS.md**; если оба нужны — импорт (`@AGENTS.md` первой строкой), а не копия (симлинк на Windows требует админа или Developer Mode).
-- https://adr.github.io/ — ADR как самый дешёвый машиночитаемый ответ на «почему это так и где оно лежит». У нас 11 ADR, см. часть 4. **Устаревший ADR активно вредит:** агент ему поверит и построит против системы, которую вы уже удалили.
+- https://adr.github.io/ — ADR как самый дешёвый машиночитаемый ответ на «почему это так и где оно лежит». У нас 14 ADR, см. часть 4. **Устаревший ADR активно вредит:** агент ему поверит и построит против системы, которую вы уже удалили.
 - https://github.com/github/spec-kit + https://github.github.com/spec-kit/ — spec-driven разработка, если понадобится тяжёлая церемония на новую подсистему. Для одиночки чаще выигрывает лёгкий вариант из best-practices: дать интервьюировать себя, записать `SPEC.md`, выполнять в **свежей** сессии.
 
 ---
@@ -575,7 +575,7 @@ ffmpeg -version | head -1                     # 8.1.2-full_build-www.gyan.dev
 
 # Что этот файл описывает как работающее — работает
 vn build                                      # build: OK
-python -m pytest tools/vn/tests -q            # 240 passed
+python -m pytest tools/vn/tests -q            # 253 passed
 vn release validate --flavor public           # 16 PASS, exit 0
 vn pipeline models                            # статус 10 записей манифеста
 ```

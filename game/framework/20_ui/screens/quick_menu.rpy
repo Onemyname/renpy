@@ -13,9 +13,10 @@ screen vn_quick_menu():
         hbox:
             style_prefix "vn_quick"
             xanchor 1.0
-            xpos 1864
+            # overscan_pad (scale.rpy): safe-area ТВ Big Picture, иначе 0
+            xpos 1864 - gui.overscan_pad
             yanchor 1.0
-            ypos 1066
+            ypos 1066 - gui.overscan_pad
             spacing gui.sp_xs // 2
             $ _q_back = vn_loc.t("ui.quick.back").upper()
             $ _q_hist = vn_loc.t("ui.quick.history").upper()
@@ -40,6 +41,11 @@ init python:
     config.overlay_screens.append("vn_quick_menu")
 
 style vn_quick_button:
+    # keyboard_focus False (аудит ui.md P0 №4): во время say это были
+    # ЕДИНСТВЕННЫЕ фокусируемые элементы — первый dpad «залипал» на кнопке,
+    # и A жал её вместо продвижения текста. Мышь/тач работают как раньше;
+    # skip/auto для пада — на L3/R3 (input.rpy), остальное — в game menu.
+    keyboard_focus False
     padding (13, 17)
     background None
     hover_background Solid("#ffffff12")

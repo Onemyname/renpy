@@ -8,6 +8,34 @@
     "version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
     "save_schema": {"type": "integer", "minimum": 1},
     "min_tools": {"type": "string", "pattern": "^\\d+\\.\\d+$"},
+    "platform": {
+      "type": "object",
+      "description": "Платформенные интеграции (ADR-0014). Игра остаётся самостоятельной: Steam — одна из платформ, не фундамент",
+      "properties": {
+        "steam": {
+          "type": "object",
+          "properties": {
+            "appid": {
+              "type": ["integer", "null"],
+              "minimum": 1,
+              "description": "Steam App ID (публичный, не секрет). null = Steam выключен во всех сборках. Активация в рантайме — наличием steam_api-библиотеки рядом с исполняемым файлом (редистрибутив Valve, в git не коммитится)"
+            },
+            "depots": {
+              "type": "object",
+              "description": "Депоты контента по платформам: vn release steam генерирует VDF для steamcmd из этих номеров",
+              "properties": {
+                "windows": {"type": "integer", "minimum": 1},
+                "linux": {"type": "integer", "minimum": 1},
+                "mac": {"type": "integer", "minimum": 1}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "renpy_sdk": {
       "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$",
       "description": "Пиннованная версия Ren'Py SDK (G18); vn doctor сверяет с RENPY_SDK"

@@ -9,6 +9,13 @@ define config.has_autosave = True
 define config.autosave_slots = 10
 define config.window_icon = None
 
+# Controller-first окружения (Steam Deck / Big Picture): игрок без мыши не
+# должен искать переключатель «Полный экран» — первый запуск сразу фуллскрин.
+# На десктопе дефолт НЕ трогаем (None = движковый: оконный, выбор сохраняется).
+init python:
+    if vn_platform.controller_first():
+        config.default_fullscreen = True
+
 # ── Сборка дистрибутивов (vn package -> launcher distribute) ─────────────────
 init python:
     build.name = "vn"

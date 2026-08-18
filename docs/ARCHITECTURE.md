@@ -68,6 +68,8 @@
 
 **G9. DLC.** Скрипты всех паков грузятся всегда (управлять загрузкой через `config.archives` в init невозможно — архивы индексируются раньше); владение — логический гейт после инициализации Steam, фильтрация реестров через `pack_registry.owned()`; манифест пака несёт `api_level` фасада `vn.*` с диапазоном; каждый релиз ядра переиздаёт все DLC-депоты; релизный CI гоняет матрицу совместимости.
 
+> **Уточнено [ADR-0014](adr/0014-platform-services.md):** ownership-провайдер живёт в `game/framework/00_core/035_platform.rpy` — единственной точке касания платформы (гард-тест `test_platform::test_platform_facade_is_single_steam_touchpoint`), подключается на `init 999`, а не в `label splashscreen`; маппинг «пак → DLC» — поле `steam_dlc_appid` в манифесте пака (`steam_appid` схемой запрещён), один пак = один DLC App ID; ошибка API — **fail-open** (гейт логический, не DRM). Переиздание всех DLC-депотов на релиз ядра и smoke-матрица ядро×DLC — по-прежнему не реализованы.
+
 **G10. Моды.** Инжекты — только на реестр стабильных якорей; подпись отделена от проверки совместимости; Mod SDK — фаза 3, но формат паков mод-совместим с первого дня.
 
 **G11. layeredimage-эмиттер.** Селекторы `attribute X default Null()`, гейтинг через `if_any`/`if_all`; каждый attribute с явным displayable; golden-тесты через `renpy compile`+lint; тонировка — через генерируемый `config.tag_layer` (теги → слой sprites) + `camera sprites`.
@@ -162,7 +164,7 @@ vars-файлы — единый формат 6.1: `schema: vars@1`, поля `s
 Единый формат: `schema: renames@1`; секции `scenes:` (old: new), `deleted_scenes:` (id: {fallback:, since:}), `labels:`, `vars:`. Генерат: `game/generated/registry/overrides.gen.rpy` с `init -100 python: config.label_overrides.update({...})` (update, не define — паки могут дополнять) + shim-метки.
 
 **C13. CLI — финальный перечень доменов**
-`vn bootstrap|doctor|dev|build|play|package`, `vn assets …`, `vn content …`, `vn scene …`, `vn chapter …`, `vn char …` (в т.ч. `vn char sheet` — команды `vn assets sheet` для персонажей не существует), `vn loc …`, `vn voice …`, `vn save …`, `vn test …`, `vn release …` (включая Steam-аплоад и changelog), `vn pack …` (сборка DLC/паков), `vn shell` (docker-репро CI), `vn migrate`.
+`vn bootstrap|doctor|dev|build|play|package`, `vn assets …`, `vn content …`, `vn scene …`, `vn chapter …`, `vn char …` (в т.ч. `vn char sheet` — команды `vn assets sheet` для персонажей не существует), `vn loc …`, `vn voice …`, `vn save …`, `vn test …`, `vn release …` (включая `vn release steam` — генерация VDF и раскладка депотов по ADR-0014; сам аплоад `steamcmd` — вне CLI — и changelog), `vn pack …` (сборка DLC/паков), `vn shell` (docker-репро CI), `vn migrate`.
 CI-режим проверки без записи — флаг `--check` ВЕЗДЕ (`vn loc keys --check`; `--verify` не существует).
 `vn dev` — комбинированный цикл разработчика (content watch + assets watch + запуск игры); низкоуровневые `vn content compile --watch` и `vn assets watch` остаются как отдельные входы.
 
@@ -226,7 +228,7 @@ CI-режим проверки без записи — флаг `--check` ВЕЗ
 | локализация | `vn loc extract\|import\|report\|pseudo\|keys` |
 | озвучка | `vn voice manifest\|import\|tts\|validate` |
 | сейвы | `vn save check\|migrate\|corpus` |
-| тесты и релизы | `vn test …`, `vn release …` (Steam-аплоад, changelog), `vn pack …` (сборка DLC-паков) |
+| тесты и релизы | `vn test …`, `vn release …` (`release steam` — VDF и депоты, ADR-0014; аплоад `steamcmd` вне CLI; changelog), `vn pack …` (сборка DLC-паков) |
 | сервис | `vn shell` (docker-репро CI), `vn migrate` |
 
 CI-режим «проверить без записи» — единый флаг `--check` у всех модифицирующих команд (например, `vn loc keys --check`).
@@ -3250,7 +3252,7 @@ kind: dlc
 version: 1.2.0
 api_level: ">=2 <3"               # версия фасада vn.* — ЕДИНСТВЕННОГО API, доступного пакам
 requires: { core: ">=2.3.0 <3.0.0" }   # верхняя граница обязательна: пак эпохи 2.x не грузится молча в 3.x
-steam_appid: 1234571
+steam_dlc_appid: 1234571          # ADR-0014: поле называется так; steam_appid схемой ЗАПРЕЩЁН
 injects:
   - anchor: ch05_s012             # только стабильные якоря из content/anchors.yaml (см. 6.8)
     chapter: dlc_summer_ch01
@@ -3261,13 +3263,13 @@ state_store: dlc_summer           # переменные пака — в named s
 **Как на самом деле грузятся паки.** Ранняя версия раздела предлагала загрузчик в `init -1500`, формирующий `config.archives` и исключающий неоплаченные DLC «до построения реестров». Это построено на неверном представлении о порядке запуска: **индексация `.rpa` и загрузка всех `.rpyc` (в том числе из архивов) происходят ДО исполнения любых init-блоков** — иначе Ren'Py не мог бы грузить игры, у которых сами скрипты лежат в `archive.rpa`. Модификация `config.archives` в init-фазе не влияет ни на состав загруженных скриптов, ни на индекс loader'а; вдобавок `_renpysteam` в раннем init ещё не инициализирован, и `dlc_installed()` в этот момент недостоверен. Следствия, принимаемые как проектная истина:
 
 - **Скрипты всех установленных паков грузятся всегда.** Это безопасно: лейблы инертны и сами по себе игроку не видны.
-- **Владение — логический гейт.** Проверка — после инициализации Steam:
+- **Владение — логический гейт.** Проверка — после инициализации Steam. **Реализовано иначе, чем в раннем наброске ниже** ([ADR-0014](adr/0014-platform-services.md)): провайдер ставится один раз на `init 999` в `game/framework/00_core/035_platform.rpy` (реестры уже загружены, движковый `steam_init()` отработал на `init -1499`), `owned()` спрашивает его лениво при отрисовке. Ни `label splashscreen`, ни метода `refresh_ownership()` не существует, и заводить их не нужно.
 
 ```renpy
-# game/framework/00_core/packs.rpy
-label splashscreen:
-    $ vn.pack_registry.refresh_ownership()   # _renpysteam здесь уже инициализирован
-    return
+# game/framework/00_core/035_platform.rpy (фактическая реализация)
+init 999 python:
+    if vn_platform.steam() is not None:
+        vn.pack_registry.set_ownership_provider(vn_platform._steam_owns_pack)
 ```
 
 Результат живёт в runtime-реестре; выбор глав, галерея, ачивки и условные переходы фильтруются через `vn.pack_registry.owned(pack_id)` (экраны — см. раздел 7). Для сторов без ownership-API (GOG, itch) владение = наличие пака — фиксируем как осознанную политику.
@@ -3440,7 +3442,7 @@ repo/
 │   └── saves-corpus/          # корпус сейвов прошлых версий (git LFS)
 ├── ci/
 │   ├── docker/build-image.Dockerfile   # пиннованный Ren'Py SDK + mesa llvmpipe + xvfb
-│   └── steam/app_build_beta.vdf.tmpl
+│   └── steam/{README.md,app_build.vdf.tmpl}      # ADR-0014: один шаблон, ключ — флейвор, не канал
 ├── tools/
 │   ├── vn/                    # python-пакет CLI (pip install -e tools/vn)
 │   └── schemas/               # JSON Schema ВСЕХ YAML — единственный реестр версий схем
@@ -3529,7 +3531,7 @@ vn play [--scene ch02_s030] [--preset romance_a] [--autopilot] [--seed 1337]
 vn dev                                             # комбинированный цикл: content watch + assets watch + запуск игры
 vn test smoke|replay|screens|paths [--affected] [--shard 3/8] [--update-baselines]
 vn package --channel beta --platforms win,mac,linux,android
-vn release steam --channel beta                    # аплоад в Steam
+vn release steam --flavor public [--branch beta]   # ADR-0014: VDF + раскладка депотов; аплоад — steamcmd вручную
 vn release changelog --from v1.6.0 [--audience player|internal]
 vn shell                                           # CI-докер-образ локально (то же окружение, что на раннере)
 ```
@@ -3785,7 +3787,7 @@ init -900 python:
 - **Changelog из деклараций:** реестры (главы/сцены/галерея) — JSON-снапшоты; `vn release changelog --from v1.6.0 --audience player` диффит снапшоты между git-тегами: новые главы/сцены/CG берут человекочитаемые строки из `changelog:`-полей chapter.yaml; `--audience internal` даёт полный дифф (включая изменённые флаги и ассеты). Никто не пишет changelog руками. Манифест релиза (какие главы/сцены/ассеты появились в какой версии) — часть тех же снапшотов.
 - **Упаковка:** обёртка над штатным `renpy.sh launcher distribute` (Win/Mac/Linux) и rapt (Android), SDK кэшируется в образе, платформы собираются параллельными джобами. Перед release-компиляцией подкладывается .rpyc-бандл прошлого релиза (7.3).
 - **Размер-бюджеты — на финальные артефакты по каналам, а не на каталог `game/assets/`:** лимит на каталог ничего не гарантирует — в дистрибутив входят движок, python-библиотеки, скрипты и .rpyc. CI собирает реальный **.aab** и сверяет с актуальными лимитами Play Asset Delivery (install-time asset pack) и **universal .apk** с жёстким потолком < 2 ГБ (zip32-границы, сторонние установщики). При превышении apk-потолка — вынос тяжёлых ассетов в загружаемый контент (мобильные тематические .rpa — фаза 3, см. 2.4; desktop-каналы остаются россыпью ради Steam-дельта-патчей) или отказ от universal apk как канала.
-- **Steam:** `vn release steam` рендерит `ci/steam/app_build_<channel>.vdf.tmpl` и вызывает `steamcmd +login $STEAM_BUILD_USER +run_app_build … +quit` (креды и Steam Guard — в CI vault):
+- **Steam:** `vn release steam --flavor <f> [--branch <b>]` рендерит `ci/steam/app_build.vdf.tmpl` в `build/steam/app_build_<flavor>.vdf` и раскладывает депоты из зипов distribute. **Уточнено [ADR-0014](adr/0014-platform-services.md):** ключ раскладки — флейвор, а не канал (каналов `dev`/`beta`/`release` как сущностей конвейера не существует; `--branch` — только строка `SetLive` в VDF), и `steamcmd +login … +run_app_build … +quit` вызывает человек или отдельная джоба, а не сам CLI: credentials и Steam Guard не бывают ни в репозитории, ни в генерате. Джобы `steam-publish` из 7.2 сегодня не существует. Шаблон VDF в репозитории — `ci/steam/app_build.vdf.tmpl`, процесс — `ci/steam/README.md`; пример результата:
 
 ```
 "AppBuild" {
@@ -3955,7 +3957,7 @@ screen chapter_select():
                         action=Start(ch["entry"]))
 ```
 
-Заголовки глав в константе — ключи локализации (`title_key: meta.chapters.chNN.title` из chapter.yaml; сырых строк в реестре нет — раздел 5), карточка резолвит их через `vn_loc` в момент отрисовки — перевод применяется в рантайме. Фильтрация по `vn.pack_registry.owned()` — это и есть логический гейт DLC: скрипты и реестры всех установленных паков загружены всегда, владение проверяется после инициализации Steam в `label splashscreen` и отражается в runtime-реестре (раздел 6). Детерминизм генератора гарантирует стабильность интерфейсных строк между сборками — иначе локализаторы получали бы ложные «новые строки» на каждый билд.
+Заголовки глав в константе — ключи локализации (`title_key: meta.chapters.chNN.title` из chapter.yaml; сырых строк в реестре нет — раздел 5), карточка резолвит их через `vn_loc` в момент отрисовки — перевод применяется в рантайме. Фильтрация по `vn.pack_registry.owned()` — это и есть логический гейт DLC: скрипты и реестры всех установленных паков загружены всегда, владение проверяется провайдером, подключённым на `init 999` в `00_core/035_platform.rpy` (ADR-0014; `label splashscreen` из раннего наброска раздела 6 не существует), и спрашивается лениво при отрисовке. Детерминизм генератора гарантирует стабильность интерфейсных строк между сборками — иначе локализаторы получали бы ложные «новые строки» на каждый билд.
 
 #### Безопасные точки расширения UI (слоты)
 
@@ -3993,7 +3995,7 @@ init 999 python in vn_ui:
              when=lambda: vn.pack_registry.owned("beach"))
 ```
 
-Семантика корректна по построению дважды. Во-первых, реестр заполняется в init-фазе и после неё не меняется → не попадает в сейвы и rollback (Ren'Py сохраняет только store-переменные, изменённые после init). Во-вторых, регистрация статична, а **владение проверяется лениво через `when()` в момент отрисовки** — это согласовано с порядком запуска: результат Steam-проверки появляется только после `label splashscreen`, когда init давно закончился (раздел 6). Имена слотов: `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`; канонический список (`main_menu.items`, `preferences.sections`, `say_window.overlay`, `pause_menu.items`, …) — часть контракта фреймворка и его `api_level` для паков. Lint-правило: slot-экраны обязаны быть «чистыми» (никаких `$`-присваиваний в теле — экраны перерисовываются непредсказуемо часто).
+Семантика корректна по построению дважды. Во-первых, реестр заполняется в init-фазе и после неё не меняется → не попадает в сейвы и rollback (Ren'Py сохраняет только store-переменные, изменённые после init). Во-вторых, регистрация статична, а **владение проверяется лениво через `when()` в момент отрисовки** — это согласовано с порядком запуска: провайдер владения подключается на `init 999` (ADR-0014), то есть позже любой регистрации слотов, а сама проверка выполняется уже в рантайме. Имена слотов: `^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`; канонический список (`main_menu.items`, `preferences.sections`, `say_window.overlay`, `pause_menu.items`, …) — часть контракта фреймворка и его `api_level` для паков. Lint-правило: slot-экраны обязаны быть «чистыми» (никаких `$`-присваиваний в теле — экраны перерисовываются непредсказуемо часто).
 
 #### Таблица init-офсетов (контракт для всего проекта)
 
@@ -4009,7 +4011,7 @@ init 999 python in vn_ui:
 | 500 | контентные define (генерат глав) |
 | 999 | регистрации слотов DLC, поздние хуки |
 
-Проверка владения DLC — принципиально **не** в init-фазе: она выполняется в `label splashscreen` после инициализации Steam (раздел 6); всё, что в init, обязано быть валидным при любом составе установленных паков.
+Проверка владения DLC — принципиально **не** в init-фазе: провайдер лишь *подключается* на `init 999` (ADR-0014, `00_core/035_platform.rpy`), а `owned()` спрашивается лениво в рантайме; всё, что в init, обязано быть валидным при любом составе установленных паков.
 
 ### 7.9. Наблюдаемость
 
@@ -4041,7 +4043,7 @@ init 999 python in vn_ui:
 | Фаза | Из этого раздела строится |
 |---|---|
 | 1 — вертикальный срез (мес. 1–3) | `vn.buildcore`, `vn build`/`vn content compile`, `vn assets build` (PNG/PSD/аудио), `vn validate --schemas`, `vn bootstrap` + bootstrap-check, базовый CI (schemas → compile → lint → smoke затронутых глав). Ничего больше |
-| 2 — до релиза 1.0 | автопилот + record/replay, `vn save check|corpus` + корпус сейвов + rpyc-compat, чит-меню из реестров, перф- и размер-бюджеты (nightly-perf, package-бюджеты), nightly-paths, packaging-матрица + Steam-паблиш, UI-токены/темы, `vn release changelog` |
+| 2 — до релиза 1.0 | автопилот + record/replay, `vn save check|corpus` + корпус сейвов + rpyc-compat, чит-меню из реестров, перф- и размер-бюджеты (nightly-perf, package-бюджеты), nightly-paths, packaging-матрица + Steam-паблиш (частично: ADR-0014 закрыл генерацию VDF и депотов, автоаплоада нет), UI-токены/темы, `vn release changelog` |
 | 3 — после 1.0 | скриншот-тесты, DLC-депоты + smoke-матрица ядро×DLC, DLC-темы, телеметрия (managed), моды/Workshop |
 
 Правила владения (критерий укомплектованности штата, а не пожелание): на каждый инструмент — минимум два владельца в CODEOWNERS с ротацией; runbook «пайплайн сломан ночью перед релизом» (первый шаг — `vn build --use-artifact <sha последнего зелёного main>`, второй — git revert lockfile тулчейна); `docs/onboarding/tools-engineer.md` с картой внутренностей компилятора и buildcore. Кросс-зонные PR не запрещены — они требуют approve владельцев всех затронутых зон через CODEOWNERS.
@@ -4097,7 +4099,7 @@ init 999 python in vn_ui:
 
 - Локализация: `vn loc keys` (стабильные id в say через парсер Ren'Py), PO-экстракция/импорт, choice-id lookup для меню, псевдолокализация, шардированный ledger, отчёты покрытия.
 - Сейвы: единая цепочка миграций + генерируемый маппинг stores↔dict, корпус сейв-фикстур в CI (включая кейсы с переносом .rpyc и «грязным» call-стеком), `vn save check|migrate|corpus`.
-- Релизный конвейер: перенос .rpyc между релизами (G6), каналы dev/beta/release, автоверсионирование, changelog из деклараций, Steam-депоты.
+- Релизный конвейер: перенос .rpyc между релизами (G6), каналы dev/beta/release, автоверсионирование, changelog из деклараций, Steam-депоты (**сделано** [ADR-0014](adr/0014-platform-services.md): `vn release steam` — VDF и раскладка депотов; остался автоаплоад).
 - QA: автопилот под xvfb, чит-меню из Scene Registry, детерминированный режим, перф-бюджеты (cold start, RSS, размер .rpyc, размер .aab/.apk).
 - Видео/WebM-конвейер, атласы UI, звуковой конвейер целиком.
 

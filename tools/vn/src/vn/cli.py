@@ -1816,7 +1816,40 @@ def release_build(flavor: str, patron_token: str | None, packages: tuple, timeou
                 f"build/dist/{info['version']}-{flavor}/", fg="green")
 
 
-release.command("steam", help="Steam-аплоад депотов (фаза 3: нужен аккаунт партнёра).")(_stub(3))
+@release.command("steam")
+@click.option("--flavor", required=True, help="Флейвор собранного дистрибутива.")
+@click.option("--branch", default="", help="SetLive-ветка steamcmd (например beta); пусто = не публиковать.")
+def release_steam(flavor: str, branch: str):
+    """Подготовка Steam-выкладки: раскладка депотов + VDF для steamcmd.
+
+    Генерирует build/steam/app_build_<flavor>.vdf и распаковывает зипы
+    distribute в build/steam/content/. Сам аплоад — steamcmd с credentials
+    ВНЕ репозитория (ci/steam/README.md)."""
+    from .doctor import sdk_path
+    from .release import (ReleaseError, steam_app_build, steam_libs_status,
+                          steam_stage_content)
+
+    root = _root()
+    try:
+        vdf, warnings = steam_app_build(root, flavor, branch=branch)
+    except ReleaseError as e:
+        _fail(str(e))
+    for w in warnings:
+        click.secho(f"warning: {w}", fg="yellow")
+    for lib in steam_libs_status(sdk_path()):
+        click.secho(f"warning: в SDK нет {lib} — дистрибутив будет standalone, "
+                    f"не Steam-сборкой (ci/steam/README.md)", fg="yellow")
+    staged, errors = steam_stage_content(root, flavor)
+    for e in errors:
+        click.secho(f"error: {e}", fg="red")
+    if errors:
+        _fail("steam: контент депотов не собран")
+    out = root / "build" / "steam" / f"app_build_{flavor}.vdf"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(vdf, encoding="utf-8")
+    click.secho(f"steam: {out.relative_to(root)} готов; платформы: "
+                f"{', '.join(staged)}; аплоад: steamcmd +run_app_build (README)",
+                fg="green")
 # ── vn pack ───────────────────────────────────────────────────────────────────
 
 @main.group()

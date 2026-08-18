@@ -315,7 +315,7 @@ reached_rooftop: trigger: {scene: ch01_s030}
 vn content lint                 # схема gallery@1 / achievements@1
 vn build                        # семантика: ассеты, превью, категории, якоря, ключи строк
 python -m pytest tools/vn/tests/test_gallery.py -q     # 10 тестов подсистемы
-python -m pytest tools/vn/tests -q                     # весь набор: 240 тестов
+python -m pytest tools/vn/tests -q                     # весь набор: 253 теста
 
 vn test smoke --picks 0,0
 cat .vncache/smoke/gallery.json                        # {"unlocked":4,"total":5,"ids":[...]}

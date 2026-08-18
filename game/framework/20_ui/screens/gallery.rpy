@@ -47,29 +47,33 @@ screen gallery():
             if not _cats:
                 text vn_loc.t("ui.gallery.empty") style "vn_gal_empty"
             else:
-                vpgrid:
+                # Пад/клавиатура (аудит ui.md P0 №2): ряды за фолдом ysize
+                # недостижимы фокусом — ячейки докручивают сетку через
+                # vn_ui.reveal (hovered ловит и клавиатурный фокус).
+                $ _items = vn_gal.items(_cur)
+                $ _rows = (len(_items) + 2) // 3
+                vpgrid id "vp_gallery":
+                    properties vn_scroll_props
                     cols 3
+                    allow_underfull True
                     spacing gui.sp_m
-                    ysize 800
-                    mousewheel True
-                    draggable True
-                    pagekeys True
-                    scrollbars "vertical"
-                    vscrollbar_unscrollable "hide"
-                    vscrollbar_base_bar Solid(gui.panel_bg_deep)
-                    vscrollbar_thumb Solid(gui.panel_border2)
-                    vscrollbar_xsize 6
-                    for _iid, _spec in vn_gal.items(_cur):
-                        use vn_gal_cell(_iid, _spec)
+                    ysize gui.scroll_height
+                    for _i, (_iid, _spec) in enumerate(_items):
+                        use vn_gal_cell(_iid, _spec, _i // 3, _rows)
 
 
 # ── Ячейка сетки: открытая (превью) или закрытая (заглушка без контента) ──────
+# Закрытые ячейки ОСТАЮТСЯ в dpad-пути сознательно (аудит ui.md P2 №14
+# отклонён): выпади целый ряд закрытых из фокус-цепочки — следующий открытый
+# ряд за фолдом стал бы недостижим (reveal некому дёрнуть).
 
-screen vn_gal_cell(item_id, spec):
+screen vn_gal_cell(item_id, spec, row=None, rows=None):
     $ _open = vn_gal.is_unlocked(item_id)
     button:
         style ("vn_gal_cell" if _open else "vn_gal_cell_locked")
         action (Show("gallery_viewer", item_id=item_id) if _open else NullAction())
+        if row is not None:
+            hovered Function(vn_ui.reveal, "gallery", "vp_gallery", row, rows)
         fixed:
             xysize (472, 266)
             if _open:
@@ -126,7 +130,8 @@ screen gallery_viewer(item_id):
     hbox:
         xalign 0.5
         yanchor 1.0
-        ypos 1080 - gui.sp_m
+        # overscan_pad (scale.rpy): на ТВ Big Picture нижняя кромка срезается
+        ypos 1080 - gui.sp_m - gui.overscan_pad
         spacing gui.sp_s
         style_prefix "vn_gal_ctl"
         if len(_sibs) > 1:
@@ -141,12 +146,17 @@ screen gallery_viewer(item_id):
         if len(_sibs) > 1:
             textbutton vn_loc.t("ui.gallery.next") action Show(
                 "gallery_viewer", item_id=_sibs[(_pos + 1) % len(_sibs)])
-        textbutton vn_loc.t("ui.common.back") action Hide("gallery_viewer")
+        # default_focus: первый A с пада — безопасное «Назад», не листание
+        textbutton vn_loc.t("ui.common.back") action Hide("gallery_viewer") default_focus True
 
-    # Клавиатура/геймпад: стрелки листают, Esc закрывает
+    # Клавиатура/геймпад: стрелки и LB/RB листают (ui.md §6: dpad шлёт
+    # focus_*, а не keysym — плечи здесь единственный пад-способ листать,
+    # не гоняя фокус по чипам), Esc/B закрывают.
     if len(_sibs) > 1:
         key "K_LEFT" action Show("gallery_viewer", item_id=_sibs[(_pos - 1) % len(_sibs)])
         key "K_RIGHT" action Show("gallery_viewer", item_id=_sibs[(_pos + 1) % len(_sibs)])
+        key "pad_leftshoulder_press" action Show("gallery_viewer", item_id=_sibs[(_pos - 1) % len(_sibs)])
+        key "pad_rightshoulder_press" action Show("gallery_viewer", item_id=_sibs[(_pos + 1) % len(_sibs)])
     key "K_ESCAPE" action Hide("gallery_viewer")
     key "game_menu" action Hide("gallery_viewer")
 

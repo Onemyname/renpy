@@ -11,6 +11,9 @@ screen vn_build_overlay():
         outlines [(1, "#00000040", 0, 0)]
         xalign 0.995
         yalign 0.995
+        # overscan_pad (scale.rpy): вотермарка в углу — первое, что срезает ТВ
+        xoffset -gui.overscan_pad
+        yoffset -gui.overscan_pad
 
 init python:
     if vn_build.watermark:

@@ -106,7 +106,7 @@ vn dev               # watch по content/ + assets_src/ и запущенная
 | `vn.unwind_call_stack()` | `:50` | `renpy.pop_call()` пока глубина > 0. Куда идти дальше — решает вызывающий | IMPLEMENTED | **да** |
 | `vn.eval_when(expr)` | `:57` | `renpy.python.py_eval(expr)` для условных exits | IMPLEMENTED / НЕ ОБКАТАН | **да**, но только когда у exit объявлен `when:`; ни одна сцена в `content/` этого не делает |
 | `vn.pack_registry` | `:88` | экземпляр `_PackRegistry` (`:63`) | IMPLEMENTED | используется в `generated/screens/chapter_select.gen.rpy`, `080_achievements.rpy:41`, `090_gallery.rpy:44` |
-| `…set_ownership_provider(fn)` | `:73` | внедрение Steam-подобной проверки владения | IMPLEMENTED / БЕЗ ВЫЗОВОВ | нет ни одного вызова |
+| `…set_ownership_provider(fn)` | `:73` | внедрение платформенной проверки владения | IMPLEMENTED | вызывающий один: `00_core/035_platform.rpy:75` (`init 999`, только при живом Steam) — [ADR-0014](../adr/0014-platform-services.md), [39-platforms.md](39-platforms.md) |
 | `…installed(pack_id)` | `:76` | `pack_id == "core"` или в `VN_PACKS` | IMPLEMENTED | — |
 | `…owned(pack_id)` | `:79` | `core`→True; не установлен→False; провайдер, если задан; **иначе True** (DRM-free по умолчанию) | IMPLEMENTED | — |
 
@@ -328,7 +328,7 @@ build.classify("game/generated/manifest.json", None)
 
 **Добавить свой экран:** файл в `game/framework/20_ui/screens/`, первой строкой `init offset = 0`, строки — только через `vn_loc.t(key)` из `content/ui/strings.yaml`. Подробности — [06-frontend.md](06-frontend.md).
 
-**Подключить платформенный бэкенд (Steam):** точки внедрения уже есть и не требуют правки контент-кода — `vn.pack_registry.set_ownership_provider(fn)` (`030_flow.rpy:73`) и `vn_ach.set_provider(fn)` (`080_achievements.rpy:17`). Вызывать после инициализации платформы. Сегодня вызовов нет: без провайдера установленный пак считается купленным.
+**Подключить платформенный бэкенд:** точки внедрения — `vn.pack_registry.set_ownership_provider(fn)` (`030_flow.rpy:73`) и `vn_ach.set_provider(fn)` (`080_achievements.rpy:17`), и **они уже подключены** для Steam в `00_core/035_platform.rpy` (`init 999`) по [ADR-0014](../adr/0014-platform-services.md). Правило жёсткое: **любая платформенная специфика идёт только в `035_platform.rpy`** — прямые обращения к `_renpysteam`/`steamapi` из других файлов `game/` роняют гард-тест `test_platform::test_platform_facade_is_single_steam_touchpoint`. Как добавить свою платформу — [39-platforms.md](39-platforms.md) §9.
 
 ---
 
@@ -355,7 +355,7 @@ vn content lint                        # декларации, граф, layout 
 vn content compile --check             # генерат актуален? (тут ловится контракт .rpy)
 vn build                               # полный проход: lint -> assets -> compile -> loc import
 vn build --check                       # ничего не пишет; падает, если генерат отстал
-python -m pytest tools/vn/tests -q     # 240 тестов, в т.ч. контракт-тесты engine_compat
+python -m pytest tools/vn/tests -q     # 253 теста, в т.ч. контракт-тесты engine_compat
 vn play                                # запуск руками
 vn test smoke                          # in-process автопилот: прогон сцен + бюджет cold start
 vn save corpus                         # 2 фикстуры сейвов загружаются и мигрируют

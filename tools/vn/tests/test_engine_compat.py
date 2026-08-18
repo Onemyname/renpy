@@ -59,6 +59,35 @@ def test_emphasize_audio_contract():
         "config.emphasize_audio_channels исчез из движка — дакинг 045_audio.rpy мёртв"
 
 
+@requires_sdk
+def test_steam_engine_contract():
+    """035_platform.rpy (ADR-0014): допущения о штатном Steam-стеке движка.
+
+    1. steam_init: без steam_api-библиотеки рядом с исполняемым файлом —
+       тихий no-op (standalone-сборка не ломается).
+    2. При инициализации движок вставляет варианты steam_deck / steam_big_picture
+       и регистрирует SteamBackend ачивок — на этом стоят controller-first UI
+       и синк ачивок.
+    3. dlc_installed существует — на нём ownership-провайдер паков (G9).
+    4. config.steam_appid обрабатывается define-пассом (движок читает его на
+       init -1499, раньше пользовательского кода)."""
+    src = (Path(SDK) / "renpy" / "common" / "00steam.rpy").read_text(encoding="utf-8")
+    init_region = src.split("def steam_init", 1)[1]
+    assert "has_steam = os.path.exists(dll_path)" in init_region and \
+           "if not has_steam:" in init_region, \
+        "движок больше не пропускает Steam тихо без библиотеки — standalone сломан"
+    assert 'config.variants.insert(0, "steam_deck")' in src, \
+        "вариант steam_deck исчез — детект Deck в vn_platform мёртв"
+    assert 'config.variants.insert(0, "steam_big_picture")' in src, \
+        "вариант steam_big_picture исчез — детект Big Picture мёртв"
+    assert "backends.insert(0, SteamBackend())" in src, \
+        "SteamBackend больше не регистрируется — синк ачивок мёртв"
+    assert "def dlc_installed" in src, \
+        "dlc_installed исчез — ownership-провайдер паков мёртв"
+    assert "steam_init()" in src.split("init -1499 python in achievement:", 2)[-1], \
+        "steam_init больше не на init -1499 — проверить, что define appid успевает"
+
+
 def test_api_level_sync():
     """VN_API_LEVEL (tools) обязан совпадать с API_LEVEL фасада vn.* (framework)."""
     import re

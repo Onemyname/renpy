@@ -1,9 +1,9 @@
 # 06. Фронтенд: UI-слой
 
-> **Статус подсистемы:** IMPLEMENTED — все экраны игры написаны вручную (20 объявлений `screen` в 7 файлах `20_ui/screens/` + 6 переиспользуемых компонентов `vn_*` в `components.rpy`; единственный генерируемый экран — `chapter_select`), работают на токенах `gui.*` и восьми генерируемых 9-patch панелях. Главное «но»: `theme.yaml` фазы 2 не существует, токены `gui.radius_*` мертвы. Правило `2*Borders` теперь под тестом со стороны потребителей — **нарушений в вёрстке нет** (последнее, в галерее, закрыто парой панелей `chip`/`chip_active`).
+> **Статус подсистемы:** IMPLEMENTED — все экраны игры написаны вручную (21 объявление `screen` в 8 файлах `20_ui/screens/` + 7 переиспользуемых компонентов `vn_*` в `components.rpy`, включая controller-first каркас `vn_modal_dialog`; единственный генерируемый экран — `chapter_select`), работают на токенах `gui.*` и восьми генерируемых 9-patch панелях. Главное «но»: `theme.yaml` фазы 2 не существует, токены `gui.radius_*` мертвы. Правило `2*Borders` теперь под тестом со стороны потребителей — **нарушений в вёрстке нет** (последнее, в галерее, закрыто парой панелей `chip`/`chip_active`).
 > **Отвечает на вопрос:** «Куда положить новую кнопку/панель/строку интерфейса, чтобы не сломать локализацию, панели и smoke-прогон».
 
-UI-слой — это `game/gui.rpy` (78 строк токенов) + `game/framework/20_ui/` (9 файлов `.rpy`, 1274 строки рукописного Ren'Py: `components.rpy` 274, `images.rpy` 5 и семь экранов в `screens/`) + два генерата: `game/generated/registry/ui_frames.gen.rpy` (фоны-панели) и `game/generated/screens/chapter_select.gen.rpy` (единственный генерируемый экран). Всё остальное в `game/generated/` к UI отношения не имеет. Ни одного бинарного UI-ассета в git нет: скругления, тени и градиенты рисует конвейер из `content/ui/panels.yaml` (ADR-0009), маркеры и индикаторы собраны из `Solid` + `Transform`.
+UI-слой — это `game/gui.rpy` (85 строк токенов) + `game/framework/20_ui/` (12 файлов `.rpy`, 1553 строки рукописного Ren'Py: `components.rpy` 385, `scale.rpy` 57 и `input.rpy` 29 — платформенные токены и раскладка пада ([39](39-platforms.md)), `images.rpy` 5 и восемь экранов в `screens/`) + два генерата: `game/generated/registry/ui_frames.gen.rpy` (фоны-панели) и `game/generated/screens/chapter_select.gen.rpy` (единственный генерируемый экран). Всё остальное в `game/generated/` к UI отношения не имеет. Ни одного бинарного UI-ассета в git нет: скругления, тени и градиенты рисует конвейер из `content/ui/panels.yaml` (ADR-0009), маркеры и индикаторы собраны из `Solid` + `Transform`.
 
 ## Быстрый ответ
 
@@ -25,8 +25,9 @@ vn test smoke --picks 0,0                    # автопрохождение, �
 | Этаж | Файл | Что содержит | Кто пишет |
 |---|---|---|---|
 | 1. Токены | `game/gui.rpy` (`init offset = -2`, :6) | палитра, шрифты, размеры, шкала отступов, радиусы, габариты слотов | человек |
-| 2. Компоненты | `game/framework/20_ui/components.rpy` (`init offset = 0`, :5) | базовые стили + 6 переиспользуемых `screen vn_*` + `image vn_ctc` + 2 трансформа | человек |
-| 3. Экраны | `game/framework/20_ui/screens/*.rpy` (7 файлов) | say/choice/history/quick_menu/main_menu/navigation/preferences/save/load/gallery/crash/watermark | человек |
+| 2. Компоненты | `game/framework/20_ui/components.rpy` (`init offset = 0`, :5) | базовые стили + 7 переиспользуемых `screen vn_*` (в т.ч. `vn_modal_dialog`) + пресет `vn_scroll_props` + `vn_ui.reveal` + `image vn_ctc` + 2 трансформа | человек |
+| 2a. Платформенные токены | `game/framework/20_ui/scale.rpy` (`init -4` / `offset = -3`), `input.rpy` (`init python`) | `gui.ui_scale`, `gui.overscan_pad`, дополнения `config.pad_bindings` — [39-platforms.md](39-platforms.md) | человек |
+| 3. Экраны | `game/framework/20_ui/screens/*.rpy` (8 файлов) | say/choice/history/quick_menu/main_menu/navigation/preferences/save/load/gallery/crash/watermark/unavailable | человек |
 | 4. Генерат | `game/generated/registry/ui_frames.gen.rpy`, `game/generated/screens/chapter_select.gen.rpy` | `define vn_frame_<id> = Frame(...)`, экран выбора глав | `vn build` |
 
 Порядок инициализации обязателен именно такой: `gui.rpy` на `-2` должен выполниться **до** стилей на `0`, иначе `gui.accent_color` в `style` будет неопределён. `ui_frames.gen.rpy` тоже на `0` — Ren'Py сортирует `.rpy` одного приоритета по пути, `game/generated/...` идёт раньше `game/framework/...`, поэтому `vn_frame_choice` уже определён к моменту разбора `style choice_button`. Полная карта init-приоритетов — [05-renpy-development.md](05-renpy-development.md), норматив — [ADR-0003](../adr/0003-init-scale-engine-limit.md).
@@ -99,6 +100,8 @@ vn test smoke --picks 0,0                    # автопрохождение, �
 | `gui.choice_text_size` | 25 | текст пункта выбора |
 | `gui.choice_width` | 880 | ширина стека выборов (не размер шрифта) |
 | `gui.title_text_size` | 110 | wordmark главного меню |
+
+**Интерфейсные кегли умножаются на `gui.ui_scale`** (`gui.rpy:52,58-64`): числа выше — база при масштабе 1.0. На Steam Deck / Big Picture (или при выборе «крупный» в настройках) множитель 1.4 даёт `interface 21 → 29`, `button 17 → 24`, `tiny 13 → 18`. Масштаб только вверх: `< 1.0` сплющил бы 9-patch панели, считающие минимумы `2*Borders` от базовых кеглей. Подробности — [39-platforms.md](39-platforms.md) §8.
 
 ### Шкала отступов (`gui.rpy:65-69`)
 
@@ -340,7 +343,7 @@ vn loc report                              # все языки 100%, fuzzy 0
 vn test smoke --picks 0,0                  # автопрохождение; скриншоты .vncache/smoke/shot*.png
 vn test smoke --lang pseudo                # псевдолокаль +40% длины строк — проверка вёрстки
 vn test smoke --lang de
-python -m pytest tools/vn/tests -q         # 240 тестов (в т.ч. 9 в test_ui_panels.py)
+python -m pytest tools/vn/tests -q         # 253 теста (в т.ч. 9 в test_ui_panels.py)
 vn release validate --flavor public        # релизный гейт (19 проверок), если готовите релиз
 ```
 
@@ -356,8 +359,9 @@ vn release validate --flavor public        # релизный гейт (19 пр�
 |---|---|---|
 | Разрешение | IMPLEMENTED | `gui.init(1920, 1080)` — единственная виртуальная сетка; движок масштабирует всю поверхность под окно. Отдельных раскладок под другие пропорции нет, брейкпоинтов нет |
 | Клавиатура | PARTIALLY IMPLEMENTED | выбор — цифры 1–9 (`choice.rpy:49-51`); просмотрщик галереи — `K_LEFT`/`K_RIGHT`/`K_ESCAPE`/`game_menu` (`gallery.rpy:144-148`); Shift+J в dev-сборке. Остальные экраны полагаются на штатную навигацию движка |
-| Геймпад | NOT IMPLEMENTED (проектных средств) | штатная поддержка движка не настраивалась и не проверялась; единственный проектный жест в её сторону — «высота кликабельной зоны ≥ 48 px» в `quick_menu.rpy:4` |
-| Масштабирование шрифта игроком | NOT IMPLEMENTED | в `screen preferences()` нет такой настройки; все размеры — константы `gui.*` |
+| Геймпад / controller-first | IMPLEMENTED ([ADR-0014](../adr/0014-platform-services.md), [39-platforms.md](39-platforms.md) §7) | скролл-пресет `vn_scroll_props` + `vn_ui.reveal` (докрутка к клавиатурному фокусу), `vn_modal_dialog` с B/Esc и `default_focus` на безопасной кнопке, `keyboard_focus False` у quick menu (уходит из dpad-пути), пад-биндинги в `20_ui/input.rpy` (L3=skip, R3=auto, LB/RB=листание вьюпортов), `FilePage("quick")`, LB/RB в просмотрщике галереи. Не проверено: живой пад — smoke под `RENPY_VARIANT` пад-события не шлёт |
+| Масштабирование шрифта игроком | IMPLEMENTED | сегмент «авто / крупный / обычный» в `screen preferences()` (`core_screens.rpy:320-343`) → `vn.set_ui_scale` → `gui.ui_scale` (`20_ui/scale.rpy`). Авто = 1.4 на Steam Deck / Big Picture. **Только увеличение** (< 1.0 сплющит 9-patch панели ADR-0009) |
+| Safe-area ТВ (overscan) | IMPLEMENTED | `gui.overscan_pad = 48` в Big Picture (`scale.rpy:42`); прижатые к кромке оверлеи сдвигаются на этот токен (`quick_menu.rpy:17,19`, `gallery.rpy:134`, `build_overlay.rpy:15-16`) |
 | Высокая контрастность / альтернативная палитра | NOT IMPLEMENTED | одна тёмная палитра, переключателя нет; `theme.yaml` фазы 2 не существует |
 | Озвучка интерфейса (self-voicing) | NOT IMPLEMENTED (проектных средств) | ни настройки, ни `alt`-подписей у декоративных элементов |
 | Локализация вёрстки | IMPLEMENTED | шрифт пункта языка берётся из манифеста пакета с fallback (`core_screens.rpy:370`); псевдолокаль `--lang pseudo` — штатный способ проверить, переживёт ли вёрстка +40% длины |

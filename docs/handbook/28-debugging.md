@@ -463,7 +463,7 @@ vn build                                         # job build-test (:67)
 vn loc keys --check                              # (:70)
 "$RENPY_SDK/renpy.exe" . lint                    # (:73) — в CI это renpy.sh под xvfb
 vn content compile --check                       # (:76)
-python -m pytest tools/vn/tests -q               # (:79) — 240 тестов
+python -m pytest tools/vn/tests -q               # (:79) — 253 теста
 ```
 
 Если локально зелено, а CI красный — проверьте по порядку:
@@ -514,7 +514,7 @@ vn build                            # ch90 исчезает из VN_CHAPTERS/VN_
 mv /tmp/ep_beach packs/ep_beach && vn build
 ```
 
-Помните: `VN_PACKS` перечисляет **все** установленные паки независимо от флейвора (`packs:` в `project.yaml` как гейт — NOT IMPLEMENTED), а `vn.pack_registry.owned()` без провайдера всегда `True`. То есть «пак не виден в игре» не воспроизводится подменой флейвора — только физическим отсутствием каталога. Подробности — [30-packs-and-dlc.md](30-packs-and-dlc.md).
+Помните: `VN_PACKS` перечисляет **все** установленные паки независимо от флейвора (`packs:` в `project.yaml` как гейт — NOT IMPLEMENTED), а `vn.pack_registry.owned()` вне Steam всегда `True` (провайдер подключается в `00_core/035_platform.rpy:75` только при живом Steam — [39-platforms.md](39-platforms.md)). То есть «пак не виден в игре» не воспроизводится подменой флейвора — только физическим отсутствием каталога или запуском под Steam без купленного DLC. Подробности — [30-packs-and-dlc.md](30-packs-and-dlc.md).
 
 ### 10.4. Понять, в каком режиме идёт игра
 
@@ -574,7 +574,7 @@ vn build --check                       # check: генерат свеж
 "$RENPY_SDK/renpy.exe" . lint          # родной lint движка по game/**
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (21 скриншот)
 vn save check && vn save corpus        # 2 фикстуры: целы, грузятся, миграция 0002 исполняется
-python -m pytest tools/vn/tests -q     # 240 passed
+python -m pytest tools/vn/tests -q     # 253 passed
 ```
 
 После правок в `game/framework/90_debug/**` или `game/options.rpy` дополнительно:

@@ -539,7 +539,7 @@ def vn_log(msg):
 vn content lint                  # переменные сцен против Variable Registry, store==id главы, G7
 vn build                         # полная сборка; падает на разрыве цепочки миграций
 vn build --check                 # ничего не пишет; exit 1 = генерат протух относительно источников
-python -m pytest tools/vn/tests -q          # 240 тестов; test_saves.py — эмиссия миграций и снапшота
+python -m pytest tools/vn/tests -q          # 253 теста; test_saves.py — эмиссия миграций и снапшота
 vn save check                    # JSON-заголовки 2 фикстур: schema/версия/сцена, без unpickle
 vn save corpus                   # обе фикстуры грузятся в реальной игре, after_load гоняет миграции
 vn test smoke                    # автопилот проходит главу; .vncache/smoke/state.json = финальный снапшот

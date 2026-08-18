@@ -462,15 +462,22 @@ def emit_chapter_select(header: str) -> str:
     return header + '''
 # Экран выбора глав (C14): собран из данных Chapter Registry
 # и компонентов framework/20_ui (vn_game_menu / vn_chapter_card).
+#
+# Сетка — vpgrid со скролл-пресетом vn_scroll_props (аудит ui.md P1 №9):
+# прежний hbox с переносом молча терял главы за низом экрана при росте
+# корпуса. Карточки докручивают сетку к фокусу через vn_ui.reveal (row/rows).
 screen chapter_select():
     tag menu
     use vn_game_menu(vn_loc.t("ui.nav.chapters")):
-        hbox:
+        # Владение паком — логический гейт (G9): непокупные главы не видны
+        $ _chs = [ch for ch in VN_CHAPTERS if vn.pack_registry.owned(ch["pack"])]
+        $ _rows = (len(_chs) + 2) // 3
+        vpgrid id "vp_chapters":
+            properties vn_scroll_props
+            cols 3
+            allow_underfull True
             spacing gui.sp_l
-            box_wrap True
-            box_wrap_spacing gui.sp_l
-            for ch in VN_CHAPTERS:
-                # Владение паком — логический гейт (G9): непокупные главы не видны
-                if vn.pack_registry.owned(ch["pack"]):
-                    use vn_chapter_card(ch)
+            ysize gui.scroll_height
+            for _i, ch in enumerate(_chs):
+                use vn_chapter_card(ch, _i // 3, _rows)
 '''

@@ -337,10 +337,11 @@ assets:
 
 ## 11. Steam: что придётся проверить дополнительно
 
-`vn release steam` — **NOT IMPLEMENTED** (стаб фазы 3, `cli.py:1565`); депотов и каналов dev/beta/release нет. Никаких обещаний по срокам. Что известно фактически:
+Техническая часть закрыта [ADR-0014](../adr/0014-platform-services.md) — устройство слоя и команда поставки описаны в [39-platforms.md](39-platforms.md). Здесь остаётся **правовое и организационное**, чего никакой код не закрывает. Что известно фактически:
 
 - **Steam-поддержка Ren'Py — не часть SDK.** Ставится через лаунчер: «preferences» → «Install libraries» → «Install Steam Support», и **гейтится приёмом в Steam partner program** (https://www.renpy.org/doc/html/achievement.html). Это не добавляется в последний момент. Ren'Py 8.5 требует Steamworks SDK 1.62.
-- **`achievement.steam` равен `None`, если Steam не инициализировался** — вызов без guard уронит билд у любого, кто запустит игру вне Steam, включая ваши dev-прогоны. Наши достижения к платформе не привязаны: `080_achievements.rpy:17-18` объявляет хук `vn_ach.set_provider(fn)`, и **вызывающих у него нет** — Steam-синк **NOT IMPLEMENTED**.
+- **`achievement.steam` равен `None`, если Steam не инициализировался** — вызов без guard уронит билд у любого, кто запустит игру вне Steam, включая ваши dev-прогоны. У нас этот guard один и в одном месте: `vn_platform.steam()` в `00_core/035_platform.rpy:19-23`; провайдер ачивок и ownership-провайдер подключаются только если он вернул не `None` (`:74`). Обращаться к `achievement.steam`/`_renpysteam` из любого другого файла `game/` запрещено гард-тестом `test_platform::test_platform_facade_is_single_steam_touchpoint`.
+- **App ID и номера депотов — публичные данные и лежат в git** (`project.yaml: platform.steam`); секретов Steamworks в репозитории нет. Секретны только логин/Steam Guard `steamcmd` (CI-секреты или интерактивный вход) — их не бывает ни в коде, ни в VDF-генерате (`release.py:168-206`). Отдельная лицензионная граница: steam_api-редистрибутивы Valve **нельзя коммитить** — место `$RENPY_SDK/lib/py3-*/` на build-машине.
 - **Организационные сроки** (VNDev Wiki, https://vndev.wiki/Guide:Ren%27Py_visual_novels_on_Steam, обновление 25.11.2025): релиз невозможен раньше чем через 30 дней после покупки app credit или через две недели после аппрува страницы — что позже. Гайд отдельно разбирает случай внешне распространяемого nudity-патча.
 - **Пакет для магазинов** — «Windows, Mac, and Linux for Markets» из `build.package()` (https://www.renpy.org/doc/html/build.html); наш `vn release build` собирает `--package win|linux|mac`.
 

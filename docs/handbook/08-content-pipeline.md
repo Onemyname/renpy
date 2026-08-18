@@ -27,7 +27,7 @@ vn content graph            # Mermaid-граф сцен в stdout
 | `loc/po/`, `loc/ledger/` | обмен с переводчиками; ledger — вход компилятора (реестр меню) | да |
 | `assets_src/` | сырцы (PNG/PSD/видео) | частично, порог ADR-0004 |
 | `game/assets/` | выход `vn assets build`; **вход** компилятора (реестр образов, галерея) | нет |
-| `game/generated/` | выход компилятора, 20 файлов + `manifest.json` | нет |
+| `game/generated/` | выход компилятора, 21 файл + `manifest.json` | нет |
 | `game/tl/` | выход `vn loc import` | нет |
 | `game/framework/` | рукописный код надстройки — **не генерат** | да |
 
@@ -35,9 +35,9 @@ vn content graph            # Mermaid-граф сцен в stdout
 
 ---
 
-## 2. Полная таблица «вход → выход» (20 выходов)
+## 2. Полная таблица «вход → выход» (21 выход)
 
-Все 20 путей — относительно `game/generated/`. Столбец «Заголовок» — что реально перечислено в шапке файла после `# source:` (см. §6, там есть расхождения).
+Все 21 путь — относительно `game/generated/`. Столбец «Заголовок» — что реально перечислено в шапке файла после `# source:` (см. §6, там есть расхождения).
 
 | # | Выход | Назначение | Реально читает | Эмиттер |
 |---|---|---|---|---|
@@ -57,7 +57,8 @@ vn content graph            # Mermaid-граф сцен в stdout
 | 14 | `registry/gallery.gen.rpy` | `VN_GALLERY_CATEGORIES` + `VN_GALLERY` (ADR-0010) | `content/gallery/*.yaml` + проверки файлов в `game/assets/**` + `strings.yaml` (warn) | `compile.py:148` |
 | 15 | `screens/chapter_select.gen.rpy` | статический шаблон экрана выбора глав; эмитится **только если есть главы** | ничего (шаблон) | `scenes.py:461` |
 | 16 | `render.gen.rpy` | потолок качества текстур сборки (ADR-0012): `define config.automatic_oversampling` + `define vn_build_max_oversampling`; настройку игрока поверх применяет `00_core/095_quality.rpy` | `project.yaml: render.max_oversampling` | `compile.py:105` |
-| 17–20 | `scenes/<chNN>/<full_id>.gen.rpy` | label-обвязка сцены (см. §5) + инжекция `voice vn.voice_path("<say-id>")` перед озвученными репликами (C5). Сейчас 4 файла: `ch01/ch01_s010`, `ch01/ch01_s020`, `ch01/ch01_s030`, `ch90/ch90_s010` | пара `*.scene.{yaml,rpy}` + AST от build-bridge + локации + audio-id + voice-манифесты `chapters/*/voice/*.voice.yaml` | `scenes.py:334` |
+| 17 | `platform.gen.rpy` | платформенный конфиг ([ADR-0014](../adr/0014-platform-services.md)): `define config.steam_appid` (движок читает его на `init -1499`, поэтому обязателен `define`, а не присваивание) + `define VN_STEAM_DLC` — карта `pack_id → Steam DLC App ID` | `project.yaml: platform.steam.appid`, `steam_dlc_appid` из `packs/*/manifest.yaml` | `compile.py:133` |
+| 18–21 | `scenes/<chNN>/<full_id>.gen.rpy` | label-обвязка сцены (см. §5) + инжекция `voice vn.voice_path("<say-id>")` перед озвученными репликами (C5). Сейчас 4 файла: `ch01/ch01_s010`, `ch01/ch01_s020`, `ch01/ch01_s030`, `ch90/ch90_s010` | пара `*.scene.{yaml,rpy}` + AST от build-bridge + локации + audio-id + voice-манифесты `chapters/*/voice/*.voice.yaml` | `scenes.py:334` |
 | — | `manifest.json` | контракт инкрементальности: `{schema, tool, inputs, outputs}`; в `outputs` себя не включает | все зарегистрированные через `src()` входы + blake3 всех выходов | `compile.py:912-922` |
 
 ### 36 входов
@@ -492,7 +493,7 @@ vn build                      # ожидается: build: OK
 vn build --check              # ожидается: check: генерат свеж
 
 # Тесты тулинга
-python -m pytest tools/vn/tests -q          # 240 тестов
+python -m pytest tools/vn/tests -q          # 253 теста
 python -m pytest tools/vn/tests/test_compile.py tools/vn/tests/test_lint.py \
                 tools/vn/tests/test_schemas.py tools/vn/tests/test_scene_pipeline.py \
                 tools/vn/tests/test_verify_regressions.py -q
@@ -515,7 +516,7 @@ vn play                                     # требует непустой ga
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/content/compile.py` (923 стр., эмиттеры + оркестрация `compile_content:587`), `tools/vn/src/vn/content/lint.py` (411 стр.), `tools/vn/src/vn/content/scenes.py` (валидация C2 + эмиссия обвязки), `tools/vn/src/vn/content/analyze.py`, `game/framework/00_core/050_build_bridge.rpy`, `tools/vn/src/vn/schemas.py`, `tools/vn/src/vn/cli.py:84-153` (порядок `vn build`), `game/generated/manifest.json` (актуальные 36 входов / 20 выходов) |
+| **Читать перед изменением** | `tools/vn/src/vn/content/compile.py` (923 стр., эмиттеры + оркестрация `compile_content:587`), `tools/vn/src/vn/content/lint.py` (411 стр.), `tools/vn/src/vn/content/scenes.py` (валидация C2 + эмиссия обвязки), `tools/vn/src/vn/content/analyze.py`, `game/framework/00_core/050_build_bridge.rpy`, `tools/vn/src/vn/schemas.py`, `tools/vn/src/vn/cli.py:84-153` (порядок `vn build`), `game/generated/manifest.json` (актуальные 36 входов / 21 выход) |
 | **Не трогать** | `game/generated/**` (генерат), `game/assets/**` (выход `vn assets build`), `game/tl/**` (выход `vn loc import`), `.vncache/**` (кэш), `build/**` — всё производное и вне git. Правки там исчезнут при первой же сборке |
 | **Зависимости (что сломается ниже по течению)** | правка эмиттера → меняются байты генерата → `vn build --check` краснеет у всех, пока не пересоберут; правка `050_build_bridge.rpy` → инвалидируется весь `.vncache/analyze-*.json` и требуется полный прогон движка; правка схемы → линт, компилятор, `vn doctor` (проверка №6) и релизный гейт строят реестр заново; добавление/удаление выхода → предыдущий `manifest.json` даст диффом удаление осиротевших `.rpy` + `.rpyc`; правка `content/renames.yaml` → `registry/overrides.gen.rpy` (shim-метки и `config.label_overrides`) |
 | **Валидация** | `vn content lint` → `vn build` → `vn build --check` → `python -m pytest tools/vn/tests -q`. Для сцен обязателен `RENPY_SDK` |

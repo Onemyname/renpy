@@ -49,15 +49,19 @@ define gui.interface_text_font     = "fonts/Inter-Regular.ttf"      # UI
 define gui.interface_semibold_font = "fonts/Inter-SemiBold.ttf"     # заголовки/кнопки
 
 ## Размеры текста (typography.sizes; px при 1920×1080) ─────────────────────────
+## Интерфейсные кегли умножаются на gui.ui_scale (>= 1.0, 20_ui/scale.rpy):
+## базовые значения читаемы на мониторе, но малы на Deck/ТВ (аудит r1) —
+## профиль «крупный» решается токенами, экраны не копируются. Диалоговые
+## кегли (text/name/label/title) масштаб НЕ трогает: они проходят пороги.
 define gui.text_size           = 34    # диалоги
 define gui.name_text_size      = 29
-define gui.interface_text_size = 21    # пункты меню/навигации
-define gui.button_text_size    = 17    # кнопки-действия (confirm и т.п.)
+define gui.interface_text_size = round(21 * gui.ui_scale)   # пункты меню/навигации
+define gui.button_text_size    = round(17 * gui.ui_scale)   # кнопки-действия (confirm и т.п.)
 define gui.label_text_size     = 34    # заголовки экранов
-define gui.group_text_size     = 13    # caps-заголовки групп настроек
-define gui.small_text_size     = 15
-define gui.tiny_text_size      = 13    # quick menu
-define gui.choice_text_size    = 25
+define gui.group_text_size     = round(13 * gui.ui_scale)   # caps-заголовки групп настроек
+define gui.small_text_size     = round(15 * gui.ui_scale)
+define gui.tiny_text_size      = round(13 * gui.ui_scale)   # quick menu
+define gui.choice_text_size    = round(25 * gui.ui_scale)
 define gui.choice_width        = 880   # components.choice.width (стек в диалоговой зоне)
 define gui.title_text_size     = 110   # wordmark главного меню
 
@@ -76,3 +80,6 @@ define gui.radius_panel  = 12
 define gui.slot_width        = 440
 define gui.slot_thumb_height = 248
 define gui.slot_height       = 330
+
+## Скролл-зоны (components.scroll): высота сеток игрового меню (галерея, главы)
+define gui.scroll_height = 800

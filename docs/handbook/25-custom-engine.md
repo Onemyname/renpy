@@ -192,7 +192,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | `release changelog` | — | Обновляет `docs/CHANGELOG.md` и `ci/release-manifest.json` по диффу реестров, штампует `id_registry` (G7) (`cli.py:1471-1489`) | PART — нет `--from/--audience`; главы из `packs/*/chapters/` не видит |
 | `release validate` | `--flavor` (**required**) | Предрелизный гейт: 19 проверок PASS/WARN/FAIL (`cli.py:1492-1505`) | IMPL |
 | `release build` | `--flavor` (**required**), `--patron-token`, `--package` (multiple), `--timeout` (def 900) | `vn build` → гейт → `game/build_id.json` → `vn package` с суффиксом `-<flavor>` → `build-info.json`; `build_id.json` и скопированный `THIRD-PARTY-NOTICES.md` снимаются в `finally` (`cli.py:1508-1562`) | IMPL — `--patron-token` это **вход**: наружу уходит только производная метка `patron_tag` (ADR-0011, см. ниже) |
-| `release steam` | — | Аплоад депотов в Steam (нужен аккаунт партнёра) | STUB — фаза 3 (`cli.py:1565`) |
+| `release steam` | `--flavor` (**required**), `--branch` | Steam-поставка ([ADR-0014](../adr/0014-platform-services.md)): рендерит `build/steam/app_build_<flavor>.vdf` из `ci/steam/app_build.vdf.tmpl` и распаковывает зипы distribute в `build/steam/content/<flavor>/<platform>/`; предупреждает про отсутствующие steam_api-библиотеки (`cli.py:1819-1852`, `release.py:151-252`) | IMPL — но **не аплоад**: `steamcmd` запускает человек, credentials вне репозитория ([39](39-platforms.md)) |
 
 Сборка идёт **до** гейта осознанно: в свежем чекауте генерата нет вовсе, и проверка «генерат свеж» валила бы каждый релиз (комментарий `cli.py:1526-1528`). См. [Сборка и релиз](29-build-and-release.md).
 
@@ -276,9 +276,8 @@ if [ "${rc:-0}" -eq 3 ]; then echo "ещё не фаза — пропускае�
 | **2** | `test replay`, `test paths` | `cli.py:1659` |
 | **3** | `save migrate` | `cli.py:1484` |
 | **3** | `test screens` | `cli.py:1659` |
-| **3** | `release steam` | `cli.py:1819` |
 
-Итого 11 заглушек (пересчитано по таблице выше и по `grep -n '_stub' cli.py`). Обратите внимание на аномалию: `char new` и `char validate` помечены **фазой 1**, то есть по плану они должны существовать уже сейчас. Персонажей приходится заводить редактированием YAML вручную.
+Итого 10 заглушек (пересчитано по таблице выше и по `grep -n '_stub' cli.py`; `release steam` из списка ушла — реализована по ADR-0014). Обратите внимание на аномалию: `char new` и `char validate` помечены **фазой 1**, то есть по плану они должны существовать уже сейчас. Персонажей приходится заводить редактированием YAML вручную.
 
 Заглушки бывают двух видов в коде:
 
@@ -411,7 +410,7 @@ tools/vn/
     loc/
       po.py       566       PO round-trip, пакеты языков, псевдолокаль, отчёт покрытия
       keys.py     249       say-id и маркеры меню, ledger
-  tests/                    23 файла test_*.py + conftest.py, 240 тестов
+  tests/                    24 файла test_*.py + conftest.py, 253 теста
 ```
 
 **Конвенция сокращений в хендбуке.** Ссылки вида `tools/vn/src/vn/content/lint.py:20-53`, `tools/vn/src/vn/loc/po.py:44`, `tools/vn/src/vn/assets/pipeline.py:38-46` — это **сокращение относительно `tools/vn/src/vn/`**, а не путь от корня репозитория. Каталоги `content/` и `loc/` в корне — совсем другие зоны (YAML-декларации и обмен с переводчиками), Python-файлов там нет. Полная форма первого сегмента: `tools/vn/src/vn/content/lint.py`, `tools/vn/src/vn/loc/po.py`, `tools/vn/src/vn/assets/pipeline.py`.
@@ -571,7 +570,7 @@ _stub_group("bar", "Домен bar (раздел N).", {"new": 1, "check": 2})  
 - **на реальном репозитории** — `test_schemas.py` берёт `repo_root` и валидирует все стартовые декларации;
 - **на синтетическом скелете** — `test_compile.py:29` (`skeleton_no_chapters`) собирает в `tmp_path` минимальный репозиторий (копирует `project.yaml`, `.vnstorage.yaml`, `tools/schemas/`, `content/` без глав и локаций) — так тест не требует Ren'Py SDK.
 
-Запуск: `python -m pytest tools/vn/tests -q` (240 тестов). См. [Тестирование](27-testing.md).
+Запуск: `python -m pytest tools/vn/tests -q` (253 теста). См. [Тестирование](27-testing.md).
 
 Третий шаблон появился 2026-08-08 — **тест над CLI**: `test_release.py:141-146` (`_run_pack_build`) даёт `click.testing.CliRunner` + `monkeypatch.chdir(root)` (чтобы `_root()` нашёл синтетический корень) и проверяет код возврата и текст вывода команды. Так стоит закрывать команды, у которых логика неотделима от обвязки.
 
@@ -646,7 +645,7 @@ vn build                           # build: OK
 vn build --check                   # check: генерат свеж   ← то же гоняет CI
 
 # 4. Тесты тулинга
-python -m pytest tools/vn/tests -q # 240 passed
+python -m pytest tools/vn/tests -q # 253 passed
 
 # 5. Контракт кодов возврата (после правок в cli.py)
 vn char new;    echo $?            # 3  — заглушка фазы 1
@@ -669,5 +668,5 @@ vn --help && vn assets --help && vn assets video --help
 | **Читать перед изменением** | `../../tools/vn/src/vn/cli.py` (обвязка всех команд), `../../tools/vn/src/vn/repo.py` (поиск корня), `../../tools/vn/src/vn/doctor.py` (обнаружение SDK), `../../tools/vn/pyproject.toml` (зависимости, entry point), целевой модуль домена в `../../tools/vn/src/vn/<домен>/` |
 | **Не трогать** | `game/generated/`, `game/assets/`, `game/tl/`, `.vncache/`, `build/` — производные зоны, перезапишет сборка. `../ARCHITECTURE.md` — целевой документ, не описание построенного: не «приводить код в соответствие» с ним без задачи |
 | **Зависимости** | Правка `cli.py` ломает CI (`.github/workflows/{ci,nightly,canary,release}.yml`, `.gitlab-ci.yml` вызывают команды `vn` по именам), хуки и любые скрипты. Переименование команды/флага — breaking change. Новая зависимость в `pyproject.toml` **обязана** получить пин в `tools/vn.lock`: лок ставится первым во всех пайплайнах, и незапиненный пакет приедет из PyPI произвольной версии. Новая джоба CI обязана ставить лок до editable и `ffmpeg` до `vn build` — оба инварианта стережёт `tools/vn/tests/test_ci_config.py` |
-| **Валидация** | `python -m pytest tools/vn/tests -q` → 240 passed · `vn build --check` → `check: генерат свеж` · `vn doctor` → exit 0 · `vn --help` и `vn <группа> --help` без исключений |
+| **Валидация** | `python -m pytest tools/vn/tests -q` → 253 passed · `vn build --check` → `check: генерат свеж` · `vn doctor` → exit 0 · `vn --help` и `vn <группа> --help` без исключений |
 | **Частые ошибки** | 1) Логика написана прямо в `cli.py` — попадает в почти непокрытую тестами зону (закрыт только `pack build`). 2) Импорт модуля поднят на уровень `cli.py` — старт CLI дорожает для всех команд. 3) Заглушка сделана как `pass` вместо `_stub(N)` — команда молча «успешна». 4) Ошибка выброшена исключением вместо `_fail()` — нарушен контракт «exit 1 всегда с сообщением». 5) Флаг взят из `ARCHITECTURE.md` (`--use-artifact`, `vn validate`, `--gate`) — таких команд нет. 6) Предположение, что `RENPY_SDK` унаследован bash-сессией — его надо экспортировать вручную. 7) Схема добавлена без совпадения `properties.schema.const` с именем файла или без `additionalProperties: false` — падает `SchemaRegistry` и `test_registry_loads`. 8) Утверждение, что `tools/vn.lock` никем не читается — устарело с 2026-08-08 (§8) |

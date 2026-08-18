@@ -73,13 +73,98 @@ screen vn_panel(title=None):
 style vn_panel is frame
 style vn_panel_title is label_text
 
-## ── vn_button(kind=primary|secondary|danger) ─────────────────────────────────
+## ── vn_scroll: единый скролл-приём (controller-first, аудит ui.md §1) ────────
+##    Проблема: движок не докручивает viewport к клавиатурному фокусу, а кнопки
+##    за границей клипа выпадают из фокус-листа (focus_nearest пропускает
+##    кандидатов без фокус-ректа) — dpad упирается в край видимой области.
+##    Приём из двух частей:
+##      1) vn_scroll_props — общие свойства viewport/vpgrid (колёсико, драг,
+##         pagekeys + LB/RB из input.rpy, единый скроллбар) вместо копий
+##         настроек в каждом экране;
+##      2) vn_ui.reveal(...) — hovered-колбэк ячейки: hovered срабатывает и на
+##         клавиатурный фокус, докручивает adjustment так, чтобы ряд был виден
+##         целиком и «подглядывал» следующий — тот получает фокус-рект и
+##         становится достижим следующим нажатием dpad.
 
-screen vn_button(label=None, action=NullAction(), kind="primary", sensitive=True):
+define vn_scroll_props = {
+    "mousewheel": True,
+    "draggable": True,
+    "pagekeys": True,
+    "scrollbars": "vertical",
+    "vscrollbar_unscrollable": "hide",
+    "vscrollbar_base_bar": Solid(gui.panel_bg_deep),
+    "vscrollbar_thumb": Solid(gui.panel_border2),
+    "vscrollbar_xsize": 6,
+}
+
+init -990 python in vn_ui:
+    from store import renpy, gui
+
+    def reveal(screen_name, vp_id, row, rows, peek=None):
+        """Прокрутить viewport `vp_id` экрана `screen_name` так, чтобы ряд `row`
+        (из `rows` рядов равной высоты) был виден целиком плюс `peek` px соседа.
+        Равновысотность рядов позволяет считать геометрию от adjustment
+        (range + page = высота контента) без знания метрик шрифтов."""
+        if not rows:
+            return
+        vp = renpy.get_widget(screen_name, vp_id)
+        adj = getattr(vp, "yadjustment", None)
+        if adj is None:
+            return
+        rng, page = adj.range or 0, adj.page or 0
+        if rng <= 0 or page <= 0:
+            return                        # всё влезает — крутить нечего
+        if peek is None:
+            peek = gui.sp_xl
+        row_h = (rng + page) / float(rows)
+        top = row * row_h - peek
+        bottom = (row + 1) * row_h + peek
+        # Минимальный сдвиг: вниз — чтобы низ ряда (с peek) влез, вверх — верх
+        value = min(max(adj.value, bottom - page), max(top, 0))
+        if value != adj.value:
+            adj.change(max(0, min(value, rng)))
+
+
+## ── vn_modal_dialog: каркас модалки (аудит ui.md §2) ─────────────────────────
+##    modal/zorder при use НЕ наследуются (свойства показанного экрана) —
+##    потребитель обязан объявить их сам; каркас даёт затемнение, отмену по
+##    B/Esc (modal-экран глотает game_menu — без своего key кнопки мертвы)
+##    и рамку. Безопасная кнопка получает default focus через vn_button.
+
+screen vn_modal_dialog(cancel_action):
+    add Solid("#0000009e")
+    key "game_menu" action cancel_action
+    frame:
+        style "vn_dialog"
+        transclude
+
+style vn_dialog:
+    xalign 0.5
+    yalign 0.5
+    xsize 560
+    background Solid(gui.panel_bg)
+    padding (gui.sp_l + gui.sp_s, gui.sp_l + gui.sp_s)
+
+style vn_dialog_text:
+    font gui.interface_text_font
+    size gui.interface_text_size + 3
+    color gui.text_color
+    xalign 0.5
+    text_align 0.5
+    line_spacing gui.sp_s
+
+
+## ── vn_button(kind=primary|secondary|danger) ─────────────────────────────────
+##    focus_default: первый A с пада уходит в эту кнопку, а не «в пустоту»
+##    (аудит ui.md §3) — в модалках ставится на БЕЗОПАСНУЮ кнопку.
+
+screen vn_button(label=None, action=NullAction(), kind="primary", sensitive=True,
+                 focus_default=False):
     button:
         style ("vn_btn_" + kind)
         action action
         sensitive sensitive
+        default_focus focus_default
         if label is not None:
             text label style ("vn_btn_" + kind + "_text")
 
@@ -230,12 +315,35 @@ style vn_slot_delete_text:
     color gui.muted_color
     hover_color gui.text_color
 
-## ── vn_chapter_card: карточка главы (использует эмиттер chapter_select) ──────
+## ── vn_slider: слайдер настроек (токен-компонент, аудит ui.md §4) ────────────
+##    hover_/selected_-варианты обязательны: bar управляется grab-паттерном
+##    (A -> dpad -> A), и без смены цвета сфокусированный/захваченный слайдер
+##    неотличим от обычного — на паде это читается как «не работает».
 
-screen vn_chapter_card(ch):
+style vn_slider:
+    xsize 560
+    ysize 22
+    left_bar Solid(gui.accent_color)
+    right_bar Solid(gui.panel_border2)
+    thumb Transform(Solid(gui.text_color), xysize=(20, 20))
+    hover_left_bar Solid(gui.hover_color)
+    hover_right_bar Solid(gui.panel_bg_hover)
+    hover_thumb Transform(Solid(gui.hover_color), xysize=(20, 20))
+    selected_left_bar Solid(gui.hover_color)
+    selected_right_bar Solid(gui.panel_bg_hover)
+    selected_thumb Transform(Solid(gui.hover_color), xysize=(20, 20))
+
+
+## ── vn_chapter_card: карточка главы (использует эмиттер chapter_select) ──────
+##    row/rows — координаты в сетке chapter_select для vn_ui.reveal (прокрутка
+##    к фокусу); None — карточка вне скролла, колбэк не вешается.
+
+screen vn_chapter_card(ch, row=None, rows=None):
     button:
         style "vn_chapter_card"
         action Start(ch["entry_label"])
+        if row is not None:
+            hovered Function(vn_ui.reveal, "chapter_select", "vp_chapters", row, rows)
         vbox:
             fixed:
                 xsize gui.slot_width
@@ -251,7 +359,10 @@ screen vn_chapter_card(ch):
                 style "vn_slot_meta"
                 text vn_loc.t(ch["title_key"]) style "vn_chapter_title"
 
-style vn_chapter_card is vn_slot
+style vn_chapter_card is vn_slot:
+    # Жёсткая ширина карточки: vpgrid предлагает ячейке всю ширину ряда, и
+    # xfill-плашка заголовка (vn_slot_meta) растянулась бы на весь экран.
+    xsize gui.slot_width
 
 style vn_chapter_num:
     font gui.text_font

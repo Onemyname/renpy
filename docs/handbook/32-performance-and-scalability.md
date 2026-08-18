@@ -99,7 +99,7 @@ print('tl', s('game/tl')/1024, 'КБ'); print('vncache', s('.vncache')/1048576, 
 | Операция | Время | Условие |
 |---|---|---|
 | `vn build` | **0,3 с** | прогретый кэш ассетов и прогретый `.vncache/analyze-*.json` |
-| `python -m pytest tools/vn/tests -q` | **7,25 с** (замер 2026-08-08 на 152 тестах) | сейчас 240 тестов в 23 файлах |
+| `python -m pytest tools/vn/tests -q` | **7,25 с** (замер 2026-08-08 на 152 тестах) | сейчас 253 теста в 24 файлах |
 | `vn test smoke` (демо-контент) | ~15 с | 19 тиков × 0,6 с + старт |
 
 Холодная сборка дополнительно поднимает Ren'Py-мост (`renpy.exe <root> vn_analyze`, таймаут 300 с, `tools/vn/src/vn/content/analyze.py:57-61`) — отдельный запуск движка на **весь** набор сцен. Точное время здесь не замерялось; замерьте сами, удалив `.vncache/analyze-*.json` и засекя `vn build`.
@@ -523,7 +523,7 @@ vn release validate --flavor public       # 19 проверок, среди ни
 vn test smoke --picks 0,0                 # печатает «cold start ... c» и валит прогон при > 30 c
 vn assets cache --dry-run                 # объём кэша и сколько подметёт GC
 vn assets video validate                  # per-file бюджет 40 МБ + валидность лупов
-python -m pytest tools/vn/tests -q        # 240 тестов (RENPY_SDK задан)
+python -m pytest tools/vn/tests -q        # 253 теста (RENPY_SDK задан)
 # фактические размеры (см. «Быстрый ответ»):
 du -sh game/generated game/assets game/tl .vncache build/rpyc-cache
 ```

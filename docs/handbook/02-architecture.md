@@ -52,7 +52,7 @@ flowchart TB
     end
 
     subgraph DER["Производное (НЕ в git, перезаписывается)"]
-        GEN["game/generated/**<br/>19 *.gen.rpy + manifest.json"]
+        GEN["game/generated/**<br/>21 *.gen.rpy + manifest.json"]
         GA["game/assets/**<br/>bg cg mov spr ui"]
         TL["game/tl/**<br/>de en pseudo"]
         CACHE[".vncache/**<br/>кэш трансформаций + AST"]
@@ -105,7 +105,7 @@ flowchart TB
 | `content/` | Источник истины ядра: YAML-декларации + авторские `*.scene.rpy` | да | человек | — (кроме say-id от `vn loc keys`) |
 | `packs/<id>/` | DLC: дерево, зеркалящее `content/`; принадлежность — по расположению (C10) | да | человек | — |
 | `game/framework/` | Рукописный Ren'Py-код надстройки | да | человек | — |
-| `game/generated/` | 19 `*.gen.rpy` + `manifest.json` | **нет** (`.gitignore:2`) | `vn build` | `vn build`, `vn content compile` |
+| `game/generated/` | 21 `*.gen.rpy` + `manifest.json` | **нет** (`.gitignore:2`) | `vn build` | `vn build`, `vn content compile` |
 | `game/assets/` | Собранные ассеты: `bg cg mov spr ui` | **нет** (`.gitignore:3`) | `vn assets build` | `vn assets build`, `vn build` |
 | `game/tl/` | Переводы `de/en/pseudo` | **нет** (`.gitignore:4`) | `vn loc import` | `vn loc import`, `vn build` |
 | `game/fonts/` | Единственный разрешённый бинарь в `game/`, в LFS | да | человек | — |
@@ -157,10 +157,10 @@ flowchart TB
 
 | Слой | Файлы | Роль |
 |---|---|---|
-| `00_core/` | `001_boot`, `010_registry`, `020_state`, `030_flow`, `040_localization`, `050_build_bridge`, `060_build_info`, `070_crash`, `080_achievements`, `090_gallery` | Ядро: фасад `vn.*`, состояние, локализация, мост к компилятору, достижения, галерея |
+| `00_core/` | `001_boot`, `010_registry`, `020_state`, `030_flow`, `035_platform`, `040_localization`, `045_audio`, `050_build_bridge`, `060_build_info`, `070_crash`, `080_achievements`, `090_gallery`, `095_quality` | Ядро: фасад `vn.*`, состояние, платформенный слой, локализация, аудио, мост к компилятору, достижения, галерея, качество текстур |
 | `00_core/engine_compat/` | `000_compat.rpy` | **Единственный** модуль, которому разрешено касаться недокументированных API движка (G18) |
 | `10_systems/` | только `README.md` | Механики как плагины — **NOT IMPLEMENTED**, «появятся в фазе 1–2» |
-| `20_ui/` | `components.rpy`, `images.rpy`, `screens/{build_overlay,choice,core_screens,crash_screen,gallery,history,quick_menu}.rpy` | Компоненты и экраны; `screens/choice.rpy` — экран выборов (C1) |
+| `20_ui/` | `components.rpy`, `images.rpy`, `scale.rpy`, `input.rpy`, `screens/{build_overlay,choice,core_screens,crash_screen,gallery,history,quick_menu,unavailable}.rpy` | Компоненты и экраны; `screens/choice.rpy` — экран выборов (C1); `scale.rpy` — токены `gui.ui_scale`/`gui.overscan_pad`, `input.rpy` — единственное место дополнений `config.pad_bindings` ([39](39-platforms.md)) |
 | `90_debug/` | `010_dev.rpy`, `020_jump_menu.rpy` | Консоль и Shift+J-меню прыжков; исключаются из релиза через `build.classify` в `game/options.rpy:24-26` |
 
 **Правило «`00_core` не знает ни одной главы».** Проверено: `grep -rn "ch[0-9][0-9]"
@@ -199,20 +199,23 @@ game/framework/ --include=*.rpy` даёт ровно два попадания, 
 | `-985` | `vn_build` — метаданные флейвора | `060_build_info.rpy:10` |
 | `-980` | Named stores генерата + `vn_ach` + `vn_gal` | `state/defaults.gen.rpy:10,13`, `080_achievements.rpy:12`, `090_gallery.rpy:20` |
 | `-970` | `SNAPSHOT_VARS` / `SNAPSHOT_STORES` | `state/snapshot.gen.rpy:8` |
-| `-960` | Цепочка миграций | `state/migrations.gen.rpy:7` |
+| `-960` | Цепочка миграций; store `vn_platform` (фасад платформы, ADR-0014) | `state/migrations.gen.rpy:7`, `035_platform.rpy:16` |
 | `-950` | `engine_compat`, обработчик крэшей | `engine_compat/000_compat.rpy:5`, `070_crash.rpy:10` |
 | `offset = -900` | `config.version` | `version.gen.rpy:6` |
 | `-100` / `offset = -100` | Данные реестров: chapters, scenes, menus, achievements, gallery, `config.label_overrides` | `registry/{chapters,scenes,menus,achievements,gallery}.gen.rpy`, `registry/overrides.gen.rpy:7` |
-| `offset = 0` | UI-компоненты и экраны, `layeredimage`/`image`, `Frame`-панели | `20_ui/**`, `registry/images.gen.rpy:7`, `registry/ui_frames.gen.rpy:7` |
+| `-4` / `offset = -3` | Хелпер `gui.vn_ui_scale()`, затем токены `gui.ui_scale` и `gui.overscan_pad` — **до** `gui.rpy` (`offset = -2`), который на них умножает кегли | `20_ui/scale.rpy:15,35-42` |
+| `offset = 0` | UI-компоненты и экраны, `layeredimage`/`image`, `Frame`-панели, дополнения `config.pad_bindings` | `20_ui/**`, `20_ui/input.rpy:19`, `registry/images.gen.rpy:7`, `registry/ui_frames.gen.rpy:7` |
 | `offset = 500` | Контентные `define`: аудио, персонажи | `registry/audio.gen.rpy:8`, `registry/characters.gen.rpy:7` |
-| `999` | Пересборка рантайм-реестра языков | `040_localization.rpy:131` |
+| `999` | Пересборка рантайм-реестра языков; подключение платформенных провайдеров (ownership + ачивки) — реестры уже загружены, Steam уже инициализирован движком | `040_localization.rpy:131`, `035_platform.rpy:71` |
 
 **Расхождения с C8, зафиксированные честно (IMPLEMENTED с дрейфом):**
 
 - C8 отводит `build_info` уровень −900; реально `vn_build` сидит на −985, а слот −900 занят
   `version.gen.rpy` (`init offset = -900`).
 - Уровень −995 (`vn_lang`/`vn_loc`) в C8 не описан вовсе — он введён [ADR-0005](../adr/0005-language-packages-and-runtime-registry.md).
-- «DLC-слоты 999» из C8 никем не используются: 999 занят пересборкой реестра языков.
+- «DLC-слоты 999» из C8 наконец используются по назначению: на 999 вместе с пересборкой реестра
+  языков живёт подключение платформенных провайдеров ([ADR-0014](../adr/0014-platform-services.md),
+  `035_platform.rpy:71-89`) — ownership-гейт паков и синк ачивок.
 - `image`- и `layeredimage`-стейтменты имеют базовый приоритет 500 внутри движка, поэтому
   `registry/images.gen.rpy` намеренно ставит `init offset = 0` (`tools/vn/src/vn/content/images.py:52-55`) —
   не «исправляйте» это на 500.
@@ -235,7 +238,7 @@ game/framework/ --include=*.rpy` даёт ровно два попадания, 
 | **G6** | :63 | `.rpyc` генерата — релизный артефакт: подкладывается перед компиляцией следующего релиза; очистка `generated/` точечная по диффу манифеста; полный wipe только в release-CI | IMPLEMENTED; кэш `build/rpyc-cache/<version>/` ключуется только версией, не флейвором |
 | **G7** | :65 | Идентификаторы: id сцены `chNN_sNNN`, слуг только в имени файла; id неизменяемы навсегда; переименование = `renames.yaml` → `config.label_overrides` + физическая shim-метка; `config.missing_label` не существует; инвариант call-стека (глубина 0 на входе в сцену) | IMPLEMENTED; защита «выпущенный id исчез» инертна — `id_registry.json` пуст |
 | **G8** | :67 | Локализация поверх `scene.rpy`: `vn loc keys` дописывает id-клаузы парсером Ren'Py; у menu-пунктов клаузы `id` нет — перевод выборов через lookup по choice-id; обмен — gettext PO с msgctxt; ledger шардирован по главам; `game/tl/` генерируется | IMPLEMENTED (включая голос: озвучка привязана к тем же say-id, `config.auto_voice` не используется — см. C5) |
-| **G9** | :69 | DLC: скрипты всех паков грузятся всегда; владение — логический гейт после инициализации Steam через `pack_registry.owned()`; манифест пака несёт `api_level` фасада `vn.*`; каждый релиз ядра переиздаёт все DLC-депоты | PARTIAL: `api_level` и `owned()` есть, провайдер владения не подключён — `owned()` всегда True |
+| **G9** | :69 | DLC: скрипты всех паков грузятся всегда; владение — логический гейт после инициализации Steam через `pack_registry.owned()`; манифест пака несёт `api_level` фасада `vn.*`; каждый релиз ядра переиздаёт все DLC-депоты | PARTIAL: `api_level` и `owned()` IMPLEMENTED; провайдер владения **подключён** [ADR-0014](../adr/0014-platform-services.md) (`035_platform.rpy:75`, `steam_dlc_appid` в манифесте, fail-open) — но только при живом Steam, вне него `owned()` = True. Переиздание всех DLC-депотов на релиз и депот пака как товара — NOT IMPLEMENTED ([39](39-platforms.md), [30](30-packs-and-dlc.md)) |
 | **G10** | :71 | Моды: инжекты только на реестр стабильных якорей; подпись отделена от проверки совместимости; Mod SDK — фаза 3, но формат паков мод-совместим с первого дня | NOT IMPLEMENTED: `content/anchors.yaml` пуст и никем не читается |
 | **G11** | :73 | layeredimage-эмиттер: `attribute X default Null()`, гейтинг `if_any`/`if_all`, у каждого attribute явный displayable; golden-тесты через `renpy compile`+lint; тонировка через генерируемый `config.tag_layer` + `camera sprites` | PARTIAL: эмиттер и `config.tag_layer` есть; golden-тестов нет (ноль тестов, запускающих SDK) |
 | **G12** | :75 | Live2D/Spine: один тег = одно определение image; prebaked fallback обязателен для 100 % анимированных персонажей; проприетарные рантаймы вендорятся; экспортированные секвенции — самостоятельные сырцы в S3 | NOT IMPLEMENTED (фаза 3); зоны `assets_src/{live2d,spine_export}/` заведены пустыми |
@@ -383,7 +386,7 @@ game/framework/ --include=*.rpy` даёт ровно два попадания, 
 vn content lint                        # 34 правила + сверка раскладки каталогов
 vn build --check                       # CI-режим: ничего не пишет, проверяет свежесть генерата
 vn content graph                       # mermaid-граф сцен (только content/, паки не видны)
-python -m pytest tools/vn/tests -q     # 240 passed
+python -m pytest tools/vn/tests -q     # 253 passed
 grep -rn "^init " game/framework/ game/generated/ | sort   # ручная сверка init-шкалы с § 5
 grep -rn "ch[0-9][0-9]" game/framework/ --include=*.rpy    # должны остаться только 2 комментария
 ```
@@ -393,7 +396,7 @@ grep -rn "ch[0-9][0-9]" game/framework/ --include=*.rpy    # должны ост
 | | |
 |---|---|
 | **Читать перед изменением** | `docs/ARCHITECTURE.md` § 0 (строки 36–201), `docs/conventions/folder-layout.md`, `docs/conventions/naming.md`, `tools/vn/src/vn/content/lint.py`, `CODEOWNERS` |
-| **Не трогать** | `game/generated/**` (19 `*.gen.rpy` + `manifest.json`), `game/assets/**`, `game/tl/**`, `.vncache/**`, `build/**` — производные зоны; `docs/ARCHITECTURE.md` — только через ADR |
+| **Не трогать** | `game/generated/**` (21 `*.gen.rpy` + `manifest.json`), `game/assets/**`, `game/tl/**`, `.vncache/**`, `build/**` — производные зоны; `docs/ARCHITECTURE.md` — только через ADR |
 | **Зависимости** | Правка `content/**` → перегенерация `game/generated/**` → перекомпиляция `.rpyc` → потенциальный слом сейвов; правка `assets_src/**` → `game/assets/**` → `registry/images.gen.rpy`; правка `content/ui/panels.yaml` → `game/assets/ui/*.webp` + `registry/ui_frames.gen.rpy`; правка `loc/po/**` → `game/tl/**` |
 | **Валидация** | `vn content lint && vn build && python -m pytest tools/vn/tests -q` |
 | **Частые ошибки** | 1) считать текст `ARCHITECTURE.md` описанием кода — сверяйтесь с § 6 и § 7; 2) переименовывать сцену через `git mv` вместо `renames.yaml`; 3) писать в `game/generated/`; 4) добавлять YAML-ключ без правки схемы (`additionalProperties: false`); 5) вводить `chNN`-идентификатор в `game/framework/00_core/` — ядро глав не знает; 6) ожидать, что `vn content graph` покажет главы из `packs/` — он сканирует только `content/chapters/` |

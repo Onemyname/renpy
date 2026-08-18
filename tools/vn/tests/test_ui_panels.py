@@ -36,10 +36,16 @@ class _Gui:
     """Пространство имён для eval выражений вида 'gui.sp_l - 6'."""
 
 
-def _load_gui_tokens(gui_rpy):
+def _load_gui_tokens(gui_rpy, ui_scale=1.0):
     """gui.rpy -> объект с атрибутами gui.*: экраны считают размеры от них,
-    поэтому тест обязан читать те же числа, а не дублировать константы."""
+    поэтому тест обязан читать те же числа, а не дублировать константы.
+
+    ui_scale — множитель интерфейсных кеглей (20_ui/scale.rpy вычисляет его в
+    рантайме из persistent/платформы; define в gui.rpy на него не eval'ится) —
+    сеем до парса. База 1.0 = геометрия монитора; scale.rpy гарантирует >= 1.0,
+    так что минимумы 2*Borders проверяются на ХУДШЕМ (наименьшем) случае."""
     gui = _Gui()
+    gui.ui_scale = ui_scale
     for line in gui_rpy.read_text(encoding="utf-8").splitlines():
         m = _DEFINE_RE.match(line.strip())
         if not m:
@@ -241,7 +247,8 @@ def test_repo_panels_declaration_is_valid(repo_root):
         assert t + b <= 60, f"панель {pid}: минимум {t + b}px выше кнопки — сплющит фон"
 
 
-def test_every_frame_consumer_is_not_smaller_than_2x_borders(repo_root):
+@pytest.mark.parametrize("ui_scale", [1.0, 1.4])
+def test_every_frame_consumer_is_not_smaller_than_2x_borders(repo_root, ui_scale):
     """Главная ловушка ADR-0009 со стороны ПОТРЕБИТЕЛЯ: элемент меньше 2*Borders
     заставляет движок сжать 9-patch, и кнопка превращается в тонкую пилюлю.
     Декларацию проверяет тест выше, но сплющивает вёрстку не она, а пара
@@ -250,11 +257,15 @@ def test_every_frame_consumer_is_not_smaller_than_2x_borders(repo_root):
 
     Высота текста берётся по метрикам шрифта из репозитория — это оценка того,
     что посчитает Ren'Py, а не сам движок. Ось, которую задаёт содержимое
-    (текст без xsize/xfill), не проверяется: её ширину знает только рантайм."""
+    (текст без xsize/xfill), не проверяется: её ширину знает только рантайм.
+
+    Прогон при ui_scale 1.4 («крупный», scale.rpy) ловит регресс связки
+    «кегль x масштаб vs Borders» — токены растут, минимумы должны выполняться
+    и в крупном профиле."""
     from vn.repo import load_yaml
 
     panels = load_yaml(repo_root / "content" / "ui" / "panels.yaml")["panels"]
-    gui = _load_gui_tokens(repo_root / "game" / "gui.rpy")
+    gui = _load_gui_tokens(repo_root / "game" / "gui.rpy", ui_scale=ui_scale)
     styles = _load_styles(sorted((repo_root / "game").rglob("*.rpy")))
 
     consumers = _frame_consumers(styles)
@@ -279,6 +290,31 @@ def test_every_frame_consumer_is_not_smaller_than_2x_borders(repo_root):
                 f"панели {pid} — движок сожмёт фон (ADR-0009)")
 
     assert not unchecked, f"высота не выводится, посчитайте вручную: {unchecked}"
+
+
+def test_ui_scale_grows_interface_tokens_only(repo_root):
+    """Масштаб интерфейса (20_ui/scale.rpy): интерфейсные кегли gui.rpy обязаны
+    сидеть на множителе gui.ui_scale (иначе профиль «крупный» молча перестанет
+    работать), диалоговые — НЕ масштабироваться (они проходят пороги Deck/ТВ),
+    и ни один токен не имеет права УМЕНЬШИТЬСЯ (минимумы 2*Borders панелей)."""
+    base = _load_gui_tokens(repo_root / "game" / "gui.rpy", ui_scale=1.0)
+    big = _load_gui_tokens(repo_root / "game" / "gui.rpy", ui_scale=1.4)
+
+    scaled = ("interface_text_size", "button_text_size", "small_text_size",
+              "tiny_text_size", "choice_text_size", "group_text_size")
+    for name in scaled:
+        assert getattr(big, name) > getattr(base, name), (
+            f"gui.{name}: не растёт с gui.ui_scale — кегль выпал из множителя")
+
+    for name in ("text_size", "name_text_size", "label_text_size",
+                 "title_text_size"):
+        assert getattr(big, name) == getattr(base, name), (
+            f"gui.{name}: диалоговый кегль не должен зависеть от ui_scale")
+
+    for name, value in vars(base).items():
+        if isinstance(value, (int, float)) and not name.startswith("_"):
+            assert getattr(big, name, value) >= value, (
+                f"gui.{name}: уменьшился при ui_scale>1 — сплющит 9-patch")
 
 
 def test_gallery_chips_fit_their_small_buttons(repo_root):

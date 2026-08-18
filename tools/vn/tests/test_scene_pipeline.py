@@ -295,6 +295,20 @@ def test_emit_scene_wrapper():
     assert unit.rpy_text.strip() in text                # авторский источник скопирован
 
 
+def test_emit_chapter_select_scrolls_with_pad():
+    """chapter_select (C14): сетка обязана жить в vpgrid со скролл-пресетом
+    vn_scroll_props и reveal-координатами карточек — прежний hbox box_wrap
+    молча прятал главы за низом экрана при росте корпуса, и они были
+    недостижимы ЛЮБЫМ вводом (аудит controller-first, P1 №9)."""
+    text = sc.emit_chapter_select("# h\n")
+    assert 'vpgrid id "vp_chapters"' in text
+    assert "properties vn_scroll_props" in text
+    assert "ysize gui.scroll_height" in text
+    # Карточка получает row/rows — без них vn_ui.reveal не докрутит сетку к фокусу
+    assert "use vn_chapter_card(ch, _i // 3, _rows)" in text
+    assert "box_wrap" not in text
+
+
 def test_emit_scene_location():
     locations = {"gate": {"id": "gate", "backgrounds": {"day": "assets/bg/gate/day.webp"}}}
     rep = sc.SceneCompileReport()

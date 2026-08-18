@@ -130,6 +130,28 @@ def _emit_render(root: Path, sources) -> str:
     )
 
 
+def _emit_platform(project: dict, packs: dict[str, dict], sources) -> str:
+    """Платформенный конфиг (ADR-0014): App ID и карта DLC-владения — данные.
+
+    config.steam_appid обязан задаваться define-стейтментом: движок собирает
+    define config.* ДО ранних init (steam_init работает на init -1499 —
+    раньше любого пользовательского кода). appid = None => движок сам удаляет
+    steam_appid.txt и не трогает Steam. Рантайм-провайдеры подключает
+    framework/00_core/035_platform.rpy — единственная точка касания Steam."""
+    steam = (project.get("platform") or {}).get("steam") or {}
+    appid = steam.get("appid")
+    dlc = {pid: m["steam_dlc_appid"] for pid, m in sorted(packs.items())
+           if m.get("steam_dlc_appid")}
+    return _header(sources) + (
+        "# App ID публичен (не секрет). None = Steam выключен: движок пропускает\n"
+        "# инициализацию и удаляет steam_appid.txt (защита от чужого appid).\n"
+        f"define config.steam_appid = {appid!r}\n\n"
+        "# pack_id -> Steam DLC App ID: владение проверяет платформенный провайдер\n"
+        "# (vn_platform), паки без маппинга гейтятся только установленностью (G9).\n"
+        f"define VN_STEAM_DLC = {dlc!r}\n"
+    )
+
+
 def _emit_defaults(project: dict, var_docs: list[tuple[str, dict]], sources) -> str:
     stores = sorted({doc["store"] for _, doc in var_docs if doc["store"] != "persistent"})
     out = [_header(sources)]
@@ -1111,6 +1133,7 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "registry/images.gen.rpy": images_out,
         "version.gen.rpy": _emit_version(project, git_sha(root), [proj_src]),
         "render.gen.rpy": _emit_render(root, [proj_src]),
+        "platform.gen.rpy": _emit_platform(project, packs, [proj_src]),
         "state/defaults.gen.rpy": _emit_defaults(project, var_docs, [proj_src] + var_sources),
         "state/snapshot.gen.rpy": _emit_snapshot(var_docs, [proj_src] + var_sources),
         "state/migrations.gen.rpy": _emit_migrations(migrations, [proj_src]),

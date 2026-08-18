@@ -87,7 +87,7 @@ vn release build --flavor public  # сборка -> гейт (19 проверо�
 
 | Процесс | Команда / триггер | Что делает | Статус |
 |---|---|---|---|
-| Юнит-тесты тулинга | `python -m pytest tools/vn/tests -q` | 240 тестов в 23 файлах. На машине без `RENPY_SDK` и ffmpeg 17 из них скипаются | IMPLEMENTED — но CLI покрыт почти никак: из `cli.py` (1643 строки) тестами закрыта одна команда `pack build` (`test_release.py:141-192`, через `CliRunner`); `analyze.py`, `scaffold.py`, `psd.py`, `devloop.py` не импортирует ни один тест |
+| Юнит-тесты тулинга | `python -m pytest tools/vn/tests -q` | 253 теста в 24 файлах. На машине без `RENPY_SDK` и ffmpeg 18 из них скипаются | IMPLEMENTED — но CLI покрыт почти никак: из `cli.py` (1643 строки) тестами закрыта одна команда `pack build` (`test_release.py:141-192`, через `CliRunner`); `analyze.py`, `scaffold.py`, `psd.py`, `devloop.py` не импортирует ни один тест |
 | Smoke-автопилот | `vn test smoke [--picks] [--lang] [--timeout]` | Пишет временный `game/generated/qa/autopilot.gen.rpy`, запускает движок с `VN_AUTOPILOT=1`, тикает раз в 0.6 с (скриншот + `dismiss`), выбирает пункты меню по индексам, пишет `RESULT.txt`/`state.json`/`gallery.json`/`picks.log` в `.vncache/smoke/`. Никакого синтетического ввода на рабочий стол — всё in-process | IMPLEMENTED — `cli.py:1285-1401`, рантайм `game/framework/00_core/030_flow.rpy:91-211` |
 | Бюджет холодного старта | внутри `vn test smoke` | Читает `startup.txt`, падает при превышении `budgets.cold_start_s` (30 с) | IMPLEMENTED — `cli.py:1386-1392`. В релизном гейте этой проверки **нет** |
 | Проверка сейв-фикстур | `vn save check` | Оффлайн: открывает каждый `ci/fixtures/saves/*.save` как zip, читает член `json`, требует целый `vn_save_schema` | IMPLEMENTED — `cli.py:1099-1124` |
@@ -301,13 +301,13 @@ vn release build --flavor public  # сборка -> гейт (19 проверо�
 **Expected benefit:** нулевой при команде из одного человека: лок защищает от коллеги, которого нет. Становится обязательным ровно в день появления второго художника.
 **Implementation idea:** `storage.py:99-118`. Файловый бэкенд чинится одной строкой — `open(path, "x")` вместо `write_text`.
 
-### Ownership provider для паков (Steam)
+### Фильтрация `VN_PACKS` по флейвору (ownership-провайдер — уже сделан)
 
-**Current state:** NOT IMPLEMENTED. `pack_registry.set_ownership_provider` определён (`game/framework/00_core/030_flow.rpy:73`), но **никто его не вызывает** — `owned()` возвращает True для всего, что попало в `VN_PACKS`. Хуже: `VN_PACKS` компилятор наполняет **всеми** паками из `packs/` независимо от флейвора (`tools/vn/src/vn/content/scenes.py:287-295`), поэтому public-сборка считает пак `nsfw` установленным и купленным. Безобидно только потому, что `packs/nsfw/chapters/` содержит один `.gitkeep`. `vn release steam` — заглушка фазы 3 (`cli.py:1565`).
-**Potential automation:** провайдер, спрашивающий платформу; плюс — независимо и куда важнее — фильтрация `VN_PACKS` по списку `packs` флейвора.
-**Priority:** **P3** (сам провайдер), но фильтрация `VN_PACKS` по флейвору — **P2**, это не автоматизация, а баг
-**Expected benefit:** до появления аккаунта партнёра Steam провайдер писать не на чем. Фильтрация же нужна до первой NSFW-главы, иначе public-сборка покажет запертую дверь туда, куда её не должно вести.
-**Implementation idea:** фильтрация — `tools/vn/src/vn/content/scenes.py:287-295` + чтение `vn_build.packs`, которое уже пишется в `build_id.json` (`release.py:249`) и уже выставлено в рантайм (`060_build_info.rpy:10-40`), но не читается никем.
+**Current state:** ownership-провайдер **IMPLEMENTED** ([ADR-0014](../adr/0014-platform-services.md)): `pack_registry.set_ownership_provider` вызывается в `game/framework/00_core/035_platform.rpy:75` на `init 999` при живом Steam, маппинг — `steam_dlc_appid` в манифесте пака, `vn release steam` генерирует VDF и раскладку депотов ([39-platforms.md](39-platforms.md)). Осталась **другая** и более важная дыра: `VN_PACKS` компилятор наполняет **всеми** паками из `packs/` независимо от флейвора (`tools/vn/src/vn/content/scenes.py:287-295`), поэтому public-сборка считает пак `nsfw` установленным, а вне Steam ещё и купленным. Безобидно только потому, что `packs/nsfw/chapters/` содержит один `.gitkeep`.
+**Potential automation:** фильтрация `VN_PACKS` по списку `packs` флейвора на этапе компиляции (или чтение `vn_build.packs` в `_PackRegistry.installed()`).
+**Priority:** **P2** — это не автоматизация, а баг
+**Expected benefit:** нужна до первой NSFW-главы, иначе public-сборка покажет запертую дверь туда, куда её не должно вести.
+**Implementation idea:** `tools/vn/src/vn/content/scenes.py:287-295` + чтение `vn_build.packs`, которое уже пишется в `build_id.json` (`release.py:249`) и уже выставлено в рантайм (`060_build_info.rpy:10-40`), но не читается никем.
 
 ## Сводная таблица приоритетов
 

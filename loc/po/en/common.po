@@ -546,6 +546,31 @@ msgctxt "string:ui.prefs.quality_eco"
 msgid "Экономное"
 msgstr "Economy"
 
+#. UI/мета-строка
+msgctxt "string:ui.file.quickpage"
+msgid "Быстрые"
+msgstr "Quick"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.scale_auto"
+msgid "Авто"
+msgstr "Auto"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.scale_large"
+msgid "Крупный"
+msgstr "Large"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.scale_normal"
+msgid "Обычный"
+msgstr "Normal"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.ui_scale"
+msgid "Масштаб интерфейса"
+msgstr "Interface scale"
+
 #~ msgctxt "string:ui.flow.return_to_menu"
 #~ msgid "Возврат в главное меню."
 #~ msgstr "Returning to the main menu."

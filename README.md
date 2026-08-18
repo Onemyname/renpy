@@ -39,7 +39,22 @@
 | Галерея/ачивки | декларации + авто-анлок фактом просмотра (`persistent._seen_images`) |
 | Паки/DLC | `packs/<id>/` зеркалит `content/`; владение — логический гейт `pack_registry.owned()` |
 | QA | автопилот внутри процесса игры (скриншоты, smoke, сейв-корпус с миграциями), бюджеты перфа в CI |
-| Релиз | флейворы (public/patron) из `project.yaml`, релизный гейт `vn release validate`, ассеты россыпью ради Steam-дельта-патчей |
+| Платформы | Platform Services ([ADR-0014](docs/adr/0014-platform-services.md)): Steam/Deck/Big Picture — одна из реализаций, а не фундамент; ачивки и владение DLC через провайдеры, controller-first UI, авто-масштаб интерфейса |
+| Релиз | флейворы (public/patron) из `project.yaml`, релизный гейт `vn release validate`, депоты `vn release steam`, ассеты россыпью ради Steam-дельта-патчей |
+
+## Платформы
+
+| Платформа | Состояние |
+|---|---|
+| Windows / Linux / macOS standalone | поддерживается; Steam не требуется |
+| Steam | штатный стек Ren'Py (без сторонних биндингов): ачивки, DLC-владение, оверлей; включается App ID в `project.yaml` + редистрибутив Valve на build-машине |
+| Steam Deck | controller-first UI, авто-масштаб интерфейса, экранная клавиатура движка |
+| Big Picture / ТВ | крупная типографика, safe-area, полноэкранный дефолт |
+| Android / APK | не реализовано; рантайм к этому подготовлен (ноль сети и subprocess, файловый ввод через loader) |
+
+Новая платформа = новый провайдер в `game/framework/00_core/035_platform.rpy`
+плюс конфиг: ядро, контент и UI не трогаются (подробно —
+[handbook: платформы](docs/handbook/39-platforms.md)).
 
 ## Быстрый старт
 

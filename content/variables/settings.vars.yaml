@@ -8,3 +8,8 @@ vars:
     default: null
     doc: "Потолок качества текстур: null = авто (потолок сборки), 1 = без @N-вариантов (00_core/095_quality.rpy)"
     since: 2
+  vn_ui_scale:
+    type: str
+    default: null
+    doc: "Масштаб интерфейсных кеглей: null = авто (крупный на Steam Deck/Big Picture), 'normal' = 1.0, 'large' = крупный (20_ui/scale.rpy)"
+    since: 2

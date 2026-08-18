@@ -567,7 +567,7 @@ vn loc report          # 5. покрытие: "en: 115/115 (100%), fuzzy: 0"
 | `vn content graph` | видит | **не видит** (`graph.py:15`) |
 | Куда компилируется | `game/generated/scenes/chNN/` | **туда же** — общее пространство имён; конфликт id ядра и пака = ошибка компиляции (`compile.py:524-526`) |
 | `vn release changelog` / `ci/release-manifest.json` | видит | **не видит** (`release.py:124-139`) — глава пака никогда не попадёт в changelog и в `id_registry.json` |
-| Гейт по флейвору | — | **NOT IMPLEMENTED**: `VN_PACKS` перечисляет все паки из `packs/` независимо от `flavors.<f>.packs`, а `pack_registry.owned()` без провайдера всегда `True` |
+| Гейт по флейвору | — | **NOT IMPLEMENTED**: `VN_PACKS` перечисляет все паки из `packs/` независимо от `flavors.<f>.packs`. Владение при этом гейтится: провайдер подключён (ADR-0014, `035_platform.rpy:75`), но только под Steam — вне него `owned()` всегда `True` |
 | Поставка | вместе с игрой | `vn pack build <id>` → `build/packs/<id>.zip`: только `manifest.yaml` + скомпилированные `.gen.rpy`/`.rpyc` сцен. Ни ассетов, ни `tl/`, ни персонажей — **PARTIALLY IMPLEMENTED**. Охранник «объявлены главы, но нет ни одной скомпилированной сцены» рабочий и падает до создания zip (`cli.py:1624-1626`); пак без глав собирается штатно с предупреждением. Остаток: проверка идёт «хоть одна сцена на весь пак», не по каждой главе |
 
 Практически: главу пака пишете тем же контрактом (метки, exits, say-id — всё идентично, `vn loc keys` и `vn loc extract` паки видят, `keys.py:48-49`), но скаффолдинг, граф и changelog делаете вручную и проверяете `vn pack validate`.
@@ -622,7 +622,7 @@ vn test smoke --picks 0,0                # прогон ветки автопи�
 vn test smoke --picks 0,1 --lang en
 vn save check && vn save corpus          # совместимость сейвов (2 фикстуры)
 vn release validate --flavor public      # 19 проверок релизного гейта
-python -m pytest tools/vn/tests -q       # 240 тестов тулинга
+python -m pytest tools/vn/tests -q       # 253 теста тулинга
 ```
 
 Ожидаемое сейчас: `vn content lint` → `lint: OK (0 предупреждений)`; `vn build` → `build: OK`; `vn release validate --flavor public` → 16 PASS, exit 0 (среди них — `PASS сейв-корпус: 2 фикстур`).

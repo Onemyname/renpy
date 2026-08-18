@@ -83,12 +83,15 @@ screen navigation():
                     add Solid(gui.accent_color) xysize (22, 4) yalign 0.8
                 vbox:
                     spacing gui.sp_xs
+                    # default_focus: первый A с пада попадает в первый пункт
+                    # рельсы, а не «в пустоту» (аудит ui.md §3); модалки
+                    # поверх перебивают его своим default focus.
                     if main_menu:
-                        textbutton vn_loc.t("ui.nav.start") action Start() style "vn_nav_button"
+                        textbutton vn_loc.t("ui.nav.start") action Start() style "vn_nav_button" default_focus True
                         if vn_registry.chapters():
                             textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select") style "vn_nav_button"
                     else:
-                        textbutton vn_loc.t("ui.nav.save") action ShowMenu("save") style "vn_nav_button"
+                        textbutton vn_loc.t("ui.nav.save") action ShowMenu("save") style "vn_nav_button" default_focus True
                     textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_nav_button"
                     textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_nav_button"
                     # Галерея (ADR-0010): доступна из обоих контекстов; пункт
@@ -167,15 +170,18 @@ screen main_menu():
         ypos 1080 - 140
         spacing gui.sp_s + 2
         $ _newest = renpy.newest_slot()
+        # default_focus (аудит ui.md §3): на ТВ/Deck первый A продолжает игру
+        # (или начинает новую) — вместо «ничего не произошло».
         if _newest is not None:
             button:
                 style "vn_main_continue"
                 action Continue(confirm=False)
+                default_focus True
                 vbox:
                     spacing gui.sp_xs + 1
                     text vn_loc.t("ui.nav.continue") style "vn_main_continue_text"
                     text FileTime(_newest, format=vn_loc.t("ui.file.time_format")) style "vn_main_meta"
-        textbutton vn_loc.t("ui.nav.start") action Start() style "vn_main_item"
+        textbutton vn_loc.t("ui.nav.start") action Start() style "vn_main_item" default_focus (_newest is None)
         if vn_registry.chapters():
             textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select") style "vn_main_item"
         textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_main_item"
@@ -234,6 +240,9 @@ screen file_menu(title, is_save):
         hbox:
             spacing gui.sp_xs
             textbutton vn_loc.t("ui.file.autopage") action FilePage("auto") style "vn_page_button"
+            # Страница квиксейвов (аудит ui.md P0 №5): QuickSave() пишет на
+            # страницу "quick" — без пункта в пейджере её нельзя было загрузить.
+            textbutton vn_loc.t("ui.file.quickpage") action FilePage("quick") style "vn_page_button"
             for p in range(1, 5):
                 textbutton "[p]" action FilePage(p) style "vn_page_button"
         grid 3 2:
@@ -310,6 +319,27 @@ screen preferences():
                             action Function(vn.set_quality_cap, 1)
                             selected vn.quality_cap() == 1
                             style "vn_seg_button"
+                vbox:
+                    spacing gui.sp_m
+                    # Масштаб интерфейса (20_ui/scale.rpy): «авто» следует
+                    # платформе (Deck/Big Picture -> крупный), выбор игрока
+                    # применяется на лету через gui.rebuild().
+                    $ _g6 = vn_loc.t("ui.prefs.ui_scale").upper()
+                    text _g6 style "vn_group"
+                    hbox:
+                        spacing gui.sp_xs
+                        textbutton vn_loc.t("ui.prefs.scale_auto"):
+                            action Function(vn.set_ui_scale, None)
+                            selected vn.ui_scale_pref() is None
+                            style "vn_seg_button"
+                        textbutton vn_loc.t("ui.prefs.scale_large"):
+                            action Function(vn.set_ui_scale, "large")
+                            selected vn.ui_scale_pref() == "large"
+                            style "vn_seg_button"
+                        textbutton vn_loc.t("ui.prefs.scale_normal"):
+                            action Function(vn.set_ui_scale, "normal")
+                            selected vn.ui_scale_pref() == "normal"
+                            style "vn_seg_button"
                 use language_picker
 
 # Ряд «подпись + слайдер»: bar со штатным value-действием Preference(...)
@@ -324,12 +354,8 @@ style vn_pref_label:
     size gui.interface_text_size - gui.sp_xs
     color gui.sub_color
 
-style vn_slider:
-    xsize 560
-    ysize 22
-    left_bar Solid(gui.accent_color)
-    right_bar Solid(gui.panel_border2)
-    thumb Transform(Solid(gui.text_color), xysize=(20, 20))
+# style vn_slider переехал в components.rpy (токен-компонент с hover-индикацией
+# фокуса — аудит ui.md §4).
 
 style vn_seg_button:
     padding (gui.sp_l - 6, gui.sp_m - gui.sp_xs)
@@ -368,24 +394,20 @@ screen language_picker():
         frame:
             style "vn_lang_panel"
             viewport id "vp_languages":
-                mousewheel True
-                draggable True
-                pagekeys True
-                scrollbars "vertical"
+                properties vn_scroll_props
                 xsize 460
                 ymaximum 420
                 yinitial (_sel / float(max(1, len(_langs) - 1)))
-                vscrollbar_unscrollable "hide"
-                vscrollbar_base_bar Solid(gui.panel_bg_deep)
-                vscrollbar_thumb Solid(gui.panel_border2)
-                vscrollbar_xsize 6
                 vbox:
                     spacing gui.sp_xs // 2
-                    for _l in _langs:
+                    # hovered/reveal (components.rpy): языки за фолдом 420px были
+                    # недостижимы с пада — фокус не ходит в клипнутые кнопки.
+                    for _li, _l in enumerate(_langs):
                         textbutton _l["name"]:
                             style "pref_lang_button"
                             text_font (_l["font"] if _l["font"] and renpy.loadable(_l["font"]) else gui.text_font)
                             action vn_lang.action(_l["code"])
+                            hovered Function(vn_ui.reveal, "preferences", "vp_languages", _li, len(_langs))
 
 style vn_group:
     font gui.interface_semibold_font
@@ -413,15 +435,15 @@ style pref_lang_button_text:
 
 ## ── Служебные ────────────────────────────────────────────────────────────────
 
+# Каркас vn_modal_dialog (components.rpy): затемнение, B/Esc = «Нет», рамка.
+# Безопасная кнопка «Нет» получает default focus — слепой A не удалит сейв.
 screen confirm(message, yes_action, no_action):
     modal True
     zorder 200
     # QA-автопилот: модальные подтверждения отвечают «Да» сами; вне автопилота — no-op.
     if vn_qa.autopilot_active():
         timer 0.8 action yes_action repeat True
-    add Solid("#0000009e")
-    frame:
-        style "vn_dialog"
+    use vn_modal_dialog(no_action):
         vbox:
             spacing gui.sp_l
             text message style "vn_dialog_text"
@@ -429,22 +451,7 @@ screen confirm(message, yes_action, no_action):
                 xalign 0.5
                 spacing gui.sp_m
                 use vn_button(vn_loc.t("ui.confirm.yes"), yes_action, kind="primary")
-                use vn_button(vn_loc.t("ui.confirm.no"), no_action, kind="secondary")
-
-style vn_dialog:
-    xalign 0.5
-    yalign 0.5
-    xsize 560
-    background Solid(gui.panel_bg)
-    padding (gui.sp_l + gui.sp_s, gui.sp_l + gui.sp_s)
-
-style vn_dialog_text:
-    font gui.interface_text_font
-    size gui.interface_text_size + 3
-    color gui.text_color
-    xalign 0.5
-    text_align 0.5
-    line_spacing gui.sp_s
+                use vn_button(vn_loc.t("ui.confirm.no"), no_action, kind="secondary", focus_default=True)
 
 
 screen notify(message):

@@ -148,6 +148,110 @@ def stamp_id_registry(root: Path) -> int:
     return added
 
 
+# ── Steam-поставка (ADR-0014, ci/steam/README.md) ────────────────────────────
+
+STEAM_PLATFORMS = ("windows", "linux", "mac")
+# Суффиксы зипов launcher distribute -> платформа депота.
+_DIST_SUFFIX = {"windows": "-win", "linux": "-linux", "mac": "-mac"}
+
+
+def steam_config(project: dict) -> dict:
+    """platform.steam из project.yaml; appid обязателен для поставки."""
+    cfg = (project.get("platform") or {}).get("steam") or {}
+    if not cfg.get("appid"):
+        raise ReleaseError(
+            "platform.steam.appid не задан в project.yaml — заполните App ID "
+            "из Steamworks (публичный, не секрет)")
+    return cfg
+
+
+def steam_app_build(root: Path, flavor: str, branch: str = "") -> tuple[str, list[str]]:
+    """Сгенерировать app_build VDF для steamcmd из шаблона ci/steam/.
+
+    Возвращает (текст VDF, предупреждения). Контент депотов ожидается
+    распакованным в build/steam/content/<flavor>/<platform>/ (наполняет
+    vn release steam из зипов distribute). Credentials здесь не бывает."""
+    project = load_project(root)
+    cfg = steam_config(project)
+    depots = cfg.get("depots") or {}
+    if not depots:
+        raise ReleaseError(
+            "platform.steam.depots пуст — задайте номера депотов по платформам "
+            "(project.yaml; номера выдаёт Steamworks)")
+    warnings: list[str] = []
+    tmpl_path = root / "ci" / "steam" / "app_build.vdf.tmpl"
+    if not tmpl_path.is_file():
+        raise ReleaseError("нет шаблона ci/steam/app_build.vdf.tmpl")
+    depot_blocks: list[str] = []
+    for platform in STEAM_PLATFORMS:
+        depot_id = depots.get(platform)
+        if not depot_id:
+            warnings.append(f"депот для {platform} не задан — платформа не уедет")
+            continue
+        depot_blocks.append(
+            '\t\t"%d"\n\t\t{\n\t\t\t"FileMapping"\n\t\t\t{\n'
+            '\t\t\t\t"LocalPath" "content/%s/%s/*"\n'
+            '\t\t\t\t"DepotPath" "."\n'
+            '\t\t\t\t"recursive" "1"\n'
+            "\t\t\t}\n\t\t}" % (depot_id, flavor, platform))
+    if not depot_blocks:
+        raise ReleaseError("ни одного депота с номером — генерировать нечего")
+    vdf = tmpl_path.read_text(encoding="utf-8")
+    vdf = (vdf.replace("{APPID}", str(cfg["appid"]))
+              .replace("{DESC}", f"{project['version']} {flavor}")
+              .replace("{BRANCH}", branch)
+              .replace("{CONTENT_ROOT}", ".")
+              .replace("{BUILD_OUTPUT}", "output")
+              .replace("{DEPOTS}", "\n".join(depot_blocks)))
+    return vdf, warnings
+
+
+def steam_stage_content(root: Path, flavor: str) -> tuple[list[str], list[str]]:
+    """Распаковать зипы distribute в раскладку депотов build/steam/content/.
+    Возвращает (распакованные платформы, ошибки)."""
+    import zipfile
+
+    project = load_project(root)
+    dist = root / "build" / "dist" / f"{project['version']}-{flavor}"
+    staged: list[str] = []
+    errors: list[str] = []
+    if not dist.is_dir():
+        return staged, [f"нет дистрибутива {dist.relative_to(root)} — "
+                        f"сначала vn release build --flavor {flavor}"]
+    for platform, suffix in _DIST_SUFFIX.items():
+        zips = sorted(dist.glob(f"*{suffix}*.zip"))
+        if not zips:
+            errors.append(f"{platform}: в {dist.relative_to(root)} нет зипа "
+                          f"*{suffix}*.zip (соберите с --package)")
+            continue
+        dest = root / "build" / "steam" / "content" / flavor / platform
+        if dest.is_dir():
+            import shutil
+            shutil.rmtree(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zips[-1]) as zf:
+            zf.extractall(dest)
+        staged.append(platform)
+    return staged, errors
+
+
+def steam_libs_status(sdk: Path | None) -> list[str]:
+    """Каких steam_api-библиотек не хватает в SDK (пустой список = все на месте).
+    Без них дистрибутив соберётся, но будет standalone, а не Steam-сборкой."""
+    if sdk is None:
+        return ["RENPY_SDK не задан — наличие steam_api-библиотек не проверить"]
+    need = {
+        "py3-windows-x86_64": "steam_api64.dll",
+        "py3-linux-x86_64": "libsteam_api.so",
+        "py3-mac-universal": "libsteam_api.dylib",
+    }
+    missing = []
+    for libdir, name in need.items():
+        if not (sdk / "lib" / libdir / name).is_file():
+            missing.append(f"{libdir}/{name}")
+    return missing
+
+
 def snapshot_content(root: Path) -> dict:
     chapters: dict[str, dict] = {}
     base = root / "content" / "chapters"

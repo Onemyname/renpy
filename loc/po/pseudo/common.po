@@ -203,6 +203,11 @@ msgid "Загрузка"
 msgstr "[[Зąгрųзкą~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.file.quickpage"
+msgid "Быстрые"
+msgstr "[[Быстрыę~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.file.save_title"
 msgid "Сохранение"
 msgstr "[[Сǫхрąнęнįę~~~~]"
@@ -453,6 +458,21 @@ msgid "Экономное"
 msgstr "[[Экǫнǫмнǫę~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.prefs.scale_auto"
+msgid "Авто"
+msgstr "[[Ąвтǫ~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.scale_large"
+msgid "Крупный"
+msgstr "[[Крųпный~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.scale_normal"
+msgid "Обычный"
+msgstr "[[Ǫбычный~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.prefs.skip"
 msgid "Пропуск"
 msgstr "[[Прǫпųск~~]"
@@ -481,6 +501,11 @@ msgstr "[[Скǫрǫсть тęкстą~~~~~~]"
 msgctxt "string:ui.prefs.title"
 msgid "Настройки"
 msgstr "[[Нąстрǫйкį~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.ui_scale"
+msgid "Масштаб интерфейса"
+msgstr "[[Мąсштąб įнтęрфęйсą~~~~~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.prefs.volume"

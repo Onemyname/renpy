@@ -28,7 +28,11 @@
       "additionalProperties": false
     },
     "fallback_anchor": {"type": "string", "pattern": "^ch\\d{2}_s\\d{3}$"},
-    "lang": {"type": "string", "pattern": "^[a-z]{2}(_[A-Z]{2})?$", "description": "Только для kind: voice_pack"}
+    "lang": {"type": "string", "pattern": "^[a-z]{2}(_[A-Z]{2})?$", "description": "Только для kind: voice_pack"},
+    "steam_dlc_appid": {
+      "type": "integer", "minimum": 1,
+      "description": "App ID DLC в Steam (публичный): владение паком проверяет платформенный провайдер (ADR-0014). Без поля пак гейтится только установленностью"
+    }
   },
   "required": ["schema", "id", "kind", "version", "api_level"],
   "additionalProperties": false

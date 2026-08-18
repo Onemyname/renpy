@@ -42,7 +42,7 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 
 Главная ставка проекта: **тулинг — это второй продукт размером с игру**
 (`ARCHITECTURE.md:4070`). Поэтому здесь есть свой компилятор контента, свой ассет-конвейер,
-свой релизный гейт и 240 тестов на всё это — при одной черновой главе игры.
+свой релизный гейт и 253 теста на всё это — при одной черновой главе игры.
 
 ## 2. Монетизация: флейворы `public` и `patron`
 
@@ -71,9 +71,11 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 нигде не хранится — владелец пересчитывает `patron_tag` из своего токена по рецепту в докстринге
 `release.patron_tag`.
 
-Steam — горизонт: `vn release steam` — заглушка фазы 3 (`cli.py:1565`, exit 3),
-депотов и каналов dev/beta/release нет. Подробности — [29-build-and-release.md](29-build-and-release.md)
-и [30-packs-and-dlc.md](30-packs-and-dlc.md).
+Платформы — **закрыто** [ADR-0014](../adr/0014-platform-services.md): Steam, Steam Deck и Big Picture
+работают (штатный стек движка, ownership-провайдер паков, controller-first UI, авто-масштаб),
+`vn release steam` генерирует VDF и раскладывает депоты. Осталось ручным: аплоад `steamcmd`,
+каналов dev/beta/release нет, Android нет. Подробности — [39-platforms.md](39-platforms.md),
+[29-build-and-release.md](29-build-and-release.md) и [30-packs-and-dlc.md](30-packs-and-dlc.md).
 
 Правовая рамка коммерческого 18+ контента — **не закрыта**: [ADR-0008](../adr/0008-ai-model-licensing-for-commercial-adult-content.md)
 единственный ADR со статусом «предложено», развилка A/B/C ждёт решения владельца,
@@ -89,16 +91,16 @@ Steam — горизонт: `vn release steam` — заглушка фазы 3 (
 | Локации | 2 — `rooftop`, `school_gate` | `content/locations/` |
 | Паки | 2 — `ep_beach` (глава `ch90_beach`, 1 сцена) и `nsfw` (манифест есть, глав нет) | `packs/` |
 | Языковые пакеты | 3 — `en`, `de`, `pseudo`; покрытие 115/115 (100 %), fuzzy 0 | `loc/po/` |
-| JSON Schema | 36 (включая `assets_manifest@1` и `build_info@2`) | `tools/schemas/` |
-| Выходы Content Compiler | 19 `*.gen.rpy` + `manifest.json` | `game/generated/` |
-| Тесты | 240 функций в 23 файлах `test_*.py` | `tools/vn/tests/` |
+| JSON Schema | 39 (включая `assets_manifest@1` и `build_info@2`) | `tools/schemas/` |
+| Выходы Content Compiler | 21 `*.gen.rpy` + `manifest.json` | `game/generated/` |
+| Тесты | 253 функции в 24 файлах `test_*.py` | `tools/vn/tests/` |
 | Фикстуры сейв-корпуса | 2 — `schema1-demo.save` (схема 1, `ch01_s010`) и `schema2-demo.save` (схема 2, `ch01_s020`) | `ci/fixtures/saves/` |
-| ADR | 11 решений + шаблон; 10 приняты, ADR-0008 предложен, ни один не заменён | `docs/adr/` |
+| ADR | 14 решений + шаблон; 13 приняты, ADR-0008 предложен, ни один не заменён | `docs/adr/` |
 | Релизы | 0.1.0 … 0.1.4 | `docs/CHANGELOG.md` |
 
 Проверенные прогоны на машине владельца (Windows 11, RTX 5080, Python 3.12.10):
 `vn doctor` → 8 PASS / 0 FAIL; `vn build` → `build: OK` за ~0.3 с на прогретом кэше;
-`pytest tools/vn/tests -q` → 240 passed; `vn release validate --flavor public` → 16 PASS, exit 0
+`pytest tools/vn/tests -q` → 253 passed; `vn release validate --flavor public` → 16 PASS, exit 0
 (в том числе `сейв-корпус: 2 фикстур`); `vn save corpus` → OK, обе фикстуры загружены и мигрированы;
 `vn pipeline doctor` → PASS (ffmpeg 8.1.2 VP9, ComfyUI `D:\ComfyUI`, PyTorch 2.11.0+cu128,
 6 обязательных моделей, DAZ Studio 6), WARN на неустановленные Virt-a-Mate и The Sims 4.
@@ -145,7 +147,8 @@ Steam — горизонт: `vn release steam` — заглушка фазы 3 (
 | Достижения | **IMPLEMENTED (бэкенд)** | UI нет; ни ADR, ни раздела документации — одно упоминание в `ARCHITECTURE.md:2720` |
 | Релизный гейт `vn release validate --flavor` | **IMPLEMENTED** | 19 проверок, собственных правил не имеет — агрегирует чужие |
 | Флейворы `public`/`patron` | **PARTIALLY IMPLEMENTED** | Работают `nsfw`/`watermark`/`patron_tag`; `packs` и `early_content` не гейтят ничего |
-| Паки/DLC | **PARTIALLY IMPLEMENTED** | `pack build` кладёт в zip только манифест и сцены; провайдер владения (Steam) не подключён. Охранник «главы объявлены, а генерата нет» ожил и падает ДО создания zip (`cli.py:1624-1627`), но проверяет «хоть одна сцена на весь пак», а не по каждой главе |
+| Паки/DLC | **PARTIALLY IMPLEMENTED** | `pack build` кладёт в zip только манифест и сцены. Провайдер владения **подключён** (ADR-0014, `035_platform.rpy:75`), но работает только при живом Steam и только для пака с `steam_dlc_appid`. Охранник «главы объявлены, а генерата нет» ожил и падает ДО создания zip (`cli.py:1624-1627`), но проверяет «хоть одна сцена на весь пак», а не по каждой главе |
+| Платформы: Steam / Steam Deck / Big Picture | **IMPLEMENTED** | [ADR-0014](../adr/0014-platform-services.md): единственная точка касания — `00_core/035_platform.rpy` (под гард-тестом), ачивки и DLC-владение через штатный стек движка, controller-first UI и авто-масштаб. `vn release steam` готовит VDF и депоты; аплоад — ручной `steamcmd`. Android — NOT IMPLEMENTED ([39-platforms.md](39-platforms.md)) |
 | QA-автопилот `vn test smoke` | **IMPLEMENTED** | `test replay`/`paths` — фаза 2, `test screens` — фаза 3, `test perf` не существует |
 | Сейв-корпус `vn save check` / `save corpus` | **IMPLEMENTED** | 2 фикстуры, и одна из них на **старой** схеме: `schema1-demo.save` (`vn_save_schema=1`) поднимается до 2, в `log.txt` появляется `[vn] migration 0002` — миграция реально исполняется в игре. Линия имён `ci/fixtures/rpyc-line/` пересобрана: 52 `.rpyc` |
 | Хранилище сырцов (`type: file`) | **IMPLEMENTED / НИ РАЗУ НЕ ЗАПУСКАЛОСЬ** | `~/vn-assets-store` не существует; `type: s3` — честный `StorageError` |
@@ -166,7 +169,7 @@ Steam — горизонт: `vn release steam` — заглушка фазы 3 (
 |---|---|---|
 | **0** — фундамент репозитория (недели 1–2) | Зоны каталогов, `CODEOWNERS`, `.gitattributes`/`.gitignore`, `project.yaml`, реестр схем, скелет CLI, lockfile, ADR-процесс | **ЗАКРЫТА.** DoD «пустой проект собирается `vn build` и запускается, CI зелёный» выполнен |
 | **1** — вертикальный срез (месяцы 1–3) | Content Compiler, ассет-конвейер, layeredimage-эмиттер + golden-тесты, `vn bootstrap` + CI «clone → ≤ 5 мин», базовый CI, ролевой инсталлер | **ПОЧТИ ЗАКРЫТА.** Не сделано: golden-тесты через `renpy compile`+lint (в `tools/vn/tests/` ноль совпадений на «golden», ни один тест не запускает SDK), `vn bootstrap` в смысле G4, CI-джоба «clone → ≤ 5 мин», однокомандный ролевой инсталлер, `vn char new`/`char validate` (обе — заглушки *фазы 1*) |
-| **2** — производство и первый релиз (месяцы 3–9) | Локализация, сейвы и миграции, релизный конвейер, QA-автопилот, видео/WebM, звуковой конвейер | **ЧАСТИЧНО.** Сделано: локализация целиком, `vn save check/corpus` (2 фикстуры, миграция реально проигрывается), `vn release changelog/validate/build`, `vn test smoke`, видео-конвейер, транспорт звука (`assets_src/audio_stems/` → `game/assets/audio/`) с эмиссией `loop_start`/`volume`, канал `ambient` + дакинг, озвучка целиком (`voice@1`, `vn voice manifest/import/validate`, транскод `voice_opus`, гейт в `vn release validate`). Не сделано: сам музыкальный/SFX-контент и loudnorm для него; `vn voice tts`, Steam-депоты, каналы dev/beta/release, `vn test replay/paths`, `vn migrate`, `vn shell`, перф-бюджеты сверх cold-start и размеров каталогов |
+| **2** — производство и первый релиз (месяцы 3–9) | Локализация, сейвы и миграции, релизный конвейер, QA-автопилот, видео/WebM, звуковой конвейер | **ЧАСТИЧНО.** Сделано: локализация целиком, `vn save check/corpus` (2 фикстуры, миграция реально проигрывается), `vn release changelog/validate/build`, `vn test smoke`, видео-конвейер, транспорт звука (`assets_src/audio_stems/` → `game/assets/audio/`) с эмиссией `loop_start`/`volume`, канал `ambient` + дакинг, озвучка целиком (`voice@1`, `vn voice manifest/import/validate`, транскод `voice_opus`, гейт в `vn release validate`). Не сделано: сам музыкальный/SFX-контент и loudnorm для него; `vn voice tts`, автоаплоад в Steam и каналы dev/beta/release (сама Steam-поставка реализована ADR-0014, см. [39](39-platforms.md)), депот пака как товара, `vn test replay/paths`, `vn migrate`, `vn shell`, перф-бюджеты сверх cold-start и размеров каталогов |
 | **3** — рост после 1.0 | Live2D/Spine, DLC-инфраструктура, скриншот-тесты, телеметрия, моды/Workshop | **НЕ НАЧАТА** (кроме частичного каркаса паков). Единственная фаза без DoD в документе |
 
 **Вывод для читателя:** формулировка «Статус: фаза 0» в `README.md:43` и «фаза 0 не содержит
@@ -233,7 +236,7 @@ Ren'Py и релизный конвейер — все четыре с `ffmpeg` 
   (3 — сцены/главы, 4 — персонажи, 6 — состояние) и схемы из `tools/schemas/`.
 - **Не правьте `game/generated/`, `game/assets/`, `game/tl/`** — эти зоны не в git и их перезапишет
   ближайшая сборка.
-- **Не планируйте релиз на `vn release steam`** — это `_stub(3)`, exit 3.
+- **Не считать `vn release steam` аплоадом** — команда есть и работает, но готовит VDF и раскладку депотов; `steamcmd` запускает человек ([39-platforms.md](39-platforms.md) §3.3).
 - **Не считайте `public`-сборку «без NSFW» автоматически защищённой:** отсечение считается по
   фактическим подкаталогам `nsfw/` **внутри категории** — `game/assets/cg/nsfw/**`,
   `game/assets/mov/nsfw/**` и т. п. (`release.py:192-203`). Ни одного такого каталога сегодня нет
@@ -253,7 +256,7 @@ Ren'Py и релизный конвейер — все четыре с `ffmpeg` 
 vn doctor                              # ожидаем 8 PASS, 0 FAIL
 vn build                               # ожидаем "build: OK"
 vn build --check                       # CI-режим: генерат свеж? (упадёт после нового коммита — см. ниже)
-python -m pytest tools/vn/tests -q     # ожидаем 240 passed
+python -m pytest tools/vn/tests -q     # ожидаем 253 passed
 vn release validate --flavor public    # ожидаем 16 PASS, exit 0 (в т.ч. «сейв-корпус: 2 фикстур»)
 vn save corpus                         # обе фикстуры грузятся; schema1-demo мигрирует 1 -> 2
 vn loc report                          # de/en/pseudo — 115/115, fuzzy 0

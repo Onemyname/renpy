@@ -1,6 +1,6 @@
 # 30. Паки и DLC
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — формат пака, валидация манифеста и компиляция пак-глав наравне с ядром работают полностью; **но** гейт владения фактически выключен (`owned()` всегда `True`, провайдера никто не регистрирует), `vn pack build` кладёт в zip только сцены и манифест, а из зон пака компилятор читает **только** `chapters/` — `characters/`, `vars.yaml`, `loc/`, галерея и ачивки пака не собираются.
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED — формат пака, валидация манифеста и компиляция пак-глав наравне с ядром работают полностью; гейт владения **ожил** ([ADR-0014](../adr/0014-platform-services.md): провайдер подключается в `00_core/035_platform.rpy` при живом Steam, маппинг — `steam_dlc_appid` в манифесте), **но** вне Steam `owned()` по-прежнему всегда `True`, `vn pack build` кладёт в zip только сцены и манифест, а из зон пака компилятор читает **только** `chapters/` — `characters/`, `vars.yaml`, `loc/`, галерея и ачивки пака не собираются.
 > **Отвечает на вопрос:** «Как выпустить кусок контента отдельной единицей поставки — и что из обещанного про DLC на самом деле работает».
 
 Пак — это каталог `packs/<id>/` с `manifest.yaml` и деревом, зеркалящим `content/`. В репозитории живут два реальных примера: `ep_beach` (пак-эпизод с одной главой `ch90`) и `nsfw` (пак-контейнер без глав вообще). Весь код подсистемы — это `_collect_packs` в компиляторе (`../../tools/vn/src/vn/content/compile.py:437-472`), группа `vn pack` в CLI (`../../tools/vn/src/vn/cli.py:1568-1639`) и класс `_PackRegistry` в рантайме (`../../game/framework/00_core/030_flow.rpy:63-88`). Всё вместе — меньше 150 строк.
@@ -82,6 +82,7 @@ packs/
 | `title_key` | `^[a-z0-9_.]+$` | нет | **никто**. Строки `meta.packs.ep_beach.title` / `meta.packs.nsfw.title` заведены в `content/ui/strings.yaml:11-12` и переведены на de/en/pseudo, но `VN_PACKS` несёт только `kind` и `version` — ни один экран не показывает название пака | IMPLEMENTED / МЁРТВЫЙ (строка есть, потребителя нет) |
 | `fallback_anchor` | `^ch\d{2}_s\d{3}$` | нет | **никто** — единственное вхождение строки в репозитории — сама схема | NOT IMPLEMENTED |
 | `lang` | `^[a-z]{2}(_[A-Z]{2})?$`, «только для `kind: voice_pack`» | нет | **никто**; связь с `kind` схемой не выражена и кодом не проверяется | NOT IMPLEMENTED |
+| `steam_dlc_appid` | integer ≥ 1 | нет | `_emit_platform` → `VN_STEAM_DLC` в `platform.gen.rpy` (`compile.py:143-144`); рантайм — ownership-провайдер `vn_platform._steam_owns_pack` | IMPLEMENTED (ADR-0014, [39](39-platforms.md) §5). Один пак = один DLC App ID; бандлы — на стороне Steamworks |
 
 Реальный манифест целиком (`packs/ep_beach/manifest.yaml`, 8 строк):
 
@@ -130,7 +131,7 @@ if not (api["min"] <= VN_API_LEVEL < api["below"]):
 | В ARCHITECTURE.md | В реальной схеме |
 |---|---|
 | `api_level: ">=2 <3"` (строка) | объект `{min: 2, below: 3}` |
-| `steam_appid: 1234571` | поле запрещено |
+| `steam_appid: 1234571` | поле запрещено; App ID **DLC** называется `steam_dlc_appid` (ADR-0014), а App ID игры живёт в `project.yaml: platform.steam.appid` |
 | `injects: [{anchor, chapter}]` | поле запрещено |
 | `state_store: dlc_summer` | поле запрещено |
 | `requires: {core: ">=2.3.0 <3.0.0"}` | совпадает |
@@ -207,6 +208,8 @@ loc/po/{de,en,pseudo}/ch90.po
 
 ## 5. Владение паком: `vn.pack_registry`
 
+Платформенная половина этой темы (кто ставит провайдера, как считается `dlc_installed`, почему fail-open) вынесена в [39-platforms.md](39-platforms.md) §5 — здесь только контракт ядра.
+
 **Имя API — `vn.pack_registry`, не `vn.packs`.** `docs/ARCHITECTURE.md:170` фиксирует это прямо: «Единственное API: `vn.pack_registry.owned(pack_id)` (через фасад). `vn_packs.*` и `vn.pack_flag` не существуют».
 
 Реализация целиком — `../../game/framework/00_core/030_flow.rpy:63-88`:
@@ -225,8 +228,8 @@ def owned(self, pack_id):
 | Метод | Статус | Комментарий |
 |---|---|---|
 | `installed(pack_id)` | IMPLEMENTED | `core` или ключ в `VN_PACKS` |
-| `owned(pack_id)` | **IMPLEMENTED, но ИНЕРТЕН** | провайдера никто не устанавливает → **всегда `True`** для всего, что есть в `VN_PACKS` |
-| `set_ownership_provider(fn)` | IMPLEMENTED / БЕЗ ВЫЗЫВАЮЩИХ | grep по `game/` даёт только определение. Steam ownership-check — фаза 3 |
+| `owned(pack_id)` | **IMPLEMENTED** | под Steam — по провайдеру: пак с `steam_dlc_appid` даёт `False`, пока DLC не установлен. **Вне Steam** (или у пака без маппинга) — по-прежнему `True` для всего, что есть в `VN_PACKS` |
+| `set_ownership_provider(fn)` | **IMPLEMENTED / ПОДКЛЮЧЁН** | вызывающий один: `game/framework/00_core/035_platform.rpy:75` (`init 999`, только если `vn_platform.steam()` не `None`) — [ADR-0014](../adr/0014-platform-services.md), [39-platforms.md](39-platforms.md) §5 |
 | `installed_versions()`, `owned_ids()` (`ARCHITECTURE.md:2993-2994`) | **NOT IMPLEMENTED** | методов не существует |
 | `refresh_ownership()` в `label splashscreen` (`ARCHITECTURE.md:3269`) | **NOT IMPLEMENTED** | метода и метки не существует |
 
@@ -238,7 +241,7 @@ def owned(self, pack_id):
 | `game/framework/00_core/080_achievements.rpy:40-41` | видимость достижения (`spec["pack"]`, по умолчанию `core`) |
 | `game/framework/00_core/090_gallery.rpy:44` | видимость элемента галереи |
 
-Поля `pack:` в `achievements@1` и `gallery@1` реальны (`tools/schemas/achievements@1.schema.json:19`, `gallery@1.schema.json:63`), и компилятор проверяет, что указанный пак существует: `достижение {aid}: пак {pack_id!r} не установлен` (`compile.py:814-817`). Но так как `owned()` всегда `True`, фильтрация сегодня ничего не отсекает.
+Поля `pack:` в `achievements@1` и `gallery@1` реальны (`tools/schemas/achievements@1.schema.json:19`, `gallery@1.schema.json:63`), и компилятор проверяет, что указанный пак существует: `достижение {aid}: пак {pack_id!r} не установлен` (`compile.py:814-817`). В standalone-сборке `owned()` всё ещё возвращает `True` и фильтрация ничего не отсекает; **под Steam у пака с `steam_dlc_appid` без купленного DLC отсекутся все три места сразу** — карточка главы, элементы галереи и ачивки этого пака.
 
 DLC-бейдж на карточке главы — единственный видимый игроку признак пака: `if ch["pack"] != "core"` → фрейм со строкой `ui.chapters.dlc` (`game/framework/20_ui/components.rpy:245-249`).
 
@@ -348,7 +351,8 @@ game/generated/scenes/ нет ни одной их скомпилированн�
 
 | Заявлено | Где | Статус |
 |---|---|---|
-| Steam-депоты DLC, переиздание всех депотов на каждый релиз ядра | `ARCHITECTURE.md:69`, `:3278`, `:3805` | NOT IMPLEMENTED (`vn release steam` — `_stub(3)`, `cli.py:1565`) |
+| Депот **пака** отдельным товаром: раскладка, ассеты, `tl/` в архиве пака | `ARCHITECTURE.md:69`, `:3278`, `:3805` | NOT IMPLEMENTED. Депоты **игры** (win/linux/mac) генерируются: `vn release steam` → VDF + `build/steam/content/` ([39-platforms.md](39-platforms.md) §3.3); `vn pack build` по-прежнему кладёт в zip только манифест и сцены, и `platform.steam.depots` не знает про паки |
+| Переиздание всех DLC-депотов на каждый релиз ядра | `ARCHITECTURE.md:69` | NOT IMPLEMENTED как процесс — ни джобы, ни чеклиста |
 | Smoke-матрица «ядро-кандидат × версии DLC» | `ARCHITECTURE.md:3278`, `:4165` | NOT IMPLEMENTED — ни джобы, ни флага |
 | Рантайм-отключение несовместимого пака с сообщением | `ARCHITECTURE.md:3278` | NOT IMPLEMENTED — компилятор падает на этапе сборки |
 | `fallback_anchor` и graceful degradation сейва внутри отсутствующего DLC | `ARCHITECTURE.md:3300-3306` | NOT IMPLEMENTED — поле в схеме, читателей нет |
@@ -522,7 +526,8 @@ label <old_id>:
 | Задача | Что править | Обязательно после |
 |---|---|---|
 | Бампнуть `api_level` фасада `vn.*` | `game/framework/00_core/030_flow.rpy:9` **И** `../../tools/vn/src/vn/content/compile.py:434` — две константы, синхронизации нет | обновить `api_level.below` во **всех** `packs/*/manifest.yaml`, иначе `vn build` покраснеет; ADR на смену контракта фасада |
-| Включить настоящий гейт владения | вызвать `vn.pack_registry.set_ownership_provider(fn)` после инициализации стора; сейчас точки вызова не существует | тест на `owned()` = False; проверить `chapter_select`, галерею, ачивки |
+| Включить гейт владения для Steam | ничего в паках: заполнить `project.yaml: platform.steam.appid` и `steam_dlc_appid` в манифесте пака — провайдер уже подключён (`035_platform.rpy:75`) | `vn pack validate`, `vn build`; проверить `chapter_select`, галерею, ачивки под Steam ([39](39-platforms.md) §5) |
+| Гейт владения для витрины без Steam (GOG/itch/Play) | новая ветка провайдера в `game/framework/00_core/035_platform.rpy` — **не** в `030_flow.rpy` и не в экранах (гард-тест ADR-0014) | тест на `owned()` = False; [39-platforms.md](39-platforms.md) §9 |
 | Сделать `flavors.packs` реальным гейтом | либо фильтровать `packs` в `_collect_packs`/`emit_chapter_registry` по флейвору, либо читать `vn_build.packs` в `_PackRegistry.installed()` | решить, гейт сборочный или рантайм-ный; ADR — это меняет смысл `VN_PACKS` |
 | Сделать охранник `pack build` поглавным (сейчас «хоть одна сцена на пак») | `cli.py:1617-1626`: собирать сцены в `dict[ch] -> [files]` и валить на главах с пустым списком | обновить оба теста `test_pack_build_*` в `tools/vn/tests/test_release.py`; решить, что делать с главой, у которой генерат легитимно пуст |
 | Класть в депот пака ассеты и `tl/` | `cli.py:1600-1639` — добавить ветки по `game/assets/**` и `game/tl/**`; сначала решить, как определять «ассеты пака» (сейчас признака нет) | ADR: нужна принадлежность ассета паку, её в манифесте ассетов нет |
@@ -540,7 +545,8 @@ label <old_id>:
 - **Не считать `warning: пак … не объявляет глав` поломкой.** Для пака-контейнера (`nsfw`) архив из одного манифеста — норма; строка есть ровно затем, чтобы это не выглядело сбоем (§7.2). А вот пак с главами и без генерата теперь честно падает — не обходите это, а запустите `vn build`.
 - **Не полагаться на охранник как на проверку полноты депота.** Он требует хотя бы одну сцену на весь пак, а не по главе: недостающая `ch92` при собранной `ch91` пройдёт молча (§7.2).
 - **Не считать `flavors.packs` гейтом.** `public`-сборка сегодня сообщает `nsfw` как установленный и купленный.
-- **Не рассчитывать на `owned()`.** Без провайдера он всегда `True`; любая «платная» глава будет видна всем.
+- **Не рассчитывать на `owned()` вне Steam.** Провайдер подключается только при живом Steam (`035_platform.rpy:74-75`); в standalone-сборке и в dev-прогонах он всегда `True`, то есть любая «платная» глава видна всем. И не делайте его fail-closed: ошибка `dlc_installed` = `True` по норме G9 (гейт логический, не DRM).
+- **Не писать `steam_dlc_appid` в `project.yaml`, а `appid` — в манифест пака.** Поля разные и живут в разных файлах ([39-platforms.md](39-platforms.md) §3).
 - **Не полагаться на `fallback_anchor`, `requires.packs`, `lang`, `title_key`** — схема их принимает, код не читает ни одного.
 - **Не пытаться управлять загрузкой скриптов пака** через `config.archives` в `init` — Ren'Py индексирует архивы и грузит `.rpyc` до init-фазы (G9). Единственный «жёсткий» путь — `renpy.utter_restart()`, и проект спроектирован так, чтобы он не понадобился.
 - **Не переименовывать главу при переносе в пак.** Id неизменяемы (G7), а принадлежность и так определяется расположением — `renames.yaml` тут не нужен.
@@ -562,7 +568,7 @@ grep -n "VN_PACKS" game/generated/registry/chapters.gen.rpy
 vn release validate --flavor public     # проверка #3: manifest.yaml каждого пака флейвора
 vn release validate --flavor patron
 vn play                                 # глава ch90 в меню с бейджем DLC
-python -m pytest tools/vn/tests -q      # 240 passed (RENPY_SDK задан; без него 6 тестов skip)
+python -m pytest tools/vn/tests -q      # 253 passed (RENPY_SDK задан; без него часть контракт-тестов skip)
 ```
 
 Эталон на 2026-08-08: 2 пака (`ep_beach` с `ch90`, `nsfw` без глав), `VN_PACKS` из двух записей, `build/packs/ep_beach.zip` — 3522 байта / 3 файла, `build/packs/nsfw.zip` — 1 файл плюс строка `warning:` про отсутствие глав.
@@ -573,8 +579,8 @@ python -m pytest tools/vn/tests -q      # 240 passed (RENPY_SDK задан; бе
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/content/compile.py:434-514` (`VN_API_LEVEL`, `_collect_packs`, `_semver_in_range`, `_collect_chapters`), `../../tools/vn/src/vn/cli.py:1568-1639` (группа `vn pack`), `../../tools/vn/src/vn/content/scenes.py:276-296` (эмиттер `VN_CHAPTERS`/`VN_PACKS`) и `:324-339` (шаблон `chapter_select`), `../../game/framework/00_core/030_flow.rpy:9,63-88` (`API_LEVEL`, `_PackRegistry`), `../../tools/schemas/pack_manifest@1.schema.json`, `../../packs/README.md`, `../ARCHITECTURE.md` §6.7-6.8 (**целевой**, не описание построенного) |
+| **Читать перед изменением** | `../../tools/vn/src/vn/content/compile.py:434-514` (`VN_API_LEVEL`, `_collect_packs`, `_semver_in_range`, `_collect_chapters`), `../../tools/vn/src/vn/cli.py:1568-1639` (группа `vn pack`), `../../tools/vn/src/vn/content/scenes.py:276-296` (эмиттер `VN_CHAPTERS`/`VN_PACKS`) и `:324-339` (шаблон `chapter_select`), `../../game/framework/00_core/030_flow.rpy:9,63-88` (`API_LEVEL`, `_PackRegistry`), `../../tools/schemas/pack_manifest@1.schema.json`, `../../packs/README.md`, `../adr/0014-platform-services.md` (ownership-провайдер, `steam_dlc_appid`), `../ARCHITECTURE.md` §6.7-6.8 (**целевой**, не описание построенного) |
 | **Не трогать** | `game/generated/**` — весь генерат пак-глав (`.gitignore:2`); `build/packs/**` — артефакт `vn pack build` (`.gitignore:20`); `content/anchors.yaml` и `content/flags.yaml` — файлы обязаны существовать, но наполнять их бессмысленно до появления читателей |
 | **Зависимости (что ломается ниже по течению)** | Смена `VN_API_LEVEL` или `API_LEVEL` → все манифесты паков надо перепроверить (`vn build` падает целиком, а не отключает пак). Смена ключей `VN_PACKS` → `_PackRegistry.installed()`, `chapter_select.gen.rpy:18`, `080_achievements.rpy:40-41`, `090_gallery.rpy:44`. Перенос главы между зонами → `pack` в `VN_CHAPTERS`, бейдж DLC, `release.py:305-309`. Добавление пака → `release.py` гейт #3 и `vn release validate` обоих флейворов |
 | **Валидация** | `vn pack validate` → `vn content lint` → `vn build` → `vn build --check` → `vn pack build <id>` + ручная проверка содержимого zip → `vn release validate --flavor public` → `python -m pytest tools/vn/tests -q` |
-| **Частые ошибки** | 1) Верить `docs/ARCHITECTURE.md` §6.7 как описанию реализованного: `api_level` там строкой, поля `steam_appid`/`injects`/`state_store` схемой запрещены, `refresh_ownership()`/`installed_versions()`/`owned_ids()` не существуют. 2) Считать, что `owned()` что-то фильтрует — провайдера нет, всегда `True`. 3) Класть контент в зоны пака, которые компилятор не читает (`characters/`, `vars.yaml`, `loc/`, `gallery/`, `achievements/`) — §1.1. 4) Читать охранник `pack build` как «ноль сцен = ошибка»: ошибка — только «главы объявлены, а генерата нет»; пак-контейнер без глав собирается штатно (`cli.py:1617-1626`, §7.2). 5) Ожидать, что `flavors.packs` исключит пак из сборки — не исключает |
+| **Частые ошибки** | 1) Верить `docs/ARCHITECTURE.md` §6.7 как описанию реализованного: `api_level` там строкой, поля `steam_appid`/`injects`/`state_store` схемой запрещены (App ID DLC называется `steam_dlc_appid`), `refresh_ownership()`/`installed_versions()`/`owned_ids()` не существуют. 2) Считать, что `owned()` ничего не фильтрует: с ADR-0014 провайдер подключён (`035_platform.rpy:75`) и под Steam честно даёт `False` — но только под Steam и только для пака с `steam_dlc_appid`. 3) Класть контент в зоны пака, которые компилятор не читает (`characters/`, `vars.yaml`, `loc/`, `gallery/`, `achievements/`) — §1.1. 4) Читать охранник `pack build` как «ноль сцен = ошибка»: ошибка — только «главы объявлены, а генерата нет»; пак-контейнер без глав собирается штатно (`cli.py:1617-1626`, §7.2). 5) Ожидать, что `flavors.packs` исключит пак из сборки — не исключает |

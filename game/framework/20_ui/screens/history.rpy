@@ -21,20 +21,19 @@ screen history():
             text vn_loc.t("ui.history.empty") style "vn_hist_empty" xalign 0.5
             text vn_loc.t("ui.history.empty_hint") style "vn_hist_empty_hint" xalign 0.5
     else:
+        # Пад/клавиатура (аудит ui.md P0 №1): список без фокусируемых детей —
+        # arrowkeys True делает viewport фокусируемым (dpad/стрелки скроллят),
+        # default_focus отдаёт ему фокус сразу; LB/RB листают через pagekeys
+        # (пад-биндинги viewport_pageup/pagedown — input.rpy).
         viewport id "vp_history":
+            properties vn_scroll_props
+            arrowkeys True
+            default_focus True
             xalign 0.5
             ypos 150
             xsize 1100
             ysize 830
-            mousewheel True
-            draggable True
-            pagekeys True
-            scrollbars "vertical"
             yinitial 1.0
-            vscrollbar_unscrollable "hide"
-            vscrollbar_base_bar Solid(gui.panel_bg_deep)
-            vscrollbar_thumb Solid(gui.panel_border2)
-            vscrollbar_xsize 6
             vbox:
                 # xfill — чтобы разделитель тянулся на ширину вьюпорта;
                 # вертикальный ритм — spacing (ypadding невалиден для hbox).

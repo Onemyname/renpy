@@ -645,7 +645,7 @@ grep -n "migration" log.txt
 **Вероятная причина:** исключения считаются от **фактических каталогов**: для каждой категории в `game/assets/<cat>/` проверяется наличие подкаталога `nsfw/` (`release.py:192-203`). Сейчас категорий пять (`bg cg mov spr ui`) и ни в одной нет `nsfw/`, поэтому оба уже собранных `build/dist/0.1.0-{public,patron}/build-info.json` несут `"exclude": []` — это корректный результат, а не баг.
 **Диагностика:** `ls game/assets/*/nsfw` и `cat build/dist/*/build-info.json`.
 **Решение:** класть взрослый контент строго в `nsfw/`-подпапку своей категории (`assets/cg/nsfw/**`, `assets/mov/nsfw/**`).
-**Профилактика:** знайте, что **не** гейтится: список `packs` флейвора ни на что не влияет (`VN_PACKS` перечисляет все паки), `early_content` пишется и нигде не читается, провайдер владения паками не установлен и `owned()` всегда True. Работают только `nsfw`, `watermark` и `patron_tag` (`game/framework/00_core/060_build_info.rpy:40,42-45`, `20_ui/screens/build_overlay.rpy`). Поле называется именно `patron_tag`, а не `patron_token`: с ADR-0011 наружу уходит `blake2s(токен, digest_size=4, person=b"vnpatron")` — 8 hex-символов, — а сам токен в дистрибутив не попадает. Подробности — [30-packs-and-dlc.md](30-packs-and-dlc.md).
+**Профилактика:** знайте, что **не** гейтится: список `packs` флейвора ни на что не влияет (`VN_PACKS` перечисляет все паки), `early_content` пишется и нигде не читается, а `owned()` вне Steam всегда True (провайдер подключается в `00_core/035_platform.rpy:75` только при живом Steam — [39-platforms.md](39-platforms.md) §5). Работают только `nsfw`, `watermark` и `patron_tag` (`game/framework/00_core/060_build_info.rpy:40,42-45`, `20_ui/screens/build_overlay.rpy`). Поле называется именно `patron_tag`, а не `patron_token`: с ADR-0011 наружу уходит `blake2s(токен, digest_size=4, person=b"vnpatron")` — 8 hex-символов, — а сам токен в дистрибутив не попадает. Подробности — [30-packs-and-dlc.md](30-packs-and-dlc.md).
 
 ### `ошибка: pack build: у пака '<id>' объявлены главы (chNN), но в game/generated/scenes/ нет ни одной их скомпилированной сцены — сначала vn build`
 
@@ -899,7 +899,7 @@ vn assets validate                     # assets validate: OK
 vn assets video validate               # video validate: OK (N файлов)
 vn loc keys --check                    # все строки с id, ledger свеж
 vn loc report                          # de/en/pseudo — 115/115 (100%), fuzzy 0
-python -m pytest tools/vn/tests -q     # 240 passed
+python -m pytest tools/vn/tests -q     # 253 passed
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (N скриншотов)
 vn save check && vn save corpus        # 2 фикстур: schema1-demo мигрирует 1 -> 2, schema2-demo уже на 2
 vn release validate --flavor public    # 16 PASS, exit 0
