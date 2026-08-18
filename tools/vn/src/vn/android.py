@@ -447,6 +447,58 @@ def preflight(root: Path, bundle: bool = False) -> AndroidPreflight:
 class ApkBuild:
     command: list[str]
     artifacts: list[Path]
+    facts: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
+def package_facts(artifact: Path) -> tuple[list[str], list[str], list[str]]:
+    """Фактический вес собранного пакета против потолков канала:
+    (строки факта, предупреждения, блокеры).
+
+    Зачем отдельно от `preflight`. Предполётная проверка считает ОЦЕНКУ СВЕРХУ по
+    `game/` плюс фиксированные накладные — до сборки другого способа нет. Но потолок
+    канала — жёсткое ограничение стора, и сверять с ним оценку, когда рядом лежит
+    настоящий пакет, значит не проверять ничего. Здесь мерится файл.
+
+    У Play-бандла проверяется ещё и крупнейшая запись: файл живёт в одном
+    fast-follow пакете целиком (`BUNDLE_PACK_LIMIT_MB`), а внутри `.aab` это уже
+    не наши ассеты, а нативные библиотеки — по `game/` их не видно вовсе."""
+    size_mb = artifact.stat().st_size / MB
+    bundle = artifact.suffix.lower() == ".aab"
+    channel = "Play-бандл (.aab)" if bundle else "universal APK"
+    facts = [f"{artifact.name}: {size_mb:.1f} МБ — {size_mb / PACKAGE_LIMIT_MB:.0%} "
+             f"потолка {channel} ({PACKAGE_LIMIT_MB} МБ)"]
+    warnings: list[str] = []
+    errors: list[str] = []
+
+    if size_mb > PACKAGE_LIMIT_MB:
+        errors.append(f"{artifact.name}: {size_mb:.0f} МБ > {PACKAGE_LIMIT_MB} МБ — стор "
+                      f"такой пакет не примет (doc/android.html: Building Android "
+                      f"Applications)")
+    elif size_mb > PACKAGE_LIMIT_MB * PACKAGE_WARN_SHARE:
+        warnings.append(f"{artifact.name}: {size_mb:.0f} МБ — уже "
+                        f"{size_mb / PACKAGE_LIMIT_MB:.0%} потолка {PACKAGE_LIMIT_MB} МБ")
+
+    if bundle:
+        import zipfile
+
+        try:
+            with zipfile.ZipFile(artifact) as zf:
+                worst = max(zf.infolist(), key=lambda i: i.file_size, default=None)
+        except (OSError, zipfile.BadZipFile) as e:
+            warnings.append(f"{artifact.name}: не прочитать как zip ({e}) — пофайловый "
+                            f"лимит бандла не проверен")
+            return facts, warnings, errors
+        if worst is not None:
+            worst_mb = worst.file_size / MB
+            facts.append(f"крупнейший файл внутри: {worst.filename} — {worst_mb:.1f} МБ "
+                         f"из {BUNDLE_PACK_LIMIT_MB} МБ на fast-follow пакет")
+            if worst_mb > BUNDLE_PACK_LIMIT_MB:
+                errors.append(f"{worst.filename}: {worst_mb:.0f} МБ > "
+                              f"{BUNDLE_PACK_LIMIT_MB} МБ — файл не влезет ни в один "
+                              f"fast-follow пакет; порежьте его или собирайте APK")
+    return facts, warnings, errors
 
 
 def build_apk(root: Path, sdk: Path | None, *, bundle: bool = False,
@@ -500,4 +552,13 @@ def build_apk(root: Path, sdk: Path | None, *, bundle: bool = False,
         raise AndroidError(
             f"android_build отчитался успехом, но в {dest} нет ни .apk, ни .aab — "
             f"проверьте лог: пакет мог остаться в rapt/bin (без --destination)")
-    return ApkBuild(command=cmd, artifacts=artifacts)
+    # Пакет собран — значит потолки канала сверяются с ФАКТОМ, а не с оценкой
+    # `preflight`. Блокеры не отменяют артефакт: файл на диске нужен, чтобы понять,
+    # чем именно он раздут, — поэтому они возвращаются, а не бросаются.
+    rv = ApkBuild(command=cmd, artifacts=artifacts)
+    for art in artifacts:
+        facts, warnings, errors = package_facts(art)
+        rv.facts += facts
+        rv.warnings += warnings
+        rv.errors += errors
+    return rv

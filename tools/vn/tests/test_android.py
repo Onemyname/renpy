@@ -25,6 +25,7 @@ from vn.android import (
     jdk_major,
     keystore_leaks,
     oversample_suffixes,
+    package_facts,
     preflight,
     rapt_status,
     setup_step,
@@ -392,6 +393,58 @@ def test_build_apk_without_rapt_explains_the_setup_path(tmp_path):
     root = mk_root(tmp_path)
     with pytest.raises(AndroidError, match="setup"):
         build_apk(root, _mk_sdk(tmp_path, rapt=False))
+
+
+# ── Факт по собранному пакету против потолков канала ──────────────────────────
+
+def test_package_facts_reports_share_of_channel_limit(tmp_path):
+    """Предполётная оценка считается по `game/` + фиксированные накладные; когда
+    пакет собран, потолок сверяется с ФАЙЛОМ, иначе проверка бессмысленна."""
+    apk = tmp_path / "app-release.apk"
+    apk.write_bytes(b"\0" * (50 * MB))
+    facts, warnings, errors = package_facts(apk)
+    assert not warnings and not errors
+    assert "50.0 МБ" in facts[0] and "universal APK" in facts[0]
+
+
+def test_package_facts_blocks_above_channel_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(android, "PACKAGE_LIMIT_MB", 10)
+    apk = tmp_path / "app-release.apk"
+    apk.write_bytes(b"\0" * (11 * MB))
+    _, _, errors = package_facts(apk)
+    assert errors and "стор" in errors[0]
+
+
+def test_package_facts_warns_before_the_ceiling(tmp_path, monkeypatch):
+    monkeypatch.setattr(android, "PACKAGE_LIMIT_MB", 10)
+    apk = tmp_path / "app-release.apk"
+    apk.write_bytes(b"\0" * (9 * MB))
+    _, warnings, errors = package_facts(apk)
+    assert warnings and not errors
+
+
+def test_bundle_facts_check_the_largest_entry(tmp_path, monkeypatch):
+    """Пофайловый лимит fast-follow пакета внутри `.aab` по `game/` не виден вовсе:
+    крупнейший файл там — нативная библиотека движка, а не наш ассет."""
+    import zipfile
+
+    monkeypatch.setattr(android, "BUNDLE_PACK_LIMIT_MB", 1)
+    aab = tmp_path / "app-release.aab"
+    with zipfile.ZipFile(aab, "w") as zf:
+        zf.writestr("base/lib/arm64-v8a/librenpython.so", b"\0" * (2 * MB))
+        zf.writestr("base/assets/x-game/script.rpyb", b"\0" * 1024)
+    facts, _, errors = package_facts(aab)
+    assert any("librenpython.so" in f for f in facts)
+    assert errors and "fast-follow" in errors[0]
+
+
+def test_bundle_facts_survive_unreadable_zip(tmp_path):
+    """Битый архив — предупреждение, а не трейсбек: вес пакета уже измерен, и это
+    само по себе полезнее падения."""
+    aab = tmp_path / "app-release.aab"
+    aab.write_bytes(b"not-a-zip")
+    facts, warnings, errors = package_facts(aab)
+    assert facts and warnings and not errors
 
 
 # ── Подготовка тулчейна: те же функции RAPT, что у лаунчера, но без GUI ────────

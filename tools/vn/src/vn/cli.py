@@ -2165,6 +2165,17 @@ def release_android_build(bundle: bool, install: bool, launch: bool, timeout_s: 
     except AndroidError as e:
         _fail(str(e))
     click.echo("команда: " + " ".join(res.command))
+    for line in res.facts:
+        click.echo(line)
+    for w in res.warnings:
+        click.secho("warning: " + w, fg="yellow")
+    if res.errors:
+        # Артефакт на диске остаётся намеренно: понять, чем пакет раздут, можно
+        # только по нему. Но зелёным такой прогон называть нельзя.
+        for e in res.errors:
+            click.secho("ошибка: " + e, fg="red")
+        _fail("пакет собран, но не проходит потолки канала — "
+              + ", ".join(p.relative_to(root).as_posix() for p in res.artifacts))
     click.secho("android build: OK — " + ", ".join(
         p.relative_to(root).as_posix() for p in res.artifacts), fg="green")
 # ── vn pack ───────────────────────────────────────────────────────────────────

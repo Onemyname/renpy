@@ -341,8 +341,9 @@ round-trip, галерея, сейвы и миграции внутри игры
 звук (тракт, канал `ambient` и озвучка `voice@1`/`vn voice` живые целиком, включая TTS-черновики `vn voice tts` — но музыки/SFX ноль, `content/audio/*.yaml` пусты),
 CODEOWNERS (все хэндлы — плейсхолдеры).
 **Нет вообще:** автоматизации рендера и ComfyUI, автоматического Steam-аплоада (`steamcmd`
-запускается руками, джобы `steam-publish` нет) и каналов dev/beta/release, Play-бандла (`.aab`)
-и запуска мобильной сборки на живом устройстве (APK собран и вскрыт — [39](39-platforms.md) §2.1.1),
+запускается руками, джобы `steam-publish` нет) и каналов dev/beta/release, запуска мобильной
+сборки на живом устройстве и загрузки в Play (APK и `.aab` собраны и вскрыты локально —
+[39](39-platforms.md) §2.1.1),
 `vn validate` / `vn build --use-artifact` из `ARCHITECTURE.md`, `CLAUDE.md`/`AGENTS.md`.
 
 Три главных пункта из [37-roadmap.md](37-roadmap.md): **P0-1** закрыть ADR-0008 (единственный
