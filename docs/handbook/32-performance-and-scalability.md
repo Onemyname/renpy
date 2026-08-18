@@ -116,7 +116,7 @@ print('tl', s('game/tl')/1024, 'КБ'); print('vncache', s('.vncache')/1048576, 
 | `game/tl/` (3 языка) | 44 691 Б | 21 | нет бюджета |
 | `assets_src/` | 132 427 Б, из них бинарей 129,3 КБ | 11 бинарных | порог ADR-0004: warn 30 МБ / error 50 МБ |
 | `.vncache/` | ~1,98 МБ | — | нет бюджета, GC только по `.vncache/assets` |
-| `build/rpyc-cache/0.1.0/` | 159 395 Б | 48 `.rpyc` | нет бюджета |
+| `build/rpyc-cache/0.1.0/` (старая раскладка, до линий флейворов) | 159 395 Б | 48 `.rpyc` | нет бюджета |
 
 ## 3. Что дорого именно в Ren'Py (и как это устроено здесь)
 
@@ -530,7 +530,7 @@ error (50 МБ) ≈ после 6–16 реальных файлов
 | `project.yaml` | версия, бюджеты, флейворы | `@tech-lead @engine-dev-1` |
 | `assets_src/` бинари | git не умеет мержить PNG | лок хранилища (§9) — но он не атомарен |
 
-**Состояние `CODEOWNERS` — PARTIALLY IMPLEMENTED:** 19 правил (`CODEOWNERS:5-23`), но **все хэндлы — плейсхолдеры** (`@tech-lead`, `@engine-dev-1`, …; TODO прямо в шапке файла, `CODEOWNERS:3`). Не покрыты: `/content/gallery/`, `/content/achievements/`, `/content/ui/`, `/packs/`, `/assets_src/` и — важнее всего — **`/.github/`**, где живёт настоящий CI: 5 workflow, 9 определений джоб (на теге релизная `build` разворачивается матрицей флейворов в 2 прогона, итого до 8).
+**Состояние `CODEOWNERS` — PARTIALLY IMPLEMENTED:** 19 правил (`CODEOWNERS:5-23`), но **все хэндлы — плейсхолдеры** (`@tech-lead`, `@engine-dev-1`, …; TODO прямо в шапке файла, `CODEOWNERS:3`). С 2026-08-18 покрыты `/.github/` (настоящий CI: 5 workflow, 9 определений джоб — на теге релизная `build` разворачивается матрицей флейворов в 2 прогона, итого до 8), `/content/{gallery,achievements,ui}/`, `/packs/`, `/assets_src/`. Не покрыты: `content/licenses.yaml`, `/game/fonts/` и `/docs/` вне `conventions/` и `adr/`.
 
 ### 11.3 Порядок действий при найме второго человека
 

@@ -1,6 +1,6 @@
 # 25. Собственный движок: CLI `vn`
 
-> **Статус подсистемы:** IMPLEMENTED — одна точка входа, 20 команд/групп верхнего уровня, честный контракт кодов возврата, **68 листовых команд, из них 59 живых**. **Но:** 9 подкоманд — заглушки с номером фазы (было 10: `voice tts` реализована 2026-08-18), десяток команд из `ARCHITECTURE.md` не существует вовсе (`vn validate`, `vn build --use-artifact`), а тестами CLI покрыт точечно — `pack build` плюс новый `tools/vn/tests/test_cli.py` (12 тестов: реестр заглушек, соответствие перечня доменов норме C13, `release android`, `test corpus`, `voice tts`). Lock-файл тулчейна `tools/vn.lock` **читается** всеми пайплайнами (§8).
+> **Статус подсистемы:** IMPLEMENTED — одна точка входа, 18 команд/групп верхнего уровня, честный контракт кодов возврата. **Заглушек шесть** (`char new|validate|sheet`, `test replay|screens|paths`, `save migrate`); три бывших обещания выведены из нормы решением [ADR-0017](../adr/0017-retired-cli-promises.md) — `vn validate` (её работу делают `content lint` и бюджеты `build`), `vn migrate` (миграций деклараций в дереве нет, а забытый документ ловит гейт версий схем) и `vn shell` (у SDK нет linux-aarch64). Аварийный путь `vn build --use-artifact` реализован и прогнан на живом артефакте. Тестами CLI покрыт точечно — `pack build` плюс `tools/vn/tests/test_cli.py` (15 тестов: реестр заглушек, гард выведенных команд, перечень доменов против C13, `release android`, `test corpus`, `voice tts`). Lock-файл тулчейна `tools/vn.lock` **читается** всеми пайплайнами (§8).
 > **Отвечает на вопрос:** «Какая команда `vn` мне нужна, что она делает, чем кончится и как добавить свою».
 
 `vn` — единственный инструмент проекта (норма G1). Это Python-пакет `vn-tools` в `tools/vn/`, ставится editable-установкой и даёт команду `vn`. Он собирает ассеты, компилирует контент, гоняет линт, локализацию, QA-прогоны, релизный гейт и паки. Ren'Py он **вызывает**, но не заменяет: движок остаётся Ren'Py 8.5.3, а `vn` — производственная обвязка вокруг него. Код: `../../tools/vn/src/vn/` (13 748 строк, 37 модулей), точка входа `vn = "vn.cli:main"` (`../../tools/vn/pyproject.toml:24`).
@@ -57,7 +57,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 |---|---|---|---|
 | `vn --version` | — | `vn, version 0.1.0` (`cli.py:42`) | IMPL |
 | `vn doctor` | — | Самодиагностика окружения, 8–9 проверок с рецептами; `sys.exit(run_doctor())` (`cli.py:60-64`) | IMPL |
-| `vn build` | `--check`, `--profile [full\|draft]` (def `full`) | lint → ассеты → компиляция → `game/tl` → бюджеты (`cli.py:84-153`) | IMPL |
+| `vn build` | `--check`, `--profile [full\|draft]` (def `full`), `--use-artifact REF` | lint → ассеты → компиляция → `game/tl` → бюджеты. С `--use-artifact` — АВАРИЙНЫЙ режим: ничего не собирает, а забирает генерат из артефакта зелёного прогона CI (несовместим с `--check`) | IMPL |
 | `vn play` | — | Запуск игры через `RENPY_SDK`; требует `game/generated/manifest.json` (`cli.py:183-199`) | IMPL |
 | `vn bootstrap` | — | `doctor` → `assets build (full)` → `compile` → `loc import` (`cli.py:202-222`) | PART — сборка только локальная; скачивание из remote cache / CI-артефактов (G4) не реализовано, о чём честно сказано в docstring (`cli.py:206-207`) |
 | `vn dev` | — | Запускает игру + вотчер `content/` и `assets_src/` в демон-потоке (`cli.py:225-276`) | IMPL |
@@ -223,7 +223,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 | Что обещано | Где обещано | Реальность |
 |---|---|---|
-| `vn build --use-artifact <sha>` | `../ARCHITECTURE.md` (14 упоминаний) | NOT IMPLEMENTED. У `build` только `--check` и `--profile` (`cli.py:85-87`). Строка `use-artifact` во всём тулинге встречается ровно один раз — в **title** схемы `tools/schemas/gen_manifest@1.schema.json` |
+| `vn build --use-artifact <ref>` | `../ARCHITECTURE.md`, `../runbooks/pipeline-broken-at-night.md` | **IMPLEMENTED** (2026-08-18): `vn.artifact` находит новейший зелёный прогон `ci.yml` на коммите, тянет `generated-<sha>` через `gh`, проверяет манифест реестром схем и пересчитывает хеши `outputs`, заменяет генерат целиком и помечает его `source.kind=artifact` (`gen_manifest@2`) — после этого `--check` красный до локальной сборки. Прогнано на живом артефакте |
 | `vn validate --schemas` / `--budgets` | `../ARCHITECTURE.md` | NOT IMPLEMENTED — группы `vn validate` не существует |
 | `vn content lint --strict/--arch/--schemas` | `../ARCHITECTURE.md` | NOT IMPLEMENTED — есть только `--layout/--no-layout` |
 | `vn content who-writes`, `vn content rename`, `vn content compile --watch`, `vn content graph --chapter` | `../ARCHITECTURE.md` | NOT IMPLEMENTED |

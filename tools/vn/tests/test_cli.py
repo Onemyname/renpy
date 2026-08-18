@@ -24,13 +24,17 @@ EXPECTED_STUBS = {
     "char new": 1,
     "char validate": 1,
     "char sheet": 2,
-    "migrate": 2,
-    "shell": 2,
     "save migrate": 3,
     "test replay": 2,
     "test screens": 3,
     "test paths": 2,
 }
+# Выведены из нормы, а не реализованы (ADR-0017): `vn migrate` (миграций деклараций
+# в дереве нет ни одной, а забытый документ теперь ловит гейт версий схем) и
+# `vn shell` (у SDK нет linux-aarch64, поэтому «то же окружение, что на раннере» на
+# машине владельца недостижимо). Список ниже — гард: заглушка, вернувшаяся под этими
+# именами, обязана споткнуться об этот тест и потребовать пересмотра ADR.
+RETIRED_COMMANDS = ("migrate", "shell", "validate")
 
 
 def _leaves(command, prefix: str = ""):
@@ -46,6 +50,16 @@ def _leaves(command, prefix: str = ""):
 def test_stub_inventory_matches_frozen_list():
     stubs = {name: phase for name, phase in _leaves(cli.main) if phase}
     assert stubs == EXPECTED_STUBS
+
+
+def test_retired_commands_stay_retired():
+    """Команда, выведенная из нормы решением (ADR-0017), не должна вернуться
+    заглушкой: обещание в help — это долг, который кто-то потом читает как факт."""
+    names = {name for name, _ in _leaves(cli.main)}
+    for retired in RETIRED_COMMANDS:
+        assert retired not in names, (
+            f"vn {retired} снова в дереве команд — если решение изменилось, "
+            f"меняйте ADR-0017, а не только код")
 
 
 @pytest.mark.parametrize("name", ["voice tts", "test corpus",

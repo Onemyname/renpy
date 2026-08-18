@@ -28,6 +28,31 @@ from .analyze import AnalyzeError, analyze_scene_files
 from .images import ImagesReport, emit_images, load_locations
 
 MANIFEST_NAME = "manifest.json"
+MANIFEST_SCHEMA = "gen_manifest@2"
+
+
+def load_manifest(gen: Path) -> dict | None:
+    """Манифест генерата или None, если его нет/он нечитаем.
+
+    Одна точка чтения на двух потребителей: ветку `--check` и доставку артефакта
+    (vn.artifact). Второе чтение того же файла означало бы второй шанс забыть про
+    поле `source`."""
+    path = gen / MANIFEST_NAME
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def manifest_source(manifest: dict | None) -> dict:
+    """Происхождение генерата: `{"kind": local|artifact|unknown, ...}`.
+
+    `unknown` — честный третий ответ для манифеста gen_manifest@1: поля `source`
+    в нём нет вовсе, а притворяться «local» он права не имеет (такой манифест
+    приезжает только из артефакта, собранного до появления поля)."""
+    src = (manifest or {}).get("source")
+    return dict(src) if isinstance(src, dict) and src.get("kind") else {"kind": "unknown"}
 CHAPTER_DIR_RE = re.compile(r"^ch(\d{2})_([a-z][a-z0-9_]{2,30})$")
 SCENE_YAML_RE = re.compile(r"^s(\d{3})_([a-z][a-z0-9_]{2,40})\.scene\.yaml$")
 
@@ -1278,15 +1303,25 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         outputs["screens/chapter_select.gen.rpy"] = sc.emit_chapter_select(_header([proj_src]))
 
     old_manifest_path = gen / MANIFEST_NAME
-    old_outputs: set[str] = set()
-    if old_manifest_path.is_file():
-        try:
-            old_outputs = set(json.loads(old_manifest_path.read_text(encoding="utf-8"))["outputs"])
-        except Exception:
-            pass
+    old_manifest = load_manifest(gen)
+    old_outputs: set[str] = set((old_manifest or {}).get("outputs") or ())
 
     # Режим --check (G1): вычислить выходы в память, сравнить с диском, НИЧЕГО не писать.
     if check:
+        # Происхождение — ПЕРВЫМ пунктом: генерат из артефакта CI может совпадать с
+        # локальными источниками байт в байт (типичный случай — тот же коммит), и
+        # тогда пофайловое сравнение зеленеет, хотя свежесть относительно источников
+        # никто не проверял. Через `stale`, а не через новое поле результата: так
+        # признак наследуют все потребители --check без правок в них.
+        src = manifest_source(old_manifest)
+        if old_manifest_path.is_file() and old_manifest is None:
+            result.stale.insert(0, f"{MANIFEST_NAME} нечитаем — пересоберите vn build")
+        elif src["kind"] != "local" and old_manifest_path.is_file():
+            result.stale.insert(0, (
+                f"генерат не собран этой машиной (source.kind={src['kind']}"
+                f"{', sha ' + str(src.get('sha'))[:12] if src.get('sha') else ''}"
+                f"{', run ' + str(src['run_id']) if src.get('run_id') else ''}) — "
+                f"свежесть относительно источников не определена; локальная сборка: vn build"))
         for rel, text in sorted(outputs.items()):
             path = gen / rel
             if not path.is_file() or _stale_key(rel, path.read_bytes()) != _stale_key(
@@ -1319,10 +1354,14 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         result.written.append(rel)
 
     manifest = {
-        "schema": "gen_manifest@1",
+        "schema": MANIFEST_SCHEMA,
         "tool": __version__,
         "inputs": dict(sorted(inputs.items())),
         "outputs": out_hashes,
+        # Успешная локальная компиляция — единственный способ снять пометку
+        # «генерат чужой»: она снимается тем же действием, которое делает генерат
+        # своим. Отдельная команда «забыть артефакт» была бы заглушкой смысла.
+        "source": {"kind": "local"},
     }
     gen.mkdir(parents=True, exist_ok=True)
     old_manifest_path.write_text(

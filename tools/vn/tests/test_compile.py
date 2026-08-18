@@ -59,7 +59,10 @@ def test_compile_empty_project(repo_root, tmp_path):
     assert "define mira = Character(_('Мира')" in chars
 
     manifest = json.loads((gen / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["schema"] == "gen_manifest@1"
+    # @2 добавил поле source: без него генерат из артефакта CI был бы неотличим от
+    # локального, и `--check` зеленел бы на чужих байтах (G4).
+    assert manifest["schema"] == "gen_manifest@2"
+    assert manifest["source"] == {"kind": "local"}
     assert "project.yaml" in manifest["inputs"]
 
 

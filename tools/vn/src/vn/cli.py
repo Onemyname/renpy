@@ -130,12 +130,39 @@ def _assets_build(root, profile: str, only_transforms: set[str] | None = None):
 @click.option("--check", is_flag=True, help="Проверить без записи: свеж ли генерат (CI-режим, G1).")
 @click.option("--profile", type=click.Choice(["full", "draft"]), default="full",
               help="Профиль энкода ассетов (draft — быстрый, для локальной итерации).")
-def build(check: bool, profile: str):
+@click.option("--use-artifact", "artifact_ref", metavar="REF",
+              help="АВАРИЙНЫЙ путь (G4): не собирать, а взять генерат из артефакта "
+                   "зелёного прогона CI на этом коммите (ветка/тег/sha). Требует gh CLI.")
+def build(check: bool, profile: str, artifact_ref: str | None = None):
     """Схемы -> lint -> сборка ассетов -> компиляция контента в game/generated/."""
     from .content.compile import CompileError, compile_content
     from .content.lint import lint
 
     root = _root()
+    if artifact_ref:
+        # Аварийный режим не собирает НИЧЕГО: он существует ровно для случая
+        # «компилятор сломан, а играть и писать текст надо сейчас». Поэтому ни
+        # lint, ни ассеты здесь не запускаются — иначе он падал бы на том же, из-за
+        # чего его вызвали.
+        if check:
+            _fail("--use-artifact и --check несовместимы: первый ПИШЕТ генерат, "
+                  "второй обязан ничего не писать (G1)")
+        from .artifact import ArtifactError, head_mismatch, use_artifact
+
+        try:
+            info = use_artifact(root, artifact_ref)
+        except ArtifactError as e:
+            _fail(str(e))
+        drift = head_mismatch(root, info.sha)
+        if drift:
+            click.secho(f"warning: {drift}", fg="yellow")
+        click.secho(f"генерат из артефакта: {info.outputs} выходов, {info.rpyc} .rpyc "
+                    f"(коммит {info.sha[:12]}, прогон {info.run_id}, собран vn "
+                    f"{info.tool})", fg="green")
+        click.secho("это ЧУЖОЙ генерат: vn build --check и vn content compile --check "
+                    "будут красными до локальной сборки — так и задумано (G4)",
+                    fg="yellow")
+        return
     rep = lint(root)
     _echo_warnings(rep.warnings)
     if not rep.ok:
@@ -425,8 +452,6 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     click.echo(f"rpyc-кэш релиза: {n} файлов -> "
                f"{save_dir.relative_to(root).as_posix()}/")
     click.secho(f"package: OK — {', '.join(artifacts)}", fg="green")
-main.command(name="migrate", help="Миграции схем деклараций (фаза 2).")(_stub(2))
-main.command(name="shell", help="Docker-репро CI-окружения (фаза 2).")(_stub(2))
 
 
 # ── vn content ────────────────────────────────────────────────────────────────
@@ -2119,8 +2144,8 @@ def release_android_status():
     for gap in gaps:
         click.secho(f" - {gap}", fg="yellow")
     if gaps:
-        _fail("android: тулчейн не готов — перечисленное выше выполняется в лаунчере "
-              "Ren'Py, CLI-пути установки у Ren'Py нет")
+        _fail("android: тулчейн не готов — закройте пункты выше (подготовка: "
+              "vn release android setup sdk|keys|config) и повторите")
     click.secho("android status: OK — тулчейн готов", fg="green")
 
 

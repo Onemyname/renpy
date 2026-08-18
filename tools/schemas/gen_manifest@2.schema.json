@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "vn:schemas/gen_manifest@2",
+  "title": "gen_manifest@2 — манифест Content Compiler (game/generated/manifest.json): blake3 входов -> выходов плюс поле source, отвечающее на вопрос «кто собрал этот генерат»",
+  "description": "Контракт инкрементальности и точечной очистки (G6). Поле source появилось в @2 вместе с аварийным путём G4 (vn build --use-artifact): генерат, приехавший артефактом CI, обязан быть отличим от собранного локально, иначе `--check` зеленел бы на чужих байтах.",
+  "type": "object",
+  "$defs": {
+    "hash_map": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{16,64}$"}
+    }
+  },
+  "properties": {
+    "schema": {"const": "gen_manifest@2"},
+    "tool": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+    "inputs": {"$ref": "#/$defs/hash_map"},
+    "outputs": {"$ref": "#/$defs/hash_map"},
+    "source": {
+      "type": "object",
+      "description": "Происхождение генерата. local — собран этой машиной (единственное состояние, в котором свежесть относительно источников вообще определена); artifact — распакован из артефакта CI.",
+      "properties": {
+        "kind": {"enum": ["local", "artifact"]},
+        "sha": {"type": "string", "pattern": "^[0-9a-f]{7,40}$", "description": "Коммит, на котором собран артефакт"},
+        "run_id": {"type": "integer", "minimum": 1},
+        "workflow": {"type": "string"},
+        "downloaded_at": {"type": "string"},
+        "installed_by": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"}
+      },
+      "required": ["kind"],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "artifact"}}, "required": ["kind"]},
+          "then": {"required": ["kind", "sha", "run_id", "workflow", "downloaded_at", "installed_by"]}
+        }
+      ]
+    }
+  },
+  "required": ["schema", "tool", "inputs", "outputs", "source"],
+  "additionalProperties": false
+}
