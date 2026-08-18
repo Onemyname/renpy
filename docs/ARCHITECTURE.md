@@ -2778,7 +2778,7 @@ translate en strings:
 #### CI-синк
 
 ```yaml
-# .gitlab-ci.yml (фрагмент)
+# .github/workflows/ci.yml (фрагмент)
 loc:push:                        # на каждый мерж в main
   script:
     - vn content lint
@@ -3466,7 +3466,7 @@ repo/
 │   ├── vn/                    # python-пакет CLI (pip install -e tools/vn)
 │   └── schemas/               # JSON Schema ВСЕХ YAML — единственный реестр версий схем
 ├── .vncache/                  # локальный кэш сборки: build-graph.json, реестры (не в git)
-└── .gitlab-ci.yml
+└── .github/workflows/       # ci, nightly, canary, release, steam-upload
 ```
 
 Два решения этого дерева изменены относительно ранних черновиков и требуют пояснения:

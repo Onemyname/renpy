@@ -249,7 +249,7 @@ version = f"{project['version']}+{sha}"          # sha = repo.git_sha(root)
 
 - Локально: после `git commit` первый же `vn build --check` покажет `устарело: version.gen.rpy`. Это норма, не баг — просто прогоните `vn build`.
 - Ставить `vn content compile --check` в pre-commit hook бессмысленно: он будет краснеть после каждого коммита.
-- В CI проблемы нет, потому что `game/generated/` не в git (`.gitignore:2`) и каждый прогон собирает генерат заново на своём коммите: `.github/workflows/ci.yml` делает `vn build`, затем `vn content compile --check` в том же job'е и на той же ревизии. В `.gitlab-ci.yml` стадия `test` получает `game/generated/` артефактом стадии `build` — тоже одна ревизия.
+- В CI проблемы нет, потому что `game/generated/` не в git (`.gitignore:2`) и каждый прогон собирает генерат заново на своём коммите: `.github/workflows/ci.yml` делает `vn build`, затем `vn content compile --check` в том же job'е и на той же ревизии.
 - `git_sha` при отсутствии git возвращает `"nogit"` (`repo.py:35-43`), так что сборка в чистом tarball не падает — но `config.version` будет `0.1.4+nogit`.
 
 ---

@@ -20,7 +20,16 @@
 /project.yaml                       @tech-lead @engine-dev-1
 /.vnstorage.yaml                    @tech-lead @engine-dev-1
 /ci/                                @engine-dev-1 @engine-dev-2
-/.gitlab-ci.yml                     @engine-dev-1 @engine-dev-2
+/.github/                           @engine-dev-1 @engine-dev-2
+# Данные, которые правит контент-команда, а ломает — рантайм: галерея и достижения
+# гейтятся паками и спойлер-правилами, строки UI уезжают в переводы.
+/content/gallery/                   @lead-writer @tech-lead
+/content/achievements/              @lead-writer @tech-lead
+/content/ui/                        @loc-lead @tech-lead
+# Паки: собственный api_level и гейт владения — правка манифеста ломает совместимость.
+/packs/                             @tech-lead @engine-dev-1
+# Мастера: LFS-зона и провенанс (ADR-0008), объём и юридический статус.
+/assets_src/                        @art-director @tech-lead
 
 # Главы: одна глава = одна папка = один владелец. Добавлять при создании главы:
 # /content/chapters/ch01_awakening/   @writer-handle

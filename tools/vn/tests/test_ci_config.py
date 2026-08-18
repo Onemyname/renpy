@@ -16,7 +16,17 @@ from conftest import REPO_ROOT
 VN_BUILD = re.compile(r"\bvn\s+(?:release\s+)?build\b")
 
 GH_WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml"))
-GITLAB_CI = REPO_ROOT / ".gitlab-ci.yml"
+
+# Конфиги ДРУГИХ систем CI, которых в этом репозитории быть не должно. Второй
+# пайплайн, который никто не запускает, — не портативность, а ловушка: он отстаёт
+# по составу шагов, при этом выглядит рабочим и попадает в документацию как
+# главный. Именно так и вышло с `.gitlab-ci.yml` (выведен из эксплуатации
+# 2026-08-18): три джобы против восьми, без LFS, ffmpeg, локализационных проверок,
+# smoke, сейв-корпуса и релиза, — а `ci/README.md` называл его конфигом пайплайна.
+# Портативность даёт CLI: перенос пайплайна — это те же команды `vn` в конфиге
+# новой системы, а не второй файл про запас.
+FOREIGN_CI = (".gitlab-ci.yml", ".circleci", "azure-pipelines.yml", "Jenkinsfile",
+              "bitbucket-pipelines.yml", ".drone.yml")
 
 # Куда положена каждая команда, у которой внешний тулчейн или прогон масштаба:
 # дешёвая диагностика — в MR-пайплайн, дорогое измерение — в nightly (G15).
@@ -88,31 +98,10 @@ def _github_steps(needle, workflow=None):
             if any(needle in cmd for cmd in _lines(step.get("run")))]
 
 
-def _gitlab_jobs():
-    """То же для GitLab: extends-шаблон разворачивается, before_script идёт перед script."""
-    doc = yaml.safe_load(GITLAB_CI.read_text(encoding="utf-8"))
-    jobs = {}
-    for job_id, job in doc.items():
-        if job_id.startswith(".") or not isinstance(job, dict) or "script" not in job:
-            continue
-        base = doc.get(job.get("extends"), {}) if job.get("extends") else {}
-        cmds = _lines(job.get("before_script") or base.get("before_script"))
-        cmds += _lines(job.get("script"))
-        jobs[f".gitlab-ci.yml:{job_id}"] = cmds
-    return jobs
-
-
-def _all_jobs():
-    jobs = _github_jobs()
-    jobs.update(_gitlab_jobs())
-    return jobs
-
-
 def test_workflows_are_discovered():
     """Тест бессмысленен, если glob промахнулся мимо конфигов, — фиксируем находку."""
     assert {wf.name for wf in GH_WORKFLOWS} == {"ci.yml", "nightly.yml", "canary.yml",
                                                 "release.yml", "steam-upload.yml"}
-    assert GITLAB_CI.is_file()
 
 
 def test_lock_installed_before_editable():
@@ -120,7 +109,7 @@ def test_lock_installed_before_editable():
     и ставится ДО editable — иначе pip уже отрезолвил >=-диапазоны из pyproject и пины
     декоративны. Порядок проверен вручную: после лока editable не поднимает ни один пакет."""
     sites = 0
-    for job, cmds in _all_jobs().items():
+    for job, cmds in _github_jobs().items():
         for i, cmd in enumerate(cmds):
             if "pip install" not in cmd or "-e " not in cmd or "tools/vn" not in cmd:
                 continue
@@ -130,19 +119,14 @@ def test_lock_installed_before_editable():
                 f"{job}: editable-установка без предшествующего "
                 f"pip install -r tools/vn.lock — G17 не обеспечен"
             )
-    # 8 джоб GitHub (ci x2, nightly x3, canary, release, steam-upload) + 3 GitLab:
-    # там строк установки две, но before_script шаблона .with-sdk разворачивается
-    # и в build, и в test.
-    assert sites == 11, f"изменилось число мест установки тулчейна: {sites} != 11"
+    # 8 джоб GitHub: ci x2, nightly x3, canary, release, steam-upload.
+    assert sites == 8, f"изменилось число мест установки тулчейна: {sites} != 8"
 
 
 def test_ffmpeg_installed_before_vn_build():
     """ADR-0006: в assets_src/video_src лежат сырцы, и видео-ветка конвейера без ffmpeg
     бросает VideoError. Любой пайплайн, который зовёт vn build, обязан поставить ffmpeg
-    раньше. GitLab исключён намеренно и точечно: зеркало отстаёт по СОСТАВУ шагов
-    (нет ни LFS-чекаута, ни ffmpeg, ни релизных джоб) — этот долг разбирается в
-    docs/handbook/04-development-workflow.md §4. Не отстаёт оно в ФОРМЕ прогонов:
-    см. test_pytest_runs_from_tools_vn_in_every_pipeline."""
+    раньше."""
     checked = 0
     for job, cmds in _github_jobs().items():
         build_at = next((i for i, c in enumerate(cmds) if VN_BUILD.search(c)), None)
@@ -290,25 +274,19 @@ def test_missing_external_toolchains_are_asserted_not_silenced():
 
 
 def _pytest_invocations():
-    """[(пайплайн, команда, cwd шага)] — каждый прогон pytest во ВСЕХ пайплайнах.
+    """[(пайплайн, команда, cwd шага)] — каждый прогон pytest во всех пайплайнах.
 
-    Формы две, потому что таковы механизмы: GitHub задаёт каталог шага полем
-    working-directory, у GitLab такого поля нет вовсе — там cwd меняется только
-    подоболочкой внутри самой команды (и внутри многострочного блока GitHub —
-    тоже, иначе cd увёл бы и остальные команды блока).
-    """
-    runs = []
-    for workflow, step in _github_steps("pytest"):
-        runs += [(workflow, cmd, step.get("working-directory"))
-                 for cmd in _lines(step.get("run")) if "pytest" in cmd]
-    for job, cmds in _gitlab_jobs().items():
-        runs += [(job, cmd, None) for cmd in cmds if "pytest" in cmd]
-    return runs
+    Форм две, потому что таковы механизмы GitHub: каталог шага задаётся полем
+    working-directory, а внутри многострочного блока — только подоболочкой (иначе
+    cd увёл бы и остальные команды блока)."""
+    return [(workflow, cmd, step.get("working-directory"))
+            for workflow, step in _github_steps("pytest")
+            for cmd in _lines(step.get("run")) if "pytest" in cmd]
 
 
 def test_pytest_runs_from_tools_vn_in_every_pipeline():
-    """Прогон набора обязан совпадать с локальным во всех пайплайнах, включая
-    зеркало GitLab: pytest запускается ИЗ tools/vn.
+    """Прогон набора обязан совпадать с локальным во всех пайплайнах: pytest
+    запускается ИЗ tools/vn.
 
     Исторически это было жёстче: набор импортировал сам себя как пакет
     (tests.test_compile), и запуск из корня падал ModuleNotFoundError — по одному
@@ -318,9 +296,6 @@ def test_pytest_runs_from_tools_vn_in_every_pipeline():
     pytest, то есть красное в CI воспроизводится одной командой разработчика.
     Разъехавшийся cwd — это снова «зелено локально, красно в CI», ради чего и
     существует этот файл.
-
-    Паритет тут полный, в отличие от LFS/ffmpeg/релизных шагов: чем гонять набор,
-    зеркало не отличается от GitHub ничем, поэтому и повода расходиться нет.
     """
     runs = _pytest_invocations()
     assert runs, "ни один пайплайн не гоняет pytest — проверка выродилась"
@@ -342,3 +317,18 @@ def test_nightly_corpus_scale_is_explicit_and_bounded():
     assert int(scenes.group(1)) <= CORPUS_SCENES_CEILING, (
         f"--scenes {scenes.group(1)} > потолка {CORPUS_SCENES_CEILING}: ночной прогон "
         f"перестаёт быть проверкой и становится исследованием (7.6)")
+
+
+def test_no_second_ci_platform_config():
+    """Один пайплайн — одна система CI.
+
+    Мёртвое зеркало опаснее его отсутствия: оно отстаёт по составу шагов, при этом
+    выглядит рабочим и попадает в документацию как главный конфиг — и ночью по
+    красному письму человек чинит не тот пайплайн. Появится нужда в другой системе
+    CI — переносится ЦЕЛИКОМ, вместе с этим тестом.
+    """
+    found = [name for name in FOREIGN_CI if (REPO_ROOT / name).exists()]
+    assert not found, (
+        f"второй конфиг CI: {', '.join(found)} — либо он полный и заменяет GitHub "
+        f"Actions, либо его нет; наполовину живой пайплайн ночью починят вместо "
+        f"настоящего")

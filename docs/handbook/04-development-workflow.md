@@ -1,6 +1,6 @@
 # 04. Цикл разработки
 
-> **Статус подсистемы:** IMPLEMENTED (инструментальная часть) / PARTIAL (процессная) — цикл «правка → `vn build` → `vn play`/`vn dev` → `vn content lint` → `pytest` → commit» работает целиком и покрыт CI из 4 GitHub-workflow; **но** процесс вокруг него держится на дисциплине одного человека: PR-процесса нет (71 коммит линейно в `main`, ноль merge-коммитов), все хэндлы в `CODEOWNERS` — плейсхолдеры, pre-commit-хука из `ARCHITECTURE.md:659` не существует, `ci.yml` **не** триггерится на `pull_request` (сознательно), а `.gitlab-ci.yml` устарел и вводит в заблуждение.
+> **Статус подсистемы:** IMPLEMENTED (инструментальная часть) / PARTIAL (процессная) — цикл «правка → `vn build` → `vn play`/`vn dev` → `vn content lint` → `pytest` → commit» работает целиком и покрыт CI из 4 GitHub-workflow; **но** процесс вокруг него держится на дисциплине одного человека: PR-процесса нет (71 коммит линейно в `main`, ноль merge-коммитов), все хэндлы в `CODEOWNERS` — плейсхолдеры, pre-commit-хука из `ARCHITECTURE.md:659` не существует, `ci.yml` **не** триггерится на `pull_request` (сознательно). Долг двух CI-конфигов закрыт 2026-08-18: GitLab-зеркало выведено из эксплуатации, источник истины один.
 > **Отвечает на вопрос:** «Я поправил файл — что запустить, чем проверить и как это закоммитить, чтобы CI не покраснел?»
 
 Всё, что делает разработчик руками, проходит через CLI `vn` (`../../tools/vn/src/vn/cli.py`, 2117 строк, 20 групп/команд верхнего уровня, 68 листовых команд — 59 живых и 9 заглушек `exit 3`). CI — тонкая обёртка над теми же командами: `.github/workflows/ci.yml:1-2` явно фиксирует правило «вся логика — в CLI `vn`, конфиг тонкий». Поэтому локальный прогон и CI отличаются только окружением (Linux + `xvfb-run`, у Ren'Py нет headless-режима — норма G23), а не набором проверок.
@@ -172,7 +172,7 @@ git tag v0.1.6 && git push --follow-tags   # -> release.yml
 
 ## 4. Что проверяет CI
 
-**Два конфига, авторитетный один.** Живой пайплайн — GitHub Actions: 5 workflow, **9 определений джоб** (`lint`, `build-test`, `smoke`, `fresh-renpy`, `build`, `dmg`, `publish`); на теге релизная `build` разворачивается матрицей `flavor: [public, patron]` в 2 прогона, то есть максимум 8 реальных прогонов. `.gitlab-ci.yml` — исторический, не в паритете (см. долг в конце раздела).
+**Один пайплайн, и это GitHub Actions:** 5 workflow, **9 определений джоб** (`lint`, `build-test`, `smoke`, `fresh-renpy`, `build`, `dmg`, `publish`); на теге релизная `build` разворачивается матрицей `flavor: [public, patron]` в 2 прогона, то есть максимум 8 реальных прогонов. Второго конфига CI нет с 2026-08-18 (см. конец раздела), и его отсутствие стережёт тест.
 
 Общее для всех GitHub-workflow: `actions/checkout@v4` с `with: {lfs: true}` (без него шрифты приезжают указателями и игра падает `FreetypeError` — это и был инцидент 0.1.1), Python 3.12, установка тулчейна **двумя шагами** — сначала `pip install --quiet -r tools/vn.lock` (точные версии, G17), затем `pip install --quiet -e "tools/vn[dev]"`, `SDL_AUDIODRIVER: dummy`, `PYTHONIOENCODING: utf-8`, SDK 8.5.3 из кэша `actions/cache` по ключу `renpy-sdk-8.5.3-linux`, движок под `xvfb-run -a`.
 
@@ -223,11 +223,13 @@ git tag v0.1.6 && git push --follow-tags   # -> release.yml
 
 Steam-выкладки в workflow **нет вообще**: `vn release steam` запускается руками, и её выход (VDF + `build/steam/content/`) не проверяется ни одним пайплайном. Про её текущее падение на linux — [44-how-do-i.md](44-how-do-i.md) §16.
 
-### Долг: `.gitlab-ci.yml` — PARTIAL / STALE
+### Долг закрыт: GitLab-конфиг выведен из эксплуатации (2026-08-18)
 
-Три стадии `lint, build, test` (`.gitlab-ci.yml:13`): `lint` — `vn content lint`; `build` — `vn build` + `renpy.sh . lint` с артефактом `game/generated/`; `test` — `vn content compile --check` + `pytest`. По сравнению с GitHub здесь **нет**: релиза и флейворов, `vn loc keys --check`, `vn test oversample`, обработки LFS (тот самый класс поломки, что убил 0.1.1), `ffmpeg`, smoke-автопилота, сейв-корпуса, canary, кэша `.rpyc`. Единственное, что подтянуто к паритету, — установка из `tools/vn.lock` перед editable (`:23` и `:37`): пин тулчейна по G17 держится во всех пяти пайплайнах, чтобы «откат = revert одного файла» не зависело от того, где прогон. `ffmpeg` сюда **не добавлялся сознательно** (это зафиксировано в докстринге `test_ci_config.py::test_ffmpeg_installed_before_vn_build`): без LFS этот конфиг всё равно упадёт раньше, на шрифтах, — чинить его по одной строке бессмысленно.
+Было: три стадии `lint, build, test` — `vn content lint`; `vn build` + `renpy.sh . lint` с артефактом `game/generated/`; `vn content compile --check` + `pytest`. По сравнению с GitHub там **не было**: релиза и флейворов, `vn loc keys --check`, `vn test oversample`, обработки LFS (тот самый класс поломки, что убил 0.1.1), `ffmpeg`, smoke-автопилота, сейв-корпуса, canary, кэша `.rpyc`. Единственное, что было подтянуто к паритету, — установка из `tools/vn.lock` перед editable: пин тулчейна по G17 не должен был зависеть от того, где прогон.
 
-При этом `../../ci/README.md:6` до сих пор называет `.gitlab-ci.yml` «конфигом пайплайна» и обещает, что «перенос на GitHub Actions = те же четыре команды» — это уже неправда: GitHub-ветка живёт, богаче и авторитетна. `../../CODEOWNERS:23` покрывает `/.gitlab-ci.yml` и **не покрывает `/.github/`**. Решение долга (паритет либо удаление + правка `ci/README.md` и `CODEOWNERS`) — [37-roadmap.md](37-roadmap.md).
+При этом `../../ci/README.md` называл «конфигом пайплайна» именно его, а `../../CODEOWNERS` покрывал `/.gitlab-ci.yml` и **не покрывал** `/.github/` — релизный workflow был формально ничей.
+
+Из двух вариантов (паритет либо удаление) выбран второй. Паритет означал бы вести восемь джоб в двух системах разом, притом что вторая никогда не запускается: GitLab-remote у проекта нет. Портативность здесь даёт не файл, а CLI — пайплайн тонкий, весь смысл в командах `vn`, и перенос в любую систему CI это те же команды в её конфиге. Сделано: `git rm .gitlab-ci.yml`, `ci/README.md` переписан на `.github/workflows/`, `CODEOWNERS` покрывает `/.github/` и заодно `/content/{gallery,achievements,ui}`, `/packs/`, `/assets_src/` (они тоже были ничьи), гард `test_ci_config.py::test_no_second_ci_platform_config` не даёт завести новое полузеркало. Файл никуда не исчез: `git log --diff-filter=D -- .gitlab-ci.yml`, затем `git show <sha>^:.gitlab-ci.yml`.
 
 ---
 
@@ -367,7 +369,6 @@ CI использует **обе** формы: сначала пишущий `vn
 - **Ввести watch для `packs/`.** Корни зашиты в `devloop.py:33-34` — добавляется одной строкой в список; отдельно решить, чем перестраивать пак (`vn build` собирает паки в общий генерат).
 - **Починить `vn assets watch`.** Заменить `lambda: None` (`cli.py:622`) на реальный колбэк компиляции — или удалить команду в пользу `vn dev`.
 - **Ввести pre-commit-хук из `ARCHITECTURE.md:659`.** Скрипт в `tools/` + `git config core.hooksPath`; учитывая, что `.gitignore` уже закрывает производные зоны, приоритет низкий.
-- **Закрыть долг GitLab.** Либо паритет с GitHub, либо `git rm .gitlab-ci.yml` + правка `ci/README.md:6` и `CODEOWNERS:23`.
 - **Починить root-относительный pytest в `ci.yml:97`** — либо `working-directory: tools/vn`, либо `[tool.pytest.ini_options] pythonpath` в `tools/vn/pyproject.toml`. Сегодня прогон из корня падает на `test_verify_regressions.py:84`.
 
 ## Чего НЕ делать

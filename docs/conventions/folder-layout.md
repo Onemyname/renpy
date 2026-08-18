@@ -15,7 +15,8 @@
 vn/
 ├── project.yaml            # version, save_schema, min_tools (schema: project@1)
 ├── .vnstorage.yaml         # логические хранилища сырцов (schema: storage@1)
-├── CODEOWNERS  .gitattributes  .gitignore  .gitlab-ci.yml
+├── CODEOWNERS  .gitattributes  .gitignore  android.json
+├── .github/workflows/      # единственная система CI: ci, nightly, canary, release, steam-upload
 ├── game/
 │   ├── framework/          # рукописный код: 00_core/ (вкл. engine_compat/), 10_systems/, 20_ui/, 90_debug/
 │   ├── generated/          # ЕДИНСТВЕННАЯ зона генерата (в .gitignore)

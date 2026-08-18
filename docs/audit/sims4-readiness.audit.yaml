@@ -238,7 +238,7 @@ items:
       - game/framework/90_debug/030_oversample.rpy
     tests:
       - tools/vn/tests/test_assets.py::test_variant_sizes_and_reference_name
-      - "vn test oversample (движковая проверка, джоба в ci.yml и .gitlab-ci.yml)"
+      - "vn test oversample (движковая проверка, джоба в ci.yml)"
     status: CLOSED
 
   AUDIT-016:
