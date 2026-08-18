@@ -19,7 +19,7 @@ vn assets daz validate                # схема + наличие сцены +
 vn assets licenses                    # каждый использованный продукт есть в реестре
 vn assets build                       # png/cg/** -> game/assets/cg/**.webp + .thumb.webp
 vn build                              # + генерат: image cg ch01 kiss
-vn release validate --flavor patron   # 19 проверок, из них 3 про DAZ/провенанс/лицензии
+vn release validate --flavor patron   # 20 проверок, из них 3 про DAZ/провенанс/лицензии
 ```
 
 Сегодня все пять команд выше отработают на пустом множестве: `vn assets daz validate` напечатает «деклараций нет (assets_src/daz/\*\*/\<name\>.render.yaml)» (`../../tools/vn/src/vn/cli.py:674-677`).
@@ -55,10 +55,10 @@ DAZ-кадр (PNG)  ──Wan 2.2 I2V в ComfyUI──>  клип .mp4  ──> 
 |---|---|---|---|
 | Сборка/поза/свет сцены в DAZ | человек, GUI | вне репозитория | — |
 | Iray-рендер в PNG | человек, GUI | **NOT IMPLEMENTED** (автоматизации нет) | §9 |
-| Декларация `*.render.yaml` | человек, руками | IMPLEMENTED (схема+валидатор), UNEXERCISED | `tools/schemas/daz_render@1.schema.json`, `../../tools/vn/src/vn/assets/daz.py:31-77` |
-| Провенанс шага `daz_render` | `vn assets daz validate` | IMPLEMENTED, UNEXERCISED | `../../tools/vn/src/vn/assets/provenance.py:266-296` |
+| Декларация `*.render.yaml` | человек, руками | IMPLEMENTED (схема+валидатор), UNEXERCISED | `tools/schemas/daz_render@1.schema.json`, `../../tools/vn/src/vn/assets/sources.py:145-206` |
+| Провенанс шага `daz_render` | `vn assets daz validate` | IMPLEMENTED, UNEXERCISED | `../../tools/vn/src/vn/assets/provenance.py:279-304` |
 | AI-полировка/анимация в ComfyUI | человек, GUI | вызов ComfyUI — **NOT IMPLEMENTED** | [20-image-generation.md](20-image-generation.md), [21-video-generation.md](21-video-generation.md) |
-| Провенанс шага `comfyui` | `vn assets provenance record` | IMPLEMENTED, UNEXERCISED | `../../tools/vn/src/vn/cli.py:794-820` |
+| Провенанс шага `comfyui` | `vn assets provenance record` | IMPLEMENTED, UNEXERCISED | `../../tools/vn/src/vn/cli.py:934-959` |
 | PNG → WebP, видео → WebM | `vn assets build` | IMPLEMENTED | [16-assets.md](16-assets.md) |
 | Ren'Py-имена образов | `vn build` (компилятор) | IMPLEMENTED | [08-content-pipeline.md](08-content-pipeline.md) |
 
@@ -414,32 +414,34 @@ render:
 
 ### 10.2 Что делает `vn assets daz validate` — по шагам
 
-`../../tools/vn/src/vn/cli.py:657-679` → `../../tools/vn/src/vn/assets/daz.py:31-77`. Флаги: `--scope <подпуть>`, `--no-provenance`.
+`../../tools/vn/src/vn/cli.py:756-778` → `../../tools/vn/src/vn/assets/daz.py` (тонкая обёртка, 31 строка) → общий валидатор источников `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три структурные копии (DAZ/VaM/Sims 4) сведены к одному контракту в `sources.py`; различия источников — данные (`SourceKind`, `sources.py:47-67`).
 
-1. Рекурсивный обход `assets_src/daz/**/*.render.yaml` (`daz.py:42`). Каталога нет → пустой отчёт молча (`daz.py:39-40`).
-2. Валидация JSON-схемой через `SchemaRegistry` (`daz.py:47-50`). **При ошибке схемы декларация пропускается целиком** (`continue`) — остальные проверки по ней не идут.
-3. Существование сцены: `assets_src/<source>` **или** `assets_src/<source>.manifest.json` (`daz.py:53-58`). Текст ошибки: «сцены … нет ни локально, ни в манифестах (vn assets push после сохранения .duf)».
-4. Дубли `output` между декларациями (`daz.py:60-64`).
-5. Наличие выхода: если `assets_src/<output>` нет — **только WARNING** «выход … ещё не отрендерен», и обработка этой декларации на этом кончается (`daz.py:66-68`).
-6. Если выход есть и не задан `--no-provenance` — пишется/обновляется `<output>.provenance.json` (`daz.py:70-76` → `provenance.record_daz`).
+1. Рекурсивный обход `assets_src/daz/**/*.render.yaml` (`sources.py:154`). Каталога нет → пустой отчёт молча (`sources.py:151-152`).
+2. Валидация JSON-схемой через `SchemaRegistry` (`sources.py:160-163`). **При ошибке схемы декларация пропускается целиком** (`continue`) — остальные проверки по ней не идут.
+3. Существование сцены: `assets_src/<source>` **или** `assets_src/<source>.manifest.json` (`sources.py:166-172`). Текст ошибки: «сцены … нет ни локально, ни в манифестах (vn assets push после сохранения .duf)».
+4. Дубли `output` между декларациями (`sources.py:174-179`).
+5. `id` против `output`: логический id пересчитывается из выхода той же арифметикой, что у конвейера, и расхождение — **error** (`sources.py:183-188`, `_logical_id_of_output:70-86`).
+6. Наличие выхода: если `assets_src/<output>` нет — **только WARNING** «выход … ещё не получен», и обработка этой декларации на этом кончается (`sources.py:190-193`).
+7. Объявленное `render.resolution` против фактических размеров файла — **error** при расхождении (`_check_resolution`, `sources.py:252-286`); для видео-мастеров ещё и согласованность `mode`/`fps` (`_check_sequence`, `sources.py:209-249`), обе видео-проверки молчат без `ffprobe`.
+8. Если выход есть и не задан `--no-provenance` — пишется/обновляется `<output>.provenance.json` (`sources.py:198-205` → `provenance.record_render`).
 
 Выход: exit 1 при любых ошибках, иначе зелёная строка «daz validate: OK (N деклараций, M предупреждений)».
 
-`--no-provenance` — режим «только проверить»: сайдкары не создаются и не обновляются. Ровно так валидатор вызывается из релизного гейта (`../../tools/vn/src/vn/release.py:347-356`, `write_provenance=False`) — гейт не должен ничего писать в рабочее дерево.
+`--no-provenance` — режим «только проверить»: сайдкары не создаются и не обновляются. Ровно так валидатор вызывается из релизного гейта (`../../tools/vn/src/vn/release.py:506-514`, `write_provenance=False`) — гейт не должен ничего писать в рабочее дерево.
 
 ### 10.3 Чего валидатор **не** делает
 
 - **Не открывает и не парсит `.duf`** — это чистая проверка существования файла.
-- **Не сверяет `render.resolution` с реальными размерами PNG.**
-- **Не проверяет, что `id` согласован с `output`**: `id: cg/ch01/kiss` при `output: png/cg/ch99/other.png` проходит.
 - **Не проверяет `character_presets`, `camera`, `lighting`** ни против чего — это свободные строки.
 - **Не требует `license`** — отсутствие даёт WARN только в `vn assets licenses` (`../../tools/vn/src/vn/assets/licenses.py:104-108`).
 - **Ничего не рендерит.**
-- Мелочь, которая путает: если сцены нет, а выход есть, вы получите **две** ошибки на одну декларацию — от шага 3 и от `record_daz`, который тоже упрётся в отсутствующий источник (`provenance.py:274-277`).
+- Мелочь, которая путает: если сцены нет, а выход есть, вы получите **две** ошибки на одну декларацию — от шага 3 и от `record_render`, который тоже упрётся в отсутствующий источник (`provenance.py:287-289`).
+
+Сверка `render.resolution` с файлом и согласованность `id` с `output` раньше были в этом списке — **ADR-0012 их закрыл**, обе проверки теперь ошибки (§10.2, шаги 5 и 7).
 
 ### 10.4 Провенанс: что пишется
 
-`record_daz` (`provenance.py:294-296` → `_record_render:266-291`) кладёт **в начало цепочки** шаг:
+`record_render` (`provenance.py:279-304`) кладёт **в начало цепочки** шаг:
 
 ```json
 {"kind": "daz_render",
@@ -448,13 +450,13 @@ render:
  "settings": { … дословный снимок блока render: … }}
 ```
 
-Хвост цепочки (шаги `comfyui` / `manual`) сохраняется; предыдущий шаг-происхождение любого движка (`*_render`) **заменяется** — у артефакта один источник. Хэши — blake3. Сайдкары ведутся **только внутри `assets_src/`** (`provenance.py:50-59`, норма G2). Подробности AI-шага — [20-image-generation.md](20-image-generation.md).
+Хвост цепочки (шаги `comfyui` / `manual`) сохраняется; предыдущий шаг-происхождение любого движка (`*_render`) **заменяется** — у артефакта один источник. Хэши — blake3. Сайдкары ведутся **только внутри `assets_src/`** (`provenance.py:49-56`, норма G2). Подробности AI-шага — [20-image-generation.md](20-image-generation.md).
 
 ### 10.5 Дыры гейта, о которых надо знать
 
 | Дыра | Последствие |
 |---|---|
-| Неотрендеренный выход — **WARN, не FAIL** (`daz.py:66-68`) | декларация без картинки не блокирует релиз |
+| Неотрендеренный выход — **WARN, не FAIL** (`sources.py:190-193`) | декларация без картинки не блокирует релиз |
 | **PNG без сайдкара провенанса проходит все проверки**: `provenance.verify()` обходит только существующие `*.provenance.json` | «запиши провенанс при генерации» — дисциплина из `../onboarding/artist.md`, ничем не форсированная |
 | Декларация без `license` — WARN | покрытие реестра лицензий фактически не обязательно |
 | Провенанс **не протекает** в манифест сборки и в `mov_meta@1` | связь «отгруженный ассет → цепочка» восстанавливается вручную сопоставлением blake3 `src_hash` |
@@ -587,7 +589,7 @@ assets:
 
 - `.vnstorage.yaml` объявляет `default: {type: file, path: "~/vn-assets-store"}`, и **этого каталога на машине не существует** — `vn assets status` печатает «манифестов нет — сырцы ещё не пушились». Бэкенд `type: s3` честно кидает `StorageError` — **NOT IMPLEMENTED** (`tools/vn/src/vn/assets/storage.py:129-133`).
 - Значит, единственный доступный путь сегодня — держать `.duf` локально в `assets_src/daz/**`.
-- А `vn content lint` считает **все** нетекстовые файлы под `assets_src/` (расширения вне `{.json,.yaml,.yml,.md,.txt,.gitkeep}`): **warn на 30 МБ, error на 50 МБ** (`../../tools/vn/src/vn/content/lint.py:47,371-399`, норма ADR-0004). `.duf` и PNG-рендеры считаются полностью.
+- А `vn content lint` считает нетекстовые файлы под `assets_src/` (расширения вне `{.json,.yaml,.yml,.md,.txt,.gitkeep}`), **которые идут мимо Git LFS**: каждый такой файл — error, и 50 МБ их суммарно — второй error (`../../tools/vn/src/vn/content/lint.py:47,422-452`, ADR-0004 в редакции ADR-0012; warn-порога на 30 МБ нет). `.duf`, `.var`, `.psd` и растр покрыты правилами `.gitattributes:18-39`, поэтому под порог не идут.
 - `assets_src/` **не в `.gitignore`** — случайный `git add` закоммитит бинарь в append-only историю.
 
 Порядок действий, пока хранилище не поднято: рендеры-исходники PNG **не держать** в `assets_src/` дольше, чем нужно для `vn assets build` (собранные WebP живут в `game/assets/`, которого нет в git); `.duf` бэкапить внешним средством и **следить за строкой лимита в `vn content lint`**. Развёртывание хранилища — задача с приоритетом; подробности и рецепты — [31-storage-and-backup.md](31-storage-and-backup.md) и [16-assets.md](16-assets.md).
@@ -598,12 +600,12 @@ assets:
 
 | Задача | Что править | Обязательно после |
 |---|---|---|
-| Добавить поле в декларацию (например `chapter`, `scene`, `notes`) | `../../tools/schemas/daz_render@1.schema.json` — **новая версия файла `daz_render@2`**, `properties.schema.const` = имени файла (`schemas.py:13-51`) | обновить `tools/vn/src/vn/assets/daz.py`, тесты `test_provenance.py`, эту таблицу; `additionalProperties: false` означает, что старые декларации **не** пройдут новую схему автоматически |
-| Сделать неотрендеренный выход ошибкой, а не варнингом | `../../tools/vn/src/vn/assets/daz.py:66-68` | тест; учтите, что это сразу краснит релиз при незавершённой главе |
+| Добавить поле в декларацию (например `chapter`, `scene`, `notes`) | `../../tools/schemas/daz_render@1.schema.json` — **новая версия файла `daz_render@2`**, `properties.schema.const` = имени файла (`schemas.py:23-32`) | обновить `tools/vn/src/vn/assets/sources.py` (и `daz.py`, если меняется контракт обёртки), тесты `test_sources.py`/`test_provenance.py`, эту таблицу; `additionalProperties: false` означает, что старые декларации **не** пройдут новую схему автоматически |
+| Сделать неотрендеренный выход ошибкой, а не варнингом | `../../tools/vn/src/vn/assets/sources.py:190-193` | тест; учтите, что это сразу краснит релиз при незавершённой главе (и правка одна на все три источника) |
 | Требовать `license:` обязательно | `tools/vn/src/vn/assets/licenses.py:104-108` (WARN → ERROR) | заполнить реестр до включения, иначе релиз встанет |
-| Требовать провенанс у каждого PNG в `png/cg/**` | новая проверка рядом с `provenance.verify` (`provenance.py:319-380`), вызов из `release.py` | закрывает дыру «PNG без сайдкара проходит гейт» (§10.5) |
+| Требовать провенанс у каждого PNG в `art/cg/**` | новая проверка рядом с `provenance.verify` (`provenance.py:317-378`), вызов из `release.py` | закрывает дыру «PNG без сайдкара проходит гейт» (§10.5) |
 | Завести автоматизацию рендера | новый модуль (`.dsa` + драйвер), §9; выход обязан ложиться в `output` деклараций | [26-automation.md](26-automation.md); статус в этом файле поменять с NOT IMPLEMENTED |
-| Сгенерировать декларации пачкой (скаффолд `vn assets daz new`) | новая команда в группе `assets_daz` (`../../tools/vn/src/vn/cli.py:652-679`) | тест уровня CLI (сейчас CLI-тестов нет вообще) |
+| Сгенерировать декларации пачкой | одиночный скаффолд уже есть — `vn assets new daz <logical_id> --scene …` (`../../tools/vn/src/vn/cli.py:843-881` → `sources.scaffold:102-142`); пачка = обход списка id поверх него | тест уровня CLI (сейчас CLI-тестов ровно один прецедент — `test_release.py:141-146`, `CliRunner` на `vn pack build`) |
 | Поднять хранилище сырцов | `.vnstorage.yaml` → `path` на внешний диск/NAS; затем `vn assets lock` + `vn assets push` | закрыть ADR-0004; манифесты коммитятся, бинари удаляются из git |
 
 ---
@@ -619,7 +621,7 @@ assets:
 - **Не рендерить с продуктом, которого нет в `content/licenses.yaml`.** Восстановить учёт задним числом по сотням деклараций дороже, чем завести запись при покупке.
 - **Не полагаться на `canvas` в `character.yaml`** — поле не читает ни одна строка кода.
 - **Не строить внешность персонажа на Premier-эксклюзивном контенте**, если не готовы держать подписку бессрочно: лицензия на такой контент действует, пока активна подписка.
-- **Не копить `.duf` и 4K-PNG в `assets_src/`** — порог ADR-0004 (warn 30 МБ / error 50 МБ) покраснит линт и CI, а `assets_src/` не в `.gitignore` (§15).
+- **Не кладите `.duf` и 4K-PNG в `assets_src/` мимо LFS** — линт краснеет на первом же таком файле (ADR-0004 в редакции ADR-0012), а `assets_src/` не в `.gitignore` (§15).
 - **Не искать пути DIM в `AppSettings.ini`** — их там нет; `Software64Path`/`CurInstallPath` живут в `UserAccounts\*.ini` (§2.1).
 - **Не переносить чужие туториалы 4.x буквально**: 3Delight, Collada, Dynamic Clothing, Mimic, Photoshop 3D Bridge, Render Album, Shader Baker/Builder в ветке 6 удалены.
 - **Не пере-симулировать dForce между соседними кадрами** — результат не бит-в-бит воспроизводим, и одежда «дышит» на монтаже.
@@ -638,7 +640,7 @@ vn assets provenance verify              # цепочки согласованы
 vn assets build                          # png/cg/** -> game/assets/cg/**
 vn content lint                          # в т.ч. порог бинарей ADR-0004
 vn build                                 # генерат: image cg …
-vn release validate --flavor patron      # 19 проверок; DAZ-декларации / провенанс / лицензии
+vn release validate --flavor patron      # 20 проверок; DAZ-декларации / провенанс / лицензии
 python -m pytest tools/vn/tests/test_provenance.py tools/vn/tests/test_licenses.py -q
 ```
 
@@ -679,8 +681,8 @@ python -m pytest tools/vn/tests/test_provenance.py tools/vn/tests/test_licenses.
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/schemas/daz_render@1.schema.json` (39 строк, `additionalProperties: false` на обоих уровнях), `../../tools/vn/src/vn/assets/daz.py` (77 строк — весь валидатор), `../../tools/vn/src/vn/assets/provenance.py:266-296` (`_record_render` / `record_daz`), `../../tools/vn/src/vn/assets/licenses.py:53-109`, `../../tools/vn/src/vn/pipeline.py:78-137` (`_dim_settings`, `daz_studio_path`, `daz_content_library`), `../../tools/vn/src/vn/cli.py:652-679` (группа `vn assets daz`), `../../tools/vn/src/vn/release.py:347-356,408-417` (гейты), `../../tools/install-daz.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md:84-105`, `../conventions/naming.md:20`, `content/licenses.yaml` |
+| **Читать перед изменением** | `../../tools/schemas/daz_render@1.schema.json` (93 строки, `additionalProperties: false` на обоих уровнях), `../../tools/vn/src/vn/assets/daz.py` (31 строка — обёртка) и `../../tools/vn/src/vn/assets/sources.py` (286 строк — весь валидатор), `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/assets/licenses.py:53-109`, `../../tools/vn/src/vn/pipeline.py:82-141` (`_dim_settings`, `daz_studio_path`, `daz_content_library`), `../../tools/vn/src/vn/cli.py:751-778` (группа `vn assets daz`), `../../tools/vn/src/vn/release.py:506-514,584-592` (гейты), `../../tools/install-daz.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md:84-106`, `../conventions/naming.md:22`, `content/licenses.yaml` |
 | **Не трогать** | `game/assets/**`, `game/generated/**`, `.vncache/**` — производные зоны, перезапишет сборка. `assets_src/**/*.provenance.json` руками не правят: их пишут `vn assets daz validate` и `vn assets provenance record`; ручная правка ломает сверку хэшей в `vn release validate`. `D:\DAZ3D\**` — вне репозитория, скриптами проекта не управляется |
-| **Зависимости (что ломается ниже по течению)** | `output` декларации → путь PNG → `tools/vn/src/vn/assets/pipeline.py:148-157` (`png2webp_cg` + `png2webp_cg_thumb`) → `game/assets/cg/**` → `tools/vn/src/vn/content/images.py` эмитит `image cg …` **по факту собранных файлов**, а не по декларациям: удалённый PNG даёт битую ссылку в рантайме, а не ошибку валидатора. Thumb-файлы читает галерея (`tools/vn/src/vn/content/compile.py:139-227`). NSFW-путь читает `release.py:191-202` при distribute. Бюджеты — `release.py:28-53`. Бинарь в `assets_src/` считает `tools/vn/src/vn/content/lint.py:371-399` (ADR-0004, 30/50 МБ) |
-| **Валидация** | `vn pipeline doctor` → `vn assets daz validate` → `vn assets licenses` → `vn assets provenance verify` → `vn assets build` → `vn content lint` → `vn build` → `vn release validate --flavor patron` → `python -m pytest tools/vn/tests -q` (138 тестов) |
-| **Частые ошибки** | 1) Считать, что что-то в репозитории рендерит: **автоматизации DAZ нет вообще**, ноль `.dsa`/`.duf`, `daz_studio_path()` только печатает путь в doctor. 2) Ссылаться на `docs/ARCHITECTURE.md` по вопросам DAZ — слова «DAZ» там нет ни разу, норма только в ADR-0006 и `docs/pipeline/phase-0.md`. 3) Верить строке «DAZ Studio 4.24+» в `phase-0.md:27` / `install-daz.ps1:109` — фактически стоит ветка 6, и для RTX 50xx 4.x нерабочая (§2.3). 4) Добавлять ключ в декларацию без бампа версии схемы — `additionalProperties: false` даст жёсткую ошибку на всех существующих декларациях. 5) Ожидать, что валидатор проверит `.duf`, разрешение, `id` ↔ `output` или наличие провенанса у PNG — не проверяет ничего из этого (§10.3, §10.5). 6) Искать пути DIM в `AppSettings.ini` вместо `UserAccounts\*.ini`. 7) Предполагать наличие хранилища сырцов: `~/vn-assets-store` не существует, `type: s3` кидает `StorageError` |
+| **Зависимости (что ломается ниже по течению)** | `output` декларации → путь PNG → `tools/vn/src/vn/assets/pipeline.py:351-368` (`img_cg` + `img_thumb`) → `game/assets/cg/**` → `tools/vn/src/vn/content/images.py` эмитит `image cg …` **по факту собранных файлов**, а не по декларациям: удалённый PNG даёт битую ссылку в рантайме, а не ошибку валидатора. Thumb-файлы читает галерея (`tools/vn/src/vn/content/compile.py:139-227`). NSFW-путь читает `release.py:191-202` при distribute. Бюджеты — `release.py:28-53`. Бинарь в `assets_src/` считает `tools/vn/src/vn/content/lint.py:371-399` (ADR-0004, 30/50 МБ) |
+| **Валидация** | `vn pipeline doctor` → `vn assets daz validate` → `vn assets licenses` → `vn assets provenance verify` → `vn assets build` → `vn content lint` → `vn build` → `vn release validate --flavor patron` → `python -m pytest tools/vn/tests -q` (254 теста) |
+| **Частые ошибки** | 1) Считать, что что-то в репозитории рендерит: **автоматизации DAZ нет вообще**, ноль `.dsa`/`.duf`, `daz_studio_path()` только печатает путь в doctor. 2) Ссылаться на `docs/ARCHITECTURE.md` по вопросам DAZ — слова «DAZ» там нет ни разу, норма только в ADR-0006 и `docs/pipeline/phase-0.md`. 3) Верить строке «DAZ Studio 4.24+» в `phase-0.md:26` / `install-daz.ps1:109` — фактически стоит ветка 6, и для RTX 50xx 4.x нерабочая (§2.3). 4) Добавлять ключ в декларацию без бампа версии схемы — `additionalProperties: false` даст жёсткую ошибку на всех существующих декларациях. 5) Ожидать, что валидатор откроет `.duf` или потребует провенанс у каждого PNG — этого он не делает; а вот разрешение и `id` ↔ `output` с ADR-0012 проверяет (§10.2, §10.3, §10.5). 6) Искать пути DIM в `AppSettings.ini` вместо `UserAccounts\*.ini`. 7) Предполагать наличие хранилища сырцов: `~/vn-assets-store` не существует, `type: s3` кидает `StorageError` |

@@ -39,7 +39,7 @@ vn play
 | `game/fonts/*.ttf` | 3 шрифта UI | **да** | **да** | нет | 1,2 МБ | `git lfs pull` |
 | `game/fonts/*.txt`, `README.md` | OFL-лицензии | да | нет | нет | 9,9 КБ | `git clone` |
 | `game/options.rpy`, `game/gui.rpy` | конфиг сборки и GUI | да | нет | нет | 8,1 КБ | `git clone` |
-| `game/generated/` | генерат Content Compiler (19 выходов + `manifest.json`) | **нет** (`.gitignore:2`) | — | — | 185 КБ | `vn build` |
+| `game/generated/` | генерат Content Compiler (21 выход + `manifest.json`) | **нет** (`.gitignore:2`) | — | — | 88 КБ | `vn build` |
 | `game/assets/` | собранные webp/webm/ogg | **нет** (`.gitignore:3`) | — | — | 191 КБ | `vn assets build` (из `assets_src/`) |
 | `game/tl/` | переводы из PO | **нет** (`.gitignore:4`) | — | — | 102 КБ | `vn loc import` |
 | `game/cache/` | кэш движка | **нет** (`.gitignore:5`) | — | — | 653 КБ | сам, при запуске |
@@ -222,7 +222,7 @@ storages:
 | `civitai_key` | 2 (`wan22_nsfw_general_high/low`, 585 МБ каждая) | **не скачает без ключа**: печатает инструкцию (civitai.com → Account Settings → API Keys → `setx CIVITAI_API_KEY <ключ>` → **новый терминал**) и продолжает |
 | `manual` | **0 записей сегодня** | загрузчик поддерживает (`pipeline.py:382-384`, `:428-432`: печатает URL, роль и целевой путь), но ни одна модель сейчас так не помечена |
 
-`--pull` без флагов качает только `required: true` (6 записей, 35,4 ГБ); `--all` добавляет опциональные; `--only id1,id2` — точечно (**внимание: `--only` тоже запускает загрузку**, не листинг — `cli.py:1442-1443`).
+`--pull` без флагов качает только `required: true` (6 записей, 35,4 ГБ); `--all` добавляет опциональные; `--only id1,id2` — точечно (**внимание: `--only` тоже запускает загрузку**, не листинг — `cli.py:1697-1698`).
 
 После успешной загрузки sha256 и размер записываются в `<ComfyUI>/models/.vn-models.json` — не в git (`pipeline.py:32`, `:420-426`). Сейчас там все 10 записей с хэшами. Это де-факто ваш чек-лист целостности: `vn pipeline models` сверяет фактический размер с записанным (расхождение > 1 МБ → `undersized`, `pipeline.py:297-298`).
 
@@ -283,7 +283,7 @@ vn pipeline models --pull                      # ~35 ГБ обязательны
 
 # 8. Проверка
 vn build --check                               # «check: генерат свеж»
-python -m pytest tools/vn/tests -q             # 253 passed
+python -m pytest tools/vn/tests -q             # 254 passed
 vn play
 ```
 
@@ -300,7 +300,7 @@ vn play
 | — | Сейвы и `persistent` — только из вашей копии |
 | — | `build/rpyc-cache/` — из вашей копии или из GitHub Actions cache (§7.3) |
 
-**Про `tools/vn.lock` — что изменилось.** Файл существует, точен (18 пинов, `Pillow==12.3.0`, `PyYAML==6.0.3`, `blake3==1.0.9`, `pytest==9.1.1`, …) и **теперь действительно читается CI**: `pip install --quiet -r tools/vn.lock` идёт **перед** editable-установкой во всех 8 местах установки тулчейна (`ci.yml:30`, `:46`, `nightly.yml:29`, `canary.yml:30`, `release.yml:42`, `.gitlab-ci.yml:23`, `:37` — две последние строки разворачиваются в три джобы через `extends: .with-sdk`). Порядок важен: после лока `>=`-диапазоны из `pyproject.toml` уже удовлетворены и pip ничего не поднимает. Инвариант закреплён тестом `tools/vn/tests/test_ci_config.py::test_lock_installed_before_editable`. На новой машине ставьте так же — сначала лок, потом editable.
+**Про `tools/vn.lock` — что изменилось.** Файл существует, точен (18 пинов, `Pillow==12.3.0`, `PyYAML==6.0.3`, `blake3==1.0.9`, `pytest==9.1.1`, …) и **теперь действительно читается CI**: `pip install --quiet -r tools/vn.lock` идёт **перед** editable-установкой во всех 7 строках установки тулчейна (в GitLab они разворачиваются в 3 джобы, итого 8 прогонов) (`ci.yml:43`, `:59`, `nightly.yml:29`, `canary.yml:30`, `release.yml:42`, `.gitlab-ci.yml:23`, `:37` — две последние строки разворачиваются в три джобы через `extends: .with-sdk`). Порядок важен: после лока `>=`-диапазоны из `pyproject.toml` уже удовлетворены и pip ничего не поднимает. Инвариант закреплён тестом `tools/vn/tests/test_ci_config.py::test_lock_installed_before_editable`. На новой машине ставьте так же — сначала лок, потом editable.
 
 **Остаток по G17, честно.** В локе закреплены только прямые зависимости; транзитивные (например `pygments`, приезжающий с `pytest`) не пиннованы, поэтому окружение всё ещё не бит-в-бит воспроизводимо. Полное закрытие — регенерация лока с транзитивными пинами (`pip-compile` / `uv pip compile`), это отдельная задача.
 
@@ -318,7 +318,7 @@ vn play
 
 | Файл/каталог | Что теряется | Последствие |
 |---|---|---|
-| `.vncache/assets-manifest.json` | манифест сборки ассетов (20 выходов) | **удаление осиротевших молча отключается**: `old_manifest` остаётся пустым (`tools/vn/src/vn/assets/pipeline.py:393-399`), `candidates = set(old_manifest) - set(seen_outputs)` пусто (`:422`), сборка зелёная. Файлы, которых уже не должно быть в `game/assets/`, останутся навсегда и поедут в каждый дистрибутив |
+| `.vncache/assets-manifest.json` | манифест сборки ассетов (55 выходов) | **удаление осиротевших молча отключается**: `old_manifest` остаётся пустым (`tools/vn/src/vn/assets/pipeline.py:393-399`), `candidates = set(old_manifest) - set(seen_outputs)` пусто (`:422`), сборка зелёная. Файлы, которых уже не должно быть в `game/assets/`, останутся навсегда и поедут в каждый дистрибутив |
 | `.vncache/assets/<2hex>/<64hex>` | 24 блоба кэша трансформаций | только время: всё перекодируется заново |
 | `.vncache/analyze-*.json` | кэш разбора `.rpy` через SDK | только время; **но** тёплый кэш маскирует отсутствие SDK — на холодном вы наконец узнаете, что `RENPY_SDK` не задан |
 | `.vncache/psd_png/` | staging PSD | пересоздаётся при `vn assets build` (не при `--check`!) |
@@ -333,7 +333,7 @@ vn play
 
 ### 7.2 Потеря `game/generated/` или `game/assets/`
 
-Штатная ситуация — обе зоны и так не в git. `vn build` (или `vn bootstrap`) восстанавливает обе. `game/generated/manifest.json` (`gen_manifest@1`, 30 входов / 19 выходов) пересоздаётся сборкой; свежесть компилятор определяет **побайтовым сравнением выходов** (`tools/vn/src/vn/content/compile.py:883-889`), а `inputs` пишется, но обратно не читается.
+Штатная ситуация — обе зоны и так не в git. `vn build` (или `vn bootstrap`) восстанавливает обе. `game/generated/manifest.json` (`gen_manifest@1`, 36 входов / 21 выход) пересоздаётся сборкой; свежесть компилятор определяет **побайтовым сравнением выходов** (`tools/vn/src/vn/content/compile.py:1168-1178`), а `inputs` пишется, но обратно не читается.
 
 Единственная команда, которая жёстко падает без `game/generated/manifest.json` — автопилот: `game/generated/ пуст — сначала vn build` (`cli.py:1297-1298`).
 
@@ -413,7 +413,7 @@ vn play
 | Сделать лок атомарным | `storage.py:99-109` — создание через `O_EXCL`/`If-None-Match` вместо read-then-write | тест на гонку в `tools/vn/tests/test_storage.py` |
 | Добавить TTL и эскалацию лока (`ARCHITECTURE.md:295`) | поле `ttl` в lock-JSON + проверка в `lock_holder`; аудит `--force` | ADR: политика «чей лок протух» |
 | Сделать `vn bootstrap` настоящим (G4) | `cli.py:202-222` — ветка скачивания артефакта `generated-<sha>` / remote cache перед локальной сборкой | джоба «clone → run ≤ 5 мин» (`ci/README.md:3`); снимет требование тулчейна для сценариста |
-| ~~Заставить `tools/vn.lock` работать (G17)~~ — **сделано** | лок ставится перед editable во всех 8 местах установки; стережёт `tools/vn/tests/test_ci_config.py` | осталось: закрепить транзитивные зависимости (`pip-compile`/`uv pip compile`) — сейчас пиннованы только 18 прямых пакетов |
+| ~~Заставить `tools/vn.lock` работать (G17)~~ — **сделано** | лок ставится перед editable во всех 7 строках установки (8 прогонов джоб); стережёт `tools/vn/tests/test_ci_config.py` | осталось: закрепить транзитивные зависимости (`pip-compile`/`uv pip compile`) — сейчас пиннованы только 18 прямых пакетов |
 | Спасти `rpyc-cache` от потери | ключевать каталог по `<version>-<flavor>` (`cli.py:358`) и/или заливать как долговременный артефакт релиза | плюс регрессионная джоба `rpyc-compat` (`ARCHITECTURE.md:3508`) |
 | ~~Завести схему `assets_manifest@1`~~ — **сделано** | `tools/schemas/assets_manifest@1.schema.json` заведена; `build_assets` валидирует документ перед записью (`pipeline.py:441-455`) | нарушение G16 закрыто; схем в `tools/schemas/` стало 36 |
 
@@ -462,4 +462,4 @@ python -m pytest tools/vn/tests/test_storage.py -q     # бэкенды, лок�
 | **Не трогать** | `game/generated/**`, `game/assets/**`, `game/tl/**`, `game/cache/**` (`.gitignore:2-5`), `build/**` (`:20`), `.vncache/**` (`:21`) — производные зоны. Особо: **не редактировать и не удалять** `.vncache/assets-manifest.json` (ломает удаление осиротевших) и `build/rpyc-cache/**` (ломает save-совместимость). `%APPDATA%\RenPy\vn-1755000000\` и `game/saves/` — пользовательские данные, вне зоны правок |
 | **Зависимости (что ломается ниже по течению)** | Изменение `.gitignore` → правила G2/G4 и `vn content lint --layout` (10 обязательных каталогов, 2 запрещённых). Изменение `.vnstorage.yaml` → `vn assets push/pull/status` и релизный гейт (проверка №16, `release.py:447-460`). Смена `config.save_directory` (`game/options.rpy:7`) → все существующие сейвы игроков становятся невидимыми. Смена формата `asset_src@1` → все закоммиченные манифесты (G21 запрещает такое изменение) |
 | **Валидация** | `vn doctor` → `vn content lint` → `vn build --check` → `vn assets status` → `vn save check` → `git status` (производные зоны чисты) → `python -m pytest tools/vn/tests/test_storage.py -q` |
-| **Частые ошибки** | 1) Считать `vn bootstrap` скачиванием готовых зон — он собирает локально, remote-fetch NOT IMPLEMENTED, `--use-artifact` не существует. 2) Писать, что `tools/vn.lock` никто не читает — с 2026-08-08 он ставится во всех 8 местах установки CI и **до** editable; неверно и обратное — полной воспроизводимости нет, транзитивные зависимости не пиннованы. 3) Считать лок хранилища технической гарантией — он кооперативный, не атомарный, без TTL. 4) Забыть, что сейвы лежат в **двух** локациях. 5) Верить, что потеря `build/rpyc-cache/` будет замечена — при полном отсутствии каталога сборка идёт молча. 6) Цитировать `docs/ARCHITECTURE.md` про S3/`If-None-Match`/TTL/бот-нотификации как про работающее — всё это NOT IMPLEMENTED |
+| **Частые ошибки** | 1) Считать `vn bootstrap` скачиванием готовых зон — он собирает локально, remote-fetch NOT IMPLEMENTED, `--use-artifact` не существует. 2) Писать, что `tools/vn.lock` никто не читает — с 2026-08-08 он ставится во всех 7 строках установки CI и **до** editable; неверно и обратное — полной воспроизводимости нет, транзитивные зависимости не пиннованы. 3) Считать лок хранилища технической гарантией — он кооперативный, не атомарный, без TTL. 4) Забыть, что сейвы лежат в **двух** локациях. 5) Верить, что потеря `build/rpyc-cache/` будет замечена — при полном отсутствии каталога сборка идёт молча. 6) Цитировать `docs/ARCHITECTURE.md` про S3/`If-None-Match`/TTL/бот-нотификации как про работающее — всё это NOT IMPLEMENTED |

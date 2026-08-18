@@ -137,26 +137,28 @@ capture:
 
 ### Где лежат бинари сцены
 
-Tray-бандл/сейв/`.package` — бинарные сырцы: в хранилище через `vn assets push`, в git — манифесты (G2/G21; docstring `../../tools/vn/src/vn/assets/sims4.py:9-12`). **Честно:** в `../../.vnstorage.yaml:9` настроен `type: file` с путём `~/vn-assets-store`, но этого каталога на машине нет и `push` здесь ни разу не запускался. `type: s3` присутствует в конфиге только закомментированным примером будущего перехода (`.vnstorage.yaml:6-7`); сам s3-бэкенд — честная заглушка, бросающая `StorageError` (`../../tools/vn/src/vn/assets/storage.py:129-133`), — NOT IMPLEMENTED. Не коммитьте бандлы в git: порог ADR-0004 (warn > 30 МБ, error > 50 МБ нетекстовых байт в `assets_src/`) считает `vn content lint` — покраснеет CI и релизный гейт.
+Tray-бандл/сейв/`.package` — бинарные сырцы: в хранилище через `vn assets push`, в git — манифесты (G2/G21; docstring `../../tools/vn/src/vn/assets/sims4.py:9-12`). **Честно:** в `../../.vnstorage.yaml:9` настроен `type: file` с путём `~/vn-assets-store`, но этого каталога на машине нет и `push` здесь ни разу не запускался. `type: s3` присутствует в конфиге только закомментированным примером будущего перехода (`.vnstorage.yaml:6-7`); сам s3-бэкенд — честная заглушка, бросающая `StorageError` (`../../tools/vn/src/vn/assets/storage.py:129-133`), — NOT IMPLEMENTED. Бандл в git легален только через LFS (`.gitattributes:36-37` покрывает `*.zip` и `*.package`): `vn content lint` краснит любой нетекстовый файл `assets_src/` мимо LFS и 50 МБ таких файлов суммарно (ADR-0004 в редакции ADR-0012) — а с ним CI и релизный гейт.
 
 ## 5. Что делает `vn assets sims4 validate`
 
-Код: `../../tools/vn/src/vn/cli.py:718-741` → `../../tools/vn/src/vn/assets/sims4.py:34-80`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три копии сведены к одному контракту — `tools/vn/src/vn/assets/sources.py`; различия источников стали данными (`SourceKind`).
+Код: `../../tools/vn/src/vn/cli.py:817-840` → `../../tools/vn/src/vn/assets/sims4.py` (обёртка, 26 строк) → `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три копии сведены к одному контракту; различия источников стали данными (`SourceKind`, `sources.py:47-67`).
 
 | Шаг | Что происходит | Строка |
 |---|---|---|
-| 1 | Обход `assets_src/sims4/**/*.render.yaml`; нет каталога — тихий пустой отчёт | `sims4.py:41-45` |
-| 2 | JSON Schema; ошибка → декларация пропускается целиком | `sims4.py:50-53` |
-| 3 | Сцена: `assets_src/<scene>` **или** `<scene>.manifest.json`, иначе error `«…нет ни локально, ни в манифестах (vn assets push после экспорта Tray-бандла/сейва)»` | `sims4.py:56-61` |
-| 4 | Дубликат `output` между декларациями → error | `sims4.py:63-67` |
-| 5 | Нет файла выхода → **warning** `«выход … ещё не захвачен»`, обработка останавливается | `sims4.py:69-72` |
-| 6 | Выход есть и не `--no-provenance` → пишется `<output>.provenance.json`, kind `sims4_render` (`provenance.py:304-306`) | `sims4.py:73-79` |
+| 1 | Обход `assets_src/sims4/**/*.render.yaml`; нет каталога — тихий пустой отчёт | `sources.py:154`, `:151-152` |
+| 2 | JSON Schema; ошибка → декларация пропускается целиком | `sources.py:160-163` |
+| 3 | Сцена: `assets_src/<scene>` **или** `<scene>.manifest.json`, иначе error `«…нет ни локально, ни в манифестах (vn assets push после экспорта Tray-бандла/сейва)»` | `sources.py:166-172` |
+| 4 | Дубликат `output` между декларациями → error | `sources.py:174-179` |
+| 5 | `id` не соответствует выходу → error | `sources.py:183-188` |
+| 6 | Нет файла выхода → **warning** `«выход … ещё не получен»`, обработка останавливается | `sources.py:190-193` |
+| 7 | `capture.resolution` против фактического файла; `capture.mode`/`fps` против типа и fps мастера → error | `sources.py:252-286`, `:209-249` |
+| 8 | Выход есть и не `--no-provenance` → пишется `<output>.provenance.json`, kind `sims4_render` (`provenance.py:279-304`, `sources.py:64-65`) | `sources.py:198-205` |
 
 **Чего не делает:** не открывает и не парсит Tray-бандл; (`resolution` против файла и `id` против `output` — сверяются с ADR-0012); **не проверяет, что `game_version` похожа на настоящую версию** — схема требует лишь `type: string` (`sims4_render@1.schema.json:26`), без `minLength` и `pattern`, так что проходит любая строка, включая пустую; не требует `license`; ничего не запускает.
 
 **Провенанс и цепочка.** `settings` — дословный снимок `capture`, включая `game_version` и `mods`. Полировка захвата в ComfyUI даёт цепочку `["sims4_render", "comfyui"]` — ровно это утверждает тест `test_provenance.py:266`; ADR-0007 §Решение п.2 называет такую полировку штатным способом закрыть стилевой разрыв с DAZ-реализмом.
 
-**Релизный гейт.** `../../tools/vn/src/vn/release.py:369-378` вызывает валидатор с `write_provenance=False`, но PASS-ветка написана как `elif srep.checked:` — **при нуле деклараций гейт не печатает про Sims 4 ничего**. Фактический прогон сегодня — 16 PASS, exit 0, среди них `PASS DAZ-декларации: 0 проверено` и ни одной строки про VaM/Sims 4.
+**Релизный гейт.** `../../tools/vn/src/vn/release.py:528-537` вызывает валидатор с `write_provenance=False`; ветвление симметрично DAZ и VaM (`errors → FAIL`, иначе `warnings → WARN`, иначе `else → PASS`), поэтому при нуле деклараций печатается `PASS  Sims4-декларации: 0 проверено`. Прошлая асимметрия (`elif srep.checked:`, из-за которой пустая зона молчала) в коде исправлена.
 
 ## 6. Лицензии — читать до того, как вкладывать время
 
@@ -248,7 +250,7 @@ vn assets sims4 validate --scope ch01 --no-provenance
 vn assets licenses                    # реестр лицензий + декларации без license
 vn assets provenance verify           # цепочки провенанса
 vn content lint                       # в т.ч. порог бинарей ADR-0004
-vn release validate --flavor public   # сейчас 16 PASS, exit 0, строки про Sims 4 нет
+vn release validate --flavor public   # сейчас 19 строк (18 PASS + 1 WARN), exit 0; строка про Sims 4 есть всегда — «Sims4-декларации: 0 проверено»
 python -m pytest tools/vn/tests/test_provenance.py -q   # включая test_sims4_capture_requires_game_version
 ```
 
@@ -260,6 +262,6 @@ python -m pytest tools/vn/tests/test_provenance.py -q   # включая test_si
 |---|---|
 | **Читать перед изменением** | `../../tools/vn/src/vn/assets/sims4.py` (весь, 80 строк), `../../tools/schemas/sims4_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:266-306`, `../../tools/vn/src/vn/cli.py:712-741`, `../../tools/vn/src/vn/pipeline.py:195-227` и `:549-552`, `../../tools/vn/src/vn/release.py:369-376`, `../../tools/install-sims4.ps1`, `../adr/0007-sims4-optional-source.md` (весь, 53 строки), `../pipeline/phase-0.md:132-162`, `../../tools/vn/tests/test_provenance.py:229-303` |
 | **Не трогать** | `assets_src/sims4/.gitkeep` (маркер зоны), `game/assets/**` и `game/generated/**` (производные), `<output>.provenance.json` (пишет валидатор; ручная правка ломает `provenance verify` по blake3) |
-| **Зависимости (что ломается ниже по течению)** | Декларация → `provenance@1` → `vn assets provenance verify` → релизный гейт (`release.py:337-345`); `license` → `tools/vn/src/vn/assets/licenses.py:53-109` (`DECL_SOURCES` содержит `("sims4", "sims4_render@1")`) → гейт (`release.py:408-417`); `output` в `png/cg/**` → `png2webp_cg` + `png2webp_cg_thumb`; `output` в `video_src/**` → `video2webm` + `mov_meta@1` |
+| **Зависимости (что ломается ниже по течению)** | Декларация → `provenance@1` → `vn assets provenance verify` → релизный гейт (`release.py:496-504`); `license` → `tools/vn/src/vn/assets/licenses.py:53-109` (`DECL_SOURCES` содержит `("sims4", "sims4_render@1")`) → гейт (`release.py:584-592`); `output` в `art/cg/**` → `img_cg` + `img_thumb`; `output` в `video_src/**` → `video2webm` + `mov_meta@1` |
 | **Валидация** | `vn assets sims4 validate` → `vn assets provenance verify` → `vn assets licenses` → `vn content lint` → `vn build` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests/test_provenance.py -q` |
 | **Частые ошибки** | 1) Считать зону мёртвым кодом и удалять — ADR-0007 «принято», зона спящая **сознательно**, план отступления описан отдельно. 2) Делать лицензионные выводы за владельца: решение об использовании визуала EA — амендмент к ADR-0007, а не правка кода или доки. 3) Забыть `capture.game_version` — единственное обязательное поле, которого нет у VaM; тест `test_sims4_capture_requires_game_version` его стережёт. 4) Добавить ключ в `capture` — `additionalProperties: false`. 5) Ждать FAIL там, где WARN: незахваченный выход, декларация без `license`, отсутствие игры в doctor. 6) Искать Sims 4 в `docs/ARCHITECTURE.md` — там **ноль** упоминаний; норма живёт в ADR-0007, `docs/pipeline/phase-0.md` и `docs/onboarding/artist.md:31-34` |

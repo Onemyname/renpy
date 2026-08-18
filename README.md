@@ -36,25 +36,28 @@
 | Аудио | каналы bgm/ambient/sfx/voice, дакинг музыки под голос, валидация «kind трека ↔ канал» |
 | Локализация | стабильные id строк (`vn loc keys`), gettext PO, пер-языковые шрифты, псевдолокаль, гейт покрытия |
 | Сейвы | версионированная схема + цепочка миграций; сейв из будущего отвергается; выпущенные id неизменяемы (реестр + shim-метки) |
-| Галерея/ачивки | декларации + авто-анлок фактом просмотра (`persistent._seen_images`) |
+| Галерея/ачивки | декларации + авто-анлок фактом просмотра (`persistent._seen_images`); у ачивок пока только бэкенд — экрана достижений в игре нет |
 | Паки/DLC | `packs/<id>/` зеркалит `content/`; владение — логический гейт `pack_registry.owned()` |
 | QA | автопилот внутри процесса игры (скриншоты, smoke, сейв-корпус с миграциями), бюджеты перфа в CI |
 | Платформы | Platform Services ([ADR-0014](docs/adr/0014-platform-services.md)): Steam/Deck/Big Picture — одна из реализаций, а не фундамент; ачивки и владение DLC через провайдеры, controller-first UI, авто-масштаб интерфейса |
-| Релиз | флейворы (public/patron) из `project.yaml`, релизный гейт `vn release validate`, депоты `vn release steam`, ассеты россыпью ради Steam-дельта-патчей |
+| Релиз | флейворы (public/patron) из `project.yaml`, релизный гейт `vn release validate` (20 проверок), депоты `vn release steam` — VDF + раскладка депотов всех платформ, включая Linux-`tar.bz2` (аплоад — ручной `steamcmd`; в репозитории ещё нет `appid`/`depots`, поэтому команду не довести до конца), ассеты россыпью ради Steam-дельта-патчей |
 
 ## Платформы
 
 | Платформа | Состояние |
 |---|---|
 | Windows / Linux / macOS standalone | поддерживается; Steam не требуется |
-| Steam | штатный стек Ren'Py (без сторонних биндингов): ачивки, DLC-владение, оверлей; включается App ID в `project.yaml` + редистрибутив Valve на build-машине |
-| Steam Deck | controller-first UI, авто-масштаб интерфейса, экранная клавиатура движка |
-| Big Picture / ТВ | крупная типографика, safe-area, полноэкранный дефолт |
+| Steam | штатный стек Ren'Py (без сторонних биндингов): ачивки, DLC-владение, оверлей; включается App ID в `project.yaml` + редистрибутив Valve на build-машине. Приложения в Steamworks ещё нет (`platform.steam.appid: null`), на живом Steam не проверено |
+| Steam Deck | controller-first UI, авто-масштаб интерфейса, экранная клавиатура движка; физического Deck не было — вёрстка проверена только эмуляцией `RENPY_VARIANT` |
+| Big Picture / ТВ | крупная типографика, safe-area, полноэкранный дефолт; открытые дефекты controller-навигации перечислены в [handbook 42](docs/handbook/42-big-picture.md) |
 | Android / APK | не реализовано; рантайм к этому подготовлен (ноль сети и subprocess, файловый ввод через loader) |
 
 Новая платформа = новый провайдер в `game/framework/00_core/035_platform.rpy`
-плюс конфиг: ядро, контент и UI не трогаются (подробно —
-[handbook: платформы](docs/handbook/39-platforms.md)).
+плюс конфиг: ядро, контент и UI не трогаются. Подробно: архитектура слоя —
+[handbook 39](docs/handbook/39-platforms.md), процесс в Steamworks —
+[40](docs/handbook/40-steamworks.md), прогон на Deck — [41](docs/handbook/41-steam-deck.md),
+controller-first UI — [42](docs/handbook/42-big-picture.md), предрелизная приёмка —
+[43](docs/handbook/43-steam-qa.md).
 
 ## Быстрый старт
 
@@ -68,7 +71,7 @@ vn doctor                        # самодиагностика окружен
 vn build                         # схемы → lint → ассеты → генерат → бюджеты
 vn play                          # запуск игры
 vn test smoke                    # автопрохождение с скриншотами
-python -m pytest tools/vn/tests -q   # 240 passed
+python -m pytest tools/vn/tests -q   # 254 passed
 ```
 
 Без `git lfs` шрифты приедут текстовыми указателями и игра упадёт на старте —
@@ -102,7 +105,7 @@ CI-режим везде — флаг `--check`. Exit-коды: 0 успех, 1 
 | `game/generated/` | Генерат Content Compiler — **не в git**, `vn build` |
 | `game/assets/` | Собранные ассеты — **не в git**, `vn assets build` |
 | `loc/` | Обмен с переводчиками: PO-файлы + шардированный ledger строк |
-| `tools/vn/` | Единственный CLI проекта + 240 pytest-тестов |
+| `tools/vn/` | Единственный CLI проекта + 254 pytest-теста |
 | `tools/schemas/` | Реестр JSON Schema (39 схем) — единственный источник версий деклараций |
 | `ci/` | Фикстуры сейв-корпуса, линия `.rpyc` для save-совместимости, релизный манифест |
 | `docs/` | [ARCHITECTURE](docs/ARCHITECTURE.md) · [handbook](docs/handbook/README.md) · [ADR](docs/adr/) · [конвенции](docs/conventions/) · [онбординг по ролям](docs/onboarding/) · [runbooks](docs/runbooks/) |
@@ -118,7 +121,7 @@ smoke по веткам и языкам + сейв-корпус; еженеде�
 
 ## Контекст проекта
 
-Версия `0.1.5`, фаза 0→1: платформа доказана на 240 тестах и демо-главе
+Версия `0.1.5`, фаза 0→1: платформа доказана на 254 тестах и демо-главе
 (две ветки, озвучка-заглушка, послойный шот, DLC-пак) — производство контента
 ещё не начиналось. Технические решения сверены с шипнутым конкурентом на 23 ГБ
 контента: [docs/competitive-audit-freshwomen.md](docs/competitive-audit-freshwomen.md) —

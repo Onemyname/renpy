@@ -77,7 +77,7 @@ matrix:
 | `color` | да | `^#[0-9a-fA-F]{6}$` | `Character(color=…)` — цвет имени в say-окне | IMPLEMENTED |
 | `voice_tag` | нет | `^[a-z][a-z0-9_]*$` | `Character(voice_tag=…)` | IMPLEMENTED — тег даёт per-character mute в настройках; сама озвучка привязана не к тегу, а к say-id через манифесты `voice@1` (см. [23-audio.md](23-audio.md) §8; заглушкой осталась только `vn voice tts`) |
 | `canvas` | нет | `[int,int]`, обе ≥1 | `assets/pipeline.py` — холст всех мастеров персонажа | IMPLEMENTED (ADR-0012): расхождение = ошибка сборки |
-| `matrix` | нет | объект, ниже | `emit_images` (`images.py:106`) | IMPLEMENTED |
+| `matrix` | нет | объект, ниже | `emit_images` (`images.py:357-510`) | IMPLEMENTED |
 | `animated` | нет | `{backend: live2d\|spine, source, map}` | **никто** — 0 совпадений `animated`/`live2d`/`spine` в коде тулинга | NOT IMPLEMENTED (G12, ARCHITECTURE.md:75) |
 
 Практические следствия:
@@ -106,17 +106,17 @@ matrix:
 
 | Проверка | Где | Уровень | Сообщение (сокращённо) |
 |---|---|---|---|
-| Дизъюнктность имён между группами | `images.py:122-130` | error | «имя `x` используется в двух группах matrix» |
-| `required`: есть `base` у позы | `images.py:133-138` | error | «matrix.required: нет base для позы `p`» |
-| `required`: есть слой `outfits/<o>` | `images.py:139-143` | error | «нет слоя outfits/o для позы p» |
-| `required`: есть слой `faces/<e>` | `images.py:144-148` | error | «нет слоя faces/e для позы p» |
-| `forbidden`: слой отсутствует | `images.py:149-165` | error | «собран, но комбинация запрещена — удалите арт или декларацию» |
-| Собранная поза вне `matrix.poses` | `images.py:169-171` | warning | «поза `p` есть в assets, но не в matrix» |
-| Собранный `outfits/*`/`faces/*` вне matrix | `images.py:172-177` | warning | «outfits/o (p) вне matrix» |
-| Собраны `overlays/*` | `images.py:178-182` | warning | «эмиссия overlay-группы появится позже — сейчас мёртвый груз» |
-| Поза из matrix без `base@2.webp` | `images.py:184-191` | error | «у позы `p` нет base@2.webp — поза не собрана» |
-| Ни одна поза не собрана | `images.py:193-195` | error | «ни одна поза из matrix не собрана в assets» |
-| Первый объявленный `outfit`/`emotion` не собран | `images.py:225-231` | warning | «default достался следующему собранному имени» |
+| Дизъюнктность имён между группами | `images.py:380-386` | error | «имя `x` используется в двух группах matrix» |
+| `required`: есть `base` у позы | `images.py:389-393` | error | «matrix.required: нет base для позы `p`» |
+| `required`: есть слой `outfits/<o>` | `images.py:395-399` | error | «нет слоя outfits/o для позы p» |
+| `required`: есть слой `faces/<e>` | `images.py:400-404` | error | «нет слоя faces/e для позы p» |
+| `forbidden`: слой отсутствует | `images.py:407-421` | error | «собран, но комбинация запрещена — удалите арт или декларацию» |
+| Собранная поза вне `matrix.poses` | `images.py:424-426` | warning | «поза `p` есть в assets, но не в matrix» |
+| Собранный `outfits/*`/`faces/*` вне matrix | `images.py:428-433` | warning | «outfits/o (p) вне matrix» |
+| Собраны `overlays/*` | `images.py:434-436` | warning | «эмиссия overlay-группы появится позже — сейчас мёртвый груз» |
+| Поза из matrix без собранного `base` | `images.py:440-444` | error | «у позы `p` нет base@2.webp — поза не собрана» |
+| Ни одна поза не собрана | `images.py:446-448` | error | «ни одна поза из matrix не собрана в assets» |
+| Первый объявленный `outfit`/`emotion` не собран | `images.py:482-487` | warning | «default достался следующему собранному имени» |
 
 Любая error здесь = `CompileError` и exit 1 у `vn build` (`compile.py:835-838`).
 
@@ -154,11 +154,11 @@ game/assets/spr/mira/a/faces/{neutral,smile,angry}@2.webp
 
 ### Почему WebP и что значит `@2`
 
-- **WebP** — единственный выходной формат статики: `png2webp_sprite`, `quality=95` в профиле `full`, `quality=50` в `draft`, `method=4`, RGBA, **без ресайза** (`pipeline.py:82-91`, `:221`). Профиль `draft` (`vn build --profile draft`, `vn assets build --profile draft`) существует ради скорости локальной итерации, в релиз идёт только `full`.
+- **WebP** — единственный выходной формат статики: трансформация `img_sprite` (имя после ADR-0012; `png2webp_sprite` в коде больше нет), `quality=95` в профиле `full`, `quality=50` в `draft`, RGBA (`alpha: require`), масштабы по `render.classes.spr.variants` (`render_config.py:81-92`, применение — `pipeline.py:625-630`, ядро энкода — `assets/imaging.py:104-136`). Профиль `draft` (`vn build --profile draft`, `vn assets build --profile draft`) существует ради скорости локальной итерации, в релиз идёт только `full`.
 - **`@2`** — суффикс oversampling Ren'Py: движок читает его из **имени файла** и считает изображение вдвое плотнее виртуального разрешения. В нашем конвейере это **чистая конвенция имени**: масштабирующего кода нет, PNG кодируется 1:1 (`pipeline.py:221` не передаёт `max_side`). То есть художник обязан отдавать сырец в 2× от расчётного экранного размера — иначе персонаж будет вдвое мельче задуманного.
 - `@2` есть **только у спрайтов**. Выходы `bg/`, `cg/`, `ui/` идут без суффикса.
 
-Трансформация версионирована: `TRANSFORMS["png2webp_sprite"] = "1"` (`pipeline.py:38-46`). Бамп версии инвалидирует только спрайтовую ветку кэша `.vncache/assets/`. Подробности кэша, GC и orphan-удаления — [16-assets.md](16-assets.md).
+Трансформация версионирована: `TRANSFORMS["img_sprite"] = "2"` (`pipeline.py:54-65`). Бамп версии инвалидирует только спрайтовую ветку кэша `.vncache/assets/`. Подробности кэша, GC и orphan-удаления — [16-assets.md](16-assets.md).
 
 ### PSD-путь (IMPLEMENTED / UNEXERCISED)
 
@@ -208,13 +208,13 @@ layeredimage mira:
 define config.tag_layer = {"mira": "sprites"}
 ```
 
-Правила эмиттера (канон G11, `images.py:197-244`) — их нужно знать, чтобы понимать ошибки:
+Правила эмиттера (канон G11, `images.py:357-510`) — их нужно знать, чтобы понимать ошибки:
 
 1. **Группа `pose` — селекторная.** Каждый атрибут — `Null()`, то есть ничего не рисует; поза только «включает» слои через `if_any`. Литерала `null` в layeredimage не существует, `Null()` — выражение-displayable.
 2. **`base` — не атрибут, а `always`-слой** с гейтом `if_any ["<pose>"]`. По одному `always` на позу.
 3. **Группы `outfit` и `face` строятся перебором `имя × поза`**: если два наряда с именем `school` есть у поз `a` и `b`, эмитятся две строки `attribute school … if_any ["a"]` и `attribute school … if_any ["b"]`. Имена атрибутов повторяются — это штатная идиома Ren'Py, гейтинг разводит их по позам.
-4. **`default` достаётся первому реально собранному имени**, а не первому объявленному (`images.py:213-218`); расхождение = warning.
-5. **Пустая группа не эмитится** — строки откатываются (`images.py:232-234`).
+4. **`default` достаётся первому реально собранному имени**, а не первому объявленному (`images.py:471-487`); расхождение = warning.
+5. **Пустая группа не эмитится** — строки откатываются (`images.py:488-495`).
 6. **Каждый attribute — с явным displayable.** Без него layeredimage искал бы файл по авто-паттерну.
 7. **`config.tag_layer`** привязывает тег персонажа к слою `sprites` — иначе `camera sprites` с matrixcolor-профилем локации не тонировала бы персонажа. Слой `sprites` создаётся в `game/framework/00_core/001_boot.rpy:22` (`renpy.add_layer("sprites", above="master")`).
 
@@ -264,7 +264,7 @@ label ch01_s020__body:
 | `side/<emotion>@2.webp` (side images для say-окна) | NOT IMPLEMENTED | нормативно в `docs/conventions/naming.md:18` и `docs/ARCHITECTURE.md:144,454,922`; в `tools/vn/src/vn/` — ноль совпадений `side/` |
 | `canvas` | IMPLEMENTED (ADR-0012) | контракт холста мастеров |
 | `animated` (Live2D/Spine, G12) | NOT IMPLEMENTED | схема есть, потребителей нет; `assets_src/{live2d,spine_export}/characters/` содержат только `.gitkeep` |
-| Персонажи в паках | NOT IMPLEMENTED | компилятор берёт **только** `content/characters/*/character.yaml` (`compile.py:665`); `packs/<id>/characters/` сканирует лишь G7-проверка линтера (`lint.py:331-338`). Персонаж, объявленный в паке, не попадёт ни в `characters.gen.rpy`, ни в `images.gen.rpy` |
+| Персонажи в паках | NOT IMPLEMENTED | компилятор берёт **только** `content/characters/*/character.yaml` (`compile.py:878`); `packs/<id>/characters/` сканирует лишь G7-проверка линтера (`lint.py:366-373`). Персонаж, объявленный в паке, не попадёт ни в `characters.gen.rpy`, ни в `images.gen.rpy` |
 | Переименование персонажа | NOT IMPLEMENTED (by design) | `renames@1` имеет секции `scenes`, `deleted_scenes`, `labels`, `vars` — секции `characters` **нет**. Комментарий линтера прямо говорит: «главы и персонажи механизма переименования не имеют» (`lint.py:320-321`) |
 | `vn voice tts` (TTS-черновики; остальной `vn voice` и озвучка по say-id — работают, [23-audio.md](23-audio.md) §8) | NOT IMPLEMENTED (фаза 2) | `cli.py:1278-1281` |
 | Автоматизация рендера DAZ/VaM/Sims4 | NOT IMPLEMENTED | есть только валидаторы деклараций и запись провенанса; headless-вызова нет |
@@ -284,7 +284,7 @@ label ch01_s020__body:
 | 5 | Рендер | выход по `output:` — для персонажа это `png/characters/<id>/<pose>/…` относительно `assets_src/` | вручную в DAZ/VaM; headless-автоматизации нет | NOT IMPLEMENTED (автоматизация) | [22-rendering.md](22-rendering.md) |
 | 6 | AI-обработка / консистентность лица | ComfyUI, PNG с tEXt-метаданными | `vn assets provenance record <файл> [--source …]` | IMPLEMENTED / UNEXERCISED (ноль `*.provenance.json` в репозитории) | [20-image-generation.md](20-image-generation.md) |
 | 7 | Постобработка, нарезка слоёв | `assets_src/psd/characters/<id>/<id>_<pose>.psd` **или** сразу PNG | `vn assets build` (PSD режется автоматически) | IMPLEMENTED / UNEXERCISED (PSD) | [24-post-processing.md](24-post-processing.md) |
-| 8 | Импорт слоёв | `assets_src/png/characters/<id>/<pose>/{base,outfits/*,faces/*}.png` | `git add` (ADR-0004: PNG живут в git, бюджет 30 МБ warn / 50 МБ error на `assets_src/`) | IMPLEMENTED | [16-assets.md](16-assets.md), [31-storage-and-backup.md](31-storage-and-backup.md) |
+| 8 | Импорт слоёв | `assets_src/art/characters/<id>/<pose>/{base,outfits/*,faces/*}.png` | `git add` (ADR-0012: мастера живут в git **через LFS**; ошибка линта на бинарь мимо LFS и на 50 МБ таких файлов суммарно) | IMPLEMENTED | [16-assets.md](16-assets.md), [31-storage-and-backup.md](31-storage-and-backup.md) |
 | 9 | Декларация | `content/characters/<id>/character.yaml` | `vn content lint` | IMPLEMENTED (руками) | этот файл, §2 |
 | 10 | Сборка ассетов | → `game/assets/spr/<id>/**@2.webp` | `vn assets build [--profile draft]` | IMPLEMENTED | §4 |
 | 11 | Валидация matrix + ссылок | — | `vn assets validate` | IMPLEMENTED | §3 |
@@ -367,7 +367,7 @@ vn loc report            # покрытие по языкам
 **Работает по построению:**
 
 - «Папка = персонаж» в трёх зонах сразу (`content/characters/<id>/`, `assets_src/png/characters/<id>/`, `game/assets/spr/<id>/`). Конфликтов между персонажами не бывает — все ключи уникальны по имени папки.
-- Скан персонажей — `sorted(glob("*/character.yaml"))` (`compile.py:665`): добавление персонажа не трогает чужие файлы, значит не создаёт merge-конфликтов и не инвалидирует чужой кэш ассетов (ключ кэша — `blake3(сырец) + трансформация + версия + профиль`).
+- Скан персонажей — `sorted(glob("*/character.yaml"))` (`compile.py:878`): добавление персонажа не трогает чужие файлы, значит не создаёт merge-конфликтов и не инвалидирует чужой кэш ассетов (ключ кэша — `blake3(сырец) + трансформация + версия + профиль`).
 - Кодоген детерминирован и идемпотентен: неизменившиеся выходы не переписываются, `.rpyc` не пересобираются массово.
 
 **Арифметика.** Слоёв на персонажа: `poses × (1 + outfits + emotions)`. Игровых комбинаций: `poses × outfits × emotions` — но **новых файлов они не требуют**, комбинации собирает движок. Взрывается не количество комбинаций, а количество поз: каждая новая поза — это полный повторный набор всех нарядов и всех лиц, потому что `outfits/` и `faces/` физически лежат **внутри** позы.
@@ -384,13 +384,13 @@ vn loc report            # покрытие по языкам
 1. **Позы — самый дорогой ресурс.** Не заводите позу ради лёгкого разворота корпуса. Реалистично: 1 поза у эпизодических, 2–3 у основных.
 2. **`required` — только на то, что реально нужно сценарию.** Всё остальное объявляйте в `matrix.poses/outfits/emotions` и досыпайте арт по мере надобности: недостающий слой не ошибка, если он не в `required`.
 3. **`forbidden` — для комбинаций, которые сценарно невозможны** (школьная форма на пляже). Это защита от того, что художник сдал арт «на всякий случай», а он молча уехал в билд.
-4. **Бюджеты.** `assets_src/` — warn > 30 МБ, error > 50 МБ нетекстовых байт (`lint.py:371-399`, ADR-0004). `game/assets` целиком — `assets_total_mb: 500` (`project.yaml`). При десятках персонажей PNG в git перестанет помещаться: миграция на внешнее хранилище — `vn assets push/pull/lock` c `.vnstorage.yaml` (`type: file` работает, `type: s3` — честный `StorageError`, [31-storage-and-backup.md](31-storage-and-backup.md)).
+4. **Бюджеты.** `assets_src/` — error на любой нетекстовый файл мимо LFS и на 50 МБ таких файлов суммарно (`lint.py:422-452`, ADR-0004 в редакции ADR-0012; warn-порога нет). `game/assets` целиком — `assets_total_mb: 20000` (`project.yaml:61`). При десятках персонажей PNG в git перестанет помещаться: миграция на внешнее хранилище — `vn assets push/pull/lock` c `.vnstorage.yaml` (`type: file` работает, `type: s3` — честный `StorageError`, [31-storage-and-backup.md](31-storage-and-backup.md)).
 
 **Чего матрица сегодня НЕ умеет** (не выдумывайте обходные пути — их нет):
 
 | Хотелось бы | Реальность | Что делать сейчас |
 |---|---|---|
-| Группа `hair` (причёски) | Групп ровно три: `pose`/`outfit`/`face`. Имена групп зашиты в `images.py:207-208` | Кодировать причёску в токен наряда (`school_ponytail`, `school_loose`) — умножает число файлов нарядов, зато честно валидируется |
+| Группа `hair` (причёски) | Групп ровно три: `pose`/`outfit`/`face`. Имена групп зашиты в `images.py:455,464` | Кодировать причёску в токен наряда (`school_ponytail`, `school_loose`) — умножает число файлов нарядов, зато честно валидируется |
 | Аксессуары поверх наряда | Группа `overlays` собирается, но не эмитится (§7) | То же: токен наряда. Не складывать в `overlays/` — получите мёртвый вес и warning |
 | Варианты тела / возраст / «до и после» | Отдельного измерения нет | Отдельная **поза** (полный набор слоёв) или отдельный персонаж с новым id (см. §11) |
 | Side-image в say-окне | `side/` NOT IMPLEMENTED | Ничего; не создавайте каталог `side/` — `_discover` его не знает, файлы просто не соберутся |
@@ -504,7 +504,7 @@ vn build                        # полный проход, включая laye
 vn build --check                # CI-режим: свеж ли генерат (ничего не пишет)
 vn loc report                   # покрытие переводов, включая имя персонажа
 vn test smoke                   # автопилот: сцены реально проходятся, спрайты не падают
-python -m pytest tools/vn/tests -q   # 138 тестов
+python -m pytest tools/vn/tests -q   # 254 теста
 vn play                         # глазами
 ```
 

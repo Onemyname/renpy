@@ -106,7 +106,7 @@ packs/ep_beach/chapters/ch90_beach/scenes/s010_shore.scene.{yaml,rpy}
 | 5 | `cli.py:116` | `compile_content(root, check=False)` | `CompileError` → exit 1 с текстом; любое другое исключение → `внутренняя ошибка компилятора: <Type>: <msg>` + 3 кадра трейсбека (`cli.py:119-123`) |
 | 6 | `cli.py:145-148` | сводка `generated: N записано, N без изменений, N осиротевших удалено` | — |
 | 7 | `cli.py:151` | `_loc_import(root)` → `game/tl/` из `loc/po/` | exit 1 при ошибках разметки переводов |
-| 8 | `cli.py:152` | `_check_budgets(root)` → `release.py:29-54 budget_failures` (G19) | `бюджет: …` + exit 1 |
+| 8 | `cli.py:156` | `_check_budgets(root)` → `release.py:29-66 budget_failures` (G19) | `бюджет: …` + exit 1 |
 | 9 | `cli.py:153` | зелёное `build: OK` | — |
 
 ### Что меняется при `--check` (CI-режим, G1)
@@ -122,7 +122,7 @@ packs/ep_beach/chapters/ch90_beach/scenes/s010_shore.scene.{yaml,rpy}
 
 **Грабля `--check --profile draft`.** На check-пути профиль ассетов не передаётся: `build_assets(root, check=True)`, а дефолт сигнатуры — `profile="full"` (`tools/vn/src/vn/assets/pipeline.py:251`). Значит зона, собранная как `vn build --profile draft`, в `vn build --check` всегда покажется несвежей. Перед проверкой пересоберите на `full`.
 
-`vn content compile` — **не** укороченный `vn build`. Он не запускает линт (`cli.py:402` так и написано в docstring) и не валидирует по схемам `*.vars.yaml`, `content/audio/*.yaml`, `content/ui/strings.yaml`, `content/renames.yaml`, `content/migrations/registry.yaml`. Битый файл из этого списка даст не понятную схемную ошибку, а `внутренняя ошибка компилятора: KeyError`. Используйте его только для быстрой итерации, финальная команда — `vn build`.
+`vn content compile` — **не** укороченный `vn build`. Он не запускает линт (`cli.py:421-424`: команда зовёт только `compile_content`) и не валидирует по схемам `*.vars.yaml`, `content/audio/*.yaml`, `content/ui/strings.yaml`, `content/renames.yaml`, `content/migrations/registry.yaml`. Битый файл из этого списка даст не понятную схемную ошибку, а `внутренняя ошибка компилятора: KeyError`. Используйте его только для быстрой итерации, финальная команда — `vn build`.
 
 ---
 
@@ -254,9 +254,9 @@ version = f"{project['version']}+{sha}"          # sha = repo.git_sha(root)
 
 ---
 
-## 7. Линтер: 34 правила
+## 7. Линтер: 33 диагностики
 
-`tools/vn/src/vn/content/lint.py` (411 строк), точка входа `lint(root, layout=True)` (`lint.py:111`). CLI — `vn content lint [--layout/--no-layout]` (`cli.py:382-396`), по умолчанию layout включён. Предупреждения никогда не валят прогон; ошибки → `_fail("lint: N ошибок")`, exit 1.
+`tools/vn/src/vn/content/lint.py` (463 строки), точка входа `lint(root, layout=True)` (`lint.py:146`). CLI — `vn content lint [--layout/--no-layout]` (`cli.py:382-396`), по умолчанию layout включён. Предупреждения никогда не валят прогон; ошибки → `_fail("lint: N ошибок")`, exit 1.
 
 Инвариант, записанный в самом коде (`lint.py:34`): **«lint зелёный ⇒ build не падает»**. Он держится не полностью — см. §7.3.
 
@@ -280,7 +280,7 @@ Sev: `E` — ошибка, `W` — предупреждение, `E/W` — за�
 | 12 | `{f}: имя файла сцены вне конвенции s<NNN>_<slug>.scene.(yaml\|rpy)` | файл в `scenes/` не матчит `SCENE_FILE_RE` (`.gitkeep` и подкаталоги пропускаются) | E | `lint.py:187` |
 | 13 | `{f}: дубликат id сцены {sid} в главе` | два `.scene.yaml` с одним `sNNN` в одной главе | E | `lint.py:192` |
 | 14 | `{f}: нет парного .scene.rpy (сцена = ПАРА файлов, G3)` | `.scene.yaml` без соседа `.rpy` | E | `lint.py:196` |
-| 15 | `{f}: id ({smeta['id']}) != номеру файла ({sid})` | `scene.yaml:id` ≠ `sNNN` из имени файла | E | `lint.py:199` |
+| 15 | `{f}: id ({smeta['id']}) != номеру файла ({sid})` | `scene.yaml:id` ≠ `sNNN` из имени файла | E | `lint.py:233-234` |
 | 16 | `{f}: нет парного .scene.yaml (сцена = ПАРА файлов, G3)` | `.scene.rpy` без соседа `.yaml` | E | `lint.py:203` |
 | 17 | `{ch_yaml}: scene_order ссылается на несуществующую сцену {s}` | элемент `scene_order` без файла сцены | E/W | `lint.py:212` |
 | 18 | `{ch_yaml}: entry_scene {entry} не существует` | `entry_scene` без файла сцены | E/W | `lint.py:214` |
@@ -293,15 +293,15 @@ Sev: `E` — ошибка, `W` — предупреждение, `E/W` — за�
 | 25 | `{c_yaml}: id ({cmeta['id']}) != имени папки ({d.name})` | `character.yaml:id` ≠ имени папки | E | `lint.py:310` |
 | 26 | `{rel}: store ({data['store']}) != id главы ({ch_id})` | `content/chapters/<dir>/vars.yaml` с чужим `store` | E | `lint.py:317` |
 | 27 | `{reg_rel}: выпущенная сцена {released} исчезла без записи в renames.yaml (id неизменяемы навсегда, G7)` | id сцены в реестре, файла нет, и нет записи в `renames.scenes` / `deleted_scenes` | E | `lint.py:351` |
-| 28 | `{reg_rel}: выпущенная глава {released} исчезла (главы не переименовываются, G7)` | id главы в реестре, каталога нет. Escape-hatch отсутствует | E | `lint.py:357` |
-| 29 | `{reg_rel}: выпущенный персонаж {released} исчез (id неизменяемы, G7)` | id персонажа в реестре, папки нет ни в `content/characters/`, ни в `packs/*/characters/` | E | `lint.py:362` |
-| 30 | `{reg_rel}: выпущенная переменная {released} исчезла без записи в renames.vars (id неизменяемы, G7)` | `store.name` в реестре не найден ни в одном `vars@1` и не покрыт `renames.vars` | E | `lint.py:367` |
-| 31 | `assets_src: бинарей на {actual_mb} МБ > порога ADR-0004 ({limit_mb} МБ); крупнейший — {path} ({mb} МБ). Заливайте сырцы в хранилище (vn assets lock + push) и удаляйте из git — история append-only` | сумма нетекстовых байт в `assets_src/` > 50 МБ | E | `lint.py:390` |
-| 32 | `assets_src: бинарей на {actual_mb} МБ (порог ADR-0004 {limit_mb} МБ) — пора переводить сырцы в хранилище` | та же сумма > 60 % порога (> 30 МБ), но ≤ 50 МБ | W | `lint.py:397` |
-| 33 | `layout: обязательный каталог отсутствует: {d}/` | отсутствует элемент `REQUIRED_DIRS`; только при `--layout` | E | `lint.py:406` |
-| 34 | `layout: запрещённый путь существует: {p} (G2/1.2)` | существует элемент `FORBIDDEN_PATHS`; только при `--layout` | E | `lint.py:409` |
+| 28 | `{reg_rel}: выпущенная глава {released} исчезла (главы не переименовываются, G7)` | id главы в реестре, каталога нет. Escape-hatch отсутствует | E | `lint.py:389-393` |
+| 29 | `{reg_rel}: выпущенный персонаж {released} исчез (id неизменяемы, G7)` | id персонажа в реестре, папки нет ни в `content/characters/`, ни в `packs/*/characters/` | E | `lint.py:394-398` |
+| 30 | `{reg_rel}: выпущенная переменная {released} исчезла без записи в renames.vars (id неизменяемы, G7)` | `store.name` в реестре не найден ни в одном `vars@1` и не покрыт `renames.vars` | E | `lint.py:399-404` |
+| 31 | `{path}: бинарь в assets_src не покрыт Git LFS — он уедет в историю целиком и навсегда. Добавьте расширение в .gitattributes (filter=lfs) или уберите файл из зоны мастеров` | любой нетекстовый файл под `assets_src/`, которому `git check-attr filter` не отдаёт `lfs` | E | `lint.py:436-441` |
+| 32 | `assets_src: бинарей мимо LFS на {actual_mb} МБ > порога ADR-0004 ({limit_mb} МБ); крупнейший — {path} ({mb} МБ). Заведите их в LFS (.gitattributes) либо в хранилище (vn assets lock + push)` | сумма нетекстовых байт **мимо LFS** > 50 МБ | E | `lint.py:445-452` |
+| 33 | `layout: обязательный каталог отсутствует: {d}/` | отсутствует элемент `REQUIRED_DIRS`; только при `--layout` | E | `lint.py:456-458` |
+| 34 | `layout: запрещённый путь существует: {p} (G2/1.2)` | существует элемент `FORBIDDEN_PATHS`; только при `--layout` | E | `lint.py:459-461` |
 
-Порог ADR-0004 (правила 31–32) считается по всем файлам под `assets_src/`, кроме расширений `.json .yaml .yml .md .txt .gitkeep` (`lint.py:377`). Константа — `ADR0004_BINARY_LIMIT_MB = 50` (`lint.py:47`), warn-множитель `0.6` захардкожен в `lint.py:396`.
+Порог ADR-0004 в редакции **ADR-0012** (правила 31–32) считается только по бинарям **мимо LFS**: покрытие спрашивается у самого git (`_lfs_tracked`, `lint.py:76-102`), файл в LFS в историю объектом не уезжает и под порог не попадает. Из подсчёта исключены расширения `.json .yaml .yml .md .txt .gitkeep` (`lint.py:429-432`). Константа — `ADR0004_BINARY_LIMIT_MB = 50` (`lint.py:47`). **Warn-порога «60 % / 30 МБ» в коде нет** — правило 31 краснит на первом же файле мимо LFS, а правило 32 срабатывает только за 50 МБ (`vn content lint` на этом дереве сегодня: 0 ошибок, 0 предупреждений).
 
 ### 7.2 G15: что именно деградирует в `status: draft`
 
@@ -315,7 +315,7 @@ Sev: `E` — ошибка, `W` — предупреждение, `E/W` — за�
 
 **Не деградирует ничего больше.** Схемы, парность файлов, конвенции имён, `id_registry`, порог `assets_src`, layout — всегда ошибки. Правило 22 (тупик) — всегда предупреждение независимо от статуса.
 
-Компилятор применяет ту же логику к своим проверкам: `entry_scene`/`scene_order` (`compile.py:779`), необъявленные переменные сцены (`scenes.py:151`), недостижимые цели exits (`scenes.py:177`). У draft-главы битая цель не роняет сборку — вместо `jump` эмитится живая заглушка (`scenes.py:253-257`):
+Компилятор применяет ту же логику к своим проверкам: `entry_scene`/`scene_order` (`compile.py:1057-1063`), необъявленные переменные сцены (`scenes.py:235`), недостижимые цели exits (`scenes.py:261,269-275`). У draft-главы битая цель не роняет сборку — вместо `jump` эмитится живая заглушка (`scenes.py:253-257`):
 
 ```renpy
     # TODO(draft): цель ch01_s040 ещё не написана
@@ -355,7 +355,7 @@ game/framework/90_debug         docs
 
 ### 7.4 Проверки, которых в линте НЕТ (живут только в компиляторе)
 
-Инвариант «lint зелёный ⇒ build не падает» ломают: участники сцены не объявлены в `content/characters/` (`compile.py:756`), коллизия id главы «ядро vs пак» (`compile.py:525`), `id` манифеста пака ≠ имени папки (`compile.py:455`), имя миграции вне конвенции и незарезервированный номер (`compile.py:386,391`), разрыв цепочки миграций (`compile.py:400`), persistent-переменная без префикса `vn_` (C9, `compile.py:102`), `location.yaml:id` ≠ имени папки (`tools/vn/src/vn/content/images.py:42`), вся валидация галереи и достижений (`compile.py:173-247, 797-816`), отсутствие метки `__body` (`scenes.py:90`). Отсюда правило: **не считайте зелёный `vn content lint` доказательством, что `vn build` пройдёт.**
+Инвариант «lint зелёный ⇒ build не падает» ломают: участники сцены не объявлены в `content/characters/` (`compile.py:1031-1037`), коллизия id главы «ядро vs пак» (`compile.py:727-729`), `id` манифеста пака ≠ имени папки (`compile.py:572-575`), имя миграции вне конвенции и незарезервированный номер (`compile.py:386,391`), разрыв цепочки миграций (`compile.py:400`), persistent-переменная без префикса `vn_` (C9, `compile.py:102`), `location.yaml:id` ≠ имени папки (`tools/vn/src/vn/content/images.py:42`), вся валидация галереи и достижений (`compile.py:173-247, 797-816`), отсутствие метки `__body` (`scenes.py:90`). Отсюда правило: **не считайте зелёный `vn content lint` доказательством, что `vn build` пройдёт.**
 
 ---
 
@@ -421,7 +421,7 @@ vn content graph --out docs/graph.mmd  # в файл
 |---|---|---|
 | `content/flags.yaml` (`flags@1`) | только проверка существования + схема в `lint.py:40`. Компилятор его не открывает | **NOT IMPLEMENTED.** `docs/ARCHITECTURE.md:696` требует флаги как гейт **компиляции** («выключенный контент не существует в release-сборке») — такого гейта в `compile.py` нет. Поле `expires` в схеме описано как «линтер напомнит» — кода нет вообще |
 | `content/anchors.yaml` (`anchors@1`) | только `lint.py:41` | **NOT IMPLEMENTED.** Точки инъекции модов (G10) существуют как данные; `scene:` в них не сверяется с реальными сценами |
-| `content/registry/id_registry.json` (`id_registry@1`) | пишет `release.py:99 stamp_id_registry`, читает `lint.py:319-369` (правила 27–30) | **IMPLEMENTED, но ИНЕРТЕН.** Все четыре массива пусты, потому что `stamp_id_registry` записывает только главы со `status: "release"`, а единственная глава `ch01_awakening` — `draft`. Гейт G7 сегодня ничего не ловит |
+| `content/registry/id_registry.json` (`id_registry@1`) | пишет `release.py:99 stamp_id_registry`, читает `lint.py:354-420` (правила 27–30 и ассеты ADR-0012) | **IMPLEMENTED, но ИНЕРТЕН.** Все четыре массива пусты, потому что `stamp_id_registry` записывает только главы со `status: "release"`, а единственная глава `ch01_awakening` — `draft`. Гейт G7 сегодня ничего не ловит |
 
 Все три обязаны существовать (`REQUIRED_FILES`) — удалять их нельзя, линт немедленно покраснеет правилом 2. Просто не рассчитывайте, что запись в них на что-то влияет.
 
@@ -460,7 +460,7 @@ vn content graph --out docs/graph.mmd  # в файл
 
 **Зарегистрировать новый входной файл.** Обязательно проведите его через `src(path)` (`compile.py:599`), иначе он не попадёт в `manifest["inputs"]` и не получит запись `# source:` в шапке. Помните: `src()` бросает `CompileError`, если файла нет, — регистрируйте только по-настоящему обязательные входы, опциональные оборачивайте в `if path.is_file()`.
 
-**Добавить правило линта.** Пишите в `lint.py` в соответствующую секцию, соблюдая формат сообщения `«<rel>: <что не так> (<норма>)»` — по этому формату сообщения читаются и человеком, и агентом. Для граф-проверок берите `complain = rep.warn if status == "draft" else rep.error`. Тест — `tools/vn/tests/test_lint.py` (14 тестов).
+**Добавить правило линта.** Пишите в `lint.py` в соответствующую секцию, соблюдая формат сообщения `«<rel>: <что не так> (<норма>)»` — по этому формату сообщения читаются и человеком, и агентом. Для граф-проверок берите `complain = rep.warn if status == "draft" else rep.error`. Тест — `tools/vn/tests/test_lint.py` (16 тестов).
 
 **Добавить главу/сцену.** Скаффолдингом, не руками: `vn chapter new <slug>`, `vn scene new <chapter> <slug>`, `vn scene stub <chapter> sNNN`. Детали — [09-chapters.md](09-chapters.md), [12-scenes.md](12-scenes.md).
 
@@ -493,7 +493,7 @@ vn build                      # ожидается: build: OK
 vn build --check              # ожидается: check: генерат свеж
 
 # Тесты тулинга
-python -m pytest tools/vn/tests -q          # 253 теста
+python -m pytest tools/vn/tests -q          # 254 теста
 python -m pytest tools/vn/tests/test_compile.py tools/vn/tests/test_lint.py \
                 tools/vn/tests/test_schemas.py tools/vn/tests/test_scene_pipeline.py \
                 tools/vn/tests/test_verify_regressions.py -q
@@ -516,7 +516,7 @@ vn play                                     # требует непустой ga
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/content/compile.py` (923 стр., эмиттеры + оркестрация `compile_content:587`), `tools/vn/src/vn/content/lint.py` (411 стр.), `tools/vn/src/vn/content/scenes.py` (валидация C2 + эмиссия обвязки), `tools/vn/src/vn/content/analyze.py`, `game/framework/00_core/050_build_bridge.rpy`, `tools/vn/src/vn/schemas.py`, `tools/vn/src/vn/cli.py:84-153` (порядок `vn build`), `game/generated/manifest.json` (актуальные 36 входов / 21 выход) |
+| **Читать перед изменением** | `tools/vn/src/vn/content/compile.py` (1211 стр., эмиттеры + оркестрация `compile_content:790`), `tools/vn/src/vn/content/lint.py` (463 стр.), `tools/vn/src/vn/content/scenes.py` (валидация C2 + эмиссия обвязки), `tools/vn/src/vn/content/analyze.py`, `game/framework/00_core/050_build_bridge.rpy`, `tools/vn/src/vn/schemas.py`, `tools/vn/src/vn/cli.py:84-153` (порядок `vn build`), `game/generated/manifest.json` (актуальные 36 входов / 21 выход) |
 | **Не трогать** | `game/generated/**` (генерат), `game/assets/**` (выход `vn assets build`), `game/tl/**` (выход `vn loc import`), `.vncache/**` (кэш), `build/**` — всё производное и вне git. Правки там исчезнут при первой же сборке |
 | **Зависимости (что сломается ниже по течению)** | правка эмиттера → меняются байты генерата → `vn build --check` краснеет у всех, пока не пересоберут; правка `050_build_bridge.rpy` → инвалидируется весь `.vncache/analyze-*.json` и требуется полный прогон движка; правка схемы → линт, компилятор, `vn doctor` (проверка №6) и релизный гейт строят реестр заново; добавление/удаление выхода → предыдущий `manifest.json` даст диффом удаление осиротевших `.rpy` + `.rpyc`; правка `content/renames.yaml` → `registry/overrides.gen.rpy` (shim-метки и `config.label_overrides`) |
 | **Валидация** | `vn content lint` → `vn build` → `vn build --check` → `python -m pytest tools/vn/tests -q`. Для сцен обязателен `RENPY_SDK` |

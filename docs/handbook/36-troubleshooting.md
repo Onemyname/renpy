@@ -266,7 +266,7 @@ ls game/assets/bg/rooftop/
 ### Спрайт предыдущей сцены протекает в следующую
 
 **Симптомы:** персонаж из прошлой сцены остаётся на экране после перехода.
-**Вероятная причина:** `scene` очищает только **свой** слой (`master`). Персонажи живут на отдельном слое `sprites` (`renpy.add_layer("sprites", above="master")`, `001_boot.rpy:22`), привязка тегов — сгенерированный `define config.tag_layer = {"mira": "sprites"}` (`game/generated/registry/images.gen.rpy:33`). Поэтому обвязка сцены явно вызывает `$ renpy.scene("sprites")` (`tools/vn/src/vn/content/scenes.py:204`, в генерате — `game/generated/scenes/ch01/ch01_s020.gen.rpy:10`).
+**Вероятная причина:** `scene` очищает только **свой** слой (`master`). Персонажи живут на отдельном слое `sprites` (`renpy.add_layer("sprites", above="master")`, `001_boot.rpy:22`), привязка тегов — сгенерированный `define config.tag_layer = {"mira": "sprites"}` (`game/generated/registry/images.gen.rpy:44`). Поэтому обвязка сцены явно вызывает `$ renpy.scene("sprites")` (`tools/vn/src/vn/content/scenes.py:204`, в генерате — `game/generated/scenes/ch01/ch01_s020.gen.rpy:10`).
 **Диагностика:** посмотрите начало соответствующего `*.gen.rpy`: строки `$ vn.checkpoint(...)` → `$ renpy.scene("sprites")` → `scene bg …` должны быть на месте.
 **Решение:** внутри одной сцены убирайте спрайты штатным `hide <tag>`. Если протекание видно **между** сценами — это баг компилятора, а не контента.
 **Профилактика:** не добавляйте персонажные теги в `config.tag_layer` руками: слой должен существовать на момент выполнения `image`-стейтментов, иначе `show` падает в рантайме.
@@ -371,7 +371,7 @@ ls game/assets/**  # сравнить
 ### В галерее нет превью
 
 **Симптомы:** ячейки галереи показывают полноразмерный CG или пусто.
-**Вероятная причина:** превью — отдельная трансформация `png2webp_cg_thumb`, дающая `<name>.thumb.webp` (длинная сторона 512, quality 80, `tools/vn/src/vn/assets/pipeline.py:157,228-231`). Она порождается **только** для источников из `assets_src/png/cg/**`.
+**Вероятная причина:** превью — отдельная трансформация `img_thumb`, дающая `<name>.thumb.webp` (длинная сторона 512, quality 80 — из `render.thumb`; `tools/vn/src/vn/assets/pipeline.py:250-259`, `:631-635`). Она порождается только для растровых классов с `thumb: true` — сегодня это `bg` и `cg`, то есть источники из `assets_src/art/{cg,backgrounds}/**` (текст предупреждения компилятора всё ещё называет прежнее имя `png2webp_cg_thumb`).
 **Диагностика:** `ls game/assets/cg/**/*.thumb.webp`.
 **Решение:** положить CG именно в `assets_src/png/cg/…` и пересобрать.
 **Профилактика:** см. [15-gallery.md](15-gallery.md) — там разобрано, как галерея резолвит `thumb` и что делать, если его нет.
@@ -452,7 +452,7 @@ vn assets video inspect game/assets/mov/demo/ambient.webm
 ### Превышен `video_file_mb` / `video_total_mb`
 
 **Симптомы:** `error: <name>: 47.3 МБ > бюджета 40 МБ на файл (project.yaml: budgets.video_file_mb)`; либо `бюджет: game/assets/mov: 320.0 МБ > бюджета 300 МБ` + `ошибка: бюджеты G19 превышены (project.yaml: budgets)`.
-**Вероятная причина:** бюджеты объявлены в `project.yaml:6-11`: `assets_total_mb 500`, `generated_total_kb 2048`, `video_total_mb 300`, `video_file_mb 40`, `cold_start_s 30`. Проверка одна и та же и в `vn build`, и в релизном гейте (`release.py:29-54`); файловый бюджет дополнительно проверяется прямо при сборке видео.
+**Вероятная причина:** бюджеты объявлены в `project.yaml:57-65`: `assets_total_mb 20000`, `generated_total_kb 65536`, `video_total_mb 8000`, `video_file_mb 512`, `cold_start_s 30`. Проверка одна и та же и в `vn build`, и в релизном гейте (`release.py:29-53`); файловый бюджет дополнительно проверяется прямо при сборке видео.
 **Диагностика:** `du -sh game/assets/mov` и `vn assets video validate`.
 **Решение:** поднять `crf` (production-дефолт 30, `tools/vn/src/vn/assets/video.py:93`), сократить длительность, снизить `max_height` в сайдкаре. Бюджет — не константа мироздания, но его правка идёт отдельным PR.
 **Профилактика:** `cold_start_s` — единственный бюджет, который проверяется **только** внутри `vn test smoke` (`cli.py:1386-1392`), остальные — в каждой сборке.
@@ -506,7 +506,7 @@ grep -rn "VN_STRINGS" game/generated/registry/ | head
 
 **Симптомы:** в `vn release validate --flavor …` строка `FAIL покрытие переводов: ниже порога 98% — en 91%`.
 **Вероятная причина:** порог `release_coverage_min: 0.98` в `loc/loc.yaml`; форсируется **только** в релизном гейте (`release.py:408-434`). Синтетические пакеты (`pseudo`) исключаются по флагу `synthetic` в `game/tl/<lang>/language.json`.
-**Диагностика:** `vn loc report` — `de: 115/115 (100%), fuzzy: 0` по каждому языку.
+**Диагностика:** `vn loc report` — `de: 130/130 (100%), fuzzy: 0` по каждому языку.
 **Решение:** дособрать переводы или временно убрать язык из поставки. Флагов `vn loc report --gate/--format` **не существует** (NOT IMPLEMENTED) — гейт живёт только в релизе.
 **Профилактика:** `vn loc report` в ежедневной проверке; `fuzzy` в поставку не идут — они молча выпадают из `game/tl` (`tools/vn/src/vn/loc/po.py:384-386`).
 
@@ -608,7 +608,7 @@ grep -n "migration" log.txt
 ### `ошибка: release validate --flavor <X>: есть FAIL`
 
 **Симптомы:** таблица строк `PASS/WARN/FAIL`, затем эта ошибка.
-**Вероятная причина:** гейт — агрегатор существующих проверок, **своих правил у него нет** (`release.py:276-481`). Всего в коде 19 проверок, но часть условная (VaM/Sims4/лицензии печатаются только при наличии деклараций, покрытие — только при заданном пороге), поэтому на текущем дереве строк 16. Частые FAIL:
+**Вероятная причина:** гейт — агрегатор существующих проверок, **своих правил у него нет** (`release.py:407-629`). Всего в коде 20 проверок, но часть условная (лицензии печатаются только при наличии деклараций, покрытие переводов — только при заданном пороге, озвучка — только при непустом покрытии), поэтому на текущем дереве строк 16. Частые FAIL:
 
 | Строка гейта | Что означает |
 |---|---|
@@ -853,7 +853,7 @@ D:/ComfyUI/venv/Scripts/python.exe -c "import torch; print(torch.__version__, to
 4. **`vn build --check`.** Ничего не пишет; ловит несвежесть ассетов и генерата, битую разметку переводов и бюджеты G19. Красный `version.gen.rpy` после смены HEAD — норма (git-sha в `config.version`).
 5. **Три файла в корне.** Не стартует → `errors.txt`. Стартует, но странно → `log.txt` (строки `[vn] …`). Упала → `traceback.txt`, плюс отчёт в `<savedir>/crash/` с breadcrumbs последних меток.
 6. **`vn test smoke --picks …`.** Воспроизвести путь автопилотом: `RESULT.txt`, `picks.log`, `startup.txt` и скриншоты в `.vncache/smoke/`. Синтетический ввод в окно игры слать нельзя — только этот путь.
-7. **`vn release validate --flavor public`.** Даже вне релиза: 19 проверок разом — быстрый способ понять, что именно в дереве не в порядке.
+7. **`vn release validate --flavor public`.** Даже вне релиза: 20 проверок разом — быстрый способ понять, что именно в дереве не в порядке.
 8. **`vn pipeline doctor`.** Только если проблема в производстве картинок/видео: ffmpeg и VP9, GPU и драйвер, torch/CUDA, ComfyUI и модели, DAZ и библиотека, свободное место, SDK.
 
 Если после всех восьми шагов непонятно — это, скорее всего, баг тулинга: соберите вывод команды целиком, `git rev-parse --short HEAD` и содержимое трёх лог-файлов, и заводите issue. Аварийный обход на время разбирательства — взять `game/generated/` артефактом зелёной CI-джобы `build` (30 дней хранения) и распаковать локально.
@@ -898,11 +898,11 @@ vn build --check                       # check: генерат свеж
 vn assets validate                     # assets validate: OK
 vn assets video validate               # video validate: OK (N файлов)
 vn loc keys --check                    # все строки с id, ledger свеж
-vn loc report                          # de/en/pseudo — 115/115 (100%), fuzzy 0
-python -m pytest tools/vn/tests -q     # 253 passed
+vn loc report                          # de/en/pseudo — 130/130 (100%), fuzzy 0
+python -m pytest tools/vn/tests -q     # 254 passed
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (N скриншотов)
 vn save check && vn save corpus        # 2 фикстур: schema1-demo мигрирует 1 -> 2, schema2-demo уже на 2
-vn release validate --flavor public    # 16 PASS, exit 0
+vn release validate --flavor public    # 19 строк: 18 PASS + 1 WARN, exit 0
 vn release validate --flavor patron
 vn pipeline doctor                     # exit 0; WARN по VaM и Sims 4 — норма
 ```

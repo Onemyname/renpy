@@ -137,13 +137,13 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 
 | Трансформация | Выход | Параметры |
 |---|---|---|
-| `png2webp_cg` | `cg/<путь>.webp` | WebP q90 (`full`) / q50 (`draft`) |
-| `png2webp_cg_thumb` | `cg/<путь>.thumb.webp` | WebP q80, длинная сторона 512 px (`pipeline.py:228-231`) |
+| `img_cg` | `cg/<путь>.webp` (+ `@2`) | WebP q90 (`full`) / q50 (`draft`) |
+| `img_thumb` | `cg/<путь>.thumb.webp` | WebP q80, длинная сторона 512 px (`render.thumb`, `pipeline.py:250-259`, `:631-635`) |
 
 Логика выбора превью в компиляторе (`compile.py:204-227`):
 
 1. Есть `thumb:` в декларации → берётся `<thumb>.thumb.webp`, если он существует, иначе полноразмерный `<thumb>`. То есть даже явный постер ужимается до миниатюры, если конвейер её сделал.
-2. Нет `thumb:`, `kind: image` → `<asset>.thumb.webp`. Если файла нет — warning «нет превью… ожидается `png2webp_cg_thumb`» и в сетку идёт полноразмерный кадр.
+2. Нет `thumb:`, `kind: image` → `<asset>.thumb.webp`. Если файла нет — warning «нет превью… ожидается `png2webp_cg_thumb`» и в сетку идёт полноразмерный кадр (имя трансформации в тексте предупреждения устарело — ветка называется `img_thumb`; сама строка живёт в `compile.py:302-304`).
 3. Нет `thumb:`, `kind: movie` → warning «kind: movie без thumb», `thumb: None`, и экран падает на `spec["asset"]` (`gallery.rpy:76`) — то есть в ячейку попадёт `.webm`. **У видео своего превью нет: указывайте `thumb:` всегда.**
 
 ## Экран галереи (`20_ui/screens/gallery.rpy`) — IMPLEMENTED
@@ -214,7 +214,7 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 
 Ошибки поднимают `CompileError` до записи генерата (`compile.py:846-848`) — битая запись физически не может доехать до игры. Проверки существования `pack:` у элемента галереи **нет** (у достижений есть, `compile.py:814-817`).
 
-Юнит-тесты подсистемы: `tools/vn/tests/test_gallery.py` (10 тестов), включая проверку боевой декларации на схему и наличие всех её `title_key`/`desc_key` в `strings.yaml` (:145-157).
+Юнит-тесты подсистемы: `tools/vn/tests/test_gallery.py` (13 тестов), включая проверку боевой декларации на схему и наличие всех её `title_key`/`desc_key` в `strings.yaml` (:145-157).
 
 ## Достижения (`achievements@1`) — IMPLEMENTED (backend) / NO UI / UNDOCUMENTED
 
@@ -294,7 +294,7 @@ reached_rooftop: trigger: {scene: ch01_s030}
 | Разблокировка «за просмотр момента» | `unlock: {beat: <name>}` **плюс** руками `$ vn.beat("<name>")` в теле сцены — иначе якорь мёртв |
 | Фильтр по персонажу | Данные уже есть (`characters`), потребителя нет — писать новый (`items()` + вкладку/выпадашку) |
 | Экран достижений | Всё готово со стороны данных: `vn_ach.all_ids()`, `visible()`, `has()`, `VN_ACHIEVEMENTS[id]["name_key"/"desc_key"/"hidden"]`. Нужен файл в `game/framework/20_ui/screens/`, пункт навигации рядом с галереей (`core_screens.rpy:97-98`) и `Frame`-фон из `ui_frames.gen.rpy` — соблюдая `2*Borders` |
-| Steam-ачивки | `vn_ach.set_provider(fn)` из `label splashscreen` после инициализации Steam. Контент-код не трогается (ADR-0010 §Последствия) |
+| Steam-ачивки | **Уже подключено (ADR-0014)**: `035_platform.rpy:80-88` регистрирует все `vn_ach.all_ids()` в движковом `achievement`, ставит `vn_ach.set_provider(achievement.grant)` и догоняет выданное офлайн. Контент-код не трогается (ADR-0010 §Последствия); менять нечего — только заводить те же id в Steamworks |
 
 ## Чего НЕ делать
 
@@ -314,8 +314,8 @@ reached_rooftop: trigger: {scene: ch01_s030}
 ```bash
 vn content lint                 # схема gallery@1 / achievements@1
 vn build                        # семантика: ассеты, превью, категории, якоря, ключи строк
-python -m pytest tools/vn/tests/test_gallery.py -q     # 10 тестов подсистемы
-python -m pytest tools/vn/tests -q                     # весь набор: 253 теста
+python -m pytest tools/vn/tests/test_gallery.py -q     # 13 тестов подсистемы
+python -m pytest tools/vn/tests -q                     # весь набор: 254 теста
 
 vn test smoke --picks 0,0
 cat .vncache/smoke/gallery.json                        # {"unlocked":4,"total":5,"ids":[...]}

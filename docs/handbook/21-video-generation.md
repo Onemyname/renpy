@@ -329,15 +329,15 @@ Warnings (жёлтое, никогда не валят):
 
 ```yaml
 budgets:
-  assets_total_mb: 500   # ВЕСЬ game/assets, включая mov
-  video_total_mb: 300    # суммарно game/assets/mov (ADR-0006)
-  video_file_mb: 40      # один луп
+  assets_total_mb: 20000  # ВЕСЬ game/assets, включая mov
+  video_total_mb: 8000   # суммарно game/assets/mov (ADR-0006)
+  video_file_mb: 512     # один луп; 4K-клип на 30 c укладывается
 ```
 
 | Бюджет | Где проверяется | Кем |
 |---|---|---|
-| `video_file_mb` | **дважды**: внутри `validate_output` (`video.py:234-236`) и в `budget_failures` (`release.py:47-52`) | `vn build`, `vn assets video build/validate`, релизный гейт |
-| `video_total_mb` | **только** `budget_failures` (`release.py:42-46`) | `vn build` (`cli.py:142, 152` → `_check_budgets`) и релизный гейт (`release.py:333-335`) |
+| `video_file_mb` | **дважды**: внутри `validate_output` (`video.py:234-236`) и в `budget_failures` (`release.py:48-53`) | `vn build`, `vn assets video build/validate`, релизный гейт |
+| `video_total_mb` | **только** `budget_failures` (`release.py:43-47`) | `vn build` (`cli.py:146, 156` → `_check_budgets`) и релизный гейт (`release.py:493`) |
 
 То есть `vn assets video validate` про суммарный бюджет **не знает** — его ловит `vn build`. И держите в голове вложенность: `assets_total_mb` считает `game/assets` целиком, mov внутри. 300 МБ видео оставляют 200 МБ на всю статику.
 
@@ -395,19 +395,19 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True)
 | fps | **24** (или 30), один на весь проект | одновременные `Movie` обязаны совпадать по fps; вне `SANE_FPS` — warning |
 | Разрешение | **1080p потолок**, 720p — нормально для фонового плана | > 1080p/1920 — warning «дороже декодировать»; в draft всё равно 720 |
 | CRF | 30 по умолчанию; A/B 30 / 32 / 34, брать самый высокий, который выживает | ниже CRF = больше байт, не всегда больше видимого качества |
-| Вес одного лупа | целиться **≤ 5 МБ** | бюджет на файл 40 МБ — это аварийный потолок, а не цель |
+| Вес одного лупа | целиться **≤ 5 МБ** | бюджет на файл 512 МБ — это аварийный потолок (4K-клип на 30 c), а не цель |
 
-Сколько лупов влезает в `video_total_mb: 300`:
+Сколько лупов влезает в `video_total_mb: 8000`:
 
-| Сценарий (5 c, 1080p) | Вес одного | Влезает в 300 МБ |
+| Сценарий (5 c, 1080p) | Вес одного | Влезает в 8000 МБ |
 |---|---|---|
-| оптимистичный, 0.6 Мбит/с | ≈ 0.4 МБ | ~800 |
-| середина, 1.2 Мбит/с | ≈ 0.75 МБ | ~400 |
-| пессимистичный, 1.8 Мбит/с | ≈ 1.1 МБ | ~270 |
-| «целевой потолок» 5 МБ | 5 МБ | **60** |
-| один файл на пределе бюджета | 40 МБ | 7 |
+| оптимистичный, 0.6 Мбит/с | ≈ 0.4 МБ | ~20 000 |
+| середина, 1.2 Мбит/с | ≈ 0.75 МБ | ~10 600 |
+| пессимистичный, 1.8 Мбит/с | ≈ 1.1 МБ | ~7 200 |
+| «целевой потолок» 5 МБ | 5 МБ | **1600** |
+| один файл на пределе бюджета | 512 МБ | 15 |
 
-Вывод для планирования: узкое место — не 300 МБ, а **200 МБ, остающиеся статике** внутри `assets_total_mb: 500`, и время генерации (5–12 мин на клип). Реалистичная цель на главу — единицы лупов, не десятки.
+Вывод для планирования: с бюджетами ADR-0012 (`video_total_mb: 8000` внутри `assets_total_mb: 20000`) видео перестало быть узким местом — цифры ловят аварию (зацикленный экспорт, забытый 4K-вариант), а не ограничивают проект, и время генерации (5–12 мин на клип). Реалистичная цель на главу — единицы лупов, не десятки.
 
 ## 10. Чего НЕТ (NOT IMPLEMENTED)
 
@@ -466,7 +466,7 @@ grep "image mov rooftop rain" game/generated/registry/images.gen.rpy
 
 1. Правите `encode_args` в `../../tools/vn/src/vn/assets/video.py:85-111`.
 2. **Обязательно** бампаете версию `video2webm` в `TRANSFORMS` (`../../tools/vn/src/vn/assets/pipeline.py:38-46`) — иначе кэш отдаст старые байты как свежие, и это никем не проверяется (конвенция без enforcement).
-3. Прогоняете `python -m pytest tools/vn/tests/test_video.py -q` (7 тестов) — там есть `test_validate_output_budget_and_codec` и `test_sidecar_options_and_invalidation`.
+3. Прогоняете `python -m pytest tools/vn/tests/test_video.py -q` (9 тестов) — там есть `test_validate_output_budget_and_codec` и `test_sidecar_options_and_invalidation`.
 4. Пересобираете: `vn assets video build` — все лупы перекодируются заново.
 5. Проверяете бюджеты: `vn build` (там `_check_budgets`) и `vn release validate --flavor public`.
 
@@ -497,8 +497,8 @@ vn assets video validate               # « ✓ ambient.webm: 256x144 24.0fps 2.
 vn assets video inspect game/assets/mov/demo/ambient.webm
 vn build                               # lint (sidecar!) -> ассеты -> генерат -> бюджеты; «build: OK»
 vn build --check                       # CI-режим: свежесть + бюджеты, ничего не пишет
-python -m pytest tools/vn/tests/test_video.py -q     # 7 тестов
-vn release validate --flavor public    # 19 проверок, среди них «видео: собранные лупы валидны»
+python -m pytest tools/vn/tests/test_video.py -q     # 9 тестов
+vn release validate --flavor public    # 20 проверок, среди них «видео: собранные лупы валидны»
 ```
 
 Эталон репозитория на 2026-08-08: ровно один луп — `game/assets/mov/demo/ambient.webm` (5683 Б) + его `.webm.meta.json` (526 Б), один сырец `assets_src/video_src/demo/ambient.mp4` (13559 Б) + `ambient.video.yaml` (31 Б).

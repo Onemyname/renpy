@@ -19,7 +19,7 @@ title_key: meta.locations.beach.title
 backgrounds:
   day: assets/bg/beach/day.webp
 YAML
-vn build          # assets build (png2webp_bg) -> compile (image bg beach day)
+vn build          # assets build (img_bg) -> compile (image bg beach day)
 ```
 
 Дальше в любой сцене: `location: beach/day` в `*.scene.yaml`. Экран, `image`-стейтмент и `scene`-строку писать не нужно — их эмитит компилятор.
@@ -51,9 +51,9 @@ backgrounds:
 
 | Поле | Обяз. | Паттерн / форма (схема) | Кто читает | Статус |
 |---|---|---|---|---|
-| `schema` | да | `const: "location@1"` | `registry.validate` из `images.py:37` | IMPLEMENTED |
-| `id` | да | `^[a-z][a-z0-9_]*$` | `images.py:41-44`; **обязан совпадать с именем папки** | IMPLEMENTED |
-| `backgrounds` | да | объект, `minProperties: 1`; ключ `^[a-z][a-z0-9_]*$`, значение `^assets/bg/[a-z0-9_/]+\.webp$` | `images.py:60-68` (эмиссия), `scenes.py:222` (проверка варианта) | IMPLEMENTED |
+| `schema` | да | `const: "location@1"` | `registry.validate` из `images.py:43` | IMPLEMENTED |
+| `id` | да | `^[a-z][a-z0-9_]*$` | `images.py:47-49`; **обязан совпадать с именем папки** | IMPLEMENTED |
+| `backgrounds` | да | объект, `minProperties: 1`; ключ `^[a-z][a-z0-9_]*$`, значение `^assets/bg/[a-z0-9_/]+\.webp$` | `images.py:291-304` (эмиссия), `scenes.py:344-370` (проверка варианта) | IMPLEMENTED |
 | `title_key` | нет | `^[a-z0-9_.]+$` | **никто** — grep по `tools/vn/src/vn/` и `game/framework/` даёт 0 попаданий на `meta.locations` | IMPLEMENTED / UNUSED |
 | `lighting` | нет | объект `вариант → профиль` (`^[a-z][a-z0-9_]*$`) | **никто** (`grep -rn lighting tools/vn/src game/framework` → пусто) | NOT IMPLEMENTED |
 
@@ -65,20 +65,20 @@ backgrounds:
 
 ### 1. Реестр образов — `image bg <loc> <variant>`
 
-`load_locations` (`tools/vn/src/vn/content/images.py:21-45`) обходит `content/locations/*/`, для каждой папки:
+`load_locations` (`tools/vn/src/vn/content/images.py:27-51`) обходит `content/locations/*/`, для каждой папки:
 
 - нет `location.yaml` → ошибка `content/locations/<dir>: нет location.yaml`;
 - документ валидируется по `location@1`;
-- `id != имени папки` → ошибка `<rel>: id (<id>) != имени папки (<dir>)` (`images.py:41-42`).
+- `id != имени папки` → ошибка `<rel>: id (<id>) != имени папки (<dir>)` (`images.py:47-49`).
 
-Затем `emit_images` (`images.py:57-71`) на каждый вариант проверяет, что файл **физически лежит** в `game/assets`, и эмитит стейтмент:
+Затем `emit_images` (`images.py:281-305`) на каждый вариант проверяет, что файл **физически лежит** в `game/assets`, и эмитит стейтмент:
 
 ```renpy
 image bg rooftop day = "assets/bg/rooftop/day.webp"
 image bg school_gate day = "assets/bg/school_gate/day.webp"
 ```
 
-(`game/generated/registry/images.gen.rpy:9-10`, блок под `init offset = 0` — `image`/`layeredimage` уже имеют собственный базовый приоритет 500, см. `images.py:52-55`.)
+(`game/generated/registry/images.gen.rpy:9-10`, блок под `init offset = 0` — `image`/`layeredimage` уже имеют собственный базовый приоритет 500, см. `images.py:286-288`.)
 
 Отсутствующий файл — **жёсткая ошибка компиляции**, а не пропуск:
 
@@ -113,7 +113,7 @@ location: school_gate/day
 | `location: school_gate/day`, всё существует | `scene bg school_gate day with dissolve` | `scenes.py:229` |
 | `location: rooftop` (без варианта) | ошибка `location 'rooftop' без варианта — нужно <location>/<variant> (например rooftop/day)` | `scenes.py:209-212` |
 | `location: beach/day`, локации нет | ошибка `location 'beach' не объявлена в content/locations/` | `scenes.py:218-220` |
-| `location: rooftop/night`, варианта нет | ошибка `у локации 'rooftop' нет варианта 'night' (есть: ['day'])` | `scenes.py:222-227` |
+| `location: rooftop/night`, варианта нет | ошибка `у локации 'rooftop' нет варианта 'night' (есть: ['day'])` | `scenes.py:360-365` |
 | поля `location` нет вообще | `scene vn_black with dissolve` — **молча, без предупреждения** | `scenes.py:230-232` |
 
 `vn_black` — это `image vn_black = Solid("#000000")` из `game/framework/20_ui/images.rpy:5`. Сцены `ch01_s010` и `ch90_s010` сегодня идут именно так: они не объявляют `location`, и игрок видит чёрный экран (`game/generated/scenes/ch01/ch01_s010.gen.rpy:11`).
@@ -122,14 +122,14 @@ location: school_gate/day
 
 ## Pipeline фона: PNG → WebP
 
-Одна трансформация, `png2webp_bg`, версия `1` (`tools/vn/src/vn/assets/pipeline.py:38-46`).
+Одна трансформация, `img_bg`, версия `2` (`tools/vn/src/vn/assets/pipeline.py:54-65`; имя после ADR-0012 — прежнего `png2webp_bg` в коде нет).
 
 ```
 assets_src/png/backgrounds/<loc>/<variant>.png
         │  vn assets build   (pipeline.py:137-144 — discovery)
         ▼
 game/assets/bg/<loc>/<variant>.webp
-        │  vn content compile (images.py:60-68)
+        │  vn content compile (images.py:291-304)
         ▼
 image bg <loc> <variant> = "assets/bg/<loc>/<variant>.webp"
 ```
@@ -148,7 +148,7 @@ image bg <loc> <variant> = "assets/bg/<loc>/<variant>.webp"
 
 Имя папки локации и имя файла проходят slug-гейт `^[a-z][a-z0-9_]*$` (`pipeline.py:48`, применяется в `pipeline.py:142`). `Beach.png`, `beach-day.png`, `day 2.png` — ошибка сборки ассетов, не сцены.
 
-Кэш: ключ `blake3("<src_hash>:png2webp_bg:1:<profile>")`, блоб в `.vncache/assets/<2hex>/<64hex>`, запись в `.vncache/assets-manifest.json` (`pipeline.py:296-310`, `:439-441`). Подробности кэша, GC и удаления сирот — [16-assets.md](16-assets.md).
+Кэш: ключ `blake3("<src_hash>:img_bg:2:<profile>")`, блоб в `.vncache/assets/<2hex>/<64hex>`, запись в `.vncache/assets-manifest.json` (`pipeline.py:723-727`, `:794`). Подробности кэша, GC и удаления сирот — [16-assets.md](16-assets.md).
 
 ## Варианты времени суток
 
@@ -178,7 +178,7 @@ vn build
 
 | Элемент | Статус | Проверка |
 |---|---|---|
-| `config.tag_layer` (теги персонажей → слой `sprites`) | **IMPLEMENTED** | `images.py:239-243`; живой вывод `game/generated/registry/images.gen.rpy:33`: `define config.tag_layer = {"mira": "sprites"}` |
+| `config.tag_layer` (теги персонажей → слой `sprites`) | **IMPLEMENTED** | `images.py:528-532`; живой вывод `game/generated/registry/images.gen.rpy:44`: `define config.tag_layer = {"mira": "sprites"}` |
 | Поле `lighting` в `location@1` | **NOT IMPLEMENTED** | схема есть, читателей ноль |
 | `content/library/lighting.yaml` | **NOT IMPLEMENTED** | каталога `content/library/` не существует |
 | Схема `lighting@1` | **NOT IMPLEMENTED** | нет среди 34 файлов `tools/schemas/*.schema.json` |
@@ -192,7 +192,7 @@ vn build
 
 1. **Каталог декларации.** `content/locations/<id>/` — имя папки станет `id`. Паттерн `^[a-z][a-z0-9_]*$`.
 2. **Каталог сырцов.** `assets_src/png/backgrounds/<id>/`. Имя папки — тот же slug (совпадение обязательно только по факту: путь webp вы прописываете руками, но расхождение = гарантированная путаница).
-3. **Фон.** Положите `<variant>.png`. Один PNG = один вариант. Помните про бюджет ADR-0004: `vn content lint` предупреждает на >30 МБ бинарей в `assets_src/` и падает на >50 МБ (`tools/vn/src/vn/content/lint.py:47,371-399`).
+3. **Фон.** Положите `<variant>.png`. Один PNG = один вариант. Помните про бюджет ADR-0004 в редакции ADR-0012: `vn content lint` краснеет на любом бинаре в `assets_src/` мимо Git LFS и на 50 МБ таких файлов суммарно (`tools/vn/src/vn/content/lint.py:47,422-452`); warn-порога на 30 МБ нет.
 4. **`location.yaml`** — четыре обязательные строки (`schema`, `id`, `backgrounds` с ≥1 вариантом). `title_key` можно опустить: его никто не читает.
 5. **Строка локализации** — только если добавили `title_key`: заведите ключ в `content/ui/strings.yaml`, иначе он останется висеть в PO без источника. Компилятор на это не ругается (проверка `title_key ∈ strings.yaml` есть только для глав, `compile.py:769-773`).
 6. **Сборка.** `vn build` — сначала соберёт `game/assets/bg/<id>/<variant>.webp`, потом эмитит `image bg`.
@@ -227,15 +227,15 @@ vn build
 
 ```bash
 vn content lint                 # схема location@1 (структуру локаций линтер не проверяет)
-vn assets build                 # png2webp_bg -> game/assets/bg/**
+vn assets build                 # img_bg -> game/assets/bg/**
 vn assets validate              # сырцы + ссылки контента (фоны локаций, matrix, треки)
 vn build                        # полный проход: lint -> assets -> compile
 vn build --check                # CI-режим: ничего не пишет, падает на несвежем генерате
 grep -n "^image bg" game/generated/registry/images.gen.rpy   # что реально объявлено
-python -m pytest tools/vn/tests -q                            # 138 тестов
+python -m pytest tools/vn/tests -q                            # 254 теста
 ```
 
-Ожидаемо на чистом дереве: `lint: OK (0 предупреждений)`, `build: OK`, `138 passed`.
+Ожидаемо на чистом дереве: `lint: OK (0 предупреждений)`, `build: OK`, `254 passed`.
 
 ## Чеклист новой локации
 
@@ -248,13 +248,13 @@ python -m pytest tools/vn/tests -q                            # 138 тестов
 - [ ] `grep "image bg <id>" game/generated/registry/images.gen.rpy` находит строку
 - [ ] Сцена ссылается как `location: <id>/<variant>` (обязательно с вариантом)
 - [ ] `vn content lint` и `python -m pytest tools/vn/tests -q` зелёные
-- [ ] Бюджет `assets_src/` не перевален (лимит ADR-0004: warn 30 МБ, error 50 МБ)
+- [ ] Бюджет `assets_src/` не перевален (ADR-0004/ADR-0012: каждый бинарь покрыт LFS; мимо LFS суммарно < 50 МБ)
 
 ## Для AI-агента
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/schemas/location@1.schema.json`, `tools/vn/src/vn/content/images.py:21-71`, `tools/vn/src/vn/content/scenes.py:206-232`, `tools/vn/src/vn/assets/pipeline.py:137-144,223`, любой `content/locations/*/location.yaml` как эталон |
+| **Читать перед изменением** | `tools/schemas/location@1.schema.json`, `tools/vn/src/vn/content/images.py:27-51,281-305`, `tools/vn/src/vn/content/scenes.py:344-370`, `tools/vn/src/vn/assets/pipeline.py:137-144,223`, любой `content/locations/*/location.yaml` как эталон |
 | **Не трогать** | `game/generated/**` (генерат `vn build`), `game/assets/**` (генерат `vn assets build`), `.vncache/**` (кэш) — все три вне git и перезаписываются |
 | **Зависимости** | `location.yaml` → `registry/images.gen.rpy` (`image bg`) и обвязка каждой сцены с этим `location:`. Удаление варианта ломает все сцены, которые на него ссылаются. Удаление webp из `game/assets` = ошибка компиляции, а не предупреждение |
 | **Валидация** | `vn build` (полный путь) или `vn assets validate` + `vn build --check`; тесты `python -m pytest tools/vn/tests -q` |

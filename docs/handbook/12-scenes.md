@@ -25,8 +25,8 @@ vn build                             # lint -> assets -> compile
 |---|---|---|
 | Что это | декларация: где, кто, куда ведёт | только текст, показ спрайтов, ветвление внутри сцены |
 | Кто читает | `compile.py` + `scenes.py` + `lint.py` | парсер Ren'Py через `renpy.exe <root> vn_analyze` |
-| Схема | `scene@1` (`tools/schemas/scene@1.schema.json`) | контракт в `tools/vn/src/vn/content/scenes.py:69-194` |
-| Обязателен | да | да — отсутствие пары = ошибка `нет парного .scene.rpy (G3)` (`compile.py:572-574`, дублирует `lint.py:196,203`) |
+| Схема | `scene@1` (`tools/schemas/scene@1.schema.json`) | контракт в `tools/vn/src/vn/content/scenes.py:152-280` (`validate_scene`) + `:76-149` (`_validate_refs`) |
+| Обязателен | да | да — отсутствие пары = ошибка `нет парного .scene.rpy (G3)` (`compile.py:770-772`, дублирует `lint.py:229-231,236-238`) |
 
 Разделение жёсткое: **`.rpy` не решает, куда идти дальше**, он только возвращает строковый ярлык. Куда ведёт ярлык — знает YAML. Поэтому переставить порядок сцен = правка YAML, не текста.
 
@@ -49,15 +49,15 @@ exits:
 
 | Поле | Схема (`scene@1`) | Кто читает | Эффект | Расхождение |
 |---|---|---|---|---|
-| `schema` | `const: "scene@1"`, **required** | `compile.py:568` (`registry.validate`) | иначе «неизвестная схема» / «нет поля schema (G16)» | — |
-| `id` | `^s\d{3}$`, **required** | **компилятор не читает** | identity сцены выводится из имени файла регуляркой `SCENE_YAML_RE` (`compile.py:32`), `full_id = f"{ch_id}_{short_id}"` (`compile.py:577-579`) | `id`, противоречащий имени файла, **компилируется**; ловит только линтер, правило `{f}: id (...) != номеру файла (...)` (`lint.py:199`) |
+| `schema` | `const: "scene@1"`, **required** | `compile.py:766-769` (`registry.validate`) | иначе «неизвестная схема» / «нет поля schema (G16)» | — |
+| `id` | `^s\d{3}$`, **required** | **компилятор не читает** | identity сцены выводится из имени файла регуляркой `SCENE_YAML_RE` (`compile.py:32`), `full_id = f"{ch_id}_{short_id}"` (`compile.py:775-777`) | `id`, противоречащий имени файла, **компилируется**; ловит только линтер, правило `{f}: id (...) != номеру файла (...)` (`lint.py:233-234`) |
 | `title_key` | `^[a-z0-9_.]+$` | **никто** | — | мёртвая поверхность схемы: `grep title_key` по `tools/vn/src/vn/` даёт только главы и галерею |
-| `participants` | массив `^[a-z][a-z0-9_]{1,23}$`, uniqueItems | `compile.py:755-760` | каждый id обязан существовать в `content/characters/`, иначе ошибка `участник 'x' не объявлен в content/characters/ (say упадёт NameError в рантайме)` | проверка **односторонняя**: персонаж, использованный в `.rpy` но не указанный в `participants`, не ловится ничем |
-| `location` | `^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)?$` — вариант **опционален** | `scenes.py:206-232` | `scene bg <loc> <variant> with dissolve`; при любой ошибке или отсутствии поля — `scene vn_black with dissolve` | компилятор **требует** `/<variant>`: `location: rooftop` lint-зелёный, build-красный |
-| `music` | `^bgm/[a-z][a-z0-9_]*$` | `scenes.py:304-331` | трек обязан быть объявлен в `content/audio/` с `kind: bgm` → `play music <id> fadeout 1.0 fadein 1.0` (+ `volume` из `audio@1`, если ≠ 1) | сегодня все `content/audio/*.yaml` имеют `tracks: {}` — **любое** значение `music:` = ошибка компиляции. Схема не допускает `/` в хвосте, т.е. `bgm/ch01/theme` невалиден |
-| `ambient` | `^amb/[a-z][a-z0-9_]*$` | `scenes.py:304-331` | зацикленный эмбиенс локации: `play ambient <id> …` на канале `ambient` (`045_audio.rpy:13`) — играет **одновременно** с `music` | то же: треков `amb` пока ноль. См. [23-audio.md](23-audio.md) §3 |
-| `vars.reads` / `vars.writes` | массивы `^(g\|chNN\|mech_*\|dlc_*)\.<name>$` | `scenes.py:160-175` | **только предупреждения**: сверка объявленного с фактом из AST | реальная проверка переменных — другая: любой store-атрибут из `.rpy` обязан быть в Variable Registry (`scenes.py:148-159`), ошибка (warning для `status: draft`) |
-| `exits` | объект; ключ `^[a-z][a-z0-9_]*$`; значение — `oneOf`: строка-target \| `{to,when}` \| массив `{to,when}`; `target` = `^(s\d{3}\|ch\d{2}/s\d{3})$` | `scenes.py:116-193` (валидация) + `:247-258` (эмиссия) | таблица диспетчеризации `if _return == "<id>"` | `when` — `{"type":"string","minLength":1}`, **никем не парсится и не проверяется**, несмотря на docstring `030_flow.rpy:57-59` «валидируется компилятором против реестра переменных» |
+| `participants` | массив `^[a-z][a-z0-9_]{1,23}$`, uniqueItems | `compile.py:1031-1037` | каждый id обязан существовать в `content/characters/`, иначе ошибка `участник 'x' не объявлен в content/characters/ (say упадёт NameError в рантайме)` | проверка **односторонняя**: персонаж, использованный в `.rpy` но не указанный в `participants`, не ловится ничем |
+| `location` | `^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)?$` — вариант **опционален** | `scenes.py:344-370` | `scene bg <loc> <variant> with dissolve`; при любой ошибке или отсутствии поля — `scene vn_black with dissolve` | компилятор **требует** `/<variant>`: `location: rooftop` lint-зелёный, build-красный |
+| `music` | `^bgm/[a-z][a-z0-9_]*$` | `_emit_track`, `scenes.py:304-331` | трек обязан быть объявлен в `content/audio/` с `kind: bgm` → `play music <id> fadeout 1.0 fadein 1.0` (+ `volume` из `audio@1`, если ≠ 1) | сегодня все `content/audio/*.yaml` имеют `tracks: {}` — **любое** значение `music:` = ошибка компиляции. Схема не допускает `/` в хвосте, т.е. `bgm/ch01/theme` невалиден |
+| `ambient` | `^amb/[a-z][a-z0-9_]*$` | `_emit_track`, `scenes.py:304-331`; вызов — `:372-375` | зацикленный эмбиенс локации: `play ambient <id> …` на канале `ambient` (`045_audio.rpy:13`) — играет **одновременно** с `music` | то же: треков `amb` пока ноль. См. [23-audio.md](23-audio.md) §3 |
+| `vars.reads` / `vars.writes` | массивы `^(g\|chNN\|mech_*\|dlc_*)\.<name>$` | `scenes.py:244-259` | **только предупреждения**: сверка объявленного с фактом из AST | реальная проверка переменных — другая: любой store-атрибут из `.rpy` обязан быть в Variable Registry (`scenes.py:232-243`), ошибка (warning для `status: draft`) |
+| `exits` | объект; ключ `^[a-z][a-z0-9_]*$`; значение — `oneOf`: строка-target \| `{to,when}` \| массив `{to,when}`; `target` = `^(s\d{3}\|ch\d{2}/s\d{3})$` | `scenes.py:200-227` (валидация) + `:264-279` (резолв цели) + `:380-392` (эмиссия) | таблица диспетчеризации `if _return == "<id>"` | `when` — `{"type":"string","minLength":1}`, **никем не парсится и не проверяется**, несмотря на docstring `030_flow.rpy:57-59` «валидируется компилятором против реестра переменных» |
 
 Чего в схеме **нет** и заводить нельзя без правки схемы: `beat`, `nsfw`, `pack`, `status`, `owner`, `anchors`.
 
@@ -68,16 +68,18 @@ exits:
 | # | Правило | Нарушение | Код |
 |---|---|---|---|
 | 1 | На верхнем уровне файла — **только `label`** | `line N: стейтмент Say вне label запрещён в scene.rpy` | `050_build_bridge.rpy:129-134` |
-| 2 | Имя метки матчит `^ch\d{2}_s\d{3}__[a-z0-9_]+$` **и** префикс равен `full_id` этой сцены | `метка 'x' вне контракта ^ch01_s020__<suffix>$ (C2; naming.md)` | `scenes.py:18,81-88` |
-| 3 | Метка `<full_id>__body` обязательна | `нет обязательной метки ch01_s020__body (C2)` | `scenes.py:89-90` |
-| 4 | `jump`/`call` — только на метки своей сцены | `jump ch02_s010 — переход вне своей сцены; межсценовые переходы только через return "<exit_id>" + exits (C2)` | `scenes.py:100-104` |
-| 5 | `jump expression` / `call expression` запрещены | `jump expression запрещён в авторских сценах (динамические цели ломают статический анализ и prediction)` | `scenes.py:92-98` |
-| 6 | Условные пункты `menu` запрещены | `условный пункт меню #0 ('...') — запрещено (ломает перевод по индексу); используйте ветвление сцены` | `scenes.py:106-114` |
-| 7 | `return <expr>` — только строковый литерал или пусто | `return с не-литеральным выражением — exit-id обязан быть строковым литералом` | `scenes.py:56-66,118-124` |
-| 8 | Возвращаемое значение обязано быть объявлено в `exits` | `return 'roof' не объявлен в exits (…: ['gate'])` | `scenes.py:133-137` |
-| 9 | Пустой `return` при непустых `exits` | `пустой return в сцене с объявленными exits — завершайте return "<exit_id>"` | `scenes.py:128-132` |
-| 10 | Объявленный exit, до которого не доходит ни один `return` | **предупреждение** `exits.roof не достигается ни одним return в …` | `scenes.py:139-143` |
-| 11 | Любой store-атрибут (`ch01.met_mira`) обязан быть в Variable Registry | ошибка (для `status: draft` — предупреждение): `… пишется, но не объявлена в Variable Registry … молчаливый фантом-стор вне сейва/миграций (G5)` | `scenes.py:148-159` |
+| 2 | Имя метки матчит `^ch\d{2}_s\d{3}__[a-z0-9_]+$` **и** префикс равен `full_id` этой сцены | `метка 'x' вне контракта ^ch01_s020__<suffix>$ (C2; naming.md)` | `scenes.py:18,165-172` |
+| 3 | Метка `<full_id>__body` обязательна | `нет обязательной метки ch01_s020__body (C2)` | `scenes.py:173-174` |
+| 4 | `jump`/`call` — только на метки своей сцены | `jump ch02_s010 — переход вне своей сцены; межсценовые переходы только через return "<exit_id>" + exits (C2)` | `scenes.py:184-188` |
+| 5 | `jump expression` / `call expression` запрещены | `jump expression запрещён в авторских сценах (динамические цели ломают статический анализ и prediction)` | `scenes.py:178-182` |
+| 6 | Условные пункты `menu` запрещены | `условный пункт меню #0 ('...') — запрещено (ломает перевод по индексу); используйте ветвление сцены` | `scenes.py:190-198` |
+| 7 | `return <expr>` — только строковый литерал или пусто | `return с не-литеральным выражением — exit-id обязан быть строковым литералом` | `_literal_exit`, `scenes.py:56-66`; проверка — `:202-209` |
+| 8 | Возвращаемое значение обязано быть объявлено в `exits` | `return 'roof' не объявлен в exits (…: ['gate'])` | `scenes.py:217-221` |
+| 9 | Пустой `return` при непустых `exits` | `пустой return в сцене с объявленными exits — завершайте return "<exit_id>"` | `scenes.py:211-216` |
+| 10 | Объявленный exit, до которого не доходит ни один `return` | **предупреждение** `exits.roof не достигается ни одним return в …` | `scenes.py:223-227` |
+| 11 | Любой store-атрибут (`ch01.met_mira`) обязан быть в Variable Registry | ошибка (для `status: draft` — предупреждение): `… пишется, но не объявлена в Variable Registry … молчаливый фантом-стор вне сейва/миграций (G5)` | `scenes.py:232-243` |
+| 12 | `show`/`hide` на несуществующий образ, тег или атрибут персонажа; `show expression` | `show mira hapy — у персонажа mira нет атрибут(ов) hapy (есть: …)`, `hide X — нет такого образа/тега`, `show expression — динамический образ запрещён` | `_validate_refs`, `scenes.py:89-121` |
+| 13 | `play music/ambient/sound <id>` на необъявленный трек или на канал, не соответствующий `kind` | `play music clam_theme — трек не объявлен в content/audio/*.yaml (в рантайме будет тишина)`, `— трек объявлен как sfx, каналу music разрешены только amb/bgm` | `_validate_refs`, `scenes.py:123-149`, карта `CHANNEL_KINDS:73` |
 
 **Грабля парсера:** Ren'Py дописывает неявный `Return` в конец каждого файла. Build-bridge его отрезает (`050_build_bridge.rpy:122-127`) — иначе каждый файл ловил бы правило №9. Если вы правите мост, не потеряйте этот срез.
 
@@ -95,7 +97,7 @@ scene shot_ch01_s030 sunset mira_school          # явный атрибут <la
 
 ## Разбор реального генерата: `game/generated/scenes/ch01/ch01_s020.gen.rpy`
 
-Файл 39 строк. Первые 19 — обвязка (её пишет `emit_scene`, `scenes.py:197-273`), остальное — дословная копия авторского `.rpy`.
+Файл 39 строк. Первые 19 — обвязка (её пишет `emit_scene`, `scenes.py:334-410`), остальное — дословная копия авторского `.rpy`.
 
 ```renpy
  1  # ══════════════════════════════════════════════════════════════
@@ -126,14 +128,14 @@ scene shot_ch01_s030 sunset mira_school          # явный атрибут <la
 | Строка | Что это | Откуда |
 |---|---|---|
 | 1-6 | Шапка с blake3 каждого источника. Меняется при любой правке источника → файл считается «несвежим» в `vn build --check` | `compile.py:62` |
-| 8 | **Метка-обвязка = ровно `full_id`**, без слуга. Именно на неё делают `jump` соседние сцены и `entry_label` главы | `scenes.py:200` |
-| 9 | Отметка прохождения: питает галерею, достижения и `vn.chapter_done` | `scenes.py:201`; рантайм `030_flow.rpy:12` |
-| 10 | Явная очистка слоя `sprites`. `scene` чистит только свой слой (`master`) — без этой строки персонажи предыдущей сцены протекали бы в следующую | `scenes.py:202-204` |
-| 11 | Фон из `location: school_gate/day`. Без `location:` здесь было бы `scene vn_black with dissolve` | `scenes.py:206-232`, см. [11-locations.md](11-locations.md) |
-| (нет) | `play music <id> fadeout 1.0 fadein 1.0` и/или `play ambient <id> …` — появились бы между 11 и 12 при наличии `music:`/`ambient:` | `scenes.py:304-331,372-375` |
-| 12 | `call` (не `jump`!) в тело автора с явным `from`-именем: Ren'Py требует стабильные имена точек возврата для совместимости сейвов | `scenes.py:244` |
-| 13 | Инвариант G7: глубина call-стека на границе сцены = 0. Нарушение пишется в лог, не падает | `scenes.py:245`; рантайм `030_flow.rpy:44-48` |
-| 14-15 | Таблица диспетчеризации: **по одному блоку `if` на каждую запись `exits`**, в порядке YAML. С `when` строка была бы `if _return == "roof" and vn.eval_when('g.route == "mira"'):` | `scenes.py:247-258` |
+| 8 | **Метка-обвязка = ровно `full_id`**, без слуга. Именно на неё делают `jump` соседние сцены и `entry_label` главы | `scenes.py:338` |
+| 9 | Отметка прохождения: питает галерею, достижения и `vn.chapter_done` | `scenes.py:339`; рантайм `030_flow.rpy:12` |
+| 10 | Явная очистка слоя `sprites`. `scene` чистит только свой слой (`master`) — без этой строки персонажи предыдущей сцены протекали бы в следующую | `scenes.py:340-342` |
+| 11 | Фон из `location: school_gate/day`. Без `location:` здесь было бы `scene vn_black with dissolve` | `scenes.py:344-370`, см. [11-locations.md](11-locations.md) |
+| (нет) | `play music <id> fadeout 1.0 fadein 1.0` и/или `play ambient <id> …` — появились бы между 11 и 12 при наличии `music:`/`ambient:` | `scenes.py:304-331`, вызов `:372-375` |
+| 12 | `call` (не `jump`!) в тело автора с явным `from`-именем: Ren'Py требует стабильные имена точек возврата для совместимости сейвов | `scenes.py:377` |
+| 13 | Инвариант G7: глубина call-стека на границе сцены = 0. Нарушение пишется в лог, не падает | `scenes.py:378`; рантайм `030_flow.rpy:44-48` |
+| 14-15 | Таблица диспетчеризации: **по одному блоку `if` на каждую запись `exits`**, в порядке YAML. С `when` строка была бы `if _return == "roof" and vn.eval_when('g.route == "mira"'):` | `scenes.py:380-392` |
 | 16-19 | Терминальный fallback: неизвестный/отсутствующий exit → размотать стек → причина `"unknown_exit"` → `vn_scene_unavailable` | `scenes.py:400-403` |
 | 21+ | Копия авторского файла (с инжектированными `voice vn.voice_path("<say-id>")` перед озвученными репликами, если глава покрыта voice-манифестом) — в отладчике Ren'Py вы видите ваш текст | `scenes.py:405-408`, `_inject_voice` `scenes.py:283-300` |
 
@@ -152,9 +154,9 @@ scene shot_ch01_s030 sunset mira_school          # явный атрибут <la
     jump vn_scene_unavailable
 ```
 
-`chapter_done` — единственный якорь «глава пройдена» для галереи и достижений; ручного кода в сценах он не требует (`scenes.py:260-265`).
+`chapter_done` — единственный якорь «глава пройдена» для галереи и достижений; ручного кода в сценах он не требует (`scenes.py:394-399`).
 
-**Draft-глава с ненаписанной целью** (`status: draft` + exit на несуществующую сцену) — вместо `jump` эмитится живая заглушка (`scenes.py:253-257`):
+**Draft-глава с ненаписанной целью** (`status: draft` + exit на несуществующую сцену) — вместо `jump` эмитится живая заглушка (`scenes.py:386-390`, ветка `to_label is None` из `:269-276`):
 
 ```renpy
     if _return == "roof":
@@ -164,7 +166,7 @@ scene shot_ch01_s030 sunset mira_school          # явный атрибут <la
         jump vn_scene_unavailable
 ```
 
-Для `status: playtest|release` та же ситуация — ошибка компиляции, не заглушка (G15, `scenes.py:184-189`).
+Для `status: playtest|release` та же ситуация — ошибка компиляции, не заглушка (G15, `scenes.py:269-275`).
 
 ## Что происходит при неизвестном exit
 
@@ -184,7 +186,7 @@ label vn_scene_unavailable:
 
 ## `vn scene new` vs `vn scene stub`
 
-Обе команды — `tools/vn/src/vn/content/scaffold.py`, CLI на `cli.py:467-496`. Обе создают **пару** файлов и **не трогают `chapter.yaml`**.
+Обе команды — `tools/vn/src/vn/content/scaffold.py`, CLI на `cli.py:488-520`. Обе создают **пару** файлов и **не трогают `chapter.yaml`**.
 
 ### `vn scene new <chapter> <slug>`
 
@@ -385,7 +387,7 @@ cat game/generated/scenes/ch01/ch01_s020.gen.rpy | head -20
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/content/scenes.py` (весь, 339 строк — это и есть контракт), `tools/schemas/scene@1.schema.json`, `tools/vn/src/vn/content/scaffold.py`, `game/framework/00_core/030_flow.rpy:1-70,227-242`, любая пара `content/chapters/ch01_awakening/scenes/s020_*` как эталон |
+| **Читать перед изменением** | `tools/vn/src/vn/content/scenes.py` (весь, 483 строки — это и есть контракт), `tools/schemas/scene@1.schema.json`, `tools/vn/src/vn/content/scaffold.py`, `game/framework/00_core/030_flow.rpy:1-70,227-242`, любая пара `content/chapters/ch01_awakening/scenes/s020_*` как эталон |
 | **Не трогать** | `game/generated/**` (генерат `vn build`), `loc/ledger/*.json` (генерат `vn loc keys`, перезаписывается целиком), `game/tl/**` (генерат `vn loc import`) |
 | **Зависимости** | Сцена → `registry/scenes.gen.rpy` (`VN_SCENES`), `registry/menus.gen.rpy` (через ledger), `registry/chapters.gen.rpy` (`entry_label`), достижения (`trigger.scene`) и галерея (`unlock.scene`) в `content/{achievements,gallery}/*.yaml`. Удаление сцены, на которую ссылается достижение, — ошибка компиляции (`compile.py:797-816`) |
 | **Валидация** | `vn content lint` → `vn loc keys --check` → `vn build` → `vn test smoke`; в CI это `.github/workflows/ci.yml:29,61,64` |

@@ -46,7 +46,7 @@ vn test smoke --picks 0,1              # прогон конкретной ве�
 | 16 | Импорт переводов | PO | `game/tl/<lang>/dialogue_chNN.rpy` | `vn loc import` (входит в `vn build`) | `vn build --check` |
 | 17 | QA-прохождение веток | генерат | `.vncache/smoke/` (скриншоты, `RESULT.txt`, `picks.log`) | `vn test smoke --picks …` | exit 0 + `OK: vn_end_of_content` |
 | 18 | Перевод в `playtest` | `chapter.yaml` | `status: playtest` | редактор | `vn content lint` — граф-предупреждения становятся ошибками |
-| 19 | Релизный гейт | всё дерево | вердикт 19 проверок | `vn release validate --flavor public` | exit 0 |
+| 19 | Релизный гейт | всё дерево | вердикт 20 проверок | `vn release validate --flavor public` | exit 0 |
 | 20 | Сборка | всё дерево | `build/dist/<version>-<flavor>/` | `vn release build --flavor public` | — |
 | 21 | Фиксация id и changelog | `status: release` | `docs/CHANGELOG.md`, `ci/release-manifest.json`, `content/registry/id_registry.json` | `vn release changelog` | — |
 
@@ -129,7 +129,7 @@ label chNN_s010__body:
 
 | Пропущено | Где доделать | Что будет, если забыть |
 |---|---|---|
-| `meta.chapters.chNN.title` | `content/ui/strings.yaml` | `vn build` даёт warning «в меню глав отобразится сырой ключ» (`compile.py:770-775`) |
+| `meta.chapters.chNN.title` | `content/ui/strings.yaml` | `vn build` даёт warning «в меню глав отобразится сырой ключ» (`compile.py:1048-1053`) |
 | Владелец главы | `CODEOWNERS` (см. закомментированный образец `CODEOWNERS:25-26`) | ревью главы никому не назначается |
 | `scene_order` при добавлении сцен | `chapter.yaml` | сцена-финал вне `scene_order` ловит warning «тупик»; сама `scene_order` при этом на кодогенерацию не влияет |
 | `exits` между сценами | каждая `scene.yaml` | сцены недостижимы; в draft — warning, в playtest/release — ошибка |
@@ -156,14 +156,14 @@ vn scene stub ch02 s040       # -> scenes/s040_stub.scene.{yaml,rpy} — заг�
 | Поле | Обяз. в схеме | Ограничение схемы | Что делает код | Статус |
 |---|---|---|---|---|
 | `schema` | да | `const: chapter@1` | точка входа реестра схем (G16) | IMPLEMENTED |
-| `id` | да | `^ch\d{2}$` | должен совпадать с префиксом имени папки — иначе ошибка и в линте (`lint.py:176-177`), и в компиляторе (`compile.py:537-540`) | IMPLEMENTED |
-| `title_key` | да | `^[a-z0-9_.]+$` | попадает в `VN_CHAPTERS` (`scenes.py:280`); отсутствие ключа в `content/ui/strings.yaml` → warning (`compile.py:770-775`) | IMPLEMENTED |
+| `id` | да | `^ch\d{2}$` | должен совпадать с префиксом имени папки — иначе ошибка и в линте (`lint.py:211-212`), и в компиляторе (`compile.py:740-743`) | IMPLEMENTED |
+| `title_key` | да | `^[a-z0-9_.]+$` | попадает в `VN_CHAPTERS` (`scenes.py:417`); отсутствие ключа в `content/ui/strings.yaml` → warning (`compile.py:1048-1053`) | IMPLEMENTED |
 | `status` | да | enum `draft \| playtest \| release` | управляет строгостью проверок (G15) — см. §4 | IMPLEMENTED |
-| `entry_scene` | да | `^s\d{3}$` | `entry_label = f"{id}_{entry_scene}"` в `VN_CHAPTERS` (`scenes.py:281`); `label start` прыгает на `entry_label` первой главы (`030_flow.rpy:217-224`) | IMPLEMENTED |
-| `scene_order` | да | массив `^s\d{3}$`, `minItems: 1`, уникальные | **проверяется, но не используется**: только существование сцен (`compile.py:782-784`, `lint.py:210-212`) и «последняя в `scene_order`» как легитимный тупик (`lint.py:287-291`). Порядок прохождения задают `exits`, а не это поле | PARTIALLY IMPLEMENTED |
+| `entry_scene` | да | `^s\d{3}$` | `entry_label = f"{id}_{entry_scene}"` в `VN_CHAPTERS` (`scenes.py:418`); `label start` прыгает на `entry_label` первой главы (`030_flow.rpy:217-224`) | IMPLEMENTED |
+| `scene_order` | да | массив `^s\d{3}$`, `minItems: 1`, уникальные | **проверяется, но не используется**: только существование сцен (`compile.py:1061-1063`, `lint.py:245-247`) и «последняя в `scene_order`» как легитимный тупик (`lint.py:321-330`). Порядок прохождения задают `exits`, а не это поле | PARTIALLY IMPLEMENTED |
 | `owner` | нет | `^@[A-Za-z0-9_-]+$` | **не читается никаким кодом** (grep по `tools/vn/src/vn/` — 0 попаданий) | NOT IMPLEMENTED |
 | `requires.systems` / `requires.chapters` | нет | массивы строк | **не читаются**; `requires` разрешается только у манифестов паков (`compile.py:464`) | NOT IMPLEMENTED |
-| `pack` | — | поля не существует | принадлежность паку выводится из расположения файла (`compile.py:541`, `packs/README.md:3-5`) | по замыслу |
+| `pack` | — | поля не существует | принадлежность паку выводится из расположения файла (`compile.py:744`, `packs/README.md:3-5`) | по замыслу |
 
 Живой пример — `content/chapters/ch01_awakening/chapter.yaml`:
 
@@ -180,21 +180,21 @@ scene_order: [s010, s020, s030]
 
 ## 4. `status: draft | playtest | release` (G15)
 
-**Статус: IMPLEMENTED** — `lint.py:209,231,270`, `compile.py:748,779`, `scenes.py:151,177`.
+**Статус: IMPLEMENTED** — `lint.py:244,266,305` (три точки `complain = rep.warn if status == "draft" else rep.error`), `compile.py:1057-1063`, `scenes.py:235,261`.
 
 Механика одна и та же везде: `complain = warn if status == "draft" else error`.
 
 | Проверка | Где | `draft` | `playtest` / `release` |
 |---|---|---|---|
-| `scene_order` ссылается на несуществующую сцену | `lint.py:210-212`, `compile.py:782-784` | warning | **error** |
-| `entry_scene` не существует | `lint.py:213-214`, `compile.py:780-781` | warning | **error** |
-| `exits.<id> -> <target>`: цели нет | `lint.py:242-255`, `scenes.py:184-189` | warning | **error** |
-| Сцена недостижима из `entry_scene` | `lint.py:279-285` | warning | **error** |
-| Переменная пишется/читается, но не в Variable Registry | `scenes.py:151-159` | warning | **error** |
-| Сцена без `exits`, не последняя в `scene_order` («тупик») | `lint.py:289-295` | warning | warning (**всегда** warning) |
-| Битая цель exit при эмиссии | `scenes.py:184-192` | эмитится `# TODO(draft)` + `$ vn.unwind_call_stack()` + `jump vn_scene_unavailable` | ветка не эмитится вовсе |
+| `scene_order` ссылается на несуществующую сцену | `lint.py:245-247`, `compile.py:1061-1063` | warning | **error** |
+| `entry_scene` не существует | `lint.py:248-249`, `compile.py:1059-1060` | warning | **error** |
+| `exits.<id> -> <target>`: цели нет | `lint.py:277-289`, `scenes.py:269-275` | warning | **error** |
+| Сцена недостижима из `entry_scene` | `lint.py:314-320` | warning | **error** |
+| Переменная пишется/читается, но не в Variable Registry | `scenes.py:232-243` | warning | **error** |
+| Сцена без `exits`, не последняя в `scene_order` («тупик») | `lint.py:321-330` | warning | warning (**всегда** warning) |
+| Битая цель exit при эмиссии | `scenes.py:269-276` (решение) + `:386-390` (эмиссия) | эмитится `# TODO(draft)` + `$ vn.unwind_call_stack()` + `jump vn_scene_unavailable` | ветка не эмитится вовсе |
 
-Дополнительный эффект `release`: `vn release changelog` штампует главу и все её сцены в `content/registry/id_registry.json` (`release.py:69-121`) — после этого исчезновение id ловится линтом как ошибка G7 (`lint.py:351-357`), а вернуть id назад нельзя: главы вообще не переименовываются (для сцен есть аварийный выход через `content/renames.yaml`).
+Дополнительный эффект `release`: `vn release changelog` штампует главу и все её сцены в `content/registry/id_registry.json` (`release.py:69-121`) — после этого исчезновение id ловится линтом как ошибка G7 (`lint.py:383-388`), а вернуть id назад нельзя: главы вообще не переименовываются (для сцен есть аварийный выход через `content/renames.yaml`).
 
 **Факт репозитория:** `ch01` и `ch90` — оба `draft`, поэтому `content/registry/id_registry.json` содержит четыре пустых массива и защита G7 сегодня **инертна**. Первая же глава со `status: release` включает её навсегда.
 
@@ -211,7 +211,7 @@ scene_order: [s010, s020, s030]
 | Папка главы | `^ch(\d{2})_([a-z][a-z0-9_]{2,30})$` | `lint.py:16`, `compile.py:31` |
 | id главы | `^ch\d{2}$` | `chapter@1.schema.json` |
 | Файл сцены | `^s(\d{3})_([a-z][a-z0-9_]{2,40})\.scene\.(yaml\|rpy)$` | `lint.py:17`; компилятор — только `.yaml` (`compile.py:32`) |
-| Полный id сцены | `^ch\d{2}_s\d{3}$` — **выводится из путей**, нигде не хранится | `compile.py:574` |
+| Полный id сцены | `^ch\d{2}_s\d{3}$` — **выводится из путей**, нигде не хранится | `compile.py:775-777` |
 | Метка-обвязка | `= полному id` (`label ch01_s020:`) | эмитит компилятор |
 | Авторская метка | `^ch\d{2}_s\d{3}__[a-z0-9_]+$` | `scenes.py:18` |
 
@@ -323,7 +323,7 @@ vars:
 
 Правила:
 
-- `store` главы **обязан** равняться `chNN` — проверяет линт (`lint.py:312-317`). **Грабля:** проверка ограничена префиксом `content/chapters/`, поэтому `vars.yaml` главы **в паке** может объявить любой store и линт промолчит.
+- `store` главы **обязан** равняться `chNN` — проверяет линт (`lint.py:348-352`). **Грабля:** проверка ограничена префиксом `content/chapters/`, поэтому `vars.yaml` главы **в паке** может объявить любой store и линт промолчит.
 - Компилятор создаёт named store и дефолты: `init -980 python in ch01: pass` + `default ch01.met_mira = False` (`compile.py:94-105`), реальный результат — `game/generated/state/defaults.gen.rpy:9-17`.
 - Каждое чтение/запись атрибута стора в `.rpy` сверяется с Variable Registry по AST от build-bridge: незадекларированная переменная — warning в `draft`, ошибка в `playtest`/`release` (`scenes.py:148-159`).
 - Необязательные `vars.reads` / `vars.writes` в `scene.yaml` — **справочные**: если объявили и разошлось с фактом, получите warning (`scenes.py:160-175`); если не объявили — никто не требует.
@@ -422,7 +422,7 @@ flowchart TD
 
 ### 10.3. Что именно ловит линт-правило достижимости
 
-`lint.py:257-295`, **IMPLEMENTED**:
+`lint.py:251-330`, **IMPLEMENTED**:
 
 1. BFS от `entry_scene` главы по рёбрам `exits` (включая условные — условия не вычисляются, ребро считается проходимым всегда).
 2. Сцена, не попавшая в обход → `chNN: сцена sNNN недостижима из entry_scene sNNN — на неё не ведёт ни один exit (мёртвый контент)`. Серьёзность — по `status`.
@@ -433,7 +433,7 @@ flowchart TD
 - недостижимую **метку внутри** сцены (`chNN_sNNN__branch`, на которую никто не прыгает) — граф строится по сценам, не по меткам;
 - ветку, недостижимую из-за `when`, которое никогда не истинно — выражения `when` не парсятся и не типизируются вообще (`scene@1` требует лишь непустую строку);
 - сцену, недостижимую потому, что автор забыл `return "<exit>"` в какой-то ветке — это ловит компилятор отдельным warning «exits.x не достигается ни одним return» (`scenes.py:139-143`);
-- **тонкость:** граф достижимости ключуется по `scene.yaml: id` (`lint.py:255`), а множество существующих сцен — по номеру из имени файла. При расхождении сработает отдельная ошибка `id (…) != номеру файла (…)` (`lint.py:198-199`), но заодно исказится и граф. Держите `id` в `scene.yaml` синхронным с именем файла.
+- **тонкость:** граф достижимости ключуется по `scene.yaml: id` (`lint.py:290`), а множество существующих сцен — по номеру из имени файла. При расхождении сработает отдельная ошибка `id (…) != номеру файла (…)` (`lint.py:233-234`), но заодно исказится и граф. Держите `id` в `scene.yaml` синхронным с именем файла.
 
 ---
 
@@ -447,7 +447,7 @@ vn loc extract         # 2. обновить loc/po/<lang>/chNN.po (перево
 #    3. перевод: правка msgstr в loc/po/<lang>/chNN.po
 vn loc pseudo          # 3'. или синтетический язык для QA переполнений UI
 vn loc import          # 4. PO -> game/tl/<lang>/dialogue_chNN.rpy  (входит в vn build)
-vn loc report          # 5. покрытие: "en: 115/115 (100%), fuzzy: 0"
+vn loc report          # 5. покрытие: "en: 130/130 (100%), fuzzy: 0"
 ```
 
 Что важно знать именно при выпуске главы:
@@ -540,7 +540,7 @@ vn loc report          # 5. покрытие: "en: 115/115 (100%), fuzzy: 0"
 ### Релиз
 
 - [ ] `status` поднят до `playtest`, `vn content lint` всё ещё 0 ошибок (граф-проверки стали строгими)
-- [ ] `vn release validate --flavor public` — 0 FAIL (19 проверок)
+- [ ] `vn release validate --flavor public` — 0 FAIL (20 проверок)
 - [ ] `vn release validate --flavor patron` — 0 FAIL
 - [ ] `project.yaml: version` поднят на **minor** (новая глава = minor по политике `project.yaml:2`)
 - [ ] `status: release` выставлен в том же коммите, что и релиз
@@ -559,13 +559,13 @@ vn loc report          # 5. покрытие: "en: 115/115 (100%), fuzzy: 0"
 | Аспект | Глава ядра | Глава пака |
 |---|---|---|
 | Расположение | `content/chapters/chNN_<slug>/` | `packs/<pack_id>/chapters/chNN_<slug>/` |
-| Поле принадлежности | нет | нет — принадлежность **по расположению** (`compile.py:541`); поля `pack:` не существует |
+| Поле принадлежности | нет | нет — принадлежность **по расположению** (`compile.py:744`); поля `pack:` не существует |
 | `vn chapter new` | работает | **не работает** — скаффолд жёстко пишет в `content/chapters/` (`scaffold.py:62`). Папку и 4 файла создаёте руками |
 | `vn scene new` / `vn scene stub` | работает | **не работает** — `_find_chapter` ищет только в `content/chapters/` (`scaffold.py:82`) |
 | Требование сверху | — | `packs/<id>/manifest.yaml` (`pack_manifest@1`): `id` == имени папки, `api_level {min ≤ 1 < below}`, `requires.core` совместим с `project.yaml: version` — иначе пак не собирается (G9, `compile.py:437-471`) |
-| `vn content lint` | полная структурная проверка | структура глав и графа проверяется (`lint.py:160-161` добавляет `packs/*/chapters`), **но** `store` в `vars.yaml` пака не проверяется (`lint.py:314`), а персонажи пака структурно не линтуются (`lint.py:298`) |
+| `vn content lint` | полная структурная проверка | структура глав и графа проверяется (`lint.py:194-196` добавляет `packs/*/chapters`), **но** `store` в `vars.yaml` пака не проверяется (`lint.py:348-349`), а персонажи пака структурно не линтуются (`lint.py:332-333`) |
 | `vn content graph` | видит | **не видит** (`graph.py:15`) |
-| Куда компилируется | `game/generated/scenes/chNN/` | **туда же** — общее пространство имён; конфликт id ядра и пака = ошибка компиляции (`compile.py:524-526`) |
+| Куда компилируется | `game/generated/scenes/chNN/` | **туда же** — общее пространство имён; конфликт id ядра и пака = ошибка компиляции (`compile.py:727-729`) |
 | `vn release changelog` / `ci/release-manifest.json` | видит | **не видит** (`release.py:124-139`) — глава пака никогда не попадёт в changelog и в `id_registry.json` |
 | Гейт по флейвору | — | **NOT IMPLEMENTED**: `VN_PACKS` перечисляет все паки из `packs/` независимо от `flavors.<f>.packs`. Владение при этом гейтится: провайдер подключён (ADR-0014, `035_platform.rpy:75`), но только под Steam — вне него `owned()` всегда `True` |
 | Поставка | вместе с игрой | `vn pack build <id>` → `build/packs/<id>.zip`: только `manifest.yaml` + скомпилированные `.gen.rpy`/`.rpyc` сцен. Ни ассетов, ни `tl/`, ни персонажей — **PARTIALLY IMPLEMENTED**. Охранник «объявлены главы, но нет ни одной скомпилированной сцены» рабочий и падает до создания zip (`cli.py:1624-1626`); пак без глав собирается штатно с предупреждением. Остаток: проверка идёт «хоть одна сцена на весь пак», не по каждой главе |
@@ -584,11 +584,11 @@ vn loc report          # 5. покрытие: "en: 115/115 (100%), fuzzy: 0"
 
 **Удалить сцену до релиза** (глава ещё `draft`/`playtest`, id не в `id_registry.json`): удалите пару файлов, уберите из `scene_order`, перенаправьте входящие `exits`, прогоните `vn loc keys` (осиротевший шард ledger чистится автоматически, `keys.py:235-249`).
 
-**Удалить сцену после релиза:** нельзя просто удалить — G7. Заведите запись в `content/renames.yaml` (`deleted_scenes: {chNN_sNNN: {fallback: chNN_sMMM, since: X.Y.Z}}` или `scenes:` для переименования), иначе `lint.py:351` выдаст `выпущенная сцена … исчезла без записи в renames.yaml`.
+**Удалить сцену после релиза:** нельзя просто удалить — G7. Заведите запись в `content/renames.yaml` (`deleted_scenes: {chNN_sNNN: {fallback: chNN_sMMM, since: X.Y.Z}}` или `scenes:` для переименования), иначе `lint.py:383-388` выдаст `выпущенная сцена … исчезла без записи в renames.yaml`.
 
 **Добавить новый язык для главы** — ничего в главе менять не нужно: `vn loc add <code> --name <native>` и всё (ADR-0005, языки обнаруживаются автоматически).
 
-**Сделать `scene_order` источником навигации** — сегодня это не так (поле проверяется, но не используется). Изменение затронет `compile.py:782-784` и `lint.py:287-291`; сначала ADR.
+**Сделать `scene_order` источником навигации** — сегодня это не так (поле проверяется, но не используется). Изменение затронет `compile.py:1061-1063` и `lint.py:321-330`; сначала ADR.
 
 ---
 
@@ -621,11 +621,11 @@ vn loc report                            # покрытие переводов
 vn test smoke --picks 0,0                # прогон ветки автопилотом
 vn test smoke --picks 0,1 --lang en
 vn save check && vn save corpus          # совместимость сейвов (2 фикстуры)
-vn release validate --flavor public      # 19 проверок релизного гейта
-python -m pytest tools/vn/tests -q       # 253 теста тулинга
+vn release validate --flavor public      # 20 проверок релизного гейта
+python -m pytest tools/vn/tests -q       # 254 теста тулинга
 ```
 
-Ожидаемое сейчас: `vn content lint` → `lint: OK (0 предупреждений)`; `vn build` → `build: OK`; `vn release validate --flavor public` → 16 PASS, exit 0 (среди них — `PASS сейв-корпус: 2 фикстур`).
+Ожидаемое сейчас: `vn content lint` → `lint: OK (0 предупреждений)`; `vn build` → `build: OK`; `vn release validate --flavor public` → 19 строк (18 PASS + 1 WARN), exit 0 (среди них — `PASS сейв-корпус: 2 фикстур`).
 
 ---
 
@@ -633,7 +633,7 @@ python -m pytest tools/vn/tests -q       # 253 теста тулинга
 
 | | |
 |---|---|
-| **Читать перед изменением** | `tools/vn/src/vn/content/scaffold.py` (шаблоны и нумерация), `tools/vn/src/vn/content/scenes.py:69-273` (контракт `.rpy` + эмиссия обвязки), `tools/vn/src/vn/content/lint.py:157-295` (структура глав, exits, достижимость), `tools/vn/src/vn/content/compile.py:500-583,740-784` (сбор глав, статус-градация), `tools/schemas/chapter@1.schema.json`, `tools/schemas/scene@1.schema.json`, `tools/schemas/vars@1.schema.json`, `docs/conventions/naming.md`, живой образец `content/chapters/ch01_awakening/**` |
+| **Читать перед изменением** | `tools/vn/src/vn/content/scaffold.py` (шаблоны и нумерация), `tools/vn/src/vn/content/scenes.py:76-410` (контракт `.rpy` + эмиссия обвязки), `tools/vn/src/vn/content/lint.py:154-330` (структура глав, exits, достижимость), `tools/vn/src/vn/content/compile.py:500-583,740-784` (сбор глав, статус-градация), `tools/schemas/chapter@1.schema.json`, `tools/schemas/scene@1.schema.json`, `tools/schemas/vars@1.schema.json`, `docs/conventions/naming.md`, живой образец `content/chapters/ch01_awakening/**` |
 | **Не трогать** | `game/generated/**` (выход `vn build`), `game/assets/**` (выход `vn assets build`), `game/tl/**` (выход `vn loc import`), `loc/ledger/*.json` руками (пересобирается `vn loc keys`), `content/registry/id_registry.json` руками (пишет `vn release changelog`), `.vncache/**`, `build/**` |
 | **Зависимости (что сломается ниже по течению)** | id главы/сцены → метки генерата → say-id в PO → `game/tl/*` → якоря `content/gallery/*.yaml` и `content/achievements/*.yaml` → `content/registry/id_registry.json` (после релиза — навсегда). `exits` → граф достижимости в линте, dispatch-блоки в обвязке, `vn content graph`. `entry_scene` → `entry_label` в `VN_CHAPTERS` → `label start` и экран выбора глав. Переменные главы → `state/defaults.gen.rpy` → сейвы → миграции |
 | **Валидация** | `vn content lint && vn build && vn loc keys --check && vn test smoke --picks 0,0` |

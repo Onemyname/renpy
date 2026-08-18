@@ -1,9 +1,9 @@
 # 25. Собственный движок: CLI `vn`
 
-> **Статус подсистемы:** IMPLEMENTED — одна точка входа, 20 команд/групп верхнего уровня, честный контракт кодов возврата, ~50 живых подкоманд. **Но:** 11 подкоманд — заглушки с номером фазы, десяток команд из `ARCHITECTURE.md` не существует вовсе (`vn validate`, `vn build --use-artifact`), а тестами покрыта ровно одна команда CLI — `pack build`. Lock-файл тулчейна `tools/vn.lock` с 2026-08-08 **читается** всеми пайплайнами (§8).
+> **Статус подсистемы:** IMPLEMENTED — одна точка входа, 20 команд/групп верхнего уровня, честный контракт кодов возврата, ~50 живых подкоманд. **Но:** 10 подкоманд — заглушки с номером фазы, десяток команд из `ARCHITECTURE.md` не существует вовсе (`vn validate`, `vn build --use-artifact`), а тестами покрыта ровно одна команда CLI — `pack build`. Lock-файл тулчейна `tools/vn.lock` с 2026-08-08 **читается** всеми пайплайнами (§8).
 > **Отвечает на вопрос:** «Какая команда `vn` мне нужна, что она делает, чем кончится и как добавить свою».
 
-`vn` — единственный инструмент проекта (норма G1). Это Python-пакет `vn-tools` в `tools/vn/`, ставится editable-установкой и даёт команду `vn`. Он собирает ассеты, компилирует контент, гоняет линт, локализацию, QA-прогоны, релизный гейт и паки. Ren'Py он **вызывает**, но не заменяет: движок остаётся Ren'Py 8.5.3, а `vn` — производственная обвязка вокруг него. Код: `../../tools/vn/src/vn/` (8112 строк, 30 модулей), точка входа `vn = "vn.cli:main"` (`../../tools/vn/pyproject.toml:24`).
+`vn` — единственный инструмент проекта (норма G1). Это Python-пакет `vn-tools` в `tools/vn/`, ставится editable-установкой и даёт команду `vn`. Он собирает ассеты, компилирует контент, гоняет линт, локализацию, QA-прогоны, релизный гейт и паки. Ren'Py он **вызывает**, но не заменяет: движок остаётся Ren'Py 8.5.3, а `vn` — производственная обвязка вокруг него. Код: `../../tools/vn/src/vn/` (11 122 строки, 34 модуля), точка входа `vn = "vn.cli:main"` (`../../tools/vn/pyproject.toml:24`).
 
 ---
 
@@ -29,7 +29,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | Что | Значение | Где | Кто бампает |
 |---|---|---|---|
 | версия тулинга | `0.1.0` | `../../tools/vn/src/vn/__init__.py:3`, `pyproject.toml:7` | engine-team |
-| версия игры | `0.1.4` | `../../project.yaml:2` | релиз-менеджер |
+| версия игры | `0.1.5` | `../../project.yaml:2` | релиз-менеджер |
 | минимум тулинга для дерева | `"0.1"` | `../../project.yaml:4` (`min_tools`) | проверяет `vn doctor` |
 
 ---
@@ -43,7 +43,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 - **Один порядок операций.** `vn build` фиксирует последовательность lint → ассеты → компиляция → импорт переводов → бюджеты. Собрать «частично и в другом порядке» нельзя случайно — только явной подкомандой.
 - **CI и человек делают одно и то же.** `.github/workflows/*.yml` и `.gitlab-ci.yml` вызывают ровно те же команды `vn`, что и разработчик. Воспроизвести падение CI = выполнить его строку локально.
 
-Обратная сторона, о которой стоит знать: `cli.py` вырос до 1643 строк и покрыт тестами **почти никак**. Единственное исключение появилось 2026-08-08: `tools/vn/tests/test_release.py:141-192` импортирует `vn.cli.pack_build` и гоняет его через `click.testing.CliRunner` (3 теста). Всё остальное — разбор аргументов, коды возврата, `_stub`, автопилот, линия `.rpyc`, `save check|corpus` — по-прежнему без тестов. См. [Тестирование](27-testing.md).
+Обратная сторона, о которой стоит знать: `cli.py` вырос до 1930 строк и покрыт тестами **почти никак**. Единственное исключение появилось 2026-08-08: `tools/vn/tests/test_release.py:141-192` импортирует `vn.cli.pack_build` и гоняет его через `click.testing.CliRunner` (3 теста). Всё остальное — разбор аргументов, коды возврата, `_stub`, автопилот, линия `.rpyc`, `save check|corpus` — по-прежнему без тестов. См. [Тестирование](27-testing.md).
 
 ---
 
@@ -80,7 +80,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | Команда | Аргументы | Что делает | Статус |
 |---|---|---|---|
 | `chapter new SLUG` | `SLUG` | Каталог `chNN_<slug>/` со скелетом (`chapter.yaml`, `vars.yaml`, `s010`) (`cli.py:447-459`) | IMPL |
-| `scene new CHAPTER SLUG` | 2 позиционных | Пара `sNNN_<slug>.scene.{yaml,rpy}`, следующий номер с шагом 10 (`cli.py:467-481`) | IMPL |
+| `scene new CHAPTER SLUG` | 2 позиционных | Пара `sNNN_<slug>.scene.{yaml,rpy}`, следующий номер с шагом 10 (`cli.py:488-503`) | IMPL |
 | `scene stub CHAPTER SCENE_ID` | 2 позиционных | Placeholder-сцена для объявленной, но не написанной цели перехода (G15) (`cli.py:484-496`) | IMPL |
 
 Обе команды после успеха печатают напоминание («владельца главы в CODEOWNERS», «добавить сцену в `scene_order`»). См. [Главы](09-chapters.md), [Сцены](12-scenes.md).
@@ -111,9 +111,9 @@ vn dev           # игра + вотчер по content/ и assets_src/
 
 | Команда | Опции | Статус |
 |---|---|---|
-| `assets daz validate` | `--scope` (подпуть в `assets_src/daz`), `--no-provenance` | IMPL (`cli.py:657-679`) |
-| `assets vam validate` | те же | IMPL (`cli.py:687-709`), источник объявлен опциональным |
-| `assets sims4 validate` | те же | IMPL (`cli.py:718-741`), ADR-0007, опциональный задел |
+| `assets daz validate` | `--scope` (подпуть в `assets_src/daz`), `--no-provenance` | IMPL (`cli.py:756-778`) |
+| `assets vam validate` | те же | IMPL (`cli.py:786-808`), источник объявлен опциональным |
+| `assets sims4 validate` | те же | IMPL (`cli.py:817-840`), ADR-0007, опциональный задел |
 
 Все три проверяют схему деклараций `*.render.yaml`, наличие сцен и выходов, и по умолчанию **пишут провенанс** для готовых рендеров. Деклараций в репозитории пока ноль — команды печатают «деклараций нет» и выходят с 0. См. [DAZ Studio](17-daz-studio.md), [Virt-a-Mate](18-vam.md), [The Sims 4](19-sims4.md).
 
@@ -133,7 +133,7 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | `char validate` | STUB — **фаза 1** |
 | `char sheet` | STUB — фаза 2 |
 
-Персонажей сейчас заводят руками, редактируя `content/characters/<id>/character.yaml` (персонаж — **каталог**: компилятор глобит `content/characters/*/character.yaml`, `tools/vn/src/vn/content/compile.py:665`). См. [Персонажи](10-characters.md).
+Персонажей сейчас заводят руками, редактируя `content/characters/<id>/character.yaml` (персонаж — **каталог**: компилятор глобит `content/characters/*/character.yaml`, `tools/vn/src/vn/content/compile.py:878`). См. [Персонажи](10-characters.md).
 
 ### 2.6 `vn loc` — «Локализация (раздел 5, G8)» (`cli.py:961-963`)
 
@@ -183,16 +183,16 @@ vn dev           # игра + вотчер по content/ и assets_src/
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
 | `pipeline doctor` | `--comfyui` (def `VN_COMFYUI`, затем `D:/ComfyUI`, `C:/ComfyUI`, `~/ComfyUI`) | PASS/WARN/FAIL: Python, ffmpeg/VP9, GPU, CUDA/PyTorch, ComfyUI, модели, DAZ, диски, SDK (`cli.py:1414-1422`) | IMPL |
-| `pipeline models` | `--pull`, `--all`, `--only <ids>`, `--comfyui` | Статус моделей по `tools/comfyui-models.yaml`; `--pull` — загрузка (`cli.py:1425-1461`) | IMPL — **грабля:** условие `if pull or only_set` (`cli.py:1442`), поэтому `--only` **сам по себе запускает скачивание**, а не фильтрует список |
+| `pipeline models` | `--pull`, `--all`, `--only <ids>`, `--comfyui` | Статус моделей по `tools/comfyui-models.yaml`; `--pull` — загрузка (`cli.py:1680-1461`) | IMPL — **грабля:** условие `if pull or only_set` (`cli.py:1697`), поэтому `--only` **сам по себе запускает скачивание**, а не фильтрует список |
 
 ### 2.11 `vn release` (`cli.py:1466-1468`)
 
 | Команда | Опции | Что делает | Статус |
 |---|---|---|---|
 | `release changelog` | — | Обновляет `docs/CHANGELOG.md` и `ci/release-manifest.json` по диффу реестров, штампует `id_registry` (G7) (`cli.py:1471-1489`) | PART — нет `--from/--audience`; главы из `packs/*/chapters/` не видит |
-| `release validate` | `--flavor` (**required**) | Предрелизный гейт: 19 проверок PASS/WARN/FAIL (`cli.py:1492-1505`) | IMPL |
+| `release validate` | `--flavor` (**required**) | Предрелизный гейт: 20 проверок PASS/WARN/FAIL (`cli.py:1492-1505`) | IMPL |
 | `release build` | `--flavor` (**required**), `--patron-token`, `--package` (multiple), `--timeout` (def 900) | `vn build` → гейт → `game/build_id.json` → `vn package` с суффиксом `-<flavor>` → `build-info.json`; `build_id.json` и скопированный `THIRD-PARTY-NOTICES.md` снимаются в `finally` (`cli.py:1508-1562`) | IMPL — `--patron-token` это **вход**: наружу уходит только производная метка `patron_tag` (ADR-0011, см. ниже) |
-| `release steam` | `--flavor` (**required**), `--branch` | Steam-поставка ([ADR-0014](../adr/0014-platform-services.md)): рендерит `build/steam/app_build_<flavor>.vdf` из `ci/steam/app_build.vdf.tmpl` и распаковывает зипы distribute в `build/steam/content/<flavor>/<platform>/`; предупреждает про отсутствующие steam_api-библиотеки (`cli.py:1819-1852`, `release.py:151-252`) | IMPL — но **не аплоад**: `steamcmd` запускает человек, credentials вне репозитория ([39](39-platforms.md)) |
+| `release steam` | `--flavor` (**required**), `--branch` | Steam-поставка ([ADR-0014](../adr/0014-platform-services.md)): рендерит `build/steam/app_build_<flavor>.vdf` из `ci/steam/app_build.vdf.tmpl` и распаковывает архивы distribute в `build/steam/content/<flavor>/<platform>/` — zip для windows/mac, `tar.bz2` для linux, только для платформ с объявленным депотом; предупреждает про отсутствующие steam_api-библиотеки (`cli.py:1819-1852`, `release.py:151-289`) | PARTIAL — раскладка депотов и VDF работают ([40](40-steamworks.md) §4.3), но это **не аплоад** (`steamcmd` запускает человек, credentials вне репозитория), а в этом чекауте команда останавливается на первом шаге: `platform.steam.appid: null` и ключа `depots` в `project.yaml` нет |
 
 Сборка идёт **до** гейта осознанно: в свежем чекауте генерата нет вовсе, и проверка «генерат свеж» валила бы каждый релиз (комментарий `cli.py:1526-1528`). См. [Сборка и релиз](29-build-and-release.md).
 
@@ -378,39 +378,45 @@ else:
 ## 7. Архитектура пакета
 
 ```
-tools/vn/
+tools/vn/                   34 .py-файла / 11 122 строки (wc -l по src/vn/**/*.py)
   pyproject.toml            вн. имя дистрибутива vn-tools, entry point vn = vn.cli:main
   src/vn/
     __init__.py    3        __version__ = "0.1.0"
-    cli.py      1643        ВСЕ команды click; никакой логики кроме печати и склейки
+    cli.py      1930        ВСЕ команды click; никакой логики кроме печати и склейки
     repo.py       43        find_root / load_yaml / load_project / git_sha
     doctor.py    153        vn doctor: 8-9 проверок, sdk_path(), детект LFS-указателей шрифтов
     devloop.py    56        polling-вотчер для vn dev и vn assets watch
     schemas.py    51        SchemaRegistry: загрузка tools/schemas/*.schema.json + validate()
     pipeline.py  581        vn pipeline doctor|models: внешнее окружение (ffmpeg/GPU/ComfyUI/DAZ)
-    release.py   481        бюджеты, changelog, флейворы, build_info@2 + patron_tag, гейт (19 проверок)
+    release.py   629        бюджеты, changelog, флейворы, build_info@2 + patron_tag,
+                            Steam-поставка (ADR-0014), гейт (20 проверок)
+    voice.py     326        голосовой контур C5: манифесты, CSV-лист, import_takes, покрытие
     content/
-      compile.py 923        Content Compiler: 19 выходов + manifest.json
-      lint.py    411        34 правила, layout-проверка, статус-градация G15
-      scenes.py  339        контракт авторского .rpy + эмиссия label-обвязки
-      images.py  246        реестр образов: image / layeredimage
+      compile.py 1211       Content Compiler: 21 выход + manifest.json
+      images.py   535       реестр образов: image / layeredimage / послойные шоты
+      scenes.py   483       контракт авторского .rpy + эмиссия label-обвязки
+      lint.py     463       33 диагностики, layout-проверка, статус-градация G15
       scaffold.py 137       vn chapter new / scene new / scene stub
       analyze.py  70        мост в парсер Ren'Py: renpy.exe <root> vn_analyze (G24) + кэш
       graph.py    45        Mermaid-граф сцен
     assets/
-      pipeline.py 512       7 трансформаций, контентно-адресуемый кэш, GC, осиротевшие,
+      pipeline.py 1045      трансформации, контентно-адресуемый кэш, GC, осиротевшие,
                             валидация манифеста по assets_manifest@1
-      provenance.py 380     цепочки провенанса, разбор tEXt-чанков ComfyUI PNG
-      video.py    326       VP9/WebM, loop-валидация, mov_meta@1
+      video.py    425       VP9/WebM, loop-валидация, mov_meta@1, постер-кадр
+      provenance.py 378     цепочки провенанса, разбор tEXt-чанков ComfyUI PNG
       storage.py  290       хранилище сырцов: file-бэкенд, локи (G14/G21)
+      sources.py  286       единый контракт внешних 3D-источников (DAZ / VaM / Sims 4)
+      render_config.py 280  render-профиль ADR-0012: разрешения, форматы, варианты @N
+      memory.py   247       модель памяти кэша образов (ADR-0012), worst-case сцены
+      imaging.py  143       обёртки Pillow: ресайз, альфа-bbox, WebP-энкод
       ui.py       137       ADR-0009: панели → 9-patch WebP → Frame
       psd.py      126       нарезка PSD по конвенции слоёв
       licenses.py 109       реестр лицензий, гейт коммерческого использования
-      sims4.py     80  vam.py 78  daz.py 77   валидаторы деклараций внешних 3D-источников
+      daz.py 31  sims4.py 26  vam.py 24   тонкие адаптеры источников поверх sources.py
     loc/
-      po.py       566       PO round-trip, пакеты языков, псевдолокаль, отчёт покрытия
+      po.py       610       PO round-trip, пакеты языков, псевдолокаль, отчёт покрытия
       keys.py     249       say-id и маркеры меню, ledger
-  tests/                    24 файла test_*.py + conftest.py, 253 теста
+  tests/                    24 файла test_*.py + conftest.py + helpers.py, 254 теста
 ```
 
 **Конвенция сокращений в хендбуке.** Ссылки вида `tools/vn/src/vn/content/lint.py:20-53`, `tools/vn/src/vn/loc/po.py:44`, `tools/vn/src/vn/assets/pipeline.py:38-46` — это **сокращение относительно `tools/vn/src/vn/`**, а не путь от корня репозитория. Каталоги `content/` и `loc/` в корне — совсем другие зоны (YAML-декларации и обмен с переводчиками), Python-файлов там нет. Полная форма первого сегмента: `tools/vn/src/vn/content/lint.py`, `tools/vn/src/vn/loc/po.py`, `tools/vn/src/vn/assets/pipeline.py`.
@@ -446,7 +452,7 @@ SDK ищется **только** через переменную окружен
 
 ### 7.4 Реестр схем
 
-`SchemaRegistry` (`schemas.py:16-51`) строится **на каждый вызов заново** — синглтона нет; 13 мест в `tools/vn/src/vn/` создают собственный экземпляр (`doctor.py:99`, `tools/vn/src/vn/content/lint.py:114`, `tools/vn/src/vn/content/compile.py:591`, `release.py:261,292`, `cli.py:1580`, `pipeline.py:264`, шесть модулей в `assets/` — включая `assets/pipeline.py:450`, где с 2026-08-08 валидируется манифест сборки). Внутри экземпляра валидаторы `Draft202012Validator` мемоизируются по schema-id (`schemas.py:22, 43-46`). Правила именования и `const`-проверка — в [Контентный конвейер §8](08-content-pipeline.md).
+`SchemaRegistry` (`schemas.py:16-51`) строится **на каждый вызов заново** — синглтона нет; 12 мест в `tools/vn/src/vn/` создают собственный экземпляр (`doctor.py:99`, `tools/vn/src/vn/content/lint.py:114`, `tools/vn/src/vn/content/compile.py:591`, `release.py:261,292`, `cli.py:1580`, `pipeline.py:264`, шесть модулей в `assets/` — включая `assets/pipeline.py:450`, где с 2026-08-08 валидируется манифест сборки). Внутри экземпляра валидаторы `Draft202012Validator` мемоизируются по schema-id (`schemas.py:22, 43-46`). Правила именования и `const`-проверка — в [Контентный конвейер §8](08-content-pipeline.md).
 
 В `tools/schemas/` **39 схем** (было 34 до 2026-08-08): добавлены `assets_manifest@1` — под манифест `.vncache/assets-manifest.json`, и `build_info@2` — замена `build_info@1` по ADR-0011. `build_info@1` из реестра не удалена: она нужна, чтобы читались артефакты сборок до 0.1.5.
 
@@ -570,7 +576,7 @@ _stub_group("bar", "Домен bar (раздел N).", {"new": 1, "check": 2})  
 - **на реальном репозитории** — `test_schemas.py` берёт `repo_root` и валидирует все стартовые декларации;
 - **на синтетическом скелете** — `test_compile.py:29` (`skeleton_no_chapters`) собирает в `tmp_path` минимальный репозиторий (копирует `project.yaml`, `.vnstorage.yaml`, `tools/schemas/`, `content/` без глав и локаций) — так тест не требует Ren'Py SDK.
 
-Запуск: `python -m pytest tools/vn/tests -q` (253 теста). См. [Тестирование](27-testing.md).
+Запуск: `python -m pytest tools/vn/tests -q` (254 теста). См. [Тестирование](27-testing.md).
 
 Третий шаблон появился 2026-08-08 — **тест над CLI**: `test_release.py:141-146` (`_run_pack_build`) даёт `click.testing.CliRunner` + `monkeypatch.chdir(root)` (чтобы `_root()` нашёл синтетический корень) и проверяет код возврата и текст вывода команды. Так стоит закрывать команды, у которых логика неотделима от обвязки.
 
@@ -609,7 +615,7 @@ python -X importtime -m vn.cli --version 2>&1 | tail -20   # что тянетс
 | `.vncache/corpus/`, `.vncache/corpus-savedir/` | прогон `vn save corpus` |
 | `.vncache/assets-manifest.json`, `.vncache/assets/` | манифест и блобы кэша трансформаций |
 | `traceback.txt` в корне | падение движка; `vn test smoke` печатает последние 1500 символов сам |
-| `game/generated/manifest.json` | 30 входов / 19 выходов; без него `vn play` и автопилот отказываются стартовать |
+| `game/generated/manifest.json` | 36 входов / 21 выход; без него `vn play` и автопилот отказываются стартовать |
 
 ---
 
@@ -622,7 +628,7 @@ python -X importtime -m vn.cli --version 2>&1 | tail -20   # что тянетс
 - **Не брать синтаксис команд из `../ARCHITECTURE.md`.** `--use-artifact`, `vn validate`, `--role`, `--gate` не существуют (§2.13). Источник истины — `--help` и `cli.py`.
 - **Не искать SDK «где-нибудь».** Только `RENPY_SDK`, и только с `renpy.py` внутри. После `setx` обязательно **новый** терминал.
 - **Не полагаться на `vn content graph` для паков** — главы из `packs/` в граф не попадают.
-- **Не использовать `vn pipeline models --only <ids>` как фильтр статуса** — этот флаг сам по себе запускает скачивание (`cli.py:1442`).
+- **Не использовать `vn pipeline models --only <ids>` как фильтр статуса** — этот флаг сам по себе запускает скачивание (`cli.py:1697`).
 - **Не ожидать, что `vn assets watch` подхватит правку `content/`** — эти события выбрасываются (`cli.py:566`). Для полного цикла — `vn dev`.
 - **Не менять `tools/vn.lock` мимоходом** — теперь он действительно определяет версии в CI (§8): каждая правка меняет тулчейн всех пяти пайплайнов. И наоборот: не добавляйте зависимость в `pyproject.toml`, не дописав пин в лок — editable-установка молча дотянет её с PyPI.
 - **Не ставить editable раньше лока** в новой джобе — пины окажутся декоративными, и `test_ci_config.py` покраснеет с объяснением.
@@ -645,7 +651,7 @@ vn build                           # build: OK
 vn build --check                   # check: генерат свеж   ← то же гоняет CI
 
 # 4. Тесты тулинга
-python -m pytest tools/vn/tests -q # 253 passed
+python -m pytest tools/vn/tests -q # 254 passed
 
 # 5. Контракт кодов возврата (после правок в cli.py)
 vn char new;    echo $?            # 3  — заглушка фазы 1
@@ -668,5 +674,5 @@ vn --help && vn assets --help && vn assets video --help
 | **Читать перед изменением** | `../../tools/vn/src/vn/cli.py` (обвязка всех команд), `../../tools/vn/src/vn/repo.py` (поиск корня), `../../tools/vn/src/vn/doctor.py` (обнаружение SDK), `../../tools/vn/pyproject.toml` (зависимости, entry point), целевой модуль домена в `../../tools/vn/src/vn/<домен>/` |
 | **Не трогать** | `game/generated/`, `game/assets/`, `game/tl/`, `.vncache/`, `build/` — производные зоны, перезапишет сборка. `../ARCHITECTURE.md` — целевой документ, не описание построенного: не «приводить код в соответствие» с ним без задачи |
 | **Зависимости** | Правка `cli.py` ломает CI (`.github/workflows/{ci,nightly,canary,release}.yml`, `.gitlab-ci.yml` вызывают команды `vn` по именам), хуки и любые скрипты. Переименование команды/флага — breaking change. Новая зависимость в `pyproject.toml` **обязана** получить пин в `tools/vn.lock`: лок ставится первым во всех пайплайнах, и незапиненный пакет приедет из PyPI произвольной версии. Новая джоба CI обязана ставить лок до editable и `ffmpeg` до `vn build` — оба инварианта стережёт `tools/vn/tests/test_ci_config.py` |
-| **Валидация** | `python -m pytest tools/vn/tests -q` → 253 passed · `vn build --check` → `check: генерат свеж` · `vn doctor` → exit 0 · `vn --help` и `vn <группа> --help` без исключений |
+| **Валидация** | `python -m pytest tools/vn/tests -q` → 254 passed · `vn build --check` → `check: генерат свеж` · `vn doctor` → exit 0 · `vn --help` и `vn <группа> --help` без исключений |
 | **Частые ошибки** | 1) Логика написана прямо в `cli.py` — попадает в почти непокрытую тестами зону (закрыт только `pack build`). 2) Импорт модуля поднят на уровень `cli.py` — старт CLI дорожает для всех команд. 3) Заглушка сделана как `pass` вместо `_stub(N)` — команда молча «успешна». 4) Ошибка выброшена исключением вместо `_fail()` — нарушен контракт «exit 1 всегда с сообщением». 5) Флаг взят из `ARCHITECTURE.md` (`--use-artifact`, `vn validate`, `--gate`) — таких команд нет. 6) Предположение, что `RENPY_SDK` унаследован bash-сессией — его надо экспортировать вручную. 7) Схема добавлена без совпадения `properties.schema.const` с именем файла или без `additionalProperties: false` — падает `SchemaRegistry` и `test_registry_loads`. 8) Утверждение, что `tools/vn.lock` никем не читается — устарело с 2026-08-08 (§8) |

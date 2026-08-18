@@ -53,7 +53,7 @@ canary-CI его уже стережёт), покрывает ачивки/DLC/�
    Steam Cloud — только Auto-Cloud синхронизация в Steamworks-настройках,
    кода в игре нет (`ci/steam/README.md`).
 8. **Поставка**: `vn release steam --flavor <f>` генерирует VDF из
-   `ci/steam/app_build.vdf.tmpl` и раскладывает депоты из зипов distribute;
+   `ci/steam/app_build.vdf.tmpl` и раскладывает депоты из артефактов distribute (zip и tar.bz2 — форматы различаются по платформам);
    аплоад — steamcmd с credentials вне репозитория.
 
 ## Последствия

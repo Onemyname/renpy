@@ -21,9 +21,9 @@
 > | у видео не было заглушки и превью | постер-кадр генерируется конвейером |
 
 
-> **Что это:** практическая wiki репозитория — 39 файлов о том, **как здесь что-то сделать**.
+> **Что это:** практическая wiki репозитория — 46 файлов (эта карта + 45 нумерованных страниц) о том, **как здесь что-то сделать**.
 > **Для кого:** для человека и для AI-агента. Оба читают одни и те же страницы.
-> **Чем отличается от [`../ARCHITECTURE.md`](../ARCHITECTURE.md):** тот документ — **целевой норматив и контракт ревью** (4180 строк, большая часть — будущие фазы). Хендбук описывает **код, который есть сегодня**.
+> **Чем отличается от [`../ARCHITECTURE.md`](../ARCHITECTURE.md):** тот документ — **целевой норматив и контракт ревью** (4182 строки, большая часть — будущие фазы). Хендбук описывает **код, который есть сегодня**.
 
 Репозиторий — коммерческая визуальная новелла на Ren'Py 8.5.3 с собственным CLI `vn`
 (`../../tools/vn/`) и производственным конвейером DAZ → ComfyUI → ffmpeg → Ren'Py.
@@ -49,7 +49,7 @@ setx RENPY_SDK "C:\Users\<you>\renpy-sdk\renpy-8.5.3-sdk"   # и ОТКРОЙТ�
 vn doctor                                # окружение: сейчас 8 PASS / 0 FAIL
 vn build                                 # lint → ассеты → генерат → game/tl → бюджеты
 vn play                                  # запуск игры (нужен RENPY_SDK)
-python -m pytest tools/vn/tests -q       # 253 passed
+python -m pytest tools/vn/tests -q       # 254 passed
 ```
 
 `setx` виден только **новым** процессам. В bash-сессии агента `RENPY_SDK` не наследуется —
@@ -76,6 +76,9 @@ python -m pytest tools/vn/tests -q       # 253 passed
 11. Тег релиза `v<X.Y.Z>` обязан посимвольно совпадать с `project.yaml: version`.
 12. Перед созданием нового механизма — `grep` по существующим. Вторая копия подсистемы дороже любой правки.
 
+Полный свод конвенций, regex имён и запретов с указанием, кто какое нарушение поймает, —
+[45-architecture-rules.md](45-architecture-rules.md). Практический FAQ «как мне…» — [44-how-do-i.md](44-how-do-i.md).
+
 ---
 
 ## Карта документации
@@ -94,9 +97,9 @@ python -m pytest tools/vn/tests -q       # 253 passed
 | Файл | О чём | Когда открывать |
 |---|---|---|
 | [05-renpy-development.md](05-renpy-development.md) | Ren'Py **в этом репозитории**: что рукописное, что генерат, что писать нельзя | пишете `.rpy` |
-| [06-frontend.md](06-frontend.md) | UI: токены `gui.*`, компоненты `vn_*`, 20 рукописных экранов, панели из `content/ui/panels.yaml` | кнопка, панель, вёрстка экрана |
+| [06-frontend.md](06-frontend.md) | UI: токены `gui.*`, 7 компонентов `vn_*`, 21 рукописный экран, панели из `content/ui/panels.yaml` | кнопка, панель, вёрстка экрана |
 | [07-backend.md](07-backend.md) | состояние: named stores, `default`, снапшот, сейвы, миграции, флоу сцен | переменная, сейв, миграция |
-| [08-content-pipeline.md](08-content-pipeline.md) | `vn build`: 36 входов → 21 выход, build-bridge, 34 правила линта, реестр схем | «почему `--check` красный» |
+| [08-content-pipeline.md](08-content-pipeline.md) | `vn build`: 36 входов → 21 выход, build-bridge, 33 диагностики линта, реестр схем | «почему `--check` красный» |
 | [25-custom-engine.md](25-custom-engine.md) | CLI `vn`: полное дерево команд, коды возврата, заглушки по фазам, как добавить команду | нужна команда или её отсутствие |
 
 ### Контент
@@ -130,14 +133,18 @@ python -m pytest tools/vn/tests -q       # 253 passed
 | Файл | О чём | Когда открывать |
 |---|---|---|
 | [26-automation.md](26-automation.md) | что делает машина, что руками, и что автоматизировать следующим | планирование работ |
-| [27-testing.md](27-testing.md) | 7 уровней проверок, 253 pytest, smoke-автопилот, сейв-корпус, чеклисты | перед push |
+| [27-testing.md](27-testing.md) | 7 уровней проверок, 254 pytest, smoke-автопилот, сейв-корпус, чеклисты | перед push |
 | [28-debugging.md](28-debugging.md) | логи, dev-меню, crash-репорты, чтение генерата, сужение поломки | «что-то не работает» |
-| [29-build-and-release.md](29-build-and-release.md) | флейворы, гейт из 19 проверок, дистрибутивы, тег → GitHub Release | выпуск |
+| [29-build-and-release.md](29-build-and-release.md) | флейворы, гейт из 20 проверок, дистрибутивы, тег → GitHub Release | выпуск |
 | [30-packs-and-dlc.md](30-packs-and-dlc.md) | формат пака, что собирается, что не собирается, гейт владения (провайдер подключён под Steam) | отдельная единица поставки |
 | [31-storage-and-backup.md](31-storage-and-backup.md) | что в git, что нет, что вернётся командой, а что не вернётся никогда | «умер диск» |
 | [32-performance-and-scalability.md](32-performance-and-scalability.md) | бюджеты G19, где ломается арифметика при росте до 50 глав | рост проекта |
 | [33-security-and-legal.md](33-security-and-legal.md) | секреты, состав дистрибутива, реестр лицензий, ADR-0008 | деньги и право |
-| [39-platforms.md](39-platforms.md) | Platform Services (ADR-0014): Steam, Steam Deck, Big Picture, controller-first UI, масштаб, `vn release steam`; Android — чего не хватает | выход на витрину, геймпад, Deck |
+| [39-platforms.md](39-platforms.md) | хаб платформенного слоя (ADR-0014): единственная точка касания, capability-фасад, ownership и ачивки через провайдеры, как добавить платформу | «как игра узнаёт, что она в Steam» |
+| [40-steamworks.md](40-steamworks.md) | процесс в Steamworks: App ID, депоты, SteamPipe и `vn release steam`, ачивки, ветки, Steam Cloud через Auto-Cloud | заводите приложение у Valve |
+| [41-steam-deck.md](41-steam-deck.md) | процедура прогона на Deck: linux-пакет, доставка по ssh, Desktop/Gaming Mode, кегли и что смотреть глазами | есть Deck под рукой |
+| [42-big-picture.md](42-big-picture.md) | controller-first UI экран за экраном: фокус, отмена по B, скролл, safe-area, читаемость с трёх метров | игрок с падом у телевизора |
+| [43-steam-qa.md](43-steam-qa.md) | предрелизная приёмка Steam/Deck: что автоматизировано, что руками, что считать провалом | перед переключением ветки в `default` |
 
 ### AI-разработка
 
@@ -153,6 +160,8 @@ python -m pytest tools/vn/tests -q       # 253 passed
 | [36-troubleshooting.md](36-troubleshooting.md) | ~70 записей «симптом → причина → диагностика → решение» по дословным сообщениям | есть текст ошибки |
 | [37-roadmap.md](37-roadmap.md) | все известные разрывы, упорядоченные по влиянию на скорость производства | «что делать следующим» |
 | [38-resources.md](38-resources.md) | инструменты, версии на машине, что реально подключено, проверенные ссылки | ищете документацию |
+| [44-how-do-i.md](44-how-do-i.md) | плоский FAQ «как мне…»: один вопрос — минимальная последовательность команд и типичная ошибка | знаете, что делать, но не помните как |
+| [45-architecture-rules.md](45-architecture-rules.md) | свод конвенций и запретов, собранный из кода: regex имён, зоны, кто какое нарушение поймает | «как это назвать и чего нельзя» |
 
 ---
 
@@ -186,21 +195,25 @@ python -m pytest tools/vn/tests -q       # 253 passed
 | Добавить язык | [14](14-localization.md) | `vn loc add ja --name 日本語` |
 | Обновить переводы | [14](14-localization.md) | `vn loc extract` → правка PO → `vn loc import` |
 | Сделать пак / DLC | [30](30-packs-and-dlc.md) | `vn pack validate`, `vn pack build <id>` |
-| Включить Steam / выложить в Steam | [39](39-platforms.md) | `project.yaml: platform.steam.appid` → `vn build` → `vn release steam --flavor public` |
-| Привязать пак к DLC в Steam | [39](39-platforms.md) §5, [30](30-packs-and-dlc.md) | `steam_dlc_appid` в `packs/<id>/manifest.yaml` |
-| Проверить UI на геймпаде / Steam Deck / ТВ | [39](39-platforms.md) §7 | `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` |
-| Поменять масштаб интерфейса / safe-area ТВ | [39](39-platforms.md) §8, [06](06-frontend.md) | `game/framework/20_ui/scale.rpy` (`gui.ui_scale`, `gui.overscan_pad`) |
-| Добавить кнопку геймпада | [39](39-platforms.md) §7 | `game/framework/20_ui/input.rpy` — единственное место |
+| Включить Steam / выложить в Steam | [40](40-steamworks.md) (процесс), [39](39-platforms.md) (архитектура) | `project.yaml: platform.steam.appid` → `vn build` → `vn release steam --flavor public` |
+| Привязать пак к DLC в Steam | [40](40-steamworks.md) §4, [30](30-packs-and-dlc.md) | `steam_dlc_appid` в `packs/<id>/manifest.yaml` |
+| Проверить UI на геймпаде / Steam Deck / ТВ | [41](41-steam-deck.md) (железо), [42](42-big-picture.md) (экран за экраном) | `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` |
+| Поменять масштаб интерфейса / safe-area ТВ | [42](42-big-picture.md) §4, [06](06-frontend.md) | `game/framework/20_ui/scale.rpy` (`gui.ui_scale`, `gui.overscan_pad`) |
+| Добавить кнопку геймпада | [42](42-big-picture.md), [39](39-platforms.md) §7 | `game/framework/20_ui/input.rpy` — единственное место |
 | Написать миграцию сейва | [07](07-backend.md) | `content/migrations/` + `registry.yaml`, бамп `project.yaml: save_schema` |
 | Добавить команду CLI | [25](25-custom-engine.md) | `tools/vn/src/vn/cli.py` |
 | Добавить правило линтера | [08](08-content-pipeline.md) §7 | `tools/vn/src/vn/content/lint.py` |
-| Добавить схему | [08](08-content-pipeline.md) §8 | `tools/schemas/<id>@N.schema.json` (сейчас 39 файлов) |
+| Добавить схему | [08](08-content-pipeline.md) §8, [45](45-architecture-rules.md) | `tools/schemas/<id>@N.schema.json` (сейчас 39 файлов) |
 | Добавить тест | [27](27-testing.md) | `tools/vn/tests/test_*.py` |
-| Выпустить релиз | [29](29-build-and-release.md) | `vn release validate --flavor public` → тег `v<X.Y.Z>` |
+| Выпустить релиз | [29](29-build-and-release.md), приёмка — [43](43-steam-qa.md) | `vn release validate --flavor public` → тег `v<X.Y.Z>` |
 | Починить красный CI | [36](36-troubleshooting.md) §8, [04](04-development-workflow.md) | воспроизвести локально: `vn build --check` |
 | Понять, почему не собирается | [36](36-troubleshooting.md) §2, [28](28-debugging.md) | `vn content lint`, затем `errors.txt` |
 | Настроить окружение для рендера | [03](03-getting-started.md), [`../pipeline/phase-0.md`](../pipeline/phase-0.md) | `vn pipeline doctor` |
 | Разобраться с лицензиями и EULA | [33](33-security-and-legal.md) | `vn assets licenses` |
+| Настроить ачивки / Steam Cloud | [40](40-steamworks.md) §6, §7 | `content/achievements/core.achievements.yaml`; Cloud — Auto-Cloud в Steamworks, кода в игре нет |
+| Принять сборку перед публикацией в Steam | [43](43-steam-qa.md) | чек-лист: `vn doctor` → `pytest` → `vn build` → `renpy.sh . lint` → `vn test smoke` |
+| Быстро найти команду под конкретную задачу | [44](44-how-do-i.md) | указатель в начале файла |
+| Проверить, как это назвать и что нельзя | [45](45-architecture-rules.md) | §15 (таблица запретов), §16 (карта ловцов) |
 | Понять, что делать дальше | [37](37-roadmap.md) | — |
 
 ---
@@ -220,7 +233,7 @@ flowchart TB
     PO["loc/po/&lt;code&gt;/*.po"] --> CC
     CC --> GEN["game/generated/** + game/tl/**"]
     GEN --> QA["QA: vn content lint · pytest · vn test smoke · vn save corpus"]
-    QA --> GATE["vn release validate --flavor<br/>гейт из 19 проверок"]
+    QA --> GATE["vn release validate --flavor<br/>гейт из 20 проверок"]
     GATE --> DIST["vn release build → build/dist/**"]
     DIST --> REL["тег v X.Y.Z → GitHub Release"]
 ```
@@ -237,9 +250,9 @@ flowchart TB
 | Компиляция контента | `content/`, `packs/`, `game/assets/`, `loc/ledger/` | `game/generated/**` (21 выход) | `vn build` | не в git | `vn build --check` | [08](08-content-pipeline.md) |
 | Локализация | ledger, `content/ui/strings.yaml` | `loc/po/**` → `game/tl/**` | `vn loc extract` / `import` | PO — в git, `tl/` — нет | `vn loc keys --check`, `vn loc report` | [14](14-localization.md) |
 | QA | собранная игра | скриншоты, вердикты | `pytest`, `vn test smoke`, `vn save corpus` | `.vncache/smoke/` | exit 0 | [27](27-testing.md) |
-| Гейт и сборка | всё вышеперечисленное | `build/dist/<version>-<flavor>/` | `vn release validate`, `vn release build`, `vn package` | не в git | 19 проверок PASS/WARN/FAIL | [29](29-build-and-release.md) |
+| Гейт и сборка | всё вышеперечисленное | `build/dist/<version>-<flavor>/` | `vn release validate`, `vn release build`, `vn package` | не в git | 20 проверок PASS/WARN/FAIL | [29](29-build-and-release.md) |
 | Публикация | тег `v<X.Y.Z>` | GitHub Release | `.github/workflows/release.yml` | GitHub | совпадение тега и `project.yaml` | [29](29-build-and-release.md) |
-| Steam | `build/dist/<version>-<flavor>/*.zip` | `build/steam/app_build_<flavor>.vdf` + раскладка депотов | `vn release steam --flavor <f>` (аплоад — ручной `steamcmd`) | не в git | VDF рендерится, депоты распакованы, warning про steam_api | [39](39-platforms.md) |
+| Steam | `build/dist/<version>-<flavor>/*.zip` и `*-linux.tar.bz2` | `build/steam/app_build_<flavor>.vdf` + раскладка депотов | `vn release steam --flavor <f>` (аплоад — ручной `steamcmd`) | не в git | VDF рендерится, депоты объявленных платформ распаковываются (win/mac из zip, linux из `tar.bz2`), warning про steam_api; **в этом чекауте команда падает на пустом `appid`** ([40](40-steamworks.md) §4.3) | [40](40-steamworks.md) |
 
 Три этапа конвейера — рендер, AI-генерация и постобработка — **полностью ручные**: в репозитории
 ноль `.dsa`, ноль ComfyUI-workflow, ноль HTTP-клиентов к ComfyUI. Граница автоматизации проходит
@@ -258,7 +271,7 @@ flowchart TB
 [ ] vn doctor                                      # 8 PASS / 0 FAIL
 [ ] прочитать 02-architecture.md §2-3 (зоны) и 35-agent-rules.md
 [ ] vn build && vn play                            # игра запустилась
-[ ] python -m pytest tools/vn/tests -q             # 253 passed
+[ ] python -m pytest tools/vn/tests -q             # 254 passed
 [ ] правка — только в источниках истины (content/, packs/, assets_src/, loc/, game/framework/, tools/)
 [ ] vn content lint && vn build && python -m pytest tools/vn/tests -q
 [ ] git status --short — ни одного файла из game/generated | game/assets | game/tl
@@ -301,26 +314,29 @@ flowchart TB
 
 ## Состояние проекта
 
-Проверено запуском на машине владельца **2026-08-08**.
+Проверено запуском на этом чекауте **2026-08-18** (HEAD `db28ce6`).
 
 | | |
 |---|---|
-| Версия игры / тулинга `vn` | `0.1.4` (`project.yaml:2`) / `0.1.0` (`vn --version`) — числа независимые |
+| Версия игры / тулинга `vn` | `0.1.5` (`project.yaml:2`) / `0.1.0` (`vn --version`) — числа независимые |
 | Ren'Py | SDK 8.5.3, пин в `project.yaml:5` |
 | Контент | 1 глава ядра `ch01_awakening` (3 сцены, `status: draft`) + 1 пак-глава `ch90` в `packs/ep_beach`; 1 персонаж (`mira`), 2 локации |
-| Языки | `en`, `de`, `pseudo` — 115/115 строк, fuzzy 0 |
-| Тесты / схемы / релизный гейт | 253 pytest · 39 JSON Schema · 19 проверок гейта (16 PASS, exit 0) |
-| Платформы | Windows/Linux/macOS standalone, Steam, Steam Deck, Big Picture — все IMPLEMENTED ([ADR-0014](../adr/0014-platform-services.md), [39](39-platforms.md)); Android — NOT IMPLEMENTED. `platform.steam.appid` сейчас `null`, поэтому локальные сборки — standalone |
+| Языки | `en`, `de`, `pseudo` — 130/130 строк, fuzzy 0 |
+| Тесты / схемы / релизный гейт | 254 pytest · 39 JSON Schema · 20 проверок гейта (для `public` печатается 19 строк: 18 PASS + 1 WARN, exit 0) |
+| Платформы | Windows/Linux/macOS standalone — IMPLEMENTED. Steam / Steam Deck / Big Picture — **PARTIALLY IMPLEMENTED**: фасад ([ADR-0014](../adr/0014-platform-services.md), [39](39-platforms.md)) закрыт, но `platform.steam.appid` сейчас `null` (значит локальные сборки — standalone, и `vn release steam` не доходит до раскладки, хотя сама раскладка депотов работает — [40](40-steamworks.md) §4.3), аплоад ручной, у controller-навигации шесть открытых дефектов ([42](42-big-picture.md)) и ни одна платформа не проверена на живом железе ([43](43-steam-qa.md)). Android — NOT IMPLEMENTED |
 
 **Работает:** компилятор контента, ассет-конвейер (включая ветку звука `audio_stems`), локализация
 round-trip, галерея, сейвы и миграции внутри игры, сейв-корпус с проверкой миграций (2 фикстуры),
 релизный гейт и сборка обоих флейворов, 4 GitHub-workflow с пиннованным тулчейном `tools/vn.lock`,
-платформенный слой (Steam-ачивки, DLC-владение, controller-first UI Deck/Big Picture, генерация Steam-депотов).
+платформенный слой (Steam-ачивки, DLC-владение, controller-first UI Deck/Big Picture).
 **Частично:** флейворы (гейтят только `nsfw` и `watermark`), паки (компилируются только `chapters/`),
+поставка в Steam (`vn release steam` рендерит VDF и раскладывает депоты всех трёх платформ,
+включая Linux-`tar.bz2`, но приложения в Steamworks нет: `appid`/`depots` в `project.yaml` пусты,
+аплоад ручной, живого прогона не было — [40](40-steamworks.md) §4.3),
 звук (тракт, канал `ambient` и озвучка `voice@1`/`vn voice` живые — но музыки/SFX ноль, `content/audio/*.yaml` пусты, `vn voice tts` — заглушка),
 CODEOWNERS (все хэндлы — плейсхолдеры).
-**Нет вообще:** автоматизации рендера и ComfyUI, автоматического Steam-аплоада (VDF и раскладка депотов
-генерируются, `steamcmd` запускается руками) и каналов dev/beta/release, Android-сборки, `vn validate` /
+**Нет вообще:** автоматизации рендера и ComfyUI, автоматического Steam-аплоада (`steamcmd`
+запускается руками, джобы `steam-publish` нет) и каналов dev/beta/release, Android-сборки, `vn validate` /
 `vn build --use-artifact` из `ARCHITECTURE.md`, `CLAUDE.md`/`AGENTS.md`.
 
 Три главных пункта из [37-roadmap.md](37-roadmap.md): **P0-1** закрыть ADR-0008 (единственный
@@ -366,7 +382,7 @@ DAZ → ComfyUI → provenance → `video_src` → сцена; **P0-3** дове
 ```bash
 vn content lint                              # 0 ошибок
 vn build                                     # build: OK
-python -m pytest tools/vn/tests -q           # 253 passed
+python -m pytest tools/vn/tests -q           # 254 passed
 git status --short                           # ни одного файла из game/generated|assets|tl
 ```
 
@@ -384,7 +400,7 @@ git status --short                           # ни одного файла из
 | `UNEXERCISED` | код есть, но в этом репозитории ни разу не исполнялся на реальных данных | ожидать сюрпризов на первом прогоне |
 
 **Почему нельзя доверять `ARCHITECTURE.md` как описанию реальности.** Это целевой нормативный
-документ на 4180 строк; большая часть — будущие фазы. Описанные там `vn validate`,
+документ на 4182 строки; большая часть — будущие фазы. Описанные там `vn validate`,
 `vn build --use-artifact <sha>`, `vn content lint --strict` **не существуют** и дадут usage error
 (exit 2). Правильная формулировка в отчёте: «`ARCHITECTURE.md` §X требует Y — сейчас
 NOT IMPLEMENTED». Раздел 0 (G1–G24, C1–C24) при этом остаётся контрактом ревью: его изменение —

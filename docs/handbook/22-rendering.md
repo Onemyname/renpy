@@ -13,7 +13,7 @@ vn pipeline doctor                 # GPU, драйвер, ffmpeg+VP9, ComfyUI, �
 vn assets build --profile draft    # быстрый черновой энкод, пока итерируете картинку
 vn assets build                    # full — то, что уедет игроку
 vn build                           # lint -> ассеты -> генерат -> tl -> БЮДЖЕТЫ
-vn release validate --flavor public # 19 проверок, включая бюджеты и лицензии
+vn release validate --flavor public # 20 проверок, включая бюджеты и лицензии
 ```
 
 **Целевая сетка игры — 1920×1080** (`game/gui.rpy:9`, `gui.init(1920, 1080)`). Фоны и CG рендерятся ровно под неё, спрайты — в 2× и уезжают с суффиксом `@2`.
@@ -210,7 +210,7 @@ with Image.open(src) as im:
 
 | Бюджет | Значение | Что меряется | Где проверяется |
 |---|---|---|---|
-| `assets_total_mb` | 500 | весь `game/assets/` рекурсивно | `vn build` (и на запись, и на `--check`) + релизный гейт (`release.py:333-335`) |
+| `assets_total_mb` | **20000** | весь `game/assets/` рекурсивно | `vn build` (и на запись, и на `--check`) + релизный гейт (`release.py:35-38`, вызов — `:493`) |
 | `generated_total_kb` | 2048 | весь `game/generated/` | там же |
 | `video_total_mb` | 300 | `game/assets/mov/` | там же |
 | `video_file_mb` | 40 | каждый `*.webm` по отдельности | там же **и** второй раз внутри `validate_output` (`video.py:234-236`) |
@@ -222,7 +222,7 @@ with Image.open(src) as im:
 
 Считать надо от **реального веса своего первого боевого ассета**, а не от демо-плейсхолдеров в репозитории (они синтетические, 8–29 КБ, и ничего не говорят о фотореалистичном рендере). Порядок действий: соберите 2–3 настоящих CG, замерьте, подставьте в арифметику.
 
-`assets_total_mb` = 500 МБ включает видео, поэтому статике остаётся `500 − (сколько реально занимает mov/)`. При полном использовании видеобюджета — 200 МБ на всю статику.
+`assets_total_mb` = 20000 МБ включает видео, поэтому статике остаётся `20000 − (сколько реально занимает mov/)`. При полном использовании видеобюджета — 200 МБ на всю статику.
 
 | Вес одного 1920×1080 WebP q90 | CG в 200 МБ | CG в 500 МБ (если видео почти нет) |
 |---|---|---|
@@ -232,7 +232,7 @@ with Image.open(src) as im:
 
 Спрайты считаются отдельно и обычно дешевле по числу файлов, но дороже по весу: полный набор одной позы персонажа = `1 (base) + N(outfits) + M(faces)` слоёв 1200×2200 RGBA. У `mira` это 6 файлов. При 10 персонажах × 2 позы × 6 слоёв = 120 файлов; при 400 КБ на слой — 48 МБ. Плюс превью галереи: каждый CG даёт ещё `.thumb.webp` (512 по длинной стороне, q80) — в этих замерах ~7–8 КБ, то есть на масштабе это единицы МБ.
 
-Видео: `video_total_mb 300` при `video_file_mb 40` даёт минимум 7 лупов худшего случая; реальные короткие лупы CRF 30 на порядок легче — меряйте `vn assets video inspect`.
+Видео: `video_total_mb 8000` при `video_file_mb 512` (ADR-0012) даёт минимум 15 лупов худшего случая; реальные короткие лупы CRF 30 на порядок легче — меряйте `vn assets video inspect`.
 
 ### 9.2 Что делать при красной сборке
 
@@ -250,7 +250,7 @@ with Image.open(src) as im:
 
 Автоподбор оверсэмпл-варианта `@N` (ADR-0012) выбирает картинку по **физическому экрану** и ничего не знает про GPU: 4K-монитор со слабой видеокартой получил бы `@2`-текстуры, которые железо не тянет. Потолков два:
 
-- **Потолок сборки** — `project.yaml: render.max_oversampling` эмитится в `game/generated/registry/render.gen.rpy` как `define config.automatic_oversampling = N` и `define vn_build_max_oversampling = N` (`tools/vn/src/vn/content/compile.py:125-129`). Выше отгруженных вариантов движок не прыгнет.
+- **Потолок сборки** — `render.max_oversampling` эмитится в `game/generated/render.gen.rpy` (файл лежит в корне генерата, не в `registry/`) как `define config.automatic_oversampling = N` и `define vn_build_max_oversampling = N` (`tools/vn/src/vn/content/compile.py:127-129`, выход объявлен в `:1135`). В `project.yaml` этот ключ **не задан** — работает дефолт `4` из `render_config.py:56`. Выше отгруженных вариантов движок не прыгнет.
 - **Потолок игрока** — `persistent.vn_quality_cap` (`content/variables/settings.vars.yaml`: `null` = авто, `1` = без `@N`-вариантов) и фасад `vn.quality_cap()` / `vn.set_quality_cap()` в `game/framework/00_core/095_quality.rpy`. Игрок может только **опустить** потолок сборки; `set_quality_cap` применяет его на лету — выставляет `config.automatic_oversampling`, делает `renpy.free_memory()`, и уже показанные текстуры перезагружаются в новом качестве без перезапуска.
 
 UI — сег-кнопки «Качество текстур: Авто / Экономное» в настройках (`game/framework/20_ui/screens/core_screens.rpy:297-312`, строки `ui.prefs.graphics` / `ui.prefs.quality_auto` / `ui.prefs.quality_eco`). Оба API движка документированы (`config.automatic_oversampling`, `renpy.free_memory`) — обёртка engine_compat не требуется.
@@ -334,7 +334,7 @@ vn assets daz validate                # сейчас: деклараций не�
 vn assets licenses                    # сейчас: «деклараций рендеров нет; в реестре 3 записей»
 vn build                              # ассеты + генерат + бюджеты
 vn build --check                      # CI-режим, ничего не пишет
-vn release validate --flavor public   # 19 проверок
+vn release validate --flavor public   # 20 проверок
 python -c "from PIL import Image;import glob;[print(Image.open(p).size,p) for p in glob.glob('game/assets/spr/**/*.webp',recursive=True)]"
 ```
 
@@ -347,5 +347,5 @@ python -c "from PIL import Image;import glob;[print(Image.open(p).size,p) for p 
 | **Читать перед изменением** | `../../tools/vn/src/vn/assets/pipeline.py:38-46,82-91,219-246` (трансформации и их версии), `../../tools/vn/src/vn/release.py:28-53` (бюджеты), `../../project.yaml:6-11`, `../../tools/vn/src/vn/assets/daz.py`, `../../tools/schemas/daz_render@1.schema.json`, `../../tools/schemas/character@1.schema.json`, `../../tools/comfyui-models.yaml`, `../../tools/vn/src/vn/pipeline.py` (doctor/модели), `../adr/0006-daz-comfyui-video-pipeline.md`, `../pipeline/phase-0.md`, `../conventions/naming.md` |
 | **Не трогать** | `game/assets/**` и `game/generated/**` — производные зоны (`.gitignore:2-3`); `.vncache/**` — кэш и манифест сборки; `<ComfyUI>/models/.vn-models.json` — лок-файл моделей вне репозитория |
 | **Зависимости (что ломается ниже по течению)** | размер/качество выходов → бюджеты `release.budget_failures()` → красный `vn build` и красный релизный гейт; разрешение слоёв → визуальная рассинхронизация `layeredimage` (гейта нет); имя выхода `@2` → `tools/vn/src/vn/content/images.py:190,205,221`; `.thumb.webp` → резолв превью галереи (`tools/vn/src/vn/content/compile.py:139-227`); профиль сборки → ключ кэша (`pipeline.py:307-309`) и сравнение свежести (`pipeline.py:407`) |
-| **Валидация** | `vn pipeline doctor` → `vn assets build` → `vn assets validate` → `vn build` → `vn build --check` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests -q` (138 тестов) |
+| **Валидация** | `vn pipeline doctor` → `vn assets build` → `vn assets validate` → `vn build` → `vn build --check` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests -q` (254 теста) |
 | **Частые ошибки** | 1) Выдумывать профили конвейера — их ровно два, `draft` и `full`. 2) Считать, что рендер автоматизирован: headless-DAZ, очередь рендеров и вызов ComfyUI — **NOT IMPLEMENTED**, `*.render.yaml` в репозитории ноль. 3) Опираться на `docs/ARCHITECTURE.md` как на описание построенного: профили `hd`/`mobile` (:1179), `vfx@1` (:1074), `game/assets/registry.json` (:1085) — NOT IMPLEMENTED; про DAZ/ComfyUI там ноль упоминаний. 4) Менять качество энкода, не бампнув версию трансформации. 5) Считать `canvas` в `character.yaml` работающей проверкой — у поля ноль читателей. 6) Считать, что релиз отсечёт `draft`-артефакты — не отсечёт |

@@ -259,7 +259,7 @@ assert not im.info.get("icc_profile")         # sRGB-гарантия
 
 | Задача | Что править | Обязательно после |
 |---|---|---|
-| Перевести спрайты на lossless WebP | `pipeline.py:223` (`_webp_encode(..., quality=...)` → `lossless=True`; ядру энкода нужен новый параметр, `pipeline.py:82-91`) | **бампнуть** `TRANSFORMS["png2webp_sprite"]` (`pipeline.py:38-46`); пересчитать бюджет `assets_total_mb` |
+| Перевести спрайты на lossless WebP | `imaging.encode` (`assets/imaging.py:104-136`) — нужен новый параметр `lossless`; прокинуть его через `_image_jobs` (`pipeline.py:238-249`) и `_transform` (`pipeline.py:625-630`) | **бампнуть** `TRANSFORMS["img_sprite"]` (`pipeline.py:54-65`); пересчитать бюджет `assets_total_mb` |
 | Поддержать `psd/backgrounds/`, `psd/cg/`, `psd/ui/` | `slice_all_psd` знает только `psd/characters/` (`psd.py:100`) | тест на `psd.py` — сейчас его **нет вообще** |
 | Сделать нарезку PSD инкрементальной | послойный кэш вместо `rmtree`+ре-слайс (`psd.py:64-65,91-95`) | обязательно до первых боевых PSD в гигабайты |
 | Добавить AVIF-ветку | `_transform` + `TRANSFORMS` + запись в `naming.md` | бенчмарк декодирования; тест на web/mobile-таргете |
@@ -288,7 +288,7 @@ vn assets validate               # конвенции имён + свежест�
 vn build                         # генерат + бюджеты
 "$RENPY_SDK/renpy.exe" . lint    # битые ссылки на образы
 vn test smoke --picks 0,0        # -> .vncache/smoke/shot*.png — смотреть глазами
-python -m pytest tools/vn/tests -q          # 253 теста (psd.py среди них НЕ покрыт)
+python -m pytest tools/vn/tests -q          # 254 теста (psd.py среди них НЕ покрыт)
 # ручные пруфы, которых нет в тулинге:
 python -c "from PIL import Image;import glob;[print(Image.open(p).size,p) for p in glob.glob('game/assets/spr/**/*.webp',recursive=True)]"
 magick identify -ping -format "%f %wx%h %m %[profile:icc]\n" game/assets/cg/**/*.webp

@@ -32,10 +32,10 @@ vn dev               # watch по content/ + assets_src/ и запущенная
 
 | Что | Где | Кто пишет | В git? |
 |---|---|---|---|
-| ядро, фасад `vn.*`, state, локализация, краш | `game/framework/00_core/` (10 файлов + `engine_compat/000_compat.rpy`) | человек | да |
+| ядро, фасад `vn.*`, state, локализация, краш | `game/framework/00_core/` (13 файлов + `engine_compat/000_compat.rpy`) | человек | да |
 | gameplay-системы (слой 1) | `game/framework/10_systems/` — **только `README.md`, кода нет** | человек | да |
-| UI: компоненты, экраны, стили | `game/framework/20_ui/` (2 файла + 7 экранов) | человек | да |
-| dev-инструменты | `game/framework/90_debug/` (2 файла) | человек | да |
+| UI: компоненты, экраны, стили | `game/framework/20_ui/` (4 файла + 8 экранов в `screens/`) | человек | да |
+| dev-инструменты | `game/framework/90_debug/` (3 файла) | человек | да |
 | дизайн-токены | `game/gui.rpy` | человек | да |
 | конфиг сборки, `build.classify` | `game/options.rpy` | человек | да |
 | обвязка сцен `label chNN_sNNN:` | `game/generated/scenes/chNN/*.gen.rpy` | `vn build` | **нет** |
@@ -100,7 +100,7 @@ vn dev               # watch по content/ + assets_src/ и запущенная
 | `vn.API_LEVEL` | `:9` | `int = 1` | IMPLEMENTED | — |
 | `vn.checkpoint(scene_id)` | `:12` | `store.vn_scene = scene_id`; прогон `vn_ach.check(scene_id=)` и `vn_gal.check(scene_id=)`, уведомление о разблокировках | IMPLEMENTED | **да**, первой строкой обвязки (`scenes.py:201`) |
 | `vn.beat(beat_id=None)` | `:19` | мелкий якорь внутри сцены; при `beat_id is None` — no-op | **IMPLEMENTED / UNUSED** | **нет.** Ни компилятор не эмитит, ни один файл в `content/` не зовёт. Тип якоря `beat:` в схемах `achievements@1`/`gallery@1` сегодня недостижим |
-| `vn.chapter_done(chapter_id)` | `:26` | `vn_ach.check(beat_id="chapter_done:<id>")` + `vn_gal.check(chapter_done=)` | IMPLEMENTED | **да**, только у терминальной сцены (без `exits`) — `scenes.py:263` |
+| `vn.chapter_done(chapter_id)` | `:26` | `vn_ach.check(beat_id="chapter_done:<id>")` + `vn_gal.check(chapter_done=)` | IMPLEMENTED | **да**, только у терминальной сцены (без `exits`) — `scenes.py:394-397` |
 | `vn._gallery_notify(opened)` | `:32` | приватный; `renpy.notify` с ключом `ui.gallery.unlocked_one`/`_many`, `[n]` подставляется `str.replace` | IMPLEMENTED | — |
 | `vn.check_scene_stack()` | `:44` | инвариант G7: глубина call-стека на границе сцены = 0. **Только логирует**, не чинит и не прерывает | IMPLEMENTED | **да** (`scenes.py:245`) |
 | `vn.unwind_call_stack()` | `:50` | `renpy.pop_call()` пока глубина > 0. Куда идти дальше — решает вызывающий | IMPLEMENTED | **да** |
@@ -297,7 +297,7 @@ build.classify("game/generated/manifest.json", None)
 | выбор пункта меню нельзя делать выражением в `screen` | экран переоценивается предикцией и каждым тиком оверлея, счётчик picks дрейфует | только `timer … action Function(...)` — `choice.rpy:53-54` |
 | парсер добавляет неявный `Return` в конец файла | особенность `renpy.parser.parse` | build-bridge отрезает его сам (`050_build_bridge.rpy:124-125`); при своём разборе `.rpy` — учитывать |
 | Ren'Py 8.5 добавляет к имени слота токен: `1-1-LT1.save` | подпись сейва | корпус кладёт **оба** имени (`1-1-LT1.save` и `1-1.save`) в временный `--savedir`, движок подхватит известный ему (`cli.py:1194` и ниже). Сейв, принесённый с чужой машины, движок встретит модальным подтверждением — для CI это решается собственным `--savedir`, а не переносом файлов в профиль игрока |
-| `image`-стейтменты имеют базовый приоритет 500 | движок | `images.gen.rpy` намеренно ставит `init offset = 0` (`images.py:52-55`), не 500 — не «поправляйте» это |
+| `image`-стейтменты имеют базовый приоритет 500 | движок | `images.gen.rpy` намеренно ставит `init offset = 0` (`images.py:286-288`), не 500 — не «поправляйте» это |
 | синтетический ввод (SendKeys) на рабочий стол | ломает чужие окна, недетерминирован, запрещён нормой G23 | только in-process автопилот `vn test smoke` — см. [27-testing.md](27-testing.md) |
 | `errors.txt` / `traceback.txt` в корне | движок пишет их сам | в git не хранятся и вырезаны из дистрибутива (`options.rpy:17-22`); лежащий в корне `errors.txt` может быть **устаревшим** — сверяйтесь с датой |
 
@@ -355,12 +355,12 @@ vn content lint                        # декларации, граф, layout 
 vn content compile --check             # генерат актуален? (тут ловится контракт .rpy)
 vn build                               # полный проход: lint -> assets -> compile -> loc import
 vn build --check                       # ничего не пишет; падает, если генерат отстал
-python -m pytest tools/vn/tests -q     # 253 теста, в т.ч. контракт-тесты engine_compat
+python -m pytest tools/vn/tests -q     # 254 теста, в т.ч. контракт-тесты engine_compat
 vn play                                # запуск руками
 vn test smoke                          # in-process автопилот: прогон сцен + бюджет cold start
 vn save corpus                         # 2 фикстуры сейвов загружаются и мигрируют
                                        #   (schema1-demo реально гоняет миграцию 0002)
-vn release validate --flavor public    # релизный гейт, 19 проверок
+vn release validate --flavor public    # релизный гейт, 20 проверок
 ```
 
 Правили `00_core/**` или `20_ui/**` — минимум: `vn build && vn test smoke`. Правили что-то, связанное со стеком вызовов, сейвами или миграциями — плюс `python -m pytest tools/vn/tests -q && vn save corpus`.

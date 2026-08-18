@@ -9,7 +9,7 @@
 
 ```bash
 vn assets licenses                     # реестр лицензий vs декларации рендеров
-vn release validate --flavor public    # 19 проверок; #15 — лицензии ассетов
+vn release validate --flavor public    # 20 проверок; #16 — лицензии ассетов
 vn release validate --flavor patron
 vn pipeline models                     # статусы моделей (id, размер, путь, required, способ авторизации)
 grep -n "license\|commercial_use" tools/comfyui-models.yaml   # лицензии моделей видны ТОЛЬКО в YAML
@@ -38,7 +38,7 @@ python -m pytest tools/vn/tests/test_licenses.py -q
 | Секрет | Где задаётся | Кто читает | Статус |
 |---|---|---|---|
 | `CIVITAI_API_KEY` | User-окружение Windows (`setx`) | `pipeline.py:313-315` → заголовок `Authorization: Bearer` при скачивании NSFW-LoRA | IMPLEMENTED |
-| `--patron-token` | флаг `vn release build`, в CI — `secrets.PATRON_TOKEN` | `release.py:206-227` (`patron_tag`) → в `game/build_id.json` уходит **только 8-hex метка** (`release.py:253`) → `060_build_info.rpy:40` | IMPLEMENTED, секрет не покидает машину сборки (§3) |
+| `--patron-token` | флаг `vn release build`, в CI — `secrets.PATRON_TOKEN` | `release.py:337-358` (`patron_tag`) → в `game/build_id.json` уходит **только 8-hex метка** (`release.py:384`) → `060_build_info.rpy:40` | IMPLEMENTED, секрет не покидает машину сборки (§3) |
 | `GITHUB_TOKEN` | выдаётся раннером (`${{ github.token }}`) | шаг `gh release create` в `.github/workflows/release.yml` | IMPLEMENTED |
 
 **Проверено grep-ом:** захардкоженных ключей/паролей/токенов в `tools/`, `game/framework/`, `content/`, `ci/` нет. В `.github/workflows/` всего два обращения к секретам: `permissions: contents: write` (`release.yml:15-16`) и `PATRON_TOKEN: ${{ secrets.PATRON_TOKEN }}` (`release.yml:81`).
@@ -95,7 +95,7 @@ Ren'Py по умолчанию пакует **всё дерево проекта
 hashlib.blake2s(token.encode("utf-8"), digest_size=4, person=b"vnpatron").hexdigest()
 ```
 
-Восемь hex-символов кладутся в поле `patron_tag` документа `build_info@2` (`release.py:253`), рантайм читает готовую метку (`060_build_info.rpy:40`), вотермарка рисует `build_id · <patron_tag>` (`060_build_info.rpy:42-45`, экран `build_overlay.rpy:6-17`). Схема бампнута `build_info@1` → `@2`; старая осталась в реестре с пометкой «УСТАРЕЛА», чтобы читались архивные `build-info.json`.
+Восемь hex-символов кладутся в поле `patron_tag` документа `build_info@2` (`release.py:384`), рантайм читает готовую метку (`060_build_info.rpy:40`), вотермарка рисует `build_id · <patron_tag>` (`060_build_info.rpy:42-45`, экран `build_overlay.rpy:6-17`). Схема бампнута `build_info@1` → `@2`; старая осталась в реестре с пометкой «УСТАРЕЛА», чтобы читались архивные `build-info.json`.
 
 **Проверка сквозным прогоном** (ADR-0011, раздел «Последствия»): в собранной patron-сборке 1663 файла, токен не встречается **ни в одном**.
 
@@ -156,13 +156,13 @@ python -c "import hashlib,sys; print(hashlib.blake2s(sys.argv[1].encode(), diges
 
 Дальше при каждом прогоне `model_status` сверяет только **размер** (±1 МБ, `pipeline.py:296-302`), а не хэш. Итог: это **trust-on-first-use**. Подменённый или изменённый апстримом файл будет зафиксирован как «эталон» без единого сигнала, а последующая подмена файла того же размера не поймается вообще. Закрывается это дёшево: проставить реальные `sha256` в манифест после проверенной загрузки. Приоритет — см. [`37-roadmap.md`](37-roadmap.md).
 
-**Питон-зависимости — PARTIALLY IMPLEMENTED, но уже не декоративно.** `tools/vn.lock` (18 закреплённых пакетов) **теперь читается всеми пайплайнами**: `pip install --quiet -r tools/vn.lock` стоит **перед** editable-установкой во всех 8 местах установки тулчейна (`ci.yml:30`, `:46`, `nightly.yml:29`, `canary.yml:30`, `release.yml:42`, `.gitlab-ci.yml:23`, `:37` — последние две строки разворачиваются в три джобы через `extends`). Порядок — предмет теста `tools/vn/tests/test_ci_config.py::test_lock_installed_before_editable`: если editable окажется первым, pip отрезолвит `>=`-диапазоны и пины станут бесполезными.
+**Питон-зависимости — PARTIALLY IMPLEMENTED, но уже не декоративно.** `tools/vn.lock` (18 закреплённых пакетов) **теперь читается всеми пайплайнами**: `pip install --quiet -r tools/vn.lock` стоит **перед** editable-установкой во всех 7 строках установки тулчейна (в GitLab они разворачиваются в 3 джобы, итого 8 прогонов) (`ci.yml:43`, `:59`, `nightly.yml:29`, `canary.yml:30`, `release.yml:42`, `.gitlab-ci.yml:23`, `:37` — последние две строки разворачиваются в три джобы через `extends`). Порядок — предмет теста `tools/vn/tests/test_ci_config.py::test_lock_installed_before_editable`: если editable окажется первым, pip отрезолвит `>=`-диапазоны и пины станут бесполезными.
 
 **Что по G17 всё ещё не закрыто:** в локе пиннованы только прямые зависимости. Транзитивные (например `pygments`, приезжающий с `pytest`) не закреплены, то есть supply-chain-поверхность закрыта частично — компрометация транзитивного пакета в CI по-прежнему возможна. Полное закрытие — регенерация лока с транзитивными пинами (`pip-compile` / `uv pip compile`).
 
 **Кастом-ноды ComfyUI — вне нашего тулинга.** ComfyUI-Manager устанавливает произвольный Python-код из GitHub; наш `vn pipeline doctor` только фиксирует факт установки. Ни песочницы, ни пиннинга нод у нас нет.
 
-**Грабля.** `vn pipeline models --only <id>` **скачивает**, а не показывает статус: условие в `cli.py:1442-1443` — `if pull or only_set`. Можно случайно вытянуть `restricted`/`unknown`-модель (bigASP, Civitai-LoRA) в момент, когда решение по ADR-0008 ещё не принято.
+**Грабля.** `vn pipeline models --only <id>` **скачивает**, а не показывает статус: условие в `cli.py:1697-1698` — `if pull or only_set`. Можно случайно вытянуть `restricted`/`unknown`-модель (bigASP, Civitai-LoRA) в момент, когда решение по ADR-0008 ещё не принято.
 
 ---
 
@@ -372,7 +372,7 @@ assets:
 vn doctor                              # 1. окружение здорово
 vn build --check                       # 2. генерат и ассеты свежи
 vn assets licenses                     # 3. лицензии ассетов: 0 ошибок, 0 «без license»
-vn release validate --flavor public    # 4. 19 проверок, exit 0
+vn release validate --flavor public    # 4. 20 проверок, exit 0
 vn release validate --flavor patron    # 5. то же для платного флейвора
 vn loc report                          # 6. покрытие переводов ≥ порога loc.yaml
 python -m pytest tools/vn/tests -q     # 7. тесты тулинга зелёные
@@ -409,7 +409,7 @@ python -m pytest tools/vn/tests -q     # 7. тесты тулинга зелён
 - **Не выдавать в `--patron-token` осмысленную строку** — ник, e-mail, `patron_<имя>`. Сам токен в дистрибутив больше не едет (ADR-0011), но метка `patron_tag` едет, а короткий низкоэнтропийный токен подбирается по ней словарём. Токен обязан быть случайным (`secrets.token_hex(16)`).
 - **Не считать `patron_tag` защитой сборки.** Это трассировка утечки: поле лежит в `game/build_id.json` внутри архива и вырезается вручную за минуту.
 - **Не рассчитывать, что `.rpy` кто-то не прочитает.** В сборке лежат 36 `.rpy` рядом с 36 `.rpyc`, и авторский текст сцен вкопирован в генерат целиком.
-- **Не запускать `vn pipeline models --only <id>`, думая, что это «показать статус».** Флаг `--only` включает загрузку (`cli.py:1442-1443`) — можно случайно вытянуть `restricted`/`unknown`-модель.
+- **Не запускать `vn pipeline models --only <id>`, думая, что это «показать статус».** Флаг `--only` включает загрузку (`cli.py:1697-1698`) — можно случайно вытянуть `restricted`/`unknown`-модель.
 - **Не заводить в конвейер SUPIR.** Его лицензия явно некоммерческая, а находится он в самом конце экспорта, где никто не смотрит.
 - **Не шипить MusicGen/AudioCraft, F5-TTS, XTTS-v2, Fish Speech, Sonic** — веса некоммерческие или под research-лицензией.
 - **Не кормить материалы Sonniss в обучение ИИ** — их лицензия это прямо запрещает, включая RVC-датасеты и аудио-LoRA.

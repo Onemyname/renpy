@@ -1,74 +1,106 @@
 # 29. Сборка и релиз
 
-> **Статус подсистемы:** IMPLEMENTED — путь «тег `v*` → гейт → дистрибутивы обоих флейворов → GitHub Release» работает целиком и обкатан четырьмя реальными релизами; **но** из четырёх заявленных рычагов флейвора реально гейтят только два (`nsfw`, `watermark` + `--patron-token`), `packs` и `early_content` не читает никто, кэш `.rpyc` ключуется версией без флейвора, а из Steam-поставки автоматизирована подготовка (VDF + раскладка депотов, `vn release steam`) — сам аплоад ручной, каналов dev/beta/release нет.
-> **Отвечает на вопрос:** «Глава готова. Что запустить, в каком порядке, что проверить и как выпустить сборку, которую не стыдно отдать игроку?»
+> **Статус подсистемы:** IMPLEMENTED — путь «тег `v*` → гейт из 20 проверок → дистрибутивы обоих флейворов → GitHub Release» работает целиком и обкатан пятью реальными релизами (`v0.1.0`, `v0.1.2`…`v0.1.5`); **но** из четырёх заявленных рычагов флейвора реально гейтят только два (`nsfw`, `watermark` + `--patron-token`), `packs` и `early_content` не читает никто, кэш `.rpyc` ключуется версией без флейвора, у Steam-поставки автоматизирована только подготовка (`vn release steam`: VDF + раскладка депотов — она понимает форматы всех трёх платформ, включая `tar.bz2` для Linux, §14.2), а **аплоад делает человек** и в этом чекауте команду вообще не получится довести до конца: `platform.steam.appid: null` и ключа `depots` нет (§14.1), а QA на живом железе (Windows/mac/Deck) не автоматизировано ничем.
+> **Отвечает на вопрос:** «Глава готова. Что запустить, в каком порядке, что проверить на каждой стадии и как выпустить сборку, которую не стыдно отдать игроку?»
 
-Весь релизный путь живёт в двух файлах: `../../tools/vn/src/vn/release.py` (629 строк — гейт, флейворы, build-info, changelog, бюджеты, Steam-поставка) и группы `package` / `release` / `pack` в `../../tools/vn/src/vn/cli.py`. CI — тонкая обёртка: `.github/workflows/release.yml` не содержит ни одной релизной проверки собственного изготовления, он вызывает `vn release build`. Поэтому всё, что делает CI на теге, воспроизводится локально одной командой.
+Весь релизный путь живёт в двух файлах: `../../tools/vn/src/vn/release.py` (629 строк — гейт, флейворы, build-info, changelog, бюджеты, Steam-поставка) и группы `package` / `release` / `pack` в `../../tools/vn/src/vn/cli.py` (1930 строк; группа `release` начинается на `:1720`). CI — тонкая обёртка: `.github/workflows/release.yml` не содержит ни одной релизной проверки собственного изготовления, он вызывает `vn release build`. Поэтому всё, что делает CI на теге, воспроизводится локально одной командой.
+
+Сквозной практический маршрут от «правлю сцену» до «нажал setlive» — §13. Если нужен только чеклист перед тегом — §15.
+
+**Состояние релизной линии на 2026-08-18 (проверено: `git tag -l`, `project.yaml:2`, `ci/release-manifest.json`):** тег `v0.1.5` **уже выпущен**, `project.yaml: version` тоже `0.1.5`, а поверх тега лежат 9 невыпущенных коммитов (в `../CHANGELOG.md` они собраны в разделе «Не выпущено»). Значит первый шаг следующего релиза — **бамп до `0.1.6`**; попытка поставить `v0.1.5` повторно упрётся в существующий тег, а `v0.1.6` без бампа `project.yaml` упадёт на `release.yml:47-54`.
 
 ## Быстрый ответ
 
 ```bash
-export RENPY_SDK="C:/Users/Vadim/renpy-sdk/renpy-8.5.3-sdk"   # без него package/release не работают
+export RENPY_SDK=/путь/к/renpy-8.5.3-sdk    # без него package/release/smoke не работают
 
 # Проверить, готов ли репозиторий к релизу (ничего не пишет, ~30 c)
 vn release validate --flavor public
 vn release validate --flavor patron
 
-# Собрать флейвор целиком (гейт + дистрибутивы) — то же, что делает CI на теге
+# Собрать флейвор целиком (сборка + гейт + дистрибутивы) — то же, что делает CI на теге
 vn release build --flavor public --package win
-#   -> build/dist/0.1.4-public/vn-0.1.4+<sha>-win.zip + build-info.json
+#   -> build/dist/0.1.6-public/vn-0.1.6+<sha>-win.zip + build-info.json
 
-# Выпустить: три файла в коммите, потом тег
+# Выпустить: правки в трёх-четырёх файлах одним коммитом, потом тег
 vn release changelog                  # docs/CHANGELOG.md + ci/release-manifest.json
-#   вручную: version в project.yaml + проза в CHANGELOG
-git commit -m "release: 0.1.5 — <итог одной строкой>"
-git tag v0.1.5 && git push --follow-tags     # -> .github/workflows/release.yml
+#   вручную: version в project.yaml (0.1.5 -> 0.1.6) + проза в CHANGELOG
+git commit -m "release: 0.1.6 — <итог одной строкой>"
+git tag v0.1.6 && git push --follow-tags     # -> .github/workflows/release.yml
 ```
 
 **Главное правило:** тег `v<X.Y.Z>` обязан посимвольно совпадать с `project.yaml: version`, иначе `release.yml:47-54` рубит сборку на первом шаге, до установки SDK.
 
 ---
 
-## 1. Четыре команды сборки и чем они отличаются
+## 1. Пять команд сборки и чем они отличаются
 
 | Команда | Что делает | Что на выходе | Флейвор |
 |---|---|---|---|
-| `vn build` | lint → ассеты → компилятор → `vn loc import` → бюджеты (`cli.py:84-153`) | `game/generated/`, `game/assets/`, `game/tl/` | нет |
-| `vn package` | `vn build` → перенос `.rpyc` → `renpy compile` → `launcher distribute` → снимок `.rpyc` (`cli.py:279-370`) | `build/dist/<version>/*.zip` | **нет — опасно, см. §3** |
-| `vn release build --flavor <f>` | `vn build` → гейт → `build_id.json` → `vn package` → `build-info.json` (`cli.py:1508-1562`) | `build/dist/<version>-<f>/` | да |
-| `vn pack build <id>` | зип генерата глав пака + манифест (`cli.py:1600-1628`) | `build/packs/<id>.zip` | — см. [30-packs-and-dlc.md](30-packs-and-dlc.md) |
-| `vn release steam --flavor <f>` | VDF из `ci/steam/app_build.vdf.tmpl` + распаковка зипов distribute под депоты (`cli.py:1819-1852`) | `build/steam/app_build_<f>.vdf` + `build/steam/content/<f>/<platform>/` | да — см. §12 и [39-platforms.md](39-platforms.md) |
+| `vn build` | lint → ассеты → компилятор → `vn loc import` → бюджеты размера **и памяти** (`cli.py:88-158`) | `game/generated/`, `game/assets/`, `game/tl/` | нет |
+| `vn package` | `vn build --profile full` → перенос `.rpyc` → `renpy compile` → `launcher distribute` → снимок `.rpyc` (`cli.py:301-393`) | `build/dist/<version>/*` | **нет — опасно, см. §4** |
+| `vn release build --flavor <f>` | `vn build` → гейт → `build_id.json` → `vn package` → `build-info.json` (`cli.py:1762-1816`) | `build/dist/<version>-<f>/` | да |
+| `vn release steam --flavor <f>` | VDF из `ci/steam/app_build.vdf.tmpl` + распаковка архивов distribute под депоты — zip и `tar.bz2` (`cli.py:1819-1852`) | `build/steam/app_build_<f>.vdf` + `build/steam/content/<f>/<platform>/` | да — §14 и [39-platforms.md](39-platforms.md) |
+| `vn pack build <id>` | зип генерата глав пака + манифест (`cli.py:1887-1926`) | `build/packs/<id>.zip` | — см. [30-packs-and-dlc.md](30-packs-and-dlc.md) |
 
 Сам конвейер `content/` → `game/generated/` разобран в [08-content-pipeline.md](08-content-pipeline.md), ассеты — в [16-assets.md](16-assets.md); здесь только то, что происходит **после** зелёной сборки.
 
-**Exit-коды `vn`** (`cli.py:46-47`): `0` — успех; `1` — ошибка проверки/сборки (всегда с сообщением `ошибка: …` на stderr, `cli.py:22-24`); `2` — usage error от click; `3` — «команда появится в фазе N» (`cli.py:34-38`).
+**Exit-коды `vn`** (докстринг `cli.py:43-48`): `0` — успех; `1` — ошибка проверки/сборки (всегда с сообщением `ошибка: …` на stderr, `cli.py:22-24`); `2` — usage error от click; `3` — «команда появится в фазе N» (`cli.py:34-38`). Заглушек фазы, дающих ровно `3`, в релизном тракте две — `vn migrate` и `vn shell` (`cli.py:393-394`); `vn validate` и `vn release build --channel` не существуют вовсе, то есть дают `2`, а не `3`.
 
 ---
 
-## 2. Флейворы: `public` и `patron` — IMPLEMENTED (наполовину)
+## 2. Профили сборки: development / testing / release / Steam / non-Steam
 
-Объявлены в `../../project.yaml:12-22`, схема — `tools/schemas/project@1.schema.json` (`packs` и `nsfw` обязательны, `early_content`/`watermark` опциональны с дефолтом `false`).
+Слово «профиль» в проекте означает **две разные вещи**, и их путают чаще всего:
+
+1. **Профиль энкода ассетов** — `--profile full|draft` у `vn build` (`cli.py:90-91`). Это единственный флаг, меняющий байты в `game/assets/`.
+2. **Флейвор релиза** — `--flavor public|patron` у `vn release build` (§3). Он не меняет ни один ассет, только состав дистрибутива и метаданные.
+
+Отдельной «Steam-сборки» в конвейере нет: тот же артефакт становится Steam-сборкой из-за окружения, а не из-за флага. Сводно:
+
+| Режим | Команды | Профиль ассетов | `game/build_id.json` | `90_debug/**` | Steam |
+|---|---|---|---|---|---|
+| **development** | `vn dev` (`cli.py:248`), `vn build --profile draft`, `vn play` | `draft` — quality 50 у bg/cg/spr/shot, панели без `method=4` (`render_config.py:65,76,88,102`; `pipeline.py:654`) | нет → `flavor="dev"` | активны | по факту окружения |
+| **testing / QA** | `vn build` (full), `pytest`, `vn test smoke`, `vn test oversample`, `vn save corpus` | `full` | нет → `flavor="dev"` | активны; автопилот пишет `game/generated/qa/` | нет |
+| **release** | `vn release build --flavor <f>` | `full` **принудительно** (`cli.py:1784`, `cli.py:323` — оба зовут `build` с `profile="full"`) | пишется на время distribute, удаляется в `finally` | вырезаются `build.classify` (`game/options.rpy:31`) | зависит от окружения |
+| **Steam build** | тот же артефакт release | — | — | — | **да**: `platform.steam.appid` ≠ `null` **и** steam_api рядом с исполняемым |
+| **non-Steam build** | тот же артефакт release | — | — | — | нет: движок тихо пропускает `steam_init()` |
+
+**Что реально различает development и release.**
+
+- **Ассеты.** `draft` уходит в ключ кэша и в `.vncache/assets-manifest.json` (`pipeline.py:725,740`), а `vn build --check` сверяет поле `profile` (`pipeline.py:867`). Практическое следствие: после `vn dev` (он собирает ассеты в `draft`, `cli.py:268`) `vn build --check` **красный** — «источник изменился». Лечится одним полным `vn build`. Релизная сборка от этого защищена: она сама навязывает `full`.
+- **Dev-инструменты.** `game/framework/90_debug/` — три файла: `010_dev.rpy` (`config.console = True`), `020_jump_menu.rpy` (Shift+J по `config.developer`), `030_oversample.rpy` (движковая команда `vn_oversample`). В дистрибутив не уезжают (`options.rpy:31`), поэтому «в собранной игре нет консоли» — норма, а не поломка.
+- **Флейвор в рантайме.** Без `build_id.json` игра идёт как `dev` со всем контентом открытым (§4). Проверять NSFW-гейты и вотермарку можно **только** на собранном флейворе.
+- **Steam.** Единственное отличие Steam-сборки от non-Steam — наличие `steam_api64.dll` / `libsteam_api.so` / `libsteam_api.dylib` в `$RENPY_SDK/lib/py3-*/` на build-машине плюс непустой `appid`. Кода, который «включает Steam», в проекте нет; см. [39-platforms.md](39-platforms.md) §3.
+
+**Чего в проекте нет:** отдельного `--profile release`, отдельного дистрибутива «для QA», подписи кода. `grep -rni "codesign\|notariz\|signtool" .github/ tools/ game/ ci/` даёт только `hdiutil` в `release.yml:109` — то есть **ни Windows-, ни macOS-артефакт не подписан** (§13, стадии 6-7).
+
+---
+
+## 3. Флейворы: `public` и `patron` — IMPLEMENTED (наполовину)
+
+Объявлены в `../../project.yaml:66-76`, схема — `tools/schemas/project@1.schema.json` (`packs` и `nsfw` обязательны, `early_content`/`watermark` опциональны с дефолтом `false`).
 
 | Ключ | `public` | `patron` | Кто читает | Статус |
 |---|---|---|---|---|
-| `packs` | `[ep_beach]` | `[ep_beach, nsfw]` | `release.py:249` → `build_info.packs`; гейт проверяет наличие `packs/<id>/manifest.yaml` (`release.py:305-309`) | **NOT IMPLEMENTED как гейт** |
-| `nsfw` | `false` | `true` | `release.py:250,254` → исключение ассетов + рантайм-гейты | IMPLEMENTED |
-| `early_content` | `false` | `true` | `release.py:251` → `vn_build.early_content` | **NOT IMPLEMENTED** — ноль потребителей |
-| `watermark` | `false` | `true` | `release.py:252` → overlay-экран | IMPLEMENTED |
+| `packs` | `[ep_beach]` | `[ep_beach, nsfw]` | `release.py:380` → `build_info.packs`; гейт проверяет наличие `packs/<id>/manifest.yaml` (`release.py:436-440`) | **NOT IMPLEMENTED как build-time-гейт** |
+| `nsfw` | `false` | `true` | `release.py:381,385` → исключение ассетов + рантайм-гейты | IMPLEMENTED |
+| `early_content` | `false` | `true` | `release.py:382` → `vn_build.early_content` | **NOT IMPLEMENTED** — ноль потребителей |
+| `watermark` | `false` | `true` | `release.py:383` → overlay-экран | IMPLEMENTED |
 
-### 2.1 Что реально работает — три механизма
+### 3.1 Что реально работает — три механизма
 
-**1. Исключение NSFW-ассетов из дистрибутива (build-time).** `nsfw_exclude_globs()` (`release.py:192-203`) обходит **фактические** каталоги: для каждого `game/assets/<cat>/`, где есть подпапка `nsfw/`, добавляет глоб `game/assets/<cat>/nsfw/**`. Список кладётся в `build_id.json: exclude`, а `game/options.rpy:44-51` при distribute применяет его через `build.classify(_glob, None)`.
+**1. Исключение NSFW-ассетов из дистрибутива (build-time).** `nsfw_exclude_globs()` (`release.py:323-334`) обходит **фактические** каталоги: для каждого `game/assets/<cat>/`, где есть подпапка `nsfw/`, добавляет глоб `game/assets/<cat>/nsfw/**`. Список кладётся в `build_id.json: exclude`, а `game/options.rpy:51-58` при distribute применяет его через `build.classify(_glob, None)`.
 
-Честно: **сегодня это no-op.** Категории в `game/assets/` — `bg cg mov spr ui`, подпапки `nsfw/` нет ни в одной, поэтому в обоих реально собранных `build/dist/0.1.0-{public,patron}/build-info.json` поле `"exclude": []`. Механизм покрыт только юнит-тестом на синтетических каталогах (`tools/vn/tests/test_release.py`). Конвенция размещения зафиксирована в комментарии `packs/nsfw/manifest.yaml` (`assets_src/png/cg/nsfw/**`).
+Честно: **сегодня это no-op.** Категории в `game/assets/` — `bg cg mov shots spr ui voice`, подпапки `nsfw/` нет ни в одной, поэтому в `build-info.json` поле `"exclude": []`. Механизм покрыт юнит-тестом на синтетических каталогах (`tools/vn/tests/test_release.py`, 13 тестов). Конвенция размещения зафиксирована в комментарии `packs/nsfw/manifest.yaml`.
 
-**2. Рантайм-гейты по `nsfw` (логические).** `game/framework/00_core/060_build_info.rpy:10-40` создаёт `init -985 python in vn_build` и читает `build_id.json` через `renpy.open_file`. Потребители:
+**2. Рантайм-гейты по `nsfw` (логические).** `game/framework/00_core/060_build_info.rpy:10-45` создаёт `init -985 python in vn_build` и читает `build_id.json` через `renpy.open_file`. Потребители:
 
-- `080_achievements.rpy:37-41` — достижение с `nsfw: true` не выдаётся в SFW-сборке;
-- `090_gallery.rpy:40-44` — то же для элементов и целых категорий галереи ([15-gallery.md](15-gallery.md));
-- `070_crash.rpy:57-60` — `build_id`/`flavor` штампуются в crash-репорт ([28-debugging.md](28-debugging.md)).
+- `080_achievements.rpy` — достижение с `nsfw: true` не выдаётся в SFW-сборке (`visible()`);
+- `090_gallery.rpy` — то же для элементов и целых категорий галереи ([15-gallery.md](15-gallery.md));
+- `070_crash.rpy` — `build_id`/`flavor` штампуются в crash-репорт ([28-debugging.md](28-debugging.md)).
 
-**3. Вотермарка.** Весь механизм — 17 строк в `game/framework/20_ui/screens/build_overlay.rpy`:
+**3. Вотермарка.** Механизм — 20 строк в `game/framework/20_ui/screens/build_overlay.rpy`:
 
 ```renpy
 init python:
@@ -76,9 +108,9 @@ init python:
         config.overlay_screens.append("vn_build_overlay")
 ```
 
-Подпись рисуется полупрозрачным текстом 12 px в правом нижнем углу, `zorder 1090`. Её содержимое — `060_build_info.rpy:42-45`: `build_id` плюс **метка получателя** `patron_tag`, если она задана (`build_id · <8 hex>`).
+Подпись рисуется полупрозрачным текстом 12 px в правом нижнем углу, `zorder 1090` (`build_overlay.rpy:6-16`), со сдвигом на `gui.overscan_pad` (Big Picture, `:15-16`; [39-platforms.md](39-platforms.md) §8). Её содержимое — `060_build_info.rpy:42-45`: `build_id` плюс **метка получателя** `patron_tag`, если она задана (`build_id · <8 hex>`).
 
-**Токен получателя в дистрибутив больше не едет (ADR-0011).** Флаг `--patron-token` (`cli.py:1510-1511`) — это по-прежнему вход команды, но в `build_id.json` пишется односторонняя производная: `patron_tag(token)` = `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex (`release.py:206-227`, поле собирается в `release.py:253`). Рантайм читает готовую метку и никакого трекинга не делает. В CI токен подставляется из `secrets.PATRON_TOKEN` и только для patron-ноги матрицы (`release.yml:79-87`).
+**Токен получателя в дистрибутив не едет (ADR-0011).** Флаг `--patron-token` (`cli.py:1764-1765`) — вход команды, но в `build_id.json` пишется односторонняя производная: `patron_tag(token)` = `blake2s(токен, digest_size=4, person=b"vnpatron")`, 8 hex (`release.py:337-358`, поле собирается в `release.py:384`). Рантайм читает готовую метку и никакого трекинга не делает. В CI токен подставляется из `secrets.PATRON_TOKEN` и только для patron-ноги матрицы (`release.yml:79-87`).
 
 Сопоставить утёкшую сборку с получателем владелец может сам — метка детерминирована:
 
@@ -89,15 +121,17 @@ python -c "import hashlib,sys; print(hashlib.blake2s(sys.argv[1].encode(), diges
 
 **Требование к процессу, вытекающее из короткой метки:** токен получателя обязан быть случайным (`secrets.token_hex(16)` и подобное). Короткий низкоэнтропийный токен подбирается по 8-символьной метке перебором. Подробности и правовая грань — [33-security-and-legal.md](33-security-and-legal.md) §3.
 
-### 2.2 Что объявлено, но не работает
+### 3.2 Что объявлено, но не работает
 
-**`flavors.<f>.packs` ничего не гейтит.** `vn_build.packs` заполняется и не читается никем. Установленность пака определяет `pack_registry.installed()` (`030_flow.rpy:76-77`) по словарю `VN_PACKS`, а компилятор эмитит туда **все** паки из `packs/` независимо от флейвора. Живой генерат:
+**`flavors.<f>.packs` не гейтит на сборке.** `vn_build.packs` заполняется и не читается никем. Установленность пака определяет `pack_registry.installed()` (`030_flow.rpy`) по словарю `VN_PACKS`, а компилятор эмитит туда **все** паки из `packs/` независимо от флейвора. Живой генерат:
 
 ```renpy
 define VN_PACKS = {'ep_beach': {'kind': 'dlc', 'version': '1.0.0'}, 'nsfw': {'kind': 'dlc', 'version': '0.1.0'}}
 ```
 
-То есть `public`-сборка сообщает, что пак `nsfw` установлен и принадлежит игроку. Безвредно ровно потому, что `packs/nsfw/chapters/` содержит один `.gitkeep`. Как только туда попадёт глава — она уедет в публичную сборку. Обходной путь на сегодня: держать NSFW-материал ассетами в `nsfw/`-подпапках (механизм 1 работает), а не отдельным паком со сценами.
+То есть `public`-сборка сообщает, что пак `nsfw` установлен. Безвредно ровно потому, что `packs/nsfw/chapters/` содержит один `.gitkeep`. Как только туда попадёт глава — она уедет в публичную сборку. Обходной путь: держать NSFW-материал ассетами в `nsfw/`-подпапках (механизм 1 работает), а не отдельным паком со сценами.
+
+**Важная поправка после ADR-0014:** «гейта по `packs` нет» верно только про **build-time**. Runtime-гейт **владения** существует и работает — но исключительно под живым Steam: провайдер `_steam_owns_pack` ставится в `035_platform.rpy:75`, и у пака с `steam_dlc_appid` в манифесте `owned()` честно вернёт `False`, убрав карточку главы из `chapter_select`, элементы галереи и ачивки пака. Разделяйте эти два утверждения — они про разные моменты жизни сборки ([39-platforms.md](39-platforms.md) §5, [30-packs-and-dlc.md](30-packs-and-dlc.md) §4).
 
 **`early_content` не читает никто.** Значение вычисляется, валидируется схемой и выставляется в `vn_build.early_content` — и на этом всё: grep по `game/` даёт только само объявление в `060_build_info.rpy`. Если ранний доступ нужен как гейт — писать потребителя придётся с нуля.
 
@@ -105,69 +139,70 @@ define VN_PACKS = {'ep_beach': {'kind': 'dlc', 'version': '1.0.0'}, 'nsfw': {'ki
 
 ---
 
-## 3. `game/build_id.json` — паспорт сборки
+## 4. `game/build_id.json` — паспорт сборки
 
-**Кто пишет.** `compute_build_info()` (`release.py:230-255`) собирает документ `build_info@2`, `write_build_info()` (`release.py:258-267`) валидирует его схемой `tools/schemas/build_info@2.schema.json` (`additionalProperties: false`, все 12 полей обязательны) и пишет в `game/build_id.json`. `clear_build_info()` (`release.py:270`) удаляет файл в блоке `finally` (`cli.py:1558-1560`) — **файл существует только на время distribute**. Он в `.gitignore:7-8`.
+**Кто пишет.** `compute_build_info()` (`release.py:361-386`) собирает документ `build_info@2`, `write_build_info()` (`release.py:389-398`) валидирует его схемой `tools/schemas/build_info@2.schema.json` (`additionalProperties: false`, все 12 полей обязательны) и пишет в `game/build_id.json`. `clear_build_info()` (`release.py:401`) удаляет файл в блоке `finally` (`cli.py:1812-1814`) — **файл существует только на время distribute**. Он в `.gitignore:8`.
 
-Живой документ (`compute_build_info(root, "patron", patron_token="tok_demo42")` на HEAD `dd1cb3e`):
+Форма документа (`compute_build_info(root, "patron", patron_token="tok_demo42")`):
 
 ```json
-{"build_id": "0.1.4+dd1cb3e.patron.202608081905", "built_at": "2026-08-08T19:05:31+00:00",
+{"build_id": "0.1.6+<sha>.patron.202608181905", "built_at": "2026-08-18T19:05:31+00:00",
  "early_content": true, "exclude": [], "flavor": "patron", "nsfw": true,
  "packs": ["ep_beach", "nsfw"], "patron_tag": "caf5afd4", "schema": "build_info@2",
- "sha": "dd1cb3e", "version": "0.1.4", "watermark": true}
+ "sha": "<sha>", "version": "0.1.6", "watermark": true}
 ```
 
-**Версия схемы бампнута с `@1` на `@2` (ADR-0011):** поле `patron_token` (сам секрет) заменено на `patron_tag` (невосстановимая метка). `build_info@1.schema.json` остался в реестре с пометкой «УСТАРЕЛА» — чтобы читались артефакты сборок до 0.1.5. Артефакт `build/dist/0.1.0-patron/build-info.json`, который лежит на диске, — как раз `build_info@1` и содержит `"patron_token": "tok_demo42"` открытым текстом; это исторический документ, а не образец.
+**Версия схемы бампнута с `@1` на `@2` (ADR-0011):** поле `patron_token` (сам секрет) заменено на `patron_tag` (невосстановимая метка). `build_info@1.schema.json` остался в реестре с пометкой «УСТАРЕЛА» — чтобы читались артефакты старых сборок.
 
-Формат `build_id` — `{version}+{sha}.{flavor}.{YYYYMMDDHHMM}` в UTC (`release.py:246`).
+Формат `build_id` — `{version}+{sha}.{flavor}.{YYYYMMDDHHMM}` в UTC (`release.py:377`).
 
 **Кто читает.** Двое, в разное время:
 
 | Читатель | Когда | Что берёт |
 |---|---|---|
-| `game/options.rpy:44-51` | во время `launcher distribute` | только `exclude` → `build.classify(glob, None)` |
+| `game/options.rpy:51-58` | во время `launcher distribute` | только `exclude` → `build.classify(glob, None)` |
 | `060_build_info.rpy:26-40` | при каждом старте игры | `flavor`, `build_id`, `version`, `packs`, `nsfw`, `early_content`, `watermark`, `patron_tag` |
 
 **Файла нет → игра идёт как `dev`.** Дефолты (`060_build_info.rpy:14-23`): `flavor="dev"`, `build_id="dev"`, `nsfw=True`, `early_content=True`, `watermark=False`. Чтение обёрнуто в `try/except Exception` — битый или отсутствующий файл не роняет старт. Это именно то, что нужно в рабочем чекауте: разработчик видит весь контент и не таскает чужую вотермарку.
 
-**Грабля с ценой в деньги.** Из этих же дефолтов следует: архив, собранный голым `vn package` (без `--dest-suffix`, то есть без флейвора), **не содержит `game/build_id.json`** — проверено на реальном `build/dist/0.1.0/vn-0.1.0+193f6b4-win.zip`, файла внутри нет. Такой билд у игрока стартует как `dev`: NSFW-достижения и NSFW-галерея открыты, ранний контент открыт, вотермарки нет, NSFW-ассеты не исключены. **Голый `vn package` — это инструмент отладки дистрибуции, а не способ собрать сборку для раздачи.** Для раздачи — только `vn release build --flavor <f>`.
+**Грабля с ценой в деньги.** Из этих же дефолтов следует: архив, собранный голым `vn package` (без `--dest-suffix`, то есть без флейвора), **не содержит `game/build_id.json`**. Такой билд у игрока стартует как `dev`: NSFW-достижения и NSFW-галерея открыты, ранний контент открыт, вотермарки нет, NSFW-ассеты не исключены. **Голый `vn package` — инструмент отладки дистрибуции, а не способ собрать сборку для раздачи.** Для раздачи — только `vn release build --flavor <f>`.
 
 ---
 
-## 4. `vn release validate --flavor <f>` — предрелизный гейт
+## 5. `vn release validate --flavor <f>` — предрелизный гейт из 20 проверок
 
-Точка входа `cli.py:1492-1505`, логика — `validate_release()` (`release.py:276-481`). Возвращает список пар `(PASS|WARN|FAIL, строка)`; `ok` становится `False` **на любом FAIL**, WARN не валит никогда. При FAIL — `_fail("release validate --flavor <f>: есть FAIL")`, **exit 1**.
+Точка входа `cli.py:1746-1759`, логика — `validate_release()` (`release.py:407-629`). Возвращает список пар `(PASS|WARN|FAIL, строка)`; `ok` становится `False` **на любом FAIL** (`release.py:414-418`), WARN не валит никогда. При FAIL — `_fail("release validate --flavor <f>: есть FAIL")`, **exit 1**.
 
-Философия зафиксирована в докстринге (`release.py:278-279`): «своих правил у релиза нет» — гейт агрегирует уже существующие проверки конвейера, чтобы не расходиться с `vn build`.
+Философия зафиксирована в докстринге (`release.py:408-410`): «своих правил у релиза нет» — гейт агрегирует уже существующие проверки конвейера, чтобы не расходиться с `vn build`.
 
-### 4.1 Полный список проверок, в порядке выполнения
+### 5.1 Полный список проверок, в порядке выполнения
 
-| # | Проверка | Код | FAIL когда |
-|---|---|---|---|
-| 1 | `project.yaml` валиден по схеме `project@1` | `release.py:291-295` | любая ошибка схемы |
-| 2 | Флейвор описан в `project.yaml` | `release.py:297-303` | нет такого флейвора — **и гейт немедленно возвращается**, остальные 17 проверок не выполняются |
-| 3 | На каждый пак флейвора есть `packs/<id>/manifest.yaml` | `release.py:305-309` | манифест отсутствует |
-| 4 | `vn content lint` — 0 ошибок | `release.py:311-315` | есть ошибки линта (34 правила, [08-content-pipeline.md](08-content-pipeline.md) §7) |
-| 5 | Шрифты UI — не LFS-указатели | `release.py:321-330`, реализация `doctor.py:50-66` | хоть один `.ttf/.otf` в `game/fonts/` не начинается с сигнатуры sfnt. WARN, если `game/fonts` пуст |
-| 6 | `game/assets` свежи (`build_assets(check=True)`) | `release.py:332-338` | есть ошибки или несвежие выходы |
-| 7 | Собранные видео-лупы валидны + бюджет на файл | `release.py:340-349` | ошибка валидации `.webm`; предупреждения → WARN |
-| 8 | Генерат свеж (`compile_content(check=True)`) | `release.py:351-359` | несвежие выходы или `CompileError` |
-| 9 | Бюджеты G19 | `release.py:361-363` | см. §8 |
-| 10 | Провенанс ассетов согласован | `release.py:365-373` | разрыв цепочки; предупреждения → WARN |
-| 11 | DAZ-декларации рендеров | `release.py:375-384` | ошибка в `*.render.yaml`; неотрендеренные выходы → WARN |
-| 12 | VaM-декларации сцен | `release.py:386-395` | ошибка; **строки нет вовсе, если деклараций нет** |
-| 13 | Sims4-декларации сцен | `release.py:397-406` | то же |
-| 14 | Покрытие переводов ≥ `loc/loc.yaml: release_coverage_min` | `release.py:408-434` | язык ниже порога (сейчас 0.98). Языки с `synthetic: true` (pseudo) исключаются по `game/tl/<lang>/language.json`. Проверка пропускается целиком, если покрытия или порога нет |
-| 15 | Реестр лицензий ассетов | `release.py:436-445` | нарушение; **строки нет, если деклараций 0** |
-| 16 | Хранилище сырцов | `release.py:447-460` | локально изменённые и не запушенные сырцы (G14); недоступное хранилище → WARN |
-| 17 | `ci/release-manifest.json` версия == `project.yaml` | `release.py:462-470` | **никогда** — только WARN |
-| 18 | git sha получен | `release.py:472-473` | **никогда** — WARN при `nogit` |
-| 19 | Есть фикстуры сейв-корпуса | `release.py:475-479` | **никогда** — WARN при нуле фикстур (сейчас их 2, см. §4.2) |
+| # | Проверка | Код | FAIL когда | Печатается всегда? |
+|---|---|---|---|---|
+| 1 | `project.yaml` валиден по схеме `project@1` | `release.py:425` | любая ошибка схемы | да |
+| 2 | Флейвор описан в `project.yaml` | `release.py:428-434` | нет такого флейвора — **и гейт немедленно возвращается**, остальные 18 проверок не выполняются | да |
+| 3 | На каждый пак флейвора есть `packs/<id>/manifest.yaml` | `release.py:436-440` | манифест отсутствует | по одной строке на пак |
+| 4 | `vn content lint` — 0 ошибок | `release.py:442-445` | есть ошибки линта ([08-content-pipeline.md](08-content-pipeline.md) §7) | да |
+| 5 | Шрифты UI — не LFS-указатели | `release.py:452-461`, реализация `doctor.py: _lfs_pointer_fonts` | хоть один `.ttf/.otf` в `game/fonts/` — указатель LFS. WARN, если `game/fonts` пуст | да |
+| 6 | `game/assets` свежи (`build_assets(check=True)`) | `release.py:463-469` | есть ошибки или несвежие выходы | да |
+| 7 | Собранные видео-лупы валидны + бюджет на файл | `release.py:471-480` | ошибка валидации `.webm`; предупреждения → WARN | да |
+| 8 | Генерат свеж (`compile_content(check=True)`) | `release.py:482-490` | несвежие выходы или `CompileError` | да |
+| 9 | Размер-бюджеты G19 | `release.py:492-494` | см. §10 | да |
+| 10 | Провенанс ассетов согласован | `release.py:496-504` | разрыв цепочки; предупреждения → WARN | да |
+| 11 | DAZ-декларации рендеров | `release.py:506-515` | ошибка в `*.render.yaml`; неотрендеренные выходы → WARN | да |
+| 12 | VaM-декларации сцен | `release.py:517-526` | ошибка; при нуле деклараций — `PASS … 0 проверено` | да |
+| 13 | Sims4-декларации сцен | `release.py:528-537` | то же | да |
+| 14 | Покрытие переводов ≥ `loc/loc.yaml: release_coverage_min` | `release.py:539-565` | язык ниже порога (сейчас 0.98). Языки с `synthetic: true` (pseudo) исключаются по `game/tl/<lang>/language.json` | только если есть и покрытие, и порог |
+| 15 | **Озвучка** | `release.py:567-582` | ошибки манифестов → FAIL; **непокрытые реплики в озвученных главах → FAIL**; черновые дубли → WARN | только если есть покрытие |
+| 16 | Реестр лицензий ассетов | `release.py:584-593` | нарушение | только если деклараций > 0 |
+| 17 | Хранилище сырцов | `release.py:595-608` | локально изменённые и не запушенные сырцы (G14); недоступное хранилище → WARN | да |
+| 18 | `ci/release-manifest.json` версия == `project.yaml` | `release.py:610-618` | **никогда** — только WARN | да |
+| 19 | git sha получен | `release.py:620-621` | **никогда** — WARN при `nogit` | да |
+| 20 | Есть фикстуры сейв-корпуса | `release.py:623-627` | **никогда** — WARN при нуле фикстур (сейчас их 2) | да |
 
-**19 проверок в коде, но строк на экране меньше:** №12, 13 и 15 молчат, когда нечего проверять. Сегодня это ровно так.
+**Строк на экране может быть меньше, чем проверок:** безусловной `else`-ветки нет у трёх — №14 (молчит без `release_coverage_min`), №15 (молчит при пустом покрытии озвучки) и №16 (молчит при нуле лицензионных деклараций). На **этом** чекауте молчит только №16: порог покрытия задан, а озвучка демо-главы даёт WARN. VaM и Sims4 (№12-13) печатаются **всегда**, включая `0 проверено` — безусловный `else: add("PASS", …)`.
 
-### 4.2 Реальный вывод (2026-08-08, HEAD `dd1cb3e`)
+### 5.2 Реальный вывод (проверено 2026-08-18, HEAD `db28ce6`)
 
 ```
 $ vn release validate --flavor public
@@ -182,15 +217,22 @@ $ vn release validate --flavor public
  PASS  бюджеты G19: в рамках
  PASS  провенанс: 0 цепочек согласованы
  PASS  DAZ-декларации: 0 проверено
+ PASS  VaM-декларации: 0 проверено
+ PASS  Sims4-декларации: 0 проверено
  PASS  покрытие переводов: все языки ≥ 98%
+ WARN  озвучка: 14 черновых дублей (draft) — ru: ch01_s010_0001
  PASS  хранилище сырцов: локальные копии согласованы
- PASS  release-manifest: версия 0.1.4 == project.yaml
- PASS  git sha: dd1cb3e
+ PASS  release-manifest: версия 0.1.5 == project.yaml
+ PASS  git sha: db28ce6
  PASS  сейв-корпус: 2 фикстур
 release validate: OK (флейвор public)
 ```
 
-16 строк, exit 0. У `--flavor patron` их 17 — добавляется `пак nsfw: manifest.yaml на месте`.
+**19 строк, из них одна WARN, exit 0.** У `--flavor patron` их 20 — добавляется `пак nsfw: manifest.yaml на месте`.
+
+**«Все PASS» больше не эталон.** Жёлтая строка про 14 черновых дублей — **штатное** состояние демо-главы: её озвучили TTS-заглушками. Штатные WARN сегодня ровно два класса: черновые дубли озвучки и (если сорвётся сеть/хранилище) недоступность объектного хранилища. Ничего искать не нужно — релиз валит только FAIL.
+
+**Отдельно про озвучку:** проверка №15 даёт **FAIL**, если в главе, для которой уже есть voice-манифест, часть реплик не покрыта (`vo.holes`). То есть «начать озвучивать половину главы» — красный релиз, а не промежуточное состояние: игрок слышал бы обрыв посреди диалога. Либо озвучиваете главу целиком (пусть черновиками), либо не начинаете. Подробности — [23-audio.md](23-audio.md) §8.
 
 Опечатка в имени флейвора обрывает гейт на второй строке:
 
@@ -201,350 +243,551 @@ $ vn release validate --flavor steam
 ошибка: release validate --flavor steam: есть FAIL      # exit 1
 ```
 
-### 4.3 Чего гейт НЕ проверяет
+### 5.3 Чего гейт НЕ проверяет
 
 Пробелы реальные, знать их обязательно:
 
-- **пин `renpy_sdk`** — только `vn doctor` (`doctor.py:124-140`);
+- **пин `renpy_sdk`** — только `vn doctor`;
 - **`save_schema`** — ни соответствия миграций, ни бампа; ловится лишь косвенно через `vn save corpus`;
-- **`cold_start_s`** — живёт исключительно внутри `vn test smoke` (`cli.py:1386-1392`), которого релизный workflow не запускает; **релиз может уехать за бюджет холодного старта**;
-- **движковый `renpy … . lint`** — только в `ci.yml:73` и `canary.yml:49`;
+- **`cold_start_s`** — живёт исключительно внутри `vn test smoke` (`cli.py:1608-1616`), которого релизный workflow не запускает; **релиз может уехать за бюджет холодного старта**;
+- **бюджет памяти сцены** — он в `vn build` (`cli.py:176-203`), а не в гейте; но так как `release build` сам зовёт `vn build` первым шагом, на этом пути он всё-таки проверяется;
+- **движковый `renpy … . lint`** — только в `ci.yml:86` и `canary.yml`;
+- **`vn test oversample`** — только `ci.yml:90-91`;
 - **smoke-прохождение** — только nightly/canary ([27-testing.md](27-testing.md));
-- **`min_tools`** из `project.yaml:4` — не сравнивается ни с чем.
+- **`min_tools`** из `project.yaml:4` — не сравнивается ни с чем;
+- **платформа** — Steam-проверок в гейте нет ни одной; `steam_libs_status` зовётся только из `vn release steam` (`cli.py:1839`) и тестов;
+- **профиль ассетов** — `grep profile tools/vn/src/vn/release.py` = 0: гейт не отличит draft-артефакт от full. Единственная защита — `release build` навязывает `full` сам (§2).
+
+Ещё одна тонкость: проверка №8 «генерат свеж» на пути `vn release build` **тавтологична** — генерат собран тем же процессом за секунду до гейта (§6.1). Смысл она имеет только при отдельном запуске `vn release validate`.
 
 ---
 
-## 5. `vn release build --flavor <f>` — полная последовательность
+## 6. `vn release build --flavor <f>` — полная последовательность
 
-`cli.py:1508-1562`. Опции: `--flavor` (обязательна), `--patron-token`, `--package` (можно несколько, по умолчанию `("win",)`), `--timeout` (900 с).
+`cli.py:1762-1816`. Опции: `--flavor` (обязательна), `--patron-token`, `--package` (можно несколько, по умолчанию `("win",)`), `--timeout` (900 с).
 
-1. **`vn build` — ДО гейта** (`cli.py:1529-1530`, `ctx.invoke(build, check=False, profile="full")`).
-2. **Гейт** `validate_release(root, flavor)` (§4). Любой FAIL → `_fail("release build --flavor <f>: гейт не пройден")`, exit 1.
-3. **`compute_build_info` + `write_build_info`** → `game/build_id.json` (`cli.py:1539-1543`).
-4. **Уведомления о сторонних лицензиях**: `docs/licenses/THIRD-PARTY-NOTICES.md` копируется в `game/THIRD-PARTY-NOTICES.md` (`cli.py:1545-1548`). Файл существует; в собранном `0.1.0-public` он присутствует внутри архива — проверено.
-5. Печать `build-id: …` и, если `exclude` непуст, `(исключено: …)`.
-6. **`vn package`** с `dest_suffix=f"-{flavor}"` (`cli.py:1552-1553`) — см. §6. Внутри он **ещё раз** прогоняет `vn build`.
-7. **`build-info.json`** пишется в `build/dist/<version>-<flavor>/` (`cli.py:1554-1557`) — обязательно после package, потому что package чистит каталог назначения.
-8. **`finally`** (`cli.py:1558-1560`): удаляются `game/build_id.json` и `game/THIRD-PARTY-NOTICES.md` — даже при падении. Рабочий чекаут не остаётся с чужим флейвором.
-9. `release build: OK — <build_id> -> build/dist/<version>-<flavor>/`.
+1. **`vn build --profile full` — ДО гейта** (`cli.py:1784`, `ctx.invoke(build, check=False, profile="full")`), с печатью `сборка перед гейтом (флейвор <f>)…`.
+2. **Гейт** `validate_release(root, flavor)` (§5). Любой FAIL → `_fail("release build --flavor <f>: гейт не пройден")`, exit 1.
+3. **`compute_build_info` + `write_build_info`** → `game/build_id.json` (`cli.py:1793-1797`).
+4. **Уведомления о сторонних лицензиях**: `docs/licenses/THIRD-PARTY-NOTICES.md` копируется в `game/THIRD-PARTY-NOTICES.md` (`cli.py:1798-1802`).
+5. Печать `build-id: …` и, если `exclude` непуст, `(исключено: …)` (`cli.py:1803-1804`).
+6. **`vn package`** с `dest_suffix=f"-{flavor}"` (`cli.py:1806-1807`) — см. §7. Внутри он **ещё раз** прогоняет `vn build`.
+7. **`build-info.json`** пишется в `build/dist/<version>-<flavor>/` (`cli.py:1808-1811`) — обязательно после package, потому что package чистит каталог назначения.
+8. **`finally`** (`cli.py:1812-1814`): удаляются `game/build_id.json` и `game/THIRD-PARTY-NOTICES.md` — даже при падении. Рабочий чекаут не остаётся с чужим флейвором.
+9. `release build: OK — <build_id> -> build/dist/<version>-<flavor>/` (`cli.py:1815-1816`).
 
-### 5.1 Почему сборка идёт ДО гейта
+### 6.1 Почему сборка идёт ДО гейта
 
-Комментарий в коде (`cli.py:1526-1528`) объясняет ровно это: в свежем чекауте CI **генерата нет вовсе** — `game/generated/` в `.gitignore:2`. Проверка №8 «генерат свеж» валила бы каждый релиз. Второй, менее очевидный аргумент из того же комментария: так гейт проверяет ровно то состояние, которое уедет в дистрибутив, а не предыдущее.
+Комментарий в коде (`cli.py:1781-1783`) объясняет ровно это: в свежем чекауте CI **генерата нет вовсе** — `game/generated/` в `.gitignore:2`. Проверка №8 «генерат свеж» валила бы каждый релиз. Второй аргумент из того же комментария: так гейт проверяет ровно то состояние, которое уедет в дистрибутив, а не предыдущее.
 
-Регрессию именно этого класса ловит nightly: он делает `rm -rf game/generated` и после этого гоняет оба флейвора (`nightly.yml:70-74`).
+Регрессию именно этого класса ловит nightly: он делает `rm -rf game/generated` и после этого гоняет оба флейвора (`nightly.yml:67-74`, комментарий там же: «ловит регрессии вида „гейт требует генерат, которого в CI ещё нет“»).
 
 Плата за схему — `vn build` выполняется дважды (шаг 1 и внутри package). На прогретом кэше второй прогон почти бесплатен; в холодном CI это заметные секунды.
 
-### 5.2 Артефакты и разбор имени архива
-
-Реально лежит на диске (`build/` в `.gitignore:20`, поэтому у каждого своё):
-
-| Путь | Размер | Чем собрано |
-|---|---|---|
-| `build/dist/0.1.0-public/vn-0.1.0+94970b3-win.zip` + `build-info.json` | 31 489 064 Б | `vn release build --flavor public` |
-| `build/dist/0.1.0-patron/vn-0.1.0+d020c37-win.zip` + `build-info.json` | 30 865 170 Б | `--flavor patron`; это ещё `build_info@1`, с `patron_token` внутри (до ADR-0011) |
-| `build/dist/0.1.0/vn-0.1.0+193f6b4-win.zip` | 30 829 470 Б | голый `vn package` — **без `build-info.json` и без `build_id.json` внутри** |
-
-Разбор `vn-0.1.0+193f6b4-win.zip`:
+### 6.2 Разбор имени архива
 
 | Часть | Откуда |
 |---|---|
-| `vn` | `build.name = "vn"` (`game/options.rpy:14`) |
-| `0.1.0+193f6b4` | `config.version` из `game/generated/version.gen.rpy:8`; эмиттер `tools/vn/src/vn/content/compile.py:82-87` склеивает `project.yaml: version` с `git rev-parse --short HEAD` (`repo.py:34-43`) |
-| `win` | значение `--package`, переданное в `launcher distribute` |
-| `.zip` | формат, который `launcher distribute` даёт для `win` |
+| `vn` | `build.name = "vn"` (`game/options.rpy:21`) |
+| `0.1.6+<sha>` | `config.version` из `game/generated/version.gen.rpy`; эмиттер `_emit_version` (`tools/vn/src/vn/content/compile.py:95-100`) склеивает `project.yaml: version` с `git rev-parse --short HEAD` (`repo.py:35-43`; при отсутствии git — `nogit`) |
+| `win` | значение `--package`, переданное в `launcher distribute` (`distribute.rpy:1501`: `filename = base_name + "-" + variant`) |
+| `.zip` | формат, объявленный для пакета `win` в `$RENPY_SDK/renpy/common/00build.rpy:426` |
 
 Проект **не задаёт** `build.directory_name` и `build.version`, поэтому имя целиком выводится движком из `build.name` и `config.version`.
 
 **Флейвора в имени архива нет.** `public` и `patron` одной версии отличаются только вкомпилированным git-sha и каталогом-родителем `<version>-<flavor>/`. Перепутать файлы на диске легко — не переименовывайте их и не складывайте в одну папку.
 
-**Про `+sha` в версии:** генерат привязан к коммиту, любая перекомпиляция после нового коммита меняет `config.version`, а значит и имя архива. Собранный из чекаута тега архив воспроизводим по имени (та же версия, тот же sha).
-
 ---
 
-## 6. `vn package` — как вызывается Ren'Py SDK
+## 7. `vn package` — как вызывается Ren'Py SDK
 
-`cli.py:279-370`. Опции: `--package` (multiple, дефолт `win`; help: «Целевые пакеты launcher distribute (win/linux/mac/market)»), `--timeout` (900), `--dest-suffix` (**скрытая**, ей пользуется только `vn release build`).
+`cli.py:301-393`. Опции: `--package` (multiple, дефолт `win`; help: «Целевые пакеты launcher distribute (win/linux/mac/market)»), `--timeout` (900), `--dest-suffix` (**скрытая**, ей пользуется только `vn release build`).
 
-**Поиск SDK — только через переменную окружения.** `doctor.sdk_path()` (`doctor.py:24-30`) читает `RENPY_SDK` и принимает путь, лишь если `<RENPY_SDK>/renpy.py` — файл. Ни PATH, ни ключа в конфиге, ни автопоиска. Нет → `_fail("Ren'Py SDK не найден (RENPY_SDK)")`. Исполняемый файл: `renpy.exe` на `win32`, иначе `renpy.sh` (`cli.py:337`).
+**Поиск SDK — только через переменную окружения.** `doctor.sdk_path()` читает `RENPY_SDK` и принимает путь, лишь если `<RENPY_SDK>/renpy.py` — файл. Ни PATH, ни ключа в конфиге, ни автопоиска. Нет → `_fail("Ren'Py SDK не найден (RENPY_SDK)")`. Исполняемый файл: `renpy.exe` на `win32`, иначе `renpy.sh` (`cli.py:359`).
 
 Шаги:
 
-1. `ctx.invoke(build, check=False, profile="full")` — генерат `.rpy` обязан существовать до восстановления `.rpyc` (`cli.py:299-301`).
-2. Перенос `.rpyc` прошлого релиза (`cli.py:303-334`) — §7.
-3. `subprocess.run([exe, root, "compile"], capture_output=True, timeout=timeout_s)` (`cli.py:338-341`). Ненулевой код → `_fail("renpy compile упал:\n…")` с хвостами stdout (1500 симв.) и stderr (800).
-4. Дистрибуция (`cli.py:344-355`): `dest = build/dist/<version><dest_suffix>`, каталог **удаляется целиком** перед сборкой («старые архивы не должны вкладываться в новые»), затем
+1. `ctx.invoke(build, check=False, profile="full")` — генерат `.rpy` обязан существовать до восстановления `.rpyc` (`cli.py:322-323`).
+2. Перенос `.rpyc` прошлого релиза (`cli.py:325-356`) — §8.
+3. `subprocess.run([exe, root, "compile"], capture_output=True, timeout=timeout_s)` (`cli.py:360-363`). Ненулевой код → `_fail("renpy compile упал:\n…")` с хвостами stdout (1500 симв.) и stderr (800).
+4. Дистрибуция (`cli.py:365-377`): `dest = build/dist/<version><dest_suffix>`, каталог **удаляется целиком** перед сборкой («старые архивы не должны вкладываться в новые»), затем
    ```python
    cmd = [str(exe), str(sdk / "launcher"), "distribute", "--dest", str(dest)]
    for p in packages: cmd += ["--package", p]
    cmd.append(str(root))
    ```
-5. Снимок `.rpyc` нового релиза (`cli.py:357-369`) — §7.
-6. `package: OK — <имена файлов в dest>`.
+5. Снимок `.rpyc` нового релиза (`cli.py:379-391`) — §8.
+6. `package: OK — <имена файлов в dest>` (`cli.py:392`).
 
-**Какие пакеты доступны.** Ровно те, что понимает `launcher distribute`; CLI значение не валидирует и передаёт как есть. CI собирает `--package win --package linux --package mac` (`release.yml:83`). **Android/rapt не подключён** — ни `rapt`, ни `.aab`, ни `.apk` в `tools/` не встречаются (NOT IMPLEMENTED).
+### 7.1 Пакеты `launcher distribute`: форматы и статус у нас
+
+Значение `--package` CLI не валидирует и передаёт как есть. Что объявлено движком (`$RENPY_SDK/renpy/common/00build.rpy:421-432`) и что из этого мы используем:
+
+| `--package` | Формат(ы) | Файл на выходе | У нас |
+|---|---|---|---|
+| `win` | `zip` (`:426`) | `vn-<ver>-win.zip` | **используется** (дефолт CLI, CI) |
+| `linux` | `tar.bz2` (`:424`) | `vn-<ver>-linux.tar.bz2` — **не zip** | используется в CI; Steam-staging распаковывает именно этот формат (§14.2) |
+| `mac` | `app-zip app-dmg` (`:425`) | `vn-<ver>-mac.zip`; **dmg НЕ создаётся** | используется в CI |
+| `pc` | `zip` (`:423`) | Windows+Linux одним зипом | не используется |
+| `market` | `bare-zip` (`:427`) | зип без каталога-обёртки | не используется |
+| `steam` | `zip`, **hidden** (`:429`) | `vn-<ver>-steam.zip`, windows+linux+mac в одном | не используется: раскладка депотов собирается из платформенных пакетов (§14.2) |
+| `android` / `ios` / `web` / `gameonly` | `directory` / `null`, hidden | — | NOT IMPLEMENTED (ни `rapt`, ни `.aab`, ни `.apk` в `tools/` нет) |
+
+**Почему `--package mac` не даёт dmg.** `distribute.rpy:1537-1540`: `if dmg and (mac_identity is None): return` — формат `app-dmg` пропускается, если не задан `build.mac_identity`. Проект его не задаёт (grep по `game/options.rpy` — только `build.name` и `build.classify`), поэтому от `mac` приходит **только zip**. Именно поэтому dmg собирает отдельная джоба `release.yml:95-115` штатным `hdiutil` на macOS-раннере. Следствие для QA: артефакт для mac **не подписан и не нотаризован** (стадия 8 в §13).
 
 **`--timeout` покрывает оба subprocess-вызова** (компиляцию и дистрибуцию) по отдельности. Дефолт 900 с хватает локально; CI ставит 1800 (`release.yml:83`), потому что три платформы сразу.
 
-**Что не уезжает в дистрибутив** (`game/options.rpy:13-51`, всё через `build.classify(…, None)`): исходные зоны `tools/** content/** assets_src/** loc/** docs/** ci/** packs/** build/** .vncache/** .git/**`, дотфайлы, `CODEOWNERS`, `README.md`, `project.yaml`, `.vnstorage.yaml`, `hdrs.tmp`, `log.txt`, `traceback.txt`, `errors.txt`; плюс `game/framework/90_debug/**`, `game/generated/qa/**`, `game/generated/manifest.json`; плюс каждый `game/tl/<code>/**`, у которого в `language.json` стоит `"synthetic": true` (то есть pseudo, [14-localization.md](14-localization.md)); плюс глобы флейвора. Проверено на архивах: в `0.1.0-public` и `0.1.0-patron` нет ни `90_debug/`, ни `tl/pseudo/`.
+### 7.2 Что не уезжает в дистрибутив
 
-**`.rpa`-архивов нет — и это норма, а не недоделка.** Вызова `build.archive(...)` нет нигде в `game/`; ассеты едут россыпью — `../ARCHITECTURE.md` §2.4 (`:943`) фиксирует это осознанно: Steam дельта-патчит отдельные файлы, монолитный `.rpa` при правке одного спрайта перекачивался бы игроками целиком, а защиты упаковка не добавляет. Тематические `.rpa` (`archive_spr.rpa` и т. д.) — только опция mobile-поставки фазы 3; их появление в desktop-дистрибутиве — осознанное решение с ADR. Инвариант закреплён гард-тестом: `test_options_rpy_ships_assets_loose_without_rpa` (`tools/vn/tests/test_release.py:250`) краснеет на любом `build.archive` в `game/options.rpy`.
+`game/options.rpy:19-58`, всё через `build.classify(…, None)`: исходные зоны `tools/** content/** assets_src/** loc/** docs/** ci/** packs/** build/** .vncache/** .git/**`, дотфайлы, `CODEOWNERS`, `README.md`, `project.yaml`, `.vnstorage.yaml`, `hdrs.tmp`, `log.txt`, `traceback.txt`, `errors.txt` (цикл `:24-29`); плюс `game/framework/90_debug/**` (`:31`), `game/generated/qa/**` (`:32`), `game/generated/manifest.json` (`:33`); плюс каждый `game/tl/<code>/**`, у которого в `language.json` стоит `"synthetic": true` (то есть pseudo, `:36-47`, [14-localization.md](14-localization.md)); плюс глобы флейвора (`:51-58`).
+
+**`.rpa`-архивов нет — и это норма, а не недоделка.** Вызова `build.archive(...)` нет нигде в `game/`; ассеты едут россыпью — `../ARCHITECTURE.md` §2.4 фиксирует это осознанно: Steam дельта-патчит отдельные файлы, монолитный `.rpa` при правке одного спрайта перекачивался бы игроками целиком, а защиты упаковка не добавляет. Инвариант закреплён гард-тестом `test_options_rpy_ships_assets_loose_without_rpa` в `tools/vn/tests/test_release.py`.
 
 ---
 
-## 7. `.rpyc` как релизный артефакт (G6)
+## 8. `.rpyc` как релизный артефакт (G6)
 
 **Зачем.** Ren'Py хранит в сейвах и в журнале rollback *имена стейтментов* (файл + версия + серийный номер). При перекомпиляции изменённого `.rpy` имена неизменившихся стейтментов сохраняются **только если рядом лежит старый `.rpyc`**. Поэтому `.rpyc` для нас — не мусор, а релизный артефакт: без него старые сейвы игроков перестают попадать «в то же место» истории.
 
-**Восстановление** (`cli.py:303-334`):
+**Восстановление** (`cli.py:325-356`):
 
-- каталоги в `build/rpyc-cache/` сортируются функцией `_semver_key` (`cli.py:307-311`: `"0.1.4"` → `(0,1,4)`; нечисловое имя → `(0,)`), берётся **самый старший по версии**, а не самый свежий по времени;
+- каталоги в `build/rpyc-cache/` сортируются функцией `_semver_key` (`cli.py:329-333`: `"0.1.6"` → `(0,1,6)`; нечисловое имя → `(0,)`), берётся **самый старший по версии**, а не самый свежий по времени;
 - для каждого `*.rpyc`: цель `game/<rel>`; если рядом нет одноимённого `.rpy`, пробуется `game/generated/<rel>` (legacy-раскладка кэша);
 - копирование **с перезаписью** — канонический носитель имён это кэш релиза, а не локальные `.rpyc`;
 - `restored == 0` при существующем кэше → `_fail("rpyc-перенос: кэш … есть, но не восстановлено ни одного .rpyc — save-совместимость под угрозой (G6), сборка остановлена")`;
 - кэша нет → печатается `rpyc-перенос: кэша прошлых релизов нет (первый релиз)` и сборка идёт дальше.
 
-**Снимок** (`cli.py:357-369`): после distribute `build/rpyc-cache/<version>/` очищается и туда копируются **все** `.rpyc` из-под `game/` — не только из `generated/`, потому что метки framework тоже попадают в сейвы и rollback (`cli.py:306`).
+**Снимок** (`cli.py:380-391`): после distribute `build/rpyc-cache/<version>/` очищается и туда копируются **все** `.rpyc` из-под `game/` — не только из `generated/`, потому что метки framework тоже попадают в сейвы и rollback.
 
-Реальные кэши на диске — два: `build/rpyc-cache/0.1.0/` (**48 файлов**, 159 395 Б) и `build/rpyc-cache/0.1.4/` (**52 файла**, 190 269 Б). Состав свежего: `framework/00_core/*` (11 с учётом `engine_compat/`), `framework/20_ui/*` (9), `framework/90_debug/*` (2), `generated/registry/*` (10), `generated/scenes/ch01|ch90/*` (4), `generated/screens|state|version` (5), `gui.rpyc`, `options.rpyc`, `tl/{de,en,pseudo}/*` (9).
+**Каталога `build/` в чистом чекауте нет** (`.gitignore:20`), поэтому все «замеры на диске» про `build/rpyc-cache/` и `build/dist/` — снимок конкретной машины, а не свойство репозитория. На новой машине первый `vn package` честно скажет «первый релиз»: настоящий носитель линии имён — кэш GitHub Actions (`release.yml:71-76`).
 
-**Проблема: кэш ключуется версией, а не флейвором.** `save_dir = cache_root / version` (`cli.py:358`). Оба флейвора одной версии пишут в один каталог — кто собрался последним, тот и записал. Локально это значит, что после `release build --flavor patron` кэш 0.1.4 содержит patron-компиляцию, и следующий public-релиз восстановится из неё. Практических расхождений сегодня нет (исключение работает на уровне `build.classify`, а не на уровне набора `.rpy`), но гарантий тоже нет. CI обходит это своим слоем: `actions/cache` ключуется по флейвору — `key: rpyc-${{ matrix.flavor }}-${{ github.ref_name }}`, `restore-keys: rpyc-${{ matrix.flavor }}-` (`release.yml:71-76`).
+**Проблема: кэш ключуется версией, а не флейвором.** `save_dir = cache_root / version` (`cli.py:380`). Оба флейвора одной версии пишут в один каталог — кто собрался последним, тот и записал. Практических расхождений сегодня нет (исключение работает на уровне `build.classify`, а не на уровне набора `.rpy`), но гарантий тоже нет. CI обходит это своим слоем: `actions/cache` ключуется по флейвору — `key: rpyc-${{ matrix.flavor }}-${{ github.ref_name }}` (`release.yml:71-76`).
 
-**Второй наблюдаемый факт:** в локальном `build/rpyc-cache/` лежат `0.1.0` и `0.1.4`; версии 0.1.2–0.1.3 собирались в CI, не на этой машине. Восстановление берёт старший по semver каталог, то есть локально это `0.1.4` — но полной линии релизов на машине всё равно нет, настоящий носитель — кэш GitHub Actions.
+**Отдельная сущность, не путать: линия имён сейв-корпуса.** `ci/fixtures/rpyc-line/` — **52 `.rpyc`**, **единственные `.rpyc` в git** (негативное правило `.gitignore:12-14`). Ими управляют `_rpyc_line_restore` (`cli.py:1354`) и `_rpyc_line_snapshot` (`cli.py:1375`) вокруг `vn save corpus`, чтобы фикстуры в `ci/fixtures/saves/` (сейчас **две** — `schema1-demo.save` и `schema2-demo.save`) грузились детерминированно на любой машине. Подробности — [27-testing.md](27-testing.md).
 
-**Отдельный, не путать: линия имён сейв-корпуса.** `ci/fixtures/rpyc-line/` — **52 `.rpyc`** (183,9 КБ), **единственные `.rpyc` в git** (негативное правило `.gitignore:14`). Линия пересобрана 2026-08-08: было 34 файла, снятых ещё до появления галереи, ачивок и генерируемых UI-панелей. Ими управляют `_rpyc_line_restore` / `_rpyc_line_snapshot` (`cli.py:1130-1164`) вокруг `vn save corpus`, чтобы фикстуры в `ci/fixtures/saves/` (сейчас **две** — `schema1-demo.save` и `schema2-demo.save`) грузились детерминированно на любой машине. Подробности — [27-testing.md](27-testing.md).
-
-**Регрессионной джобы `rpyc-compat` не существует** (`../ARCHITECTURE.md:3508` называет её обязательным release-гейтом, скелет джобы — `:3602`). Ничто не проверяет, что перенос имён реально работает: нет ни workflow, ни флага. NOT IMPLEMENTED.
+**Регрессионной джобы `rpyc-compat` не существует.** Ничто не проверяет, что перенос имён реально работает: нет ни workflow, ни флага. NOT IMPLEMENTED.
 
 ---
 
-## 8. Версионирование
+## 9. Версионирование
 
 | Поле | Где | Правило | Кто проверяет |
 |---|---|---|---|
-| `version` | `project.yaml:2` | semver: патч — фиксы, **новая глава = minor**, мажор — сезон/сеттинг | схема `^\d+\.\d+\.\d+$`; `release.yml:47-54` сверяет с тегом (hard fail); `release.py:462-470` сверяет с `ci/release-manifest.json` (**только WARN**) |
-| `save_schema` | `project.yaml:3` | целое, бампает tech-lead при несовместимом изменении vars | схема `integer, minimum: 1`. Эмитится как `define vn_build_save_schema` в `game/generated/state/defaults.gen.rpy`; сравнение и миграции — `020_state.rpy:83-107`. **В гейте проверки нет** |
-| `min_tools` | `project.yaml:4` | минимальная версия `vn` для дерева контента | **никто** — сравнения с `vn.__version__` (`0.1.0`) в коде нет |
-| `renpy_sdk` | `project.yaml:5` | пин SDK (G18); апгрейд — отдельным PR с прогоном canary | только `vn doctor` (`doctor.py:124-140`). Продублирован руками как `RENPY_VERSION` в `ci.yml:13`, `nightly.yml:12`, `release.yml:19` — **автопроверки согласованности нет** |
-| `config.version` | генерат | `{version}+{git-short-sha}` (`compile.py:82-87`) | это, а не `build_id`, даёт имя архиву |
+| `version` | `project.yaml:2` | semver: патч — фиксы, **новая глава = minor**, мажор — сезон/сеттинг | схема `^\d+\.\d+\.\d+$`; `release.yml:47-54` сверяет с тегом (hard fail); `release.py:610-618` сверяет с `ci/release-manifest.json` (**только WARN**) |
+| `save_schema` | `project.yaml:3` | целое, бампает tech-lead при несовместимом изменении vars | схема `integer, minimum: 1`. Эмитится как `define vn_build_save_schema` в `game/generated/state/defaults.gen.rpy`; сравнение и миграции — `020_state.rpy`. **В гейте проверки нет** |
+| `min_tools` | `project.yaml:4` | минимальная версия `vn` для дерева контента | **никто** — сравнения с `vn.__version__` (`0.1.0`) в коде нет; `vn doctor` только печатает оба числа |
+| `renpy_sdk` | `project.yaml:5` | пин SDK (G18); апгрейд — отдельным PR с прогоном canary | только `vn doctor`. Продублирован руками как `RENPY_VERSION` в `ci.yml:26`, `nightly.yml`, `release.yml:19` — **автопроверки согласованности нет** |
+| `config.version` | генерат | `{version}+{git-short-sha}` (`compile.py:95-100`) | это, а не `build_id`, даёт имя архиву |
 | версия пака | `packs/<id>/manifest.yaml` | `^\d+\.\d+\.\d+$` | связи «бампнул ядро → бампни пак» нет |
-| версия `vn` | `tools/vn/pyproject.toml` и `tools/vn/src/vn/__init__.py:3` | `0.1.0`, продублирована руками | — |
+| версия `vn` | `tools/vn/pyproject.toml` и `tools/vn/src/vn/__init__.py` | `0.1.0`, продублирована руками | — |
 
-**Версия игры и версия тулинга независимы.** Игра — `0.1.4`, `vn --version` — `0.1.0`. Это не рассинхрон, это два разных счётчика.
+**Версия игры и версия тулинга независимы.** Игра — `0.1.5`, `vn --version` — `0.1.0`. Это не рассинхрон, это два разных счётчика.
 
-**Pre-release-теги невозможны.** Схема `project@1` требует `version` строго `^\d+\.\d+\.\d+$`, а гейт тега требует точного совпадения: `v1.0.0-rc1` не пройдёт ни там, ни там. Бета-канал из `../ARCHITECTURE.md` сегодня непредставим — NOT IMPLEMENTED.
+**Pre-release-теги невозможны.** Схема `project@1` требует `version` строго `^\d+\.\d+\.\d+$`, а гейт тега требует точного совпадения: `v1.0.0-rc1` не пройдёт ни там, ни там. Значит и «release candidate» у нас — не отдельная версия, а **состояние** (§13, стадия 8): та же `0.1.6`, выложенная в бета-ветку Steam.
 
-**Бамп `save_schema` — точка невозврата.** Игрок, который сохранился на новой схеме, не сможет играть на старой сборке: `after_load` увидит `_loaded_schema > _target_schema`, вызовет `renpy.block_rollback()`, покажет `ui.flow.save_from_newer` и сделает `renpy.full_restart()` (`020_state.rpy:83-93`). Понижать `save_schema` нельзя никогда, откатывать релиз с бампом — см. §12.
+**Бамп `save_schema` — точка невозврата.** Игрок, который сохранился на новой схеме, не сможет играть на старой сборке: `after_load` увидит `_loaded_schema > _target_schema`, вызовет `renpy.block_rollback()`, покажет `ui.flow.save_from_newer` и сделает `renpy.full_restart()` (`020_state.rpy`). Понижать `save_schema` нельзя никогда, откатывать релиз с бампом — §17.
 
 Ветки, теги и формат коммитов — [04-development-workflow.md](04-development-workflow.md) §3.
 
 ---
 
-## 9. Бюджеты G19
+## 10. Бюджеты: размерные G19 плюс память сцены
 
-Единственная реализация — `budget_failures()` (`release.py:29-54`), читает `project.yaml: budgets` (`:6-11`).
+`vn build` может упасть на бюджетах **двумя разными способами** — `_check_budgets()` (`cli.py:176-203`, вызовы на `cli.py:146` и `:156`) проверяет и размеры, и модель памяти образов.
 
-| Бюджет | Значение | Что меряется | Текущий факт |
+### 10.1 Размерные бюджеты (G19)
+
+Реализация — `budget_failures()` (`release.py:29-54`), читает `project.yaml: budgets` (`:57-65`).
+
+| Бюджет | Значение | Что меряется | Факт на 2026-08-18 |
 |---|---|---|---|
-| `assets_total_mb` | 500 | `game/assets/` | 0,14 МБ |
-| `generated_total_kb` | 2048 | `game/generated/` | 73 КБ |
-| `video_total_mb` | 300 | `game/assets/mov/` | 0,006 МБ |
-| `video_file_mb` | 40 | каждый `mov/**/*.webm` | 1 файл |
+| `assets_total_mb` | **20000** | `game/assets/` | десятки МБ |
+| `generated_total_kb` | **65536** | `game/generated/` | десятки КБ |
+| `video_total_mb` | **8000** | `game/assets/mov/` | < 1 МБ |
+| `video_file_mb` | **512** | каждый `mov/**/*.webm` | 1 файл |
 | `cold_start_s` | 30 | init → первая интеракция | **не в `budget_failures`** |
 
-**Где проверяются первые четыре:** `_check_budgets()` в `vn build` — и в `--check`, и в полном режиме (`cli.py:142`, `:152`, реализация `cli.py:172-180`; сообщения с префиксом `бюджет: …`, затем `_fail("бюджеты G19 превышены (project.yaml: budgets)")`) — и проверка №9 релизного гейта (`release.py:361`). Одна реализация на оба пути: гейт не может разойтись со сборкой.
+Комментарий в `project.yaml:58-60` объясняет, почему числа именно такие: это **предохранители от аварии** (зацикленный экспорт, забытый 8K-вариант), а не потолок игры — «8–15 ГБ качественного контента — норма жанра» (ADR-0012). Не оптимизируйте под них: они не узкое место, и упрутся сотнями глав позже, чем всё остальное.
 
-`video_file_mb` дополнительно передаётся в `videomod.validate_all(root, file_budget_mb=…)` (`release.py:342-343`), поэтому перевес одного `.webm` даёт **две** разные строки — в проверке №7 и в №9. Это не баг, просто не пугайтесь дубля.
+`video_file_mb` дополнительно передаётся в `videomod.validate_all(root, file_budget_mb=…)` (`release.py:473-474`), поэтому перевес одного `.webm` даёт **две** строки — в проверке №7 и в №9. Это не баг, просто не пугайтесь дубля.
 
-**`cold_start_s` — исключение.** Он проверяется только внутри `vn test smoke` (`cli.py:1386-1392`: `_fail(f"cold start {cold:.2f} c > бюджета {budget} c (G19)")`), который гоняют nightly и canary, но **не** `ci.yml` и **не** релизный workflow. Релиз может уехать за бюджет холодного старта. Комментарий `project.yaml:9` даёт ориентиры: CI-раннер на llvmpipe ~14 с, RTX ~1 с.
+### 10.2 Бюджет памяти сцены (ADR-0012)
 
-**Что делать при превышении:**
+Второй, менее известный fail-режим `vn build`: `assets.memory.analyze(root)` считает худшую сцену и сравнивает с бюджетом, выведенным из `render.image_cache_mb` и `render.cache_generations`. Провал → `_fail("бюджет памяти сцены превышен (project.yaml: render.image_cache_mb)")`.
+
+Живой вывод сборки на HEAD:
+
+```
+память: худшая сцена ch01_s030 — 28.5 Мпикс из 89.5 (масштаб @2)
+```
+
+Детальный разбор — отдельной командой (`cli.py:572-604`):
+
+```
+$ vn assets memory
+кэш образов: 1024 МБ -> 268 Мпикс; бюджет сцены 89.5 Мпикс (3 поколения), масштаб @2
+  ch01_s030           28.5 Мпикс    32%
+      ui+текстбокс                    4.17
+      bg rooftop/day                 11.11
+      mira (a)                        1.48
+      shot sunset                    11.79
+  …
+рекомендуемый render.image_cache_mb: 327
+память: OK
+```
+
+**Этого бюджета в релизном гейте нет** — только в `vn build`. На пути `vn release build` он всё равно исполняется (шаг 1), но при отдельном `vn release validate` — нет. Подробности модели — [16-assets.md](16-assets.md), [32-performance-and-scalability.md](32-performance-and-scalability.md).
+
+### 10.3 Что делать при превышении
 
 | Бюджет | Первое действие |
 |---|---|
-| `assets_total_mb` | `vn assets status`; лишние выходы удаляются как осиротевшие при `vn assets build` ([16-assets.md](16-assets.md) §6) |
+| `assets_total_mb` | `vn assets status`; лишние выходы удаляются как осиротевшие при `vn assets build` ([16-assets.md](16-assets.md)) |
 | `video_total_mb` / `video_file_mb` | поднять `crf` или укоротить луп ([21-video-generation.md](21-video-generation.md)); менять пресет, а не бюджет |
 | `generated_total_kb` | реальная причина — рост числа сцен; бюджет поднимается осознанно, вместе с ADR |
+| память сцены | `vn assets memory --top 10`: смотреть, какой слой съел бюджет; чаще всего это раздутый холст или лишний альфа-пиксель |
 | `cold_start_s` | `vn test smoke --picks 0,0` локально и профилирование init ([32-performance-and-scalability.md](32-performance-and-scalability.md)) |
 
 Поднятие числа в `project.yaml` — легальный, но **последний** ход, и он идёт отдельным коммитом с обоснованием, а не в составе релизного.
 
 ---
 
-## 10. CHANGELOG — PARTIALLY IMPLEMENTED
+## 11. CHANGELOG — PARTIALLY IMPLEMENTED
 
-`vn release changelog` (`cli.py:1471-1489` → `update_changelog()`, `release.py:142-179`). Флагов у команды нет.
+`vn release changelog` (`cli.py:1725-1743` → `update_changelog()`, `release.py:273-310`). Флагов у команды нет.
 
-1. `snapshot_content(root)` (`release.py:124-139`) обходит **только `content/chapters/`**, даёт `{ch_id: {status, scenes[]}}`.
+1. `snapshot_content(root)` (`release.py:255-270`) обходит **только `content/chapters/`**, даёт `{ch_id: {status, scenes[]}}`.
 2. Предыдущее состояние читается из `ci/release-manifest.json` (`.chapters`).
 3. Дифф: новые главы, новые сцены, удалённые сцены.
-4. Если что-то изменилось — блок вставляется сразу после первой строки `../CHANGELOG.md`:
-   ```markdown
-   ## 0.1.0
-
-   Новые главы: ch01
-   Новые сцены (3): ch01_s010, ch01_s020, ch01_s030
-   ```
+4. Если что-то изменилось — блок вставляется сразу после первой строки `../CHANGELOG.md`.
 5. `ci/release-manifest.json` перезаписывается целиком (`release_manifest@1`, `indent=1, sort_keys=True`).
-6. `stamp_id_registry()` (`release.py:99-121`) — append-only объединение в `content/registry/id_registry.json`. `_released_ids()` (`release.py:69-96`) собирает **только главы со `status: "release"`**; если released-сцен нет, возвращаются пустые списки и штамповать нечего.
+6. `stamp_id_registry()` (`release.py:126`) — append-only объединение в `content/registry/id_registry.json`. `_released_ids()` (`release.py:69`) собирает **только главы со `status: "release"`**; если released-сцен нет, штамповать нечего.
 
-**Реальность.** `ci/release-manifest.json` сейчас: версия `0.1.4`, одна глава `ch01` (`draft`, 3 сцены). `content/registry/id_registry.json` состоит из пустых массивов, потому что `ch01` — `draft`; страховка G7 инертна. В `../CHANGELOG.md` **сгенерирован ровно один блок** — `## 0.1.0` (`:36-39`); записи 0.1.1–0.1.4 написаны руками прозой для игрока. Утверждение `../ARCHITECTURE.md:3785` «никто не пишет changelog руками» на практике не выполняется — и это правильно: генератор умеет говорить только про главы и сцены, а 0.1.1–0.1.4 несли UI, галерею и фиксы.
+**Реальность.** `ci/release-manifest.json` сейчас: версия `0.1.5`, одна глава `ch01` (`draft`, 3 сцены). `content/registry/id_registry.json` состоит из пустых массивов, потому что `ch01` — `draft`; страховка G7 инертна. Проза для игрока в `../CHANGELOG.md` (включая большой раздел «Не выпущено») написана руками: генератор умеет говорить только про главы и сцены.
 
 **Ограничения (NOT IMPLEMENTED):** нет `--from <tag>`, нет `--audience player|internal`, нет диффа между git-тегами, нет пер-релизных `releases/<version>.yaml`. `snapshot_content` **не заглядывает в `packs/*/chapters/`** — глава `ch90` из `ep_beach` никогда не попадёт ни в манифест, ни в сгенерированный блок; для паков описание пишется руками.
 
-**Порядок:** сначала `vn release changelog`, потом дописывать прозу — иначе генератор вставит свой блок выше вашего текста в той же версии.
+**Порядок:** сначала `vn release changelog`, потом дописывать прозу — иначе генератор вставит свой блок выше вашего текста.
 
 ---
 
-## 11. CI/CD
+## 12. CI/CD
 
-Живой пайплайн — GitHub Actions: **4 workflow, 7 определений джоб** (на теге релизная `build` разворачивается матрицей в 2 прогона). Общее для всех: `actions/checkout@v4` с `with: {lfs: true}`, Python 3.12, установка тулчейна двумя шагами — `pip install --quiet -r tools/vn.lock` и следом `pip install --quiet -e "tools/vn[dev]"` (лок первым, G17: диапазоны `>=` из `pyproject.toml` к этому моменту уже удовлетворены, pip ничего не поднимает), `SDL_AUDIODRIVER: dummy`, `PYTHONIOENCODING: utf-8`, движок под `xvfb-run -a` (headless-режима у Ren'Py нет, G23). Везде, где джоба доходит до `vn build`, раньше него ставится `ffmpeg` — видео-ветка конвейера без него бросает `VideoError` (ADR-0006).
+Живой пайплайн — GitHub Actions: **4 workflow, 7 определений джоб** (на теге релизная `build` разворачивается матрицей в 2 прогона). Общее для всех: `actions/checkout@v4` с `with: {lfs: true}`, Python 3.12, установка тулчейна двумя шагами — `pip install --quiet -r tools/vn.lock` и следом `pip install --quiet -e "tools/vn[dev]"` (лок первым, G17), `SDL_AUDIODRIVER: dummy`, `PYTHONIOENCODING: utf-8`, движок под `xvfb-run -a` (headless-режима у Ren'Py нет, G23). Везде, где джоба доходит до `vn build`, раньше него ставится `ffmpeg`.
 
-**Оба этих инварианта — не соглашение, а тест.** `tools/vn/tests/test_ci_config.py` (4 теста) парсит YAML всех пяти конфигов и проверяет: (а) перед каждой editable-установкой идёт `pip install -r tools/vn.lock` — таких мест **8** (5 джоб GitHub + 3 джобы GitLab: строк с локом в `.gitlab-ci.yml` две, но `before_script` шаблона `.with-sdk` разворачивается и в `build`, и в `test`); (б) в каждой GitHub-джобе, которая зовёт `vn build` или `vn release build`, `ffmpeg` ставится раньше. GitLab из проверки (б) исключён намеренно — конфиг исторический и вне паритета.
+**Оба этих инварианта — не соглашение, а тест.** `tools/vn/tests/test_ci_config.py` (**7 тестов**) парсит YAML конфигов и проверяет в том числе: (а) перед каждой editable-установкой идёт `pip install -r tools/vn.lock`; (б) в каждой GitHub-джобе, которая зовёт `vn build` или `vn release build`, `ffmpeg` ставится раньше. GitLab из проверки (б) исключён намеренно — конфиг исторический и вне паритета.
 
 | Workflow | Триггер | Джобы | Ключевые шаги | Артефакты |
 |---|---|---|---|---|
-| `ci.yml` | push в `main`, любой PR | `lint`; `build-test` (needs `lint`) | `vn content lint`; кэш SDK `renpy-sdk-8.5.3-linux`; `vn build` → `vn loc keys --check` → `renpy.sh . lint` → `vn content compile --check` → `pytest tools/vn/tests -q` | `generated-<sha>` = `game/generated/`, 30 дней |
-| `nightly.yml` | cron `30 2 * * *`, dispatch | `smoke` | `vn build`; `vn loc import`; `vn loc report`; smoke-матрица из 4 прогонов; `vn save check` + `vn save corpus`; **`rm -rf game/generated` → `vn release build --flavor public` и `--flavor patron`** (`:70-74`) | `smoke-shots-<run_id>` = `.vncache/smoke/`, 7 дней, `if: always()` |
+| `ci.yml` | push в любую ветку, dispatch | `lint`; `build-test` (needs `lint`) | `vn content lint`; кэш SDK; `vn build` (`:80`) → `vn loc keys --check` (`:83`) → `renpy.sh . lint` (`:86`) → **`vn test oversample --scale 2`** (`:90-91`) → `vn content compile --check` (`:94`) → `pytest tools/vn/tests -q` (`:97`) | `generated-<sha>` = `game/generated/`, 30 дней |
+| `nightly.yml` | cron `30 2 * * *`, dispatch | `smoke` | `vn build`; `vn loc import`; `vn loc report`; smoke-матрица из 4 прогонов (`:57-60`); `vn save check` + `vn save corpus` (`:62-65`); **`rm -rf game/generated` → `vn release build --flavor public --package win` и то же для patron** (`:70-74`) | `smoke-shots-<run_id>` = `.vncache/smoke/`, 7 дней, `if: always()` |
 | `canary.yml` | cron `0 3 * * 1`, dispatch | `fresh-renpy` | берёт **самый свежий** Ren'Py с `renpy.org/latest.html`, подменяет `RENPY_SDK` через `$GITHUB_ENV`, гоняет `vn build` → `renpy.sh . lint` → `pytest` → `vn test smoke --picks 0,0` | — |
 | `release.yml` | push тега `v*` | `build` (matrix `flavor: [public, patron]`, `fail-fast: false`); `dmg`; `publish` | сверка тега с `project.yaml` (`:47-54`); кэш SDK; кэш `build/rpyc-cache` **на флейвор** (`:71-76`); `vn release build --flavor <f> --package win --package linux --package mac --timeout 1800` (+`--patron-token` из secrets только для patron) | `dist-public`, `dist-patron` (7 дней); `dmg`; GitHub Release |
 
-**Разделение публикации — политика CI, а не кода.** В GitHub Release уходит только `dist-public` + dmg (`release.yml:117-135`, `gh release create … --generate-notes --verify-tag`). `dist-patron` остаётся артефактом workflow на 7 дней для ручной раздачи по своим каналам. Скачали — раздали, через неделю артефакт исчезает.
+**Разделение публикации — политика CI, а не кода.** В GitHub Release уходит только `dist-public` + dmg (`release.yml:117-135`, `gh release create … --generate-notes --verify-tag`; маска поиска — `*.zip`, `*.tar.bz2`, `*.dmg`). `dist-patron` остаётся артефактом workflow на 7 дней для ручной раздачи по своим каналам.
 
-**`dmg` не требует движка:** macos-раннер берёт `*-mac.zip` из `dist-public`, распаковывает, находит `.app` и делает `hdiutil create -volname "VN" -format UDZO` (`release.yml:95-115`).
+**`dmg` не требует движка:** macos-раннер берёт `*-mac.zip` из `dist-public`, распаковывает, находит `.app` и делает `hdiutil create -volname "VN" -format UDZO` (`release.yml:95-115`). См. §7.1 о том, почему launcher сам dmg не отдаёт.
 
 **Долги CI, которые касаются релиза:**
 
-- `.gitlab-ci.yml` — 3 джобы (`lint`, `build`, `test`), **ни релиза, ни флейворов, ни LFS, ни ffmpeg, ни кэша `.rpyc`**. При этом `../../ci/README.md:6` до сих пор называет его «конфигом пайплайна». `../../CODEOWNERS:23` покрывает `/.gitlab-ci.yml` и **не покрывает `/.github/`** — релизный workflow формально ничей. Разбор — [04-development-workflow.md](04-development-workflow.md) §4.
-- ~~`nightly.yml` ставит только `xvfb libgl1` — без ffmpeg~~ — **закрыто**: `nightly.yml:32` и `canary.yml:33` ставят `ffmpeg` тем же шагом, что `ci.yml:49` и `release.yml:45`. Долг был не теоретическим — сырцы в `assets_src/video_src/` уже лежат, то есть ночной и еженедельный прогоны падали бы `VideoError`. Инвариант закреплён тестом `test_ffmpeg_installed_before_vn_build`.
-- ~~`tools/vn.lock` не читает ни одна джоба — G17 только на бумаге~~ — **закрыто**: лок ставится во всех 8 местах установки тулчейна (`ci.yml:30`, `:46`, `nightly.yml:29`, `canary.yml:30`, `release.yml:42`, `.gitlab-ci.yml:23`, `:37`) и **до** editable-установки. Остаток честный: в локе закреплены 18 прямых пакетов, транзитивные зависимости (например `pygments`) не пиннованы — полной воспроизводимости окружения это ещё не даёт. Инвариант закреплён тестом `test_lock_installed_before_editable`.
-- `canary.yml` не имеет `continue-on-error`: красный canary валит workflow. Это строже, чем `allow_failure: true` из `../ARCHITECTURE.md:3596`, и это осознанное расхождение.
+- `.gitlab-ci.yml` — 3 джобы (`lint`, `build`, `test`), **ни релиза, ни флейворов, ни LFS, ни ffmpeg, ни кэша `.rpyc`**. `../../CODEOWNERS` покрывает `/.gitlab-ci.yml` и **не покрывает `/.github/`** — релизный workflow формально ничей.
+- `canary.yml` не имеет `continue-on-error`: красный canary валит workflow. Это строже, чем `allow_failure: true` из `../ARCHITECTURE.md`, и это осознанное расхождение.
 - Не существует ни одной из джоб `rpyc-compat`, `screens`, `nightly-paths`, `nightly-perf`, `steam-publish`, матрицы `PLATFORM: [win, mac, linux, android]` и шага `vn validate --budgets --dist dist/` — всё NOT IMPLEMENTED (команды `vn validate` нет вовсе).
+- **QA на живом железе не автоматизировано ничем**: ни Windows-, ни mac-, ни Deck-прогона в CI нет; всё это стадии 5-7 §13, и все они ручные.
 
 ---
 
-## 12. Steam и магазины — PARTIALLY IMPLEMENTED
+## 13. Сквозной маршрут релиза: девять стадий
 
-Полная страница платформенного слоя — [39-platforms.md](39-platforms.md) ([ADR-0014](../adr/0014-platform-services.md)); здесь — только релизная часть.
+Здесь собран практический путь целиком. Стадии 1-3 автоматизированы, 4-9 — процесс, и часть его сегодня **невозможна** (нет App ID и физического Deck) — это помечено явно.
 
-`vn release steam --flavor <f> [--branch <b>]` (`cli.py:1819-1852`) **реализована**: рендерит `build/steam/app_build_<flavor>.vdf` из шаблона `../../ci/steam/app_build.vdf.tmpl` по номерам из `project.yaml: platform.steam.{appid,depots}` и распаковывает зипы `build/dist/<version>-<flavor>/` в раскладку депотов `build/steam/content/<flavor>/<platform>/` (`release.py:151-252`). Проверка владения DLC тоже ожила: провайдер ставится в `game/framework/00_core/035_platform.rpy:75` при живом Steam, маппинг — `steam_dlc_appid` в манифесте пака.
+Общее условие для всего, что дальше стадии 2: `export RENPY_SDK=/путь/к/renpy-8.5.3-sdk` и зелёный `vn doctor` (8 PASS: Python, git, git-lfs, корень репозитория, `project.yaml`, реестр схем — 39, шрифты UI 3/3, пин SDK 8.5.3).
 
-Чего по-прежнему нет:
+### Стадия 1. Development
+
+| | |
+|---|---|
+| **Команда** | `vn dev` (watch + запущенная игра, ассеты в `draft`) либо `vn build` + `vn play` |
+| **Условия** | `RENPY_SDK`; для `vn play` — непустой `game/generated/manifest.json` |
+| **Expected output** | `vn build`: `assets: … собрано, … из кэша, N актуально, … осиротевших удалено` → `generated: N записано, M без изменений, K осиротевших удалено` → `память: худшая сцена <id> — X Мпикс из Y (масштаб @2)` → зелёное `build: OK`. `vn dev`: `игра запущена; watch активен`, дальше на каждую правку `content изменился — компиляция… / готово — Shift+R в игре` |
+| **Типичные ошибки** | `lint: N ошибок — сборка остановлена` (диагноз — в строках `error:` выше); `внутренняя ошибка компилятора: KeyError…` (битый YAML прошёл мимо линта — прогоните `vn content lint`); `бюджеты G19 превышены`; `бюджет памяти сцены превышен`; `game/generated/ пуст — сначала vn build` от `vn play` |
+| **Как проверить** | глазами в игре (Shift+R перезагружает); `vn content compile --check` → `check: генерат свеж` |
+| **Грабля стадии** | `vn dev` собрал ассеты в `draft` → следующий `vn build --check` красный «источник изменился». Перед push всегда один полный `vn build` (§2) |
+
+### Стадия 2. Local QA
+
+Всё, что CI делает на push, плюс то, чего CI не делает. Порядок — от дешёвого к дорогому.
+
+| Команда | Expected output (проверено на HEAD) | Что ловит |
+|---|---|---|
+| `vn content lint` | `lint: 0 ошибок, 0 предупреждений` | схемы, графы, id, LFS-покрытие бинарей |
+| `vn loc keys --check` | `loc keys --check: все строки с id, ledger свеж` | say-id и ledger разошлись с текстом (G8) |
+| `vn content compile --check` | `check: генерат свеж` | несвежий генерат, разметка переводов, бюджеты |
+| `python -m pytest tools/vn/tests -q` | `254 passed` | тулинг; **из venv проекта** — системный python без `yaml`/`blake3` даст ошибки коллекции |
+| `bash "$RENPY_SDK/renpy.sh" . lint` | движковый отчёт без ошибок | то, что видит только Ren'Py: битые метки, отсутствующие образы |
+| `vn test oversample --scale 2` | `oversample: OK` | что 4K-варианты реально подхватываются движком (ADR-0012) |
+| `vn loc report` | `de: 130/130 (100%), fuzzy: 0` и так для каждого языка | покрытие переводов (гейт — не здесь, а в `release validate`) |
+| `vn voice validate` | `voice: OK (драфтов: 14, непокрыто: 0)` | дыры в озвученных главах — будущий FAIL гейта |
+| `vn pack validate` | ` ✓ ep_beach: dlc v1.0.0, api_level [1, 2) (фасад 1)` … `pack validate: OK (2 паков)` | несовместимый пак |
+| `vn save check` | ` ✓ schema1-demo.save: schema 1, версия 0.1.4+dd1cb3e, сцена ch01_s010` … `save check: OK (2 фикстур)` | структура фикстур (оффлайн, без движка) |
+| `vn save corpus` | `линия имён: 52 .rpyc восстановлено из ci/fixtures/rpyc-line/ (G6)` → по фикстуре ` ✓ …: OK: …; schema после загрузки: 2 (цель 2)` → `save corpus: OK (2 фикстур загружены и мигрированы)` | что старые сейвы грузятся и миграции доводят схему |
+| `vn test smoke --picks 0,0` | `скриншоты: N -> …/.vncache/smoke` → `cold start (init -> первая интеракция): X.XX c` → `путь: …` → `smoke: OK: vn_end_of_content (N скриншотов)` | прохождение целиком + **единственная** проверка `cold_start_s` |
+
+**Типичные ошибки стадии.** `smoke: игра упала с traceback` (хвост `traceback.txt` печатается тут же); `smoke: игра не завершилась за N c — прогон снят`; `cold start X c > бюджета 30 c (G19)`; `save corpus: N фикстур не прошли` (почти всегда — забытая миграция после бампа `save_schema`); `языка 'xx' нет в game/tl/ — выполните vn loc import`.
+
+**Как проверить результат.** Скриншоты в `.vncache/smoke/` смотрят **глазами**: ни один автотест не видит сплющенную панель или обрезанный текст.
+
+### Стадия 3. Build
+
+| | |
+|---|---|
+| **Команда** | `vn release build --flavor public --package win --package linux --package mac --timeout 1800` (и то же для `patron`, при необходимости с `--patron-token`) |
+| **Условия** | `RENPY_SDK`; чистое дерево; для полноценной линии имён — `build/rpyc-cache/<прошлая версия>/` или кэш CI |
+| **Expected output** (по коду `cli.py:1762-1816`, `cli.py:301-393`) | `сборка перед гейтом (флейвор public)…` → вывод `vn build` → 19-20 строк гейта → `build-id: 0.1.6+<sha>.public.<YYYYMMDDHHMM>` → `rpyc-перенос: N файлов из релиза <ver> (G6, с перезаписью)` **или** `rpyc-перенос: кэша прошлых релизов нет (первый релиз)` → `distribute win, linux, mac -> build/dist/0.1.6-public …` → `rpyc-кэш релиза: N файлов -> build/rpyc-cache/0.1.6/` → `package: OK — <файлы>` → `release build: OK — <build_id> -> build/dist/0.1.6-public/` |
+| **Типичные ошибки** | `Ren'Py SDK не найден (RENPY_SDK)`; `release build --flavor public: гейт не пройден` (смотрите строку FAIL); `rpyc-перенос: кэш … есть, но не восстановлено ни одного .rpyc` (кэш от другой раскладки — удалите каталог); `renpy compile упал:` / `distribute упал:` с хвостом лога SDK |
+| **Как проверить** | `cat build/dist/0.1.6-public/build-info.json` — `flavor`, `version`, `sha`, `exclude`; затем состав архива скриптом из «Проверки» ниже: внутри обязан быть `game/build_id.json`, не должно быть `90_debug/` и `tl/pseudo/`, должен быть `THIRD-PARTY-NOTICES.md` |
+| **Что получится** | `vn-<ver>-win.zip`, `vn-<ver>-linux.tar.bz2`, `vn-<ver>-mac.zip` (dmg — нет, §7.1) |
+
+### Стадия 4. Steam test branch — **BLOCKED сегодня** (нет приложения в Steamworks)
+
+| | |
+|---|---|
+| **Команда** | `vn release steam --flavor public --branch beta`, затем `steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit` |
+| **Условия** | `platform.steam.appid` ≠ `null` **и** непустой `platform.steam.depots` в `project.yaml`; `ci/steam/app_build.vdf.tmpl`; собранный `build/dist/<version>-public/`; steam_api-библиотеки в `$RENPY_SDK/lib/py3-*/`; ветка `beta` **заранее создана в Steamworks** |
+| **Expected output при успехе** | предупреждения о ненайденных депотах/библиотеках, затем `steam: build/steam/app_build_public.vdf готов; платформы: windows, linux, mac; аплоад: steamcmd +run_app_build (README)` (`cli.py:1850-1852`). В списке платформ будут ровно те, у которых объявлен депот |
+| **Что мешает сегодня** | 1) в `project.yaml:13-15` только `appid: null` — команда падает `ошибка: platform.steam.appid не задан в project.yaml` (exit 1, проверено 2026-08-18); 2) ключа `depots` в файле нет вообще → после заполнения одного `appid` придёт второе исключение `platform.steam.depots пуст`. Это два **редактирования данных**, а не правки кода: раскладка депотов сама по себе рабочая и понимает форматы всех трёх платформ (§14.2). 3) Дальше в силе остаются внешние блокеры: steam_api-редистрибутивов Valve на build-машине нет, аплоад запускает человек, ветку `beta` нужно создать в Steamworks заранее, и ни один прогон на живом Steam/Deck ещё не делался. Релизное следствие механики: **любая** ошибка staging = `_fail("steam: контент депотов не собран")` **до** записи VDF (`cli.py:1843-1846`) — промежуточных состояний не бывает |
+| **Как проверить** | `ls build/steam/` → `app_build_public.vdf` + `content/public/<platform>/`; открыть VDF и убедиться, что `AppID`, `SetLive` и номера депотов те, что нужно |
+
+### Стадия 5. Steam Deck QA — частично, физического Deck нет
+
+| | |
+|---|---|
+| **Команда (эмуляция вёрстки)** | `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` |
+| **Почему работает** | `vn test smoke` наследует окружение процесса (`cli.py:1538`: `env = dict(os.environ, VN_AUTOPILOT="1", …)`), а движок читает `RENPY_VARIANT` в `renpy/main.py:158-159` |
+| **Тонкость, о которой легко забыть** | `RENPY_VARIANT` **заменяет** `config.variants` целиком (`main.py:159`: список из переменной + `[None]`). То есть штатных `pc`/`large`/`desktop` в прогоне не будет — это эмуляция набора вариантов, а не эмуляция Deck |
+| **Expected output** | обычный `smoke: OK: vn_end_of_content (N скриншотов)`; ценность — в самих скриншотах: масштаб интерфейса 1.4, фуллскрин, ничего не срезано |
+| **Чего этот прогон НЕ проверяет** | реального геймпада (событий `pad_*` в автопилоте нет), Steam-инициализации, оверлея, `dlc_installed`, экранной клавиатуры Deck |
+| **Статус живого прогона** | **не проверялось** — физического Steam Deck нет; прогон на нём перед `setlive default` объявлен обязательным в `../../ci/steam/README.md` и остаётся невыполненным пунктом |
+
+Ещё один вариант той же стадии — `RENPY_VARIANT="steam_big_picture" vn test smoke --picks 0,0`: проверяет, что оверлеи отъехали от кромки на `gui.overscan_pad` ([39-platforms.md](39-platforms.md) §8).
+
+### Стадия 6. Windows QA — ручная
+
+| | |
+|---|---|
+| **Что делать** | распаковать `vn-<ver>-win.zip`, запустить `.exe`, пройти демо-главу, открыть галерею, историю, настройки, сменить язык, сохранить/загрузить |
+| **Условия** | машина с Windows; артефакт из стадии 3 либо скачанный `dist-public` из `release.yml` |
+| **Что смотреть** | `flavor` в вотермарке (для patron), отсутствие консоли и Shift+J (dev-зона вырезана), сейв грузится, `log.txt` рядом с игрой без строк `error` |
+| **Автоматизации нет** | ни джобы, ни команды: `vn test smoke` гоняет игру из чекаута, а не из дистрибутива |
+| **Известный пробел** | артефакт **не подписан** (нет `signtool` нигде в репозитории) — SmartScreen покажет предупреждение при первом запуске. Это RECOMMENDED FUTURE STATE, не текущее поведение |
+| **Статус** | **не проверялось на этой машине** (darwin arm64) |
+
+### Стадия 7. Mac / Linux QA — ручная
+
+| | |
+|---|---|
+| **macOS** | распаковать `vn-<ver>-mac.zip`, запустить `.app`. Сборка **не подписана и не нотаризована**: `build.mac_identity` в `game/options.rpy` не задан, поэтому launcher даже dmg не делает (§7.1), а Gatekeeper будет ругаться на первый запуск. dmg из `release.yml:95-115` — обычный `hdiutil`, подписи в нём тоже нет |
+| **Linux** | распаковать `vn-<ver>-linux.tar.bz2` (**не zip**), запустить `.sh`. На Deck поедет именно этот пакет |
+| **Что смотреть** | старт без окна ошибки, шрифты (не «тофу»), звук, сейв/загрузка, `log.txt` |
+| **Автоматизации нет** | единственная mac-джоба в CI (`dmg`) движок не запускает — она только упаковывает |
+| **Статус** | **не проверялось**: mac-пакет на этой машине не собирался, Linux-машины нет |
+
+### Стадия 8. Release candidate
+
+RC у нас — **состояние, а не версия**: pre-release-теги запрещены схемой (§9). Практически это значит:
+
+1. `project.yaml: version` уже бампнут до целевого (`0.1.6`), `vn release changelog` прогнан, проза дописана.
+2. Оба флейвора собраны локально и прошли стадии 5-7 на том железе, которое доступно.
+3. Артефакт выложен в **бета-ветку** Steam (`--branch beta`) или роздан узкому кругу как `dist-patron`.
+4. Тег **ещё не поставлен**: тег запускает публикацию, поэтому он — последний шаг, а не первый.
+
+Expected state перед переходом дальше: `git status --short` пуст, `vn release validate` зелёный по обоим флейворам, чеклист §15 закрыт.
+
+### Стадия 9. Steam release
+
+| | |
+|---|---|
+| **Команды** | `git tag v0.1.6 && git push --follow-tags` (→ GitHub Release), затем для Steam — `vn release steam --flavor public` + `steamcmd … +run_app_build …` и **вручную в Steamworks**: переключить default-ветку |
+| **Условия** | зелёный `release.yml`; ветка `beta` проверена; App ID и депоты заполнены |
+| **Expected output** | в GitHub — Release с `*-win.zip`, `*-linux.tar.bz2`, `*-mac.zip`, `*.dmg`; артефакты `dist-public`/`dist-patron` живут 7 дней |
+| **Типичные ошибки** | `::error::тег v0.1.6 != project.yaml version 0.1.5` (первый шаг workflow, `release.yml:47-54`); `::error::mac-zip не найден среди артефактов` (собрали без `--package mac`); `steam: контент депотов не собран` |
+| **Чего нет** | джобы `steam-publish`, каналов `dev/beta/release` как сущностей конвейера, Steam-префлайта в гейте (§14) |
+| **Статус** | Steam-часть — **не выполнялась**: приложения в Steamworks нет |
+
+---
+
+## 14. Steam и магазины — PARTIALLY IMPLEMENTED
+
+Полная страница платформенного слоя — [39-platforms.md](39-platforms.md) ([ADR-0014](../adr/0014-platform-services.md)); Steamworks-процесс (App ID, депоты, SteamPipe, ачивки, ветки, Cloud) — [40-steamworks.md](40-steamworks.md); предрелизная приёмка — [43-steam-qa.md](43-steam-qa.md); здесь только релизная часть.
+
+`vn release steam --flavor <f> [--branch <b>]` (`cli.py:1819-1852`) **реализована**: рендерит `build/steam/app_build_<flavor>.vdf` из шаблона `../../ci/steam/app_build.vdf.tmpl` по номерам из `project.yaml: platform.steam.{appid,depots}` и распаковывает зипы `build/dist/<version>-<flavor>/` в раскладку депотов `build/steam/content/<flavor>/<platform>/` (`release.py:153-252`).
+
+### 14.1 Чего нет
 
 | Что | Статус |
 |---|---|
 | Аплоад | **ручной** — `steamcmd +login … +run_app_build … +quit`; credentials вне репозитория, джобы `steam-publish` не существует |
-| Каналы `dev`/`beta`/`release` как сущности конвейера | NOT IMPLEMENTED. `--branch beta` — это только строка `"SetLive"` в VDF; теги `vX.Y.Z-rcN` невозможны: `project@1` требует `^\d+\.\d+\.\d+$` (`release.yml:47-54`) |
-| Steam-проверки в релизном гейте | нет ни одной из 19; всё платформенное валидируется внутри `vn release steam` и в `tools/vn/tests/test_platform.py` |
-| Депот отдельного пака/DLC как товара | NOT IMPLEMENTED — `vn pack build` кладёт в zip только манифест и сцены ([30](30-packs-and-dlc.md) §7.2) |
+| Каналы `dev`/`beta`/`release` как сущности конвейера | NOT IMPLEMENTED. `--branch beta` — это только значение `"SetLive"` в VDF; ветка обязана существовать в Steamworks, иначе публикация в неё не произойдёт; теги `vX.Y.Z-rcN` невозможны (§9) |
+| Steam-проверки в релизном гейте | нет ни одной из 20; всё платформенное валидируется внутри `vn release steam` и в `tools/vn/tests/test_platform.py` (10 тестов) |
+| Депот отдельного пака/DLC как товара | NOT IMPLEMENTED — и дело не только в `vn pack build`: схема `project@1` разрешает в `platform.steam.depots` **ровно** ключи `windows`/`linux`/`mac` при `additionalProperties: false`, то есть номер DLC-депота сегодня физически некуда положить ([30-packs-and-dlc.md](30-packs-and-dlc.md) §7.3) |
 | steam_api-библиотеки в репозитории | и не будет: редистрибутив Valve ставится лаунчером в `$RENPY_SDK/lib/py3-*/`. Их отсутствие — `warning`, сборка остаётся валидной (просто standalone) |
 
-**Что придётся сделать руками сегодня, если релиз выкладывается в Steam или куда-то кроме GitHub:**
+### 14.2 Раскладка депотов: форматы архивов по платформам
+
+**STATUS: IMPLEMENTED.** `steam_stage_content` знает, что launcher distribute отдаёт **разные
+форматы**: win — `zip`, linux — `tar.bz2`, mac — `app-zip` (`00build.rpy:421-432`). Карта
+`_DIST_SUFFIX` (`release.py:159-163`) держит для каждой платформы суффикс имени и расширения по
+приоритету, `_extract_archive` (`:174-184`) распаковывает zip или tar.bz2 по фактическому типу
+файла; `.dmg` игнорируется намеренно (кроссплатформенно не распаковать, `app-zip` несёт то же).
+Ожидаются только платформы **с объявленным депотом** в `platform.steam.depots` — собирать все три
+ради одного депота незачем. Разбор по коду и тесты на реальные архивы —
+[40-steamworks.md](40-steamworks.md) §4.3.
+
+Релизное следствие механики никуда не делось: **промежуточных состояний нет.** Любая ошибка
+staging (нет `build/dist/`, нет артефакта у платформы с депотом) даёт
+`_fail("steam: контент депотов не собран")` **до** записи VDF (`cli.py:1843-1846`) — либо все
+объявленные депоты и VDF, либо exit 1 и ничего, а `steamcmd` без VDF бесполезен. Что остаётся
+непроверенным: раскладка ни разу не проходила через реальный SteamPipe, и каталог-обёртку внутри
+архива (`prepend_directory` в `distribute.rpy:1581`) придётся сверить с путём запуска в Steamworks
+на первой же загрузке.
+
+### 14.3 Что придётся сделать руками сегодня
 
 1. `vn release build --flavor public --package win --package linux --package mac` локально или скачать `dist-public` из `release.yml`.
 2. Проверить `build/dist/<version>-public/build-info.json`: `flavor`, `version`, `sha`, `exclude`.
-3. Распаковать zip нужной платформы, убедиться, что внутри есть `game/build_id.json` (иначе флейвор не применится — §3).
-4. Для Steam — `vn release steam --flavor public [--branch beta]`, затем `steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit`. Для остальных витрин архивы заливаются их собственным загрузчиком (itch и т. п.).
+3. Распаковать архив нужной платформы, убедиться, что внутри есть `game/build_id.json` (иначе флейвор не применится — §4).
+4. Для Steam — `vn release steam --flavor public [--branch beta]`, затем `steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit`. Что нужно заполнить в `project.yaml`, чтобы команда вообще дошла до раскладки, — §14.1. Для остальных витрин архивы заливаются их собственным загрузчиком (itch и т. п.).
 5. Описание релиза собрать из `../CHANGELOG.md` руками — `--audience player` не существует.
-6. Для patron-канала брать `dist-patron` и раздавать напрямую; вотермарка с `build_id` и меткой `patron_tag` уже в кадре. Сам токен в архив не попадает (ADR-0011) — сопоставление «метка → получатель» считается на вашей стороне.
+6. Для patron-канала брать `dist-patron` и раздавать напрямую; вотермарка с `build_id` и меткой `patron_tag` уже в кадре. Сам токен в архив не попадает (ADR-0011).
 
-Пак как отдельный товар (`vn pack build`) — [30-packs-and-dlc.md](30-packs-and-dlc.md); напомню, что зип пака содержит только манифест и скомпилированные сцены, без ассетов и переводов.
+Пак как отдельный товар (`vn pack build`) — [30-packs-and-dlc.md](30-packs-and-dlc.md); зип пака содержит только манифест и скомпилированные сцены, без ассетов и переводов.
 
 ---
 
-## 13. PRE-RELEASE CHECKLIST
+## 15. RELEASE CHECKLIST
 
-Выполняется на чистом `main`, до коммита версии. Все пункты — команды этого проекта.
+Выполняется на чистом `main`, до релизного коммита. Здесь только то, что реально необходимо; пункты, которые сегодня выполнить нельзя, помечены явно.
 
-**Окружение**
+**Окружение и дерево**
 
-- [ ] `export RENPY_SDK=…`; `vn doctor` — 8 PASS, 0 FAIL (в том числе пин SDK 8.5.3 и шрифты без LFS-указателей)
+- [ ] `export RENPY_SDK=…`; `vn doctor` — **8 PASS, 0 FAIL** (Python, git, git-lfs, корень, `project.yaml`, 39 схем, шрифты 3/3, пин SDK 8.5.3)
 - [ ] `git status --short` пуст: ничего из `game/generated|assets|tl`, никаких локальных правок
+- [ ] Последняя сборка ассетов была **полной**, не `draft` (после `vn dev` — один `vn build`)
 
-**Содержимое**
+**Содержимое и тулинг**
 
-- [ ] `vn build` — `build: OK`
-- [ ] `vn content lint` — 0 ошибок
+- [ ] `vn build` — `build: OK` (и строка `память: худшая сцена … из …` в рамках)
+- [ ] `vn content lint` — `0 ошибок`
 - [ ] `vn content compile --check` — `check: генерат свеж`
-- [ ] `python -m pytest tools/vn/tests -q` — 253 passed (с заданным `RENPY_SDK`; без него и ffmpeg часть тестов молча скипается — см. 27-testing.md §1)
-- [ ] `vn loc keys --check` — say-id и ledger свежи (G8)
+- [ ] `python -m pytest tools/vn/tests -q` — **254 passed** (из venv проекта: `tools/vn/.venv/bin/python`; с системным python часть тестов не соберётся)
+- [ ] `bash "$RENPY_SDK/renpy.sh" . lint` — движковый lint чист
+- [ ] `vn test oversample --scale 2` — `oversample: OK`
+- [ ] `vn loc keys --check` — `все строки с id, ledger свеж`
 - [ ] `vn loc report` — все несинтетические языки ≥ 98 % (порог `loc/loc.yaml: release_coverage_min`)
-- [ ] `vn pack validate` — все паки совместимы с фасадом `vn.*` (`api_level`, `requires.core`)
+- [ ] `vn voice validate` — `непокрыто: 0` (иначе гейт даст FAIL, §5.2)
+- [ ] `vn pack validate` — все паки совместимы с фасадом `vn.*`
 
-**Рантайм** (`ci.yml` этого не гоняет)
+**Сейвы (G5/G6)**
 
+- [ ] `vn save check` — `save check: OK (2 фикстур)`
+- [ ] `vn save corpus` — все фикстуры дают `schema после загрузки: <save_schema> (цель <save_schema>)`
+- [ ] Если бампался `save_schema` — миграция написана, добавлена в `content/migrations/registry.yaml`, свежая фикстура положена через `vn save corpus --add`
 - [ ] `vn test smoke --picks 0,0` — `OK: vn_end_of_content`, cold start в бюджете 30 с
-- [ ] `vn save check` и `vn save corpus` — обе фикстуры грузятся, миграции доводят схему до `project.yaml: save_schema` (`schema1-demo` обязан дать «schema после загрузки: 2 (цель 2)», а в `log.txt` — строку `[vn] migration 0002`)
-- [ ] Если бампался `save_schema` — миграция написана, добавлена в `content/migrations/registry.yaml`, свежая фикстура положена через `vn save corpus --add` ([07-backend.md](07-backend.md))
 
-**Релиз**
+**Гейт и сборка**
 
-- [ ] `vn release validate --flavor public` — 0 FAIL (16 строк PASS)
-- [ ] `vn release validate --flavor patron` — 0 FAIL (17 строк)
+- [ ] `vn release validate --flavor public` — **0 FAIL** (сегодня это 19 строк, одна из них штатный WARN про черновые дубли)
+- [ ] `vn release validate --flavor patron` — 0 FAIL (20 строк)
 - [ ] `vn release build --flavor public --package win` прошёл локально хотя бы раз за цикл
-- [ ] Главы, которые считаются выпущенными, переведены в `status: release` (иначе `id_registry.json` останется пустым и G7 не сработает)
+- [ ] Состав архива проверен: есть `game/build_id.json` и `THIRD-PARTY-NOTICES.md`, нет `90_debug/` и `tl/pseudo/`
+
+**Прогоны вариантов и живое железо**
+
+- [ ] `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` — скриншоты просмотрены **глазами**
+- [ ] `RENPY_VARIANT="steam_big_picture" vn test smoke --picks 0,0` — оверлеи не срезаны кромкой
+- [ ] Windows-артефакт запущен на живой Windows — **не автоматизировано; на этой машине невозможно**
+- [ ] mac/Linux-артефакты запущены — **не автоматизировано; mac-сборка на этой машине не проверялась, Linux-машины нет**
+- [ ] Прогон на физическом Steam Deck — **невозможно сегодня: устройства нет** (требование `ci/steam/README.md` перед `setlive default`)
+
+**Версии и документы**
+
+- [ ] `project.yaml: version` бампнут по политике (новая глава = **minor**, фиксы = patch) и **не равен уже существующему тегу** (`git tag -l`)
+- [ ] `save_schema` бампнут ровно тогда, когда менялись `vars` несовместимо — и никогда не понижен
 - [ ] `vn release changelog` прогнан, проза для игрока дописана **после** него
-- [ ] `project.yaml: version` бампнут по политике: новая глава = **minor**, фиксы = patch
 - [ ] `ci/release-manifest.json` в коммите (иначе гейт даст WARN о расхождении версий)
+- [ ] Главы, которые считаются выпущенными, переведены в `status: release` (иначе `id_registry.json` останется пустым и G7 не сработает)
+
+**Steam и публикация**
+
+- [ ] Депоты и ветка Steam: `platform.steam.appid` + `depots` заполнены, ветка `beta` создана в Steamworks — **сегодня невозможно: App ID нет** ([40-steamworks.md](40-steamworks.md))
+- [ ] `vn release steam --flavor public` даёт VDF и раскладку без `error` — **в этом чекауте недостижимо**: `platform.steam.appid: null` и ключа `depots` нет, команда останавливается на первом шаге (§14.1). Сама раскладка депотов рабочая и знает форматы всех платформ (§14.2)
+- [ ] Тег `v<version>` совпадает с `project.yaml: version`; `git push --follow-tags` запускает `release.yml`
+- [ ] После зелёного workflow: GitHub Release проверен, `dist-patron` скачан (артефакт живёт **7 дней**)
 
 ---
 
-## 14. RELEASE RUNBOOK
+## 16. RELEASE RUNBOOK
 
-Пошагово, от «глава готова» до опубликованного релиза.
+Пошагово, от «глава готова» до опубликованного релиза. Версии в примере — фактические: `0.1.5` уже выпущена, значит цель — `0.1.6`.
 
 ```bash
 # 0. Чистый main, SDK на месте
 git switch main && git pull && git status --short
-export RENPY_SDK="C:/Users/Vadim/renpy-sdk/renpy-8.5.3-sdk"
-vn doctor
+export RENPY_SDK=/путь/к/renpy-8.5.3-sdk
+vn doctor                             # 8 PASS
 
 # 1. Поднять статус выпускаемых глав (граф-проверки станут строгими, G15)
 #    content/chapters/chNN_*/chapter.yaml -> status: release
-vn content lint            # должно остаться 0 ошибок
+vn content lint                       # должно остаться 0 ошибок
 
-# 2. Полный круг проверок
+# 2. Полный круг проверок (стадия 2 из §13)
 vn build
 vn loc keys --check
 vn content compile --check
-python -m pytest tools/vn/tests -q
+python -m pytest tools/vn/tests -q    # 254 passed
+bash "$RENPY_SDK/renpy.sh" . lint
+vn test oversample --scale 2
+vn voice validate
+vn pack validate
 vn test smoke --picks 0,0
 vn save check && vn save corpus
 
-# 3. Changelog и манифест (ДО правки версии — генератор берёт version из project.yaml,
-#    поэтому бампайте версию сразу после и перезапустите команду, если блок уже вставлен)
+# 3. Changelog и манифест (ДО правки версии — генератор берёт version из project.yaml)
 vn release changelog
 #    вручную: docs/CHANGELOG.md — 2-5 предложений для игрока
-#    вручную: project.yaml: version -> 0.1.5
+#    вручную: project.yaml: version -> 0.1.6
 
 # 4. Гейт по обоим флейворам
 vn release validate --flavor public
 vn release validate --flavor patron
 
-# 5. Локальная контрольная сборка (необязательно, но ловит проблемы distribute до тега)
+# 5. Контрольная сборка (ловит проблемы distribute до тега)
 vn release build --flavor public --package win
-ls build/dist/0.1.5-public/            # vn-0.1.5+<sha>-win.zip + build-info.json
-#    содержимое архива проверяется скриптом из раздела «Проверка» ниже
+ls build/dist/0.1.6-public/           # vn-0.1.6+<sha>-win.zip + build-info.json
 
-# 6. Релизный коммит — ровно три файла
+# 6. Прогоны вариантов (скриншоты смотреть глазами)
+RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0
+RENPY_VARIANT="steam_big_picture" vn test smoke --picks 0,0
+
+# 7. Релизный коммит — ровно три-четыре файла
 git add project.yaml docs/CHANGELOG.md ci/release-manifest.json content/registry/id_registry.json
-git commit -m "release: 0.1.5 — <итог одной строкой>"
+git commit -m "release: 0.1.6 — <итог одной строкой>"
 
-# 7. Тег и пуш
-git tag v0.1.5
-git push --follow-tags                 # -> release.yml: гейт тега -> build x2 -> dmg -> publish
+# 8. Тег и пуш
+git tag v0.1.6
+git push --follow-tags                # -> release.yml: гейт тега -> build x2 -> dmg -> publish
 
-# 8. После зелёного workflow
+# 9. После зелёного workflow
 #    - GitHub Release создан, в нём только public-архивы + dmg
 #    - dist-patron скачать из артефактов workflow (7 дней!) и раздать по своим каналам
+#    - для Steam: vn release steam --flavor public, затем steamcmd (§14)
 ```
 
 **Что проверить на артефактах перед раздачей:**
 
 | Проверка | Как |
 |---|---|
-| Флейвор применился | внутри архива есть `game/<name>/game/build_id.json`, поле `flavor` верное |
+| Флейвор применился | внутри архива есть `.../game/build_id.json`, поле `flavor` верное |
 | Вотермарка там, где надо | `patron` → `watermark: true`; `public` → `false` |
 | Нет dev-инструментов | в архиве нет `game/framework/90_debug/` |
 | Нет псевдолокали | нет `game/tl/pseudo/` |
@@ -553,31 +796,32 @@ git push --follow-tags                 # -> release.yml: гейт тега -> bu
 
 ---
 
-## 15. Откат: релиз сломан
+## 17. Откат: релиз сломан
 
-**Прецедент проекта.** Сборка `0.1.1` оказалась нерабочей: чекаут в CI шёл без LFS, в дистрибутив уехали 131-байтные указатели вместо шрифтов, игра падала `FreetypeError` на главном меню. Тега `v0.1.1` в репозитории **нет** — сломанная версия не откатывалась, она была вытеснена вперёд: коммит `ff28ba9` добавил `lfs: true` во все workflow и проверку шрифтов по содержимому (`doctor.py:50-66`, гейт `release.py:293-302`), после чего вышел `0.1.2`, а `../CHANGELOG.md:20-24` прямо говорит игроку «сборки 0.1.1 непригодны — используйте 0.1.2».
+**Прецедент проекта.** Сборка `0.1.1` оказалась нерабочей: чекаут в CI шёл без LFS, в дистрибутив уехали 131-байтные указатели вместо шрифтов, игра падала `FreetypeError` на главном меню. Тега `v0.1.1` в репозитории **нет** — сломанная версия не откатывалась, она была вытеснена вперёд: коммит `ff28ba9` добавил `lfs: true` во все workflow и проверку шрифтов по содержимому (`doctor.py: _lfs_pointer_fonts`, гейт `release.py:452-461`), после чего вышел `0.1.2`, а `../CHANGELOG.md` прямо говорит игроку «сборки 0.1.1 непригодны — используйте 0.1.2».
 
 **Это и есть штатная процедура: катим вперёд, а не назад.** Причины технические, не идеологические:
 
 1. Тег обязан совпадать с `project.yaml: version` (`release.yml:47-54`). Перевыпустить ту же версию с другим содержимым можно только удалив тег и релиз — а у игроков он уже скачан.
 2. `config.version` содержит git-sha, поэтому «та же версия» после фикса всё равно даёт другое имя архива.
-3. Если в сломанном релизе бампался `save_schema`, откат назад для игроков **невозможен в принципе**: их сейвы будут «из будущего», и `after_load` покажет `ui.flow.save_from_newer` и перезапустит игру (`020_state.rpy:83-93`).
+3. Если в сломанном релизе бампался `save_schema`, откат назад для игроков **невозможен в принципе**: их сейвы будут «из будущего», и `after_load` покажет `ui.flow.save_from_newer` и перезапустит игру.
 
 **Порядок действий:**
 
 ```bash
 # 1. Остановить распространение (руками, инструмента нет)
-gh release edit v0.1.5 --draft        # убрать из публичного списка
-#   или gh release delete v0.1.5 --yes , если скачиваний ещё не было
+gh release edit v0.1.6 --draft        # убрать из публичного списка
+#   или gh release delete v0.1.6 --yes , если скачиваний ещё не было
+#   в Steam: переключить default-ветку обратно в Steamworks (руками)
 
 # 2. Починить причину в main отдельным коммитом (fix(...): ...), с тестом/проверкой,
 #    которая поймала бы этот класс поломки. Хотфикс поверх непонятного пайплайна запрещён.
 
-# 3. Бампнуть patch и выпустить новую версию по runbook §14
-#    project.yaml: 0.1.5 -> 0.1.6 ; в CHANGELOG честно: «сборки 0.1.5 непригодны»
+# 3. Бампнуть patch и выпустить новую версию по runbook §16
+#    project.yaml: 0.1.6 -> 0.1.7 ; в CHANGELOG честно: «сборки 0.1.6 непригодны»
 
 # 4. Сломанный тег НЕ переиспользовать. Если тег ещё никуда не уехал:
-git tag -d v0.1.5 && git push origin :refs/tags/v0.1.5
+git tag -d v0.1.6 && git push origin :refs/tags/v0.1.6
 ```
 
 **Чего откат НЕ трогает:**
@@ -586,49 +830,59 @@ git tag -d v0.1.5 && git push origin :refs/tags/v0.1.5
 - `content/registry/id_registry.json` — append-only, из него ничего не вычёркивается. Это by design (G7).
 - `ci/release-manifest.json` — перезапишется следующим `vn release changelog`.
 
-**Если ломается не релиз, а сборка** (красный CI, не собирается генерат) — порядок в [36-troubleshooting.md](36-troubleshooting.md) и [04-development-workflow.md](04-development-workflow.md) §6. Аварийный режим G4 «взять `game/generated/` из артефакта `generated-<sha>`» работает только руками: `vn build --use-artifact <sha>` **не существует**, хотя упомянут в `../ARCHITECTURE.md` 14 раз.
+**Если ломается не релиз, а сборка** (красный CI, не собирается генерат) — порядок в [36-troubleshooting.md](36-troubleshooting.md) и [04-development-workflow.md](04-development-workflow.md) §6. Аварийный режим G4 «взять `game/generated/` из артефакта `generated-<sha>`» работает только руками: `vn build --use-artifact <sha>` **не существует**.
 
 ---
 
 ## Как изменить / Как расширить
 
-**Добавить флейвор.** Дописать блок в `project.yaml:12-22` (ключи `packs` и `nsfw` обязательны схемой). Кода менять не нужно: `--flavor` принимает любое имя из `project.yaml`, а гейты в игре спрашивают `vn_build.nsfw` / `vn_build.early_content`, а не имя флейвора (`060_build_info.rpy:6-8`). Добавить ногу в матрицу `release.yml:32`, если он должен собираться на теге.
+**Добавить флейвор.** Дописать блок в `project.yaml:66-76` (ключи `packs` и `nsfw` обязательны схемой). Кода менять не нужно: `--flavor` принимает любое имя из `project.yaml`, а гейты в игре спрашивают `vn_build.nsfw` / `vn_build.early_content`, а не имя флейвора. Добавить ногу в матрицу `release.yml:32`, если он должен собираться на теге.
 
-**Сделать `packs` настоящим гейтом.** Точка правки — `030_flow.rpy:76-77`: `installed()` должен пересекать `VN_PACKS` с `vn_build.packs`, а не смотреть только на генерат. Проверить потребителей `owned()`: `chapter_select.gen.rpy`, `080_achievements.rpy:41`, `090_gallery.rpy:44`. Тест: `public`-сборка не должна показывать главы пака `nsfw`.
+**Сделать `packs` build-time-гейтом.** Точка правки — `installed()` в `030_flow.rpy`: он должен пересекать `VN_PACKS` с `vn_build.packs`, а не смотреть только на генерат. Проверить потребителей `owned()`: `chapter_select.gen.rpy`, `080_achievements.rpy`, `090_gallery.rpy`. Тест: `public`-сборка не должна показывать главы пака `nsfw`.
 
-**Оживить `early_content`.** Потребителя нужно написать: гейт по главе (`chapter.yaml`) или по элементу галереи, по образцу NSFW-гейта в `090_gallery.rpy:40-44`.
+**Оживить `early_content`.** Потребителя нужно написать: гейт по главе (`chapter.yaml`) или по элементу галереи, по образцу NSFW-гейта в `090_gallery.rpy`.
 
-**Развести кэш `.rpyc` по флейворам.** Одна строка — `cli.py:358`: `cache_root / version` → `cache_root / f"{version}-{flavor}"`. Потребуется прокинуть флейвор в `package` (сейчас туда идёт только `dest_suffix`) и поправить `_semver_key`, который парсит имя каталога как semver.
+**Развести кэш `.rpyc` по флейворам.** Одна строка — `cli.py:380`: `cache_root / version` → `cache_root / f"{version}-{flavor}"`. Потребуется прокинуть флейвор в `package` (сейчас туда идёт только `dest_suffix`) и поправить `_semver_key`, который парсит имя каталога как semver.
+
+**Довести Steam-поставку до конца (§14.1).** Раскладка депотов уже работает и покрыта тестами на реальные форматы архивов (§14.2). Осталось внешнее: приложение в Steamworks и номера в `project.yaml` (`platform.steam.appid` + `depots`), steam_api-редистрибутивы Valve на build-машине, первый прогон `steamcmd` в бета-ветку и сверка каталога-обёртки в депоте с путём запуска. Автоматизация аплоада (джоба `steam-publish`) — отдельное решение: credentials Steamworks в CI это не тот вопрос, который решается заодно.
+
+**Добавить Steam-префлайт в гейт.** Дешёвый минимум, который предотвращает известные падения: `appid`/`depots` заполнены, `ci/steam/app_build.vdf.tmpl` на месте, `steam_libs_status()` пуст, и для каждой платформы депота в `build/dist/` есть артефакт **ожидаемого формата** (а не только `.zip`). Сейчас `steam_libs_status` зовётся из одного места (`cli.py:1839`) и `vn doctor` о нём не знает.
 
 **Добавить проверку в гейт.** Правило пишется как функция в своём модуле (`assets/`, `content/`, `loc/`) и вызывается из `validate_release` через `add("PASS"/"WARN"/"FAIL", …)`. Собственной логики в `release.py` быть не должно — иначе гейт разойдётся с `vn build`.
 
 **Затащить `cold_start_s` в релиз.** Либо шаг `vn test smoke --picks 0,0` в `release.yml` перед `vn release build`, либо новая проверка в гейте, читающая результат последнего smoke из `.vncache/smoke/`. Первый вариант честнее — он меряет ту же сборку.
 
-**Включить `.rpa`-архивы (только через ADR).** Россыпь в desktop-каналах — норма `../ARCHITECTURE.md` §2.4 (Steam-дельта-патчи); тематические `.rpa` допустимы лишь как опция mobile-поставки фазы 3. Технически это `build.archive(...)` + `build.classify(..., "archive_*")` в `game/options.rpy`; помнить, что после этого проверки размеров придётся считать по архивам, а каждый патч будет размером с архив.
+**Подписать артефакты (RECOMMENDED FUTURE STATE, сейчас NOT IMPLEMENTED).** Для macOS движок уже умеет: `build.mac_identity` + `build.mac_codesign_command` (`$RENPY_SDK/launcher/game/distribute.rpy:1348,1380`), и с заданным identity launcher сам начнёт отдавать dmg (`:1537-1540`) — джоба `dmg` тогда станет лишней. Для Windows — свой `signtool`-шаг. Требует сертификатов, то есть секретов CI, и отдельного ADR.
+
+**Включить `.rpa`-архивы (только через ADR).** Россыпь в desktop-каналах — норма `../ARCHITECTURE.md` §2.4 (Steam-дельта-патчи); тематические `.rpa` допустимы лишь как опция mobile-поставки фазы 3. Технически это `build.archive(...)` + `build.classify(..., "archive_*")` в `game/options.rpy`.
 
 ## Чего НЕ делать
 
 - **Не раздавать архив из голого `vn package`** — в нём нет `game/build_id.json`, игра пойдёт как `dev`: NSFW открыт, ранний контент открыт, вотермарки нет.
-- **Не ставить тег, не бампнув `project.yaml: version`** — `release.yml:47-54` рубит workflow первым шагом.
-- **Не пытаться выпустить `v1.0.0-rc1`** — схема `project@1` запрещает pre-release-суффикс.
-- **Не понижать `save_schema` и не откатывать релиз с его бампом** — сейвы игроков станут «из будущего», игра перезапустится (`020_state.rpy:83-93`).
+- **Не ставить тег, не бампнув `project.yaml: version`** — `release.yml:47-54` рубит workflow первым шагом. И помните, что `v0.1.5` уже занят.
+- **Не пытаться выпустить `v1.0.0-rc1`** — схема `project@1` запрещает pre-release-суффикс; RC — состояние, а не версия (§13, стадия 8).
+- **Не понижать `save_schema` и не откатывать релиз с его бампом** — сейвы игроков станут «из будущего», игра перезапустится.
 - **Не коммитить `game/build_id.json`** — он в `.gitignore:8` и должен жить только во время distribute; закоммиченный, он превратит все dev-запуски в чужой флейвор.
-- **Не считать, что `flavors.<f>.packs` кого-то ограничивает** — `VN_PACKS` перечисляет все паки из `packs/` независимо от флейвора.
-- **Не класть главу со сценами в пак `nsfw`, рассчитывая на исключение по флейвору** — она уедет и в `public`. Гейт по ассетам (`nsfw/`-подпапки) работает, гейт по пакам — нет.
-- **Не переименовывать архивы в `build/dist/`** — имя выводится движком из `build.name` и `config.version`; переименованный файл не соотнесётся с `build-info.json`.
+- **Не считать, что `flavors.<f>.packs` кого-то ограничивает на сборке** — `VN_PACKS` перечисляет все паки из `packs/` независимо от флейвора. Runtime-гейт владения — другое дело и работает только под Steam (§3.2).
+- **Не класть главу со сценами в пак `nsfw`, рассчитывая на исключение по флейвору** — она уедет и в `public`. Гейт по ассетам (`nsfw/`-подпапки) работает, build-time-гейт по пакам — нет.
+- **Не собирать релиз после `vn dev`, не сделав полный `vn build`** — draft-профиль ассетов остаётся в манифесте; `release build` навяжет `full` сам, но `vn build --check` и `vn release validate` до этого будут красными.
+- **Не переименовывать архивы в `build/dist/`** — имя выводится движком из `build.name` и `config.version`; переименованный файл не соотнесётся с `build-info.json`, а Steam-staging ищет их по суффиксу платформы.
 - **Не удалять `ci/fixtures/rpyc-line/`** как «лишние `.rpyc`» — это единственные `.rpyc` в git и основа детерминированности сейв-корпуса (G6).
-- **Не полагаться на `vn release validate` как на полную проверку** — он не гоняет ни smoke, ни движковый lint, ни бюджет холодного старта, ни пин SDK.
-- **Не рассчитывать на `vn validate`, `vn build --use-artifact`, `vn release changelog --from/--audience`, `vn release build --channel`** — этих команд и флагов не существует (exit 3 или usage error). `vn release steam` **существует** (§12), но готовит VDF и раскладку депотов, а не заливает: аплоад — ручной `steamcmd`.
+- **Не полагаться на `vn release validate` как на полную проверку** — он не гоняет ни smoke, ни движковый lint, ни `vn test oversample`, ни бюджет холодного старта, ни пин SDK, ни одной платформенной проверки.
+- **Не считать `vn release steam` аплоадом и не считать её проходящей целиком** — она готовит VDF и раскладку (это работает, включая Linux-`tar.bz2`, §14.2), но в этом чекауте останавливается на пустом `appid` (§14.1), а `steamcmd` запускает человек.
+- **Не искать в жёлтых строках гейта поломку** — 14 черновых дублей озвучки это штатный WARN; релиз валит только FAIL.
+- **Не приводить размеры `build/dist/` и состав `build/rpyc-cache/` как свойства репозитория** — каталога `build/` в чекауте нет (`.gitignore:20`), это всегда снимок конкретной машины.
+- **Не рассчитывать на `vn validate`, `vn build --use-artifact`, `vn release changelog --from/--audience`, `vn release build --channel`** — этих команд и флагов не существует (usage error 2, а не exit 3).
 - **Не забывать про 7 дней хранения `dist-patron`** — артефакт workflow исчезнет, а собрать бит-в-бит тот же архив заново уже не получится (в `build_id` зашита минута сборки).
 
 ## Проверка
 
 ```bash
-export RENPY_SDK="C:/Users/Vadim/renpy-sdk/renpy-8.5.3-sdk"
+export RENPY_SDK=/путь/к/renpy-8.5.3-sdk
 
 # Гейт цел и проходит по обоим флейворам
-vn release validate --flavor public       # 16 PASS, exit 0
-vn release validate --flavor patron       # 17 PASS, exit 0
+vn release validate --flavor public       # 19 строк (1 WARN), exit 0
+vn release validate --flavor patron       # 20 строк (1 WARN), exit 0
 vn release validate --flavor nosuch; echo $?   # FAIL на 2-й строке, exit 1
 
 # Релизная сборка проходит целиком
@@ -647,8 +901,10 @@ print("tl/pseudo:", any("tl/pseudo" in x for x in n))        # должно бы
 print("notices:", any("THIRD-PARTY-NOTICES" in x for x in n))
 PY
 
-# Бюджеты и версии
-vn build                                  # бюджеты G19 проверяются здесь же
+# Бюджеты (размерные и память) и версии
+vn build                                  # оба класса бюджетов проверяются здесь же
+vn assets memory                          # детально по сценам
+git tag -l                                # тег для новой версии обязан быть свободен
 git describe --tags --exact-match 2>/dev/null   # тег == project.yaml: version?
 ```
 
@@ -656,8 +912,12 @@ git describe --tags --exact-match 2>/dev/null   # тег == project.yaml: versio
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/release.py` (гейт, флейворы, build-info, `patron_tag`, changelog, бюджеты), группы `package`/`release`/`pack` в `../../tools/vn/src/vn/cli.py:279-370,1466-1639`, `../../project.yaml`, `../../game/options.rpy`, `../../game/framework/00_core/060_build_info.rpy`, `../../.github/workflows/release.yml`, `../../tools/schemas/build_info@2.schema.json` (действующая; `build_info@1` — только для чтения старых артефактов), `../adr/0011-patron-tag-instead-of-token.md`, `../adr/0014-platform-services.md` + `../../ci/steam/README.md` (Steam-поставка), `../../tools/vn/tests/test_ci_config.py` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/release.py` (гейт `validate_release:407-629`, флейворы, build-info, `patron_tag`, changelog, бюджеты, Steam-поставка `:153-252`), группы `package`/`release`/`pack` в `../../tools/vn/src/vn/cli.py` (`:301-393`, `:1720-1852`, `:1855-1926`), `../../project.yaml`, `../../game/options.rpy`, `../../game/framework/00_core/060_build_info.rpy`, `../../.github/workflows/release.yml`, `../../tools/schemas/build_info@2.schema.json`, `$RENPY_SDK/renpy/common/00build.rpy:421-432` (форматы пакетов), `../adr/0011-patron-tag-instead-of-token.md`, `../adr/0014-platform-services.md`, `../../ci/steam/README.md`, `../../tools/vn/tests/test_ci_config.py` |
 | **Не трогать** | `game/build_id.json` (пишет и удаляет `vn release build`), `build/**` (dist, rpyc-cache, packs — производная зона, `.gitignore:20`), `game/generated/**`, `game/assets/**`, `game/tl/**`; `ci/fixtures/rpyc-line/**` — только через `vn save corpus` |
-| **Зависимости** | правка `project.yaml: version` → тег, `config.version`, имя архива, каталог `build/rpyc-cache/<version>/`; правка `flavors` → `build_id.json` → рантайм-гейты достижений и галереи; правка `budgets` → и `vn build`, и гейт; правка `renpy_sdk` → руками синхронизировать `RENPY_VERSION` в `ci.yml:13`, `nightly.yml:12`, `release.yml:19`; правка `game/options.rpy` → состав каждого дистрибутива |
-| **Валидация** | `vn release validate --flavor public && vn release validate --flavor patron`; полная — `vn release build --flavor public --package win` с проверкой содержимого zip (см. «Проверка») |
-| **Частые ошибки** | 1) выдумать флаг: `vn validate`, `vn build --use-artifact`, `vn release changelog --from`, `vn release build --channel` — их нет; 2) считать `flavors.<f>.packs` и `early_content` работающими гейтами — они не читаются никем; 3) назвать `vn package` способом собрать релиз — получится dev-сборка без `build_id.json`; 4) цитировать `../ARCHITECTURE.md` как описание реализованного (это целевой документ: каналы `dev`/`beta`/`release`, `steam-publish`-джоба, `rpyc-compat` — NOT IMPLEMENTED; Steam-депоты — отдельный случай: подготовка есть по ADR-0014, нет только аплоада, §12; `.rpa` — §2.4 фиксирует россыпь как норму, и код ей соответствует); 5) утверждать, что гейт — 19 строк вывода: в коде 19 проверок, но три молчат при пустых данных, сегодня видно 16/17; 6) ставить тег, не бампнув `project.yaml`; 7) писать про `patron_token` в `build_id.json` — с ADR-0011 туда пишется `patron_tag` (схема `build_info@2`), а сам токен остаётся на машине сборки |
+| **Зависимости** | правка `project.yaml: version` → тег, `config.version`, имя архива, каталог `build/rpyc-cache/<version>/`; правка `flavors` → `build_id.json` → рантайм-гейты достижений и галереи; правка `budgets` → и `vn build`, и гейт; правка `render.image_cache_mb` → бюджет памяти сцены в `vn build`; правка `renpy_sdk` → руками синхронизировать `RENPY_VERSION` в `ci.yml:26`, `nightly.yml`, `release.yml:19`; правка `game/options.rpy` → состав каждого дистрибутива |
+| **Валидация** | `vn release validate --flavor public && vn release validate --flavor patron`; полная — `vn release build --flavor public --package win` с проверкой содержимого архива (см. «Проверка»); при правке Steam-части — `pytest tools/vn/tests/test_platform.py -q` (10 тестов) |
+| **Частые ошибки** | 1) выдумать флаг: `vn validate`, `vn build --use-artifact`, `vn release changelog --from`, `vn release build --channel` — их нет; 2) считать `flavors.<f>.packs` и `early_content` работающими гейтами — на сборке они не читаются никем (runtime-гейт владения — отдельная история, §3.2); 3) назвать `vn package` способом собрать релиз — получится dev-сборка без `build_id.json`; 4) цитировать `../ARCHITECTURE.md` как описание реализованного (каналы `dev`/`beta`/`release`, `steam-publish`, `rpyc-compat` — NOT IMPLEMENTED); 5) писать «гейт из 19 проверок» — их **20**, а строк на экране сегодня 19/20 и одна из них WARN; 6) писать «все PASS» как эталон — штатный WARN про черновые дубли озвучки; 7) ставить тег, не бампнув `project.yaml` (и помнить, что `v0.1.5` уже выпущен, следующая версия — `0.1.6`); 8) писать про `patron_token` в `build_id.json` — с ADR-0011 туда пишется `patron_tag`; 9) утверждать, что `vn release steam` проходит целиком — раскладка депотов работает (§14.2), но `appid`/`depots` пусты, аплоад ручной, живого прогона не было (§14.1); и не писать обратное — «staging ищет zip» больше не факт; 10) приводить числа из `build/` как факт репозитория — этого каталога в чекауте нет |
+
+---
+
+**Смежные страницы:** [39-platforms.md](39-platforms.md) (платформенный слой, controller-first, `vn release steam`) · [40-steamworks.md](40-steamworks.md) (App ID, депоты, ачивки, ветки в Steamworks) · [41-steam-deck.md](41-steam-deck.md) (Deck: вёрстка и прогон) · [42-big-picture.md](42-big-picture.md) (ТВ и safe-area) · [43-steam-qa.md](43-steam-qa.md) (QA-протокол под Steam) · [44-how-do-i.md](44-how-do-i.md) («как мне…» одной строкой) · [27-testing.md](27-testing.md) (уровни проверок, smoke, сейв-корпус) · [30-packs-and-dlc.md](30-packs-and-dlc.md) (паки как единицы поставки) · [33-security-and-legal.md](33-security-and-legal.md) (секреты, состав дистрибутива, лицензии)

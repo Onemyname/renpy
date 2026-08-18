@@ -31,7 +31,7 @@
 |---|---|---|
 | `CLAUDE.md` (корень) | Короткие постоянные правила, которые агент видит **всегда**: язык, ключевые команды, запретные зоны, обязательный хвост проверок, 10 жёстких контрактов. Не пересказ архитектуры, не карта каталогов. Цель — до 200 строк, реально хватит 60–70 | **НЕТ** |
 | `AGENTS.md` (корень) | Вендор-нейтральный эквивалент по конвенции `agents.md`. На практике — тонкий файл-указатель на `CLAUDE.md` и хендбук | **НЕТ** |
-| `docs/ARCHITECTURE.md` | Нормативный **целевой** документ. Раздел 0 (G1–G24, C1–C24) — контракт ревью: «Изменение любого пункта — только через ADR» (`../ARCHITECTURE.md:36`) | ЕСТЬ, 4180 строк |
+| `docs/ARCHITECTURE.md` | Нормативный **целевой** документ. Раздел 0 (G1–G24, C1–C24) — контракт ревью: «Изменение любого пункта — только через ADR» (`../ARCHITECTURE.md:36`) | ЕСТЬ, 4182 строки |
 | `docs/adr/` | Точечные решения с обоснованием и планом отступления. ADR обязателен при изменении нормы раздела 0 | ЕСТЬ: 14 ADR + `template.md`; ADR-0008 — единственный со статусом «предложено» |
 | `docs/handbook/` | Практические how-to со статусами реализации — **точка входа агента** | ЕСТЬ (этот корпус) |
 | `.claude/settings.json` | `permissions.deny` на производные зоны, чтобы генерат не съедал контекст; hook-гейт на `vn content lint` | **НЕТ** |
@@ -59,9 +59,9 @@
 ## Команды
     vn doctor                            # окружение; норма — 8 PASS, 0 FAIL
     vn build                             # lint -> ассеты -> компилятор -> loc import -> бюджеты
-    vn content lint                      # 34 правила, 5-10 c
+    vn content lint                      # 33 диагностики, 5-10 c
     vn play  |  vn dev                   # запуск | запуск + watch content/ и assets_src/
-    python -m pytest tools/vn/tests -q   # 240 тестов, ~9 c
+    python -m pytest tools/vn/tests -q   # 254 теста, ~5-9 c
 Обязательный хвост ЛЮБОЙ правки:
     vn content lint && vn build && python -m pytest tools/vn/tests -q
 Трогал рантайм/сейвы/локализацию — добавь: vn test smoke --picks 0,0 && vn save corpus
@@ -146,22 +146,22 @@
 
 | Правило | Конкретно в этом репозитории |
 |---|---|
-| Минимальный scope | Одна задача = один слой. Не «заодно» рефакторить `cli.py` (1643 строки) при правке одной сцены |
+| Минимальный scope | Одна задача = один слой. Не «заодно» рефакторить `cli.py` (1930 строк) при правке одной сцены |
 | Переиспользовать существующее | `vn_*`-фасад рантайма, `gui.*`-токены, `vn_frame_*`-панели, схемы из `tools/schemas/` |
 | Не менять архитектуру попутно | Норма раздела 0 меняется ADR-ом отдельным коммитом, а не строчкой внутри фичи |
 | Данные — в YAML + схему | Новая сущность = `content/<зона>/*.yaml` + `tools/schemas/<name>@1.schema.json` + правило в `tools/vn/src/vn/content/lint.py` + тест. Хардкод в `.rpy` не переводится, не валидируется и не мигрируется |
 | UI — через `vn_*` и `gui.*` | Литерал в экране не попадёт в PO-экстракцию (`content/ui/strings.yaml:3-4`); число вместо токена ломает панели (ADR-0009) |
-| Обновить тесты | `tools/vn/tests/` — 24 файла `test_*.py` + `conftest.py`, 253 теста. Новое правило линтера без теста в `test_lint.py` — незакрытая правка |
+| Обновить тесты | `tools/vn/tests/` — 24 файла `test_*.py` + `conftest.py`, 254 теста. Новое правило линтера без теста в `test_lint.py` — незакрытая правка |
 | Обновить документацию | Назвать, какой файл хендбука затронут, и поправить его. Если изменился статус механизма — поправить пометку |
 
 ### 2.3. После
 
 ```bash
 # 1. Цепочка валидации — обязательный минимум
-vn content lint                          # 34 правила
+vn content lint                          # 33 диагностики
 vn build                                 # lint -> ассеты -> компилятор -> loc import -> бюджеты
 vn content compile --check               # «check: генерат свеж»
-python -m pytest tools/vn/tests -q       # 240 passed
+python -m pytest tools/vn/tests -q       # 254 passed
 
 # 2. Дополнительно по зоне правки
 vn loc keys --check                      # трогал реплики/меню в *.scene.rpy
@@ -227,7 +227,7 @@ git status --short                       # game/generated|assets|tl быть н�
 | Поднять окружение с нуля | `pip install -e "tools/vn[dev]"`, `vn doctor` | [03-getting-started.md](03-getting-started.md) | `doctor.py` |
 | Добавить главу | `vn chapter new <slug>` (`cli.py:449`) | [09-chapters.md](09-chapters.md) | `tools/vn/src/vn/content/scaffold.py` |
 | Добавить сцену | `vn scene new ch01 <slug>` (`cli.py:470`) | [12-scenes.md](12-scenes.md) | `tools/vn/src/vn/content/scaffold.py`, `tools/vn/src/vn/content/scenes.py` |
-| Заглушить объявленный, но не написанный переход | `vn scene stub ch01 s040` (`cli.py:487`) | [12-scenes.md](12-scenes.md) | `tools/vn/src/vn/content/scaffold.py` |
+| Заглушить объявленный, но не написанный переход | `vn scene stub ch01 s040` (`cli.py:506-520`) | [12-scenes.md](12-scenes.md) | `tools/vn/src/vn/content/scaffold.py` |
 | Написать реплики и выборы | `content/chapters/*/scenes/*.scene.rpy` | [13-dialogue.md](13-dialogue.md) | `tools/vn/src/vn/content/analyze.py`, `00_core/050_build_bridge.rpy` |
 | Добавить персонажа | вручную `content/characters/<id>/character.yaml` (`vn char new` — заглушка фазы 1, exit 3, `cli.py:958`) | [10-characters.md](10-characters.md) | `tools/schemas/character@1.schema.json` |
 | Добавить локацию | вручную `content/locations/<id>/location.yaml` | [11-locations.md](11-locations.md) | `tools/schemas/location@1.schema.json` |
@@ -271,7 +271,7 @@ git status --short                       # game/generated|assets|tl быть н�
 | Код: `tools/vn/src/vn/**`, `game/framework/**`, `tools/schemas/**` | **Факт.** Конечная инстанция |
 | `docs/handbook/*` со статус-пометками | Проверенный факт на 2026-08-08; при расхождении с кодом побеждает код |
 | `docs/adr/*` со статусом «принято» | Решение и его обоснование. Код мог отстать — сверять |
-| `docs/ARCHITECTURE.md` | **Намерение, не реализация.** Целевой документ на 4180 строк; бо́льшая часть — будущие фазы |
+| `docs/ARCHITECTURE.md` | **Намерение, не реализация.** Целевой документ на 4182 строки; бо́льшая часть — будущие фазы |
 | `README.md:43` («Статус: фаза 0») | Устарело: реализованы компилятор, локализация, галерея, флейворы, сейв-корпус, smoke |
 | `docs/onboarding/localizer.md` («появится в фазе 2») | Устарело: весь `vn loc *` работает |
 | `ci/README.md` («`.gitlab-ci.yml` — конфиг пайплайна») | Устарело: живой CI — `.github/workflows/` (4 workflow, 7 определений джоб) |
@@ -286,9 +286,9 @@ grep -n "\-\-<флаг>" tools/vn/src/vn/cli.py
 
 # Что отложено честной заглушкой (exit 3)?
 grep -n "_stub(\|_stub_group(" tools/vn/src/vn/cli.py
-# одиночные заглушки:  393, 394 (migrate, shell), 1278-1281 (voice tts),
-#                      1484 (save migrate), 1659 (test replay|screens|paths),
-#                      1819 (release steam)
+# одиночные заглушки:  393, 394 (migrate, shell), 1281 (voice tts),
+#                      1484 (save migrate), 1659 (test replay|screens|paths)
+# НЕ заглушка: release steam (cli.py:1819) — реализована по ADR-0014
 # группы заглушек:     _stub_group — генератор cli.py:523-527, вызов :1097 (char)
 # определение:         def _stub — cli.py:34
 # ЛОЖНЫЕ срабатывания шаблона "_stub(": scene_stub / new_stub — это рабочий код
@@ -303,7 +303,7 @@ grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
 |---|---|
 | 1 | `vn char new`, `vn char validate` |
 | 2 | `vn migrate`, `vn shell`, `vn char sheet`, `vn voice tts` (остальной `vn voice` — живой), `vn test replay`, `vn test paths` |
-| 3 | `vn save migrate`, `vn test screens`, `vn release steam` |
+| 3 | `vn save migrate`, `vn test screens` |
 
 **Отсутствуют вовсе** (даже заглушки нет — click вернёт usage error, exit 2): `vn validate` (группы не существует), `vn build --use-artifact <sha>`, `vn content lint --strict/--arch/--schemas`, `vn content rename`, `vn content who-writes`, `vn play --scene`, `vn test perf`, `vn loc report --gate`, `vn release changelog --from`.
 
@@ -344,7 +344,7 @@ grep -rn "<термин>" tools/vn/src/vn/ game/framework/ | head
 |---|---|
 | `vn content lint` | OK, 3 предупреждения (перечислены ниже) |
 | `vn build` | `build: OK`; generated: 2 записано, 17 без изменений |
-| `python -m pytest tools/vn/tests -q` | 240 passed in 8.9s |
+| `python -m pytest tools/vn/tests -q` | 254 passed |
 | `vn test smoke --picks 0,0` | НЕ ЗАПУСКАЛОСЬ: нет RENPY_SDK в этой сессии |
 
 ## Затронутые нормы
@@ -360,7 +360,7 @@ ADR не требуется: раздел 0 ARCHITECTURE.md не менялся.
 
 Требования к содержанию:
 
-- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `240 passed`.
+- **Фактический вывод, а не пересказ.** «Тесты прошли» — недостаточно; нужно `254 passed`.
 - **Не запускавшаяся проверка называется прямо** («НЕ ЗАПУСКАЛОСЬ: причина»), а не опускается. Типичная причина в этом репозитории — отсутствие `RENPY_SDK` в bash-сессии агента.
 - **Предупреждения линтера перечисляются**, даже если exit 0: `vn content lint` печатает warnings, которые в главе со `status: release` станут ошибками (G15).
 - **Затронутые нормы называются номерами** — это язык ревью в этом проекте.
@@ -422,7 +422,7 @@ git stash -u                      # снять всё, проверить чис
 
 ## Чего НЕ делать
 
-- **Не копировать `../ARCHITECTURE.md` в `CLAUDE.md`.** 4180 строк утопят инструкции; агент начнёт игнорировать файл целиком.
+- **Не копировать `../ARCHITECTURE.md` в `CLAUDE.md`.** 4182 строки утопят инструкции; агент начнёт игнорировать файл целиком.
 - **Не превращать `CLAUDE.md` в карту каталогов.** Раскладка выводится из репозитория за один `ls`. В файл идут грабли, конвенции и решения, которые нельзя вывести из кода.
 - **Не держать `CLAUDE.md` и `AGENTS.md` с пересекающимся содержимым.** Два источника правды расходятся молча, и расхождение проявляется как дублированная подсистема.
 - **Не делать симлинк `AGENTS.md → CLAUDE.md`** на Windows без Developer Mode: команда просто не выполнится. Импорт первой строкой (`@AGENTS.md`) решает ту же задачу.
@@ -445,7 +445,7 @@ git diff --stat                                  # объём правки со�
 vn content lint
 vn build
 vn content compile --check
-python -m pytest tools/vn/tests -q               # 240 passed
+python -m pytest tools/vn/tests -q               # 254 passed
 
 # 4. По зоне правки
 vn loc keys --check                              # реплики/меню
@@ -458,7 +458,7 @@ vn release validate --flavor public              # релизный путь
 
 | | |
 |---|---|
-| **Читать перед изменением** | `docs/handbook/README.md` → профильный файл; `../../tools/vn/src/vn/cli.py` (истина по командам и флагам); `../../tools/vn/src/vn/content/lint.py` (34 правила — что вообще считается ошибкой); `../../.gitignore`; [02-architecture.md](02-architecture.md) §2–3 (зоны) и §6 (нормы G/C); [04-development-workflow.md](04-development-workflow.md) §5 (чеклисты) |
+| **Читать перед изменением** | `docs/handbook/README.md` → профильный файл; `../../tools/vn/src/vn/cli.py` (истина по командам и флагам); `../../tools/vn/src/vn/content/lint.py` (33 диагностики — что вообще считается ошибкой); `../../.gitignore`; [02-architecture.md](02-architecture.md) §2–3 (зоны) и §6 (нормы G/C); [04-development-workflow.md](04-development-workflow.md) §5 (чеклисты) |
 | **Не трогать** | `game/generated/**`, `game/assets/**`, `game/tl/**`, `game/build_id.json`, `build/**`, `.vncache/**` — производные зоны; `ci/fixtures/rpyc-line/**` — линия statement-имён (G6), управляется только через `vn save corpus`; `docs/ARCHITECTURE.md` раздел 0 — только через ADR |
 | **Зависимости** | Этот файл описывает правила, а не механизм: сломать им можно только доверие к отчётам. Обратная зависимость сильная — при появлении `CLAUDE.md` его содержимое обязано совпадать с §1 и §3, иначе агент получит два расходящихся набора правил |
 | **Валидация** | `vn --help` (команды существуют), `grep -n "_stub(" tools/vn/src/vn/cli.py` (список заглушек актуален), `vn content lint && vn build && python -m pytest tools/vn/tests -q` |

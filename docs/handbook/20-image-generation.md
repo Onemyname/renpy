@@ -127,14 +127,14 @@ D:\ComfyUI\venv\Scripts\python.exe D:\ComfyUI\main.py
 
 ### 3.2 `vn pipeline models` — режимы
 
-`cli.py:1425-1461` → `pipeline.py:362-439`.
+`cli.py:1679-1716` → `pipeline.py:362-440`.
 
 | Вызов | Что происходит |
 |---|---|
 | `vn pipeline models` | только статус-таблица: `✓ ok`, `✗ missing`, `! undersized`, `? no_root` |
 | `vn pipeline models --pull` | скачивает недостающие с `required: true` и `auth: none` |
 | `vn pipeline models --pull --all` | + позиции с `required: false` |
-| `vn pipeline models --only a,b` | **⚠ СКАЧИВАЕТ, а не показывает.** `--only` включает режим загрузки сам по себе (`cli.py:1442`: `if pull or only_set`) и перекрывает фильтр `required` |
+| `vn pipeline models --only a,b` | **⚠ СКАЧИВАЕТ, а не показывает.** `--only` включает режим загрузки сам по себе (`cli.py:1697`: `if pull or only_set`) и перекрывает фильтр `required` |
 | `--comfyui <path>` | явный корень вместо `VN_COMFYUI` |
 
 Загрузка (`pipeline.py:333-359`): `curl -L --fail --retry 3 --retry-delay 5 -C -` в файл `<dest>.part`, затем атомарный `os.replace`. **Докачка резюмируемая** (`-C -`) — оборванная 13-гигабайтная загрузка продолжается с места разрыва. Без `curl` в PATH — фоллбек на `urllib` (уже без докачки).
@@ -213,7 +213,7 @@ vn pipeline models --pull --all
 
 - Место в декларации: `render.character_presets` (массив строк) в `assets_src/daz/**/<name>.render.yaml`, схема `daz_render@1`.
 - Цена: время на сборку пресета и рендер (минуты на кадр вместо секунд).
-- **Честно:** поле `character_presets` схемой принимается, но **ничем не валидируется** — реестра пресетов, конвенции их именования и проверки «тот ли пресет» в репозитории нет (`tools/vn/src/vn/assets/daz.py:31-77` делает только проверку существования файлов). Деклараций `*.render.yaml` в репозитории **ноль**.
+- **Честно:** поле `character_presets` схемой принимается, но **ничем не валидируется** — реестра пресетов, конвенции их именования и проверки «тот ли пресет» в репозитории нет (общий валидатор `tools/vn/src/vn/assets/sources.py:145-206` проверяет существование сцены и выхода, соответствие `id` ↔ `output` и разрешение — но не пресеты). Деклараций `*.render.yaml` в репозитории **ноль**.
 
 ### (б) i2i-полировка поверх рендера с низким denoise · **рекомендуемый AI-шаг**
 
@@ -323,7 +323,7 @@ vn pipeline models --pull --all
 
 ### 8.2 Три команды провенанса
 
-**IMPLEMENTED** (`tools/vn/src/vn/assets/provenance.py`, 11 тестов в `tools/vn/tests/test_provenance.py`), **UNEXERCISED** — в репозитории ноль сайдкаров.
+**IMPLEMENTED** (`tools/vn/src/vn/assets/provenance.py`, 12 тестов в `tools/vn/tests/test_provenance.py`), **UNEXERCISED** — в репозитории ноль сайдкаров.
 
 ```bash
 # Записать: PNG из ComfyUI разбирается автоматически
@@ -370,7 +370,7 @@ vn assets provenance verify [--scope <подпуть в assets_src>]
 
 ### 8.4 Что проверяет `verify` и где он в релизе
 
-`provenance.py:319-380`, вызывается из релизного гейта (`release.py:337-345`).
+`provenance.py:317-378`, вызывается из релизного гейта (`release.py:496-504`).
 
 | Уровень | Условие |
 |---|---|
@@ -482,7 +482,7 @@ tools/workflows/
 | **Артефакты апскейла** | апскейл там, где он не нужен | генерировать сразу в целевом разрешении; RealESRGAN брать для чистого 2×, а не для «дорисуй детали»; downscale безопасен, upscale читается как каша |
 | **Несоответствие цветового профиля** | `_webp_encode` (`pipeline.py:82-91`) делает `im.convert("RGBA")` и сохраняет WebP **без `icc_profile`** — встроенный ICC теряется | работайте в sRGB от DAZ до финального PNG; не подавайте на вход Adobe RGB / P3 — цвет уедет молча, ошибки не будет |
 | Спрайт «съехал» относительно лица | слои одной позы разного размера | все PNG позы — один холст (у `mira` — 1200×2200); валидатора нет |
-| `vn pipeline models --only …` внезапно начал качать 13 ГБ | `--only` включает pull сам по себе (`cli.py:1442`) | для статуса — `vn pipeline models` без флагов |
+| `vn pipeline models --only …` внезапно начал качать 13 ГБ | `--only` включает pull сам по себе (`cli.py:1697`) | для статуса — `vn pipeline models` без флагов |
 | Civitai: «нужен ключ» сразу после `setx` | окружение не наследуется в открытый процесс | **новый** терминал; `vn` сам это распознаёт и подсказывает |
 
 ---
@@ -553,7 +553,7 @@ vn assets build                     # assets_src/ -> game/assets/
 vn build                            # lint -> ассеты -> генерат -> game/tl
 vn build --check                    # CI-режим: ничего не пишет, краснеет на несвежем
 
-# Релизный гейт (провенанс и лицензии — часть 19 проверок)
+# Релизный гейт (провенанс и лицензии — часть 20 проверок)
 vn release validate --flavor public
 ```
 
@@ -581,5 +581,5 @@ vn release validate --flavor public
 | **Читать перед изменением** | `../../tools/comfyui-models.yaml`, `../../tools/schemas/comfyui_models@1.schema.json`, `../../tools/vn/src/vn/pipeline.py` (`:250-446` — манифест/загрузка/статус, `:455-581` — doctor), `../../tools/vn/src/vn/assets/provenance.py`, `../../tools/schemas/provenance@1.schema.json`, `../../tools/setup-comfyui.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../adr/0008-ai-model-licensing-for-commercial-adult-content.md` |
 | **Не трогать** | `D:\ComfyUI\models\.vn-models.json` (лок загрузчика, не в git, пишется кодом); `game/assets/**` (генерат `vn assets build`); `.vncache/**`; сами файлы моделей — они внешняя зависимость уровня SDK, не ассет проекта |
 | **Зависимости** | правка `dest`/`kind` в манифесте → загруженные модели становятся `missing`, ComfyUI не найдёт файл по старому пути; удаление позиции → `vn pipeline doctor` уронит счётчик обязательных; правка `sha256` с `null` на значение → **все ранее скачанные файлы будут удаляться при повторном `--pull`, если хэш не совпал**; изменение `tools/setup-comfyui.ps1` в части индекса torch → риск тихого CPU-fallback на Blackwell |
-| **Валидация** | `vn pipeline doctor` (схема манифеста — единственный FAIL этой зоны) · `vn pipeline models` · `vn assets provenance verify` · `vn assets licenses` · `python -m pytest tools/vn/tests/test_provenance.py -q` (11 тестов) |
-| **Частые ошибки** | 1) считать, что `vn` умеет запускать ComfyUI или ставить задачи в очередь — **API-клиента не существует**, порт 8188 нигде не упоминается; 2) искать workflow-JSON в репозитории — их **ноль**, `phase-0.md:174` отправляет к штатному шаблону ComfyUI; 3) описывать `vn pipeline models --only` как «показать выбранные» — он **качает** (`cli.py:1442`); 4) утверждать, что манифест проверяет целостность — у всех позиций `sha256: null`, повторные прогоны сверяют **только размер**; 5) искать DAZ/ComfyUI в `docs/ARCHITECTURE.md` — там **ноль** упоминаний, вся зона нормирована ADR-0006/0007/0008 и `docs/pipeline/phase-0.md`; 6) считать `content/licenses.yaml` реестром лицензий **моделей** — это реестр **ассетов** (DAZ-продукты, шрифты), у моделей гейта нет вообще; 7) предполагать, что провенанс обязателен — PNG без сайдкара проходит все проверки; 8) писать сайдкар для файла вне `assets_src/` — `ProvenanceError` (G2) |
+| **Валидация** | `vn pipeline doctor` (схема манифеста — единственный FAIL этой зоны) · `vn pipeline models` · `vn assets provenance verify` · `vn assets licenses` · `python -m pytest tools/vn/tests/test_provenance.py -q` (12 тестов) |
+| **Частые ошибки** | 1) считать, что `vn` умеет запускать ComfyUI или ставить задачи в очередь — **API-клиента не существует**, порт 8188 нигде не упоминается; 2) искать workflow-JSON в репозитории — их **ноль**, `phase-0.md:174` отправляет к штатному шаблону ComfyUI; 3) описывать `vn pipeline models --only` как «показать выбранные» — он **качает** (`cli.py:1697`); 4) утверждать, что манифест проверяет целостность — у всех позиций `sha256: null`, повторные прогоны сверяют **только размер**; 5) искать DAZ/ComfyUI в `docs/ARCHITECTURE.md` — там **ноль** упоминаний, вся зона нормирована ADR-0006/0007/0008 и `docs/pipeline/phase-0.md`; 6) считать `content/licenses.yaml` реестром лицензий **моделей** — это реестр **ассетов** (DAZ-продукты, шрифты), у моделей гейта нет вообще; 7) предполагать, что провенанс обязателен — PNG без сайдкара проходит все проверки; 8) писать сайдкар для файла вне `assets_src/` — `ProvenanceError` (G2) |

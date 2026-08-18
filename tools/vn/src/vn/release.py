@@ -151,8 +151,36 @@ def stamp_id_registry(root: Path) -> int:
 # ── Steam-поставка (ADR-0014, ci/steam/README.md) ────────────────────────────
 
 STEAM_PLATFORMS = ("windows", "linux", "mac")
-# Суффиксы зипов launcher distribute -> платформа депота.
-_DIST_SUFFIX = {"windows": "-win", "linux": "-linux", "mac": "-mac"}
+# Форматы, которые launcher distribute реально выдаёт по платформам
+# (SDK renpy/common/00build.rpy: package("win","zip") / ("linux","tar.bz2") /
+# ("mac","app-zip app-dmg")). Порядок расширений = приоритет: .dmg игнорируем —
+# распаковать его кроссплатформенно нельзя, а app-zip несёт то же содержимое.
+_DIST_SUFFIX = {
+    "windows": ("-win", (".zip",)),
+    "linux": ("-linux", (".tar.bz2", ".zip")),
+    "mac": ("-mac", (".zip",)),
+}
+
+
+def _find_dist_archive(dist: Path, suffix: str, exts: tuple[str, ...]) -> Path | None:
+    for ext in exts:
+        found = sorted(dist.glob(f"*{suffix}*{ext}"))
+        if found:
+            return found[-1]
+    return None
+
+
+def _extract_archive(archive: Path, dest: Path) -> None:
+    """zip или tar.bz2 — распаковка по фактическому типу файла."""
+    import tarfile
+    import zipfile
+
+    if archive.name.endswith(".tar.bz2"):
+        with tarfile.open(archive, "r:bz2") as tf:
+            tf.extractall(dest)
+        return
+    with zipfile.ZipFile(archive) as zf:
+        zf.extractall(dest)
 
 
 def steam_config(project: dict) -> dict:
@@ -206,10 +234,15 @@ def steam_app_build(root: Path, flavor: str, branch: str = "") -> tuple[str, lis
     return vdf, warnings
 
 
-def steam_stage_content(root: Path, flavor: str) -> tuple[list[str], list[str]]:
-    """Распаковать зипы distribute в раскладку депотов build/steam/content/.
+def steam_stage_content(root: Path, flavor: str, platforms: tuple[str, ...] | None = None
+                        ) -> tuple[list[str], list[str]]:
+    """Распаковать артефакты distribute в раскладку депотов build/steam/content/.
+
+    platforms — какие платформы ожидать (по умолчанию те, у которых объявлен
+    депот): собирать под все три ради одного депота незачем, а «нет артефакта»
+    для неотгружаемой платформы — не ошибка, а шум.
     Возвращает (распакованные платформы, ошибки)."""
-    import zipfile
+    import shutil
 
     project = load_project(root)
     dist = root / "build" / "dist" / f"{project['version']}-{flavor}"
@@ -218,19 +251,22 @@ def steam_stage_content(root: Path, flavor: str) -> tuple[list[str], list[str]]:
     if not dist.is_dir():
         return staged, [f"нет дистрибутива {dist.relative_to(root)} — "
                         f"сначала vn release build --flavor {flavor}"]
-    for platform, suffix in _DIST_SUFFIX.items():
-        zips = sorted(dist.glob(f"*{suffix}*.zip"))
-        if not zips:
-            errors.append(f"{platform}: в {dist.relative_to(root)} нет зипа "
-                          f"*{suffix}*.zip (соберите с --package)")
+    if platforms is None:
+        platforms = tuple((steam_config(project).get("depots") or {}).keys())
+    for platform in platforms:
+        suffix, exts = _DIST_SUFFIX[platform]
+        archive = _find_dist_archive(dist, suffix, exts)
+        if archive is None:
+            errors.append(
+                f"{platform}: в {dist.relative_to(root)} нет артефакта "
+                f"*{suffix}*{'/'.join(exts)} (соберите vn release build "
+                f"--package {suffix.lstrip('-')})")
             continue
         dest = root / "build" / "steam" / "content" / flavor / platform
         if dest.is_dir():
-            import shutil
             shutil.rmtree(dest)
         dest.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(zips[-1]) as zf:
-            zf.extractall(dest)
+        _extract_archive(archive, dest)
         staged.append(platform)
     return staged, errors
 

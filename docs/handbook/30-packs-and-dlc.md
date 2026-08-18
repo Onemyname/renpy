@@ -55,7 +55,7 @@ packs/
 | `packs/<id>/manifest.yaml` | **да** | `_collect_packs` (`compile.py:437-472`) |
 | `packs/<id>/chapters/**` | **да** | `_collect_chapters` (`compile.py:500-514`) |
 | `packs/<id>/chapters/*/vars.yaml` | **НЕТ** | компилятор глобит только `content/chapters/*/vars.yaml` (`compile.py:621`) |
-| `packs/<id>/characters/**` | **НЕТ** | компилятор глобит только `content/characters/*/character.yaml` (`compile.py:665`) |
+| `packs/<id>/characters/**` | **НЕТ** | компилятор глобит только `content/characters/*/character.yaml` (`compile.py:878`) |
 | `packs/<id>/loc/**` | **НЕТ** | зоны не существует в коде; PO пак-глав живут в общем `loc/` (см. §3.3) |
 | `packs/<id>/gallery/`, `achievements/`, `ui/`, `audio/` | **НЕТ** | все эти зоны жёстко `content/…` (`compile.py:628,642,656,693,700`) |
 | любые `*.yaml` под `packs/` | частично | `vn content lint` валидирует **схемы** всех yaml под `packs/` (`tools/vn/src/vn/content/lint.py:89-91`) |
@@ -104,7 +104,7 @@ requires:
 | Где | Значение | Строка |
 |---|---|---|
 | Рантайм-фасад | `API_LEVEL = 1` | `game/framework/00_core/030_flow.rpy:9` |
-| Компилятор (зеркало) | `VN_API_LEVEL = 1` | `../../tools/vn/src/vn/content/compile.py:434` |
+| Компилятор (зеркало) | `VN_API_LEVEL = 1` | `../../tools/vn/src/vn/content/compile.py:554` (сверка — `:577-581`) |
 
 Проверка — одно условие (`compile.py:457-462`):
 
@@ -434,7 +434,7 @@ vn build
 | Что | Куда | Почему |
 |---|---|---|
 | `vars.yaml` главы | оставить в `content/chapters/<ch>/vars.yaml`? **нельзя** — каталога уже нет | переменные придётся переселить в `content/variables/*.vars.yaml` (глобальный неймспейс) — иначе они исчезнут из `defaults.gen.rpy` |
-| персонажи, объявленные под главу | остаются в `content/characters/` | компилятор читает только ядро (`compile.py:665`) |
+| персонажи, объявленные под главу | остаются в `content/characters/` | компилятор читает только ядро (`compile.py:878`) |
 | ачивки/галерея с `pack:` | остаются в `content/{achievements,gallery}/`, добавьте поле `pack: ep_winter` | зоны пака не читаются; поле `pack` валидируется (`compile.py:814-817`) |
 | PO и ledger | **ничего не делать** | `loc/ledger/chNN.json` и `loc/po/*/chNN.po` уже привязаны к id главы, а не к зоне (§3.3) |
 
@@ -525,7 +525,7 @@ label <old_id>:
 
 | Задача | Что править | Обязательно после |
 |---|---|---|
-| Бампнуть `api_level` фасада `vn.*` | `game/framework/00_core/030_flow.rpy:9` **И** `../../tools/vn/src/vn/content/compile.py:434` — две константы, синхронизации нет | обновить `api_level.below` во **всех** `packs/*/manifest.yaml`, иначе `vn build` покраснеет; ADR на смену контракта фасада |
+| Бампнуть `api_level` фасада `vn.*` | `game/framework/00_core/030_flow.rpy:9` **И** `../../tools/vn/src/vn/content/compile.py:554` — две константы, синхронизации нет | обновить `api_level.below` во **всех** `packs/*/manifest.yaml`, иначе `vn build` покраснеет; ADR на смену контракта фасада |
 | Включить гейт владения для Steam | ничего в паках: заполнить `project.yaml: platform.steam.appid` и `steam_dlc_appid` в манифесте пака — провайдер уже подключён (`035_platform.rpy:75`) | `vn pack validate`, `vn build`; проверить `chapter_select`, галерею, ачивки под Steam ([39](39-platforms.md) §5) |
 | Гейт владения для витрины без Steam (GOG/itch/Play) | новая ветка провайдера в `game/framework/00_core/035_platform.rpy` — **не** в `030_flow.rpy` и не в экранах (гард-тест ADR-0014) | тест на `owned()` = False; [39-platforms.md](39-platforms.md) §9 |
 | Сделать `flavors.packs` реальным гейтом | либо фильтровать `packs` в `_collect_packs`/`emit_chapter_registry` по флейвору, либо читать `vn_build.packs` в `_PackRegistry.installed()` | решить, гейт сборочный или рантайм-ный; ADR — это меняет смысл `VN_PACKS` |
@@ -568,7 +568,7 @@ grep -n "VN_PACKS" game/generated/registry/chapters.gen.rpy
 vn release validate --flavor public     # проверка #3: manifest.yaml каждого пака флейвора
 vn release validate --flavor patron
 vn play                                 # глава ch90 в меню с бейджем DLC
-python -m pytest tools/vn/tests -q      # 253 passed (RENPY_SDK задан; без него часть контракт-тестов skip)
+python -m pytest tools/vn/tests -q      # 254 passed (RENPY_SDK задан; без него часть контракт-тестов skip)
 ```
 
 Эталон на 2026-08-08: 2 пака (`ep_beach` с `ch90`, `nsfw` без глав), `VN_PACKS` из двух записей, `build/packs/ep_beach.zip` — 3522 байта / 3 файла, `build/packs/nsfw.zip` — 1 файл плюс строка `warning:` про отсутствие глав.

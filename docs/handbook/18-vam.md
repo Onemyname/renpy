@@ -3,7 +3,7 @@
 > **Статус подсистемы:** IMPLEMENTED (ветка источника) — контракт «декларация → выход → провенанс» общий с DAZ и Sims 4 (`assets/sources.py`), и с ADR-0012 закрыт весь производственный путь VaM: `.var` в `scene`, `capture.fps` и сверка `mode`/`fps`/`resolution` с фактическим файлом, склейка PNG-секвенции (`vn assets video seq`) с записью провенанса, постер-кадр видео, скаффолд (`vn assets new vam`), симметричный релизный гейт. **Остаётся внешним:** VaM на этой машине не установлен (doctor → WARN, не FAIL), деклараций в репозитории ноль, автоматизация захвата — **WONT_FIX** (у VaM нет официального headless-режима, см. `../audit/daz-wan-readiness.audit.yaml`: VAM-005), а `docs/ARCHITECTURE.md` о VaM не знает — 0 упоминаний.
 > **Отвечает на вопрос:** «Нужен ли мне VaM вместо/рядом с DAZ, как его легально поставить и как затащить захват в наш конвейер, чтобы он не выпал из провенанса и релизного гейта».
 
-VaM (Virt-a-Mate) — Unity-песочница с физическим позингом персонажей. В этом проекте это **опциональный третий источник** кадров (ADR-0006 §2a), а не замена DAZ. Продакшен-трек проекта — DAZ → ComfyUI/Wan I2V → ffmpeg → Ren'Py (см. [DAZ Studio](17-daz-studio.md), [Видео](21-video-generation.md)). VaM берут точечно, когда нужна физика тел и анимация, которую AI-видео пока не вытягивает. Код источника: `../../tools/vn/src/vn/assets/vam.py` (78 строк), схема `../../tools/schemas/vam_render@1.schema.json`, детект `../../tools/vn/src/vn/pipeline.py:173`, установщик-детектор `../../tools/install-vam.ps1`.
+VaM (Virt-a-Mate) — Unity-песочница с физическим позингом персонажей. В этом проекте это **опциональный третий источник** кадров (ADR-0006 §2a), а не замена DAZ. Продакшен-трек проекта — DAZ → ComfyUI/Wan I2V → ffmpeg → Ren'Py (см. [DAZ Studio](17-daz-studio.md), [Видео](21-video-generation.md)). VaM берут точечно, когда нужна физика тел и анимация, которую AI-видео пока не вытягивает. Код источника: `../../tools/vn/src/vn/assets/vam.py` (24 строки — тонкая обёртка над общим валидатором `assets/sources.py`, ADR-0012), схема `../../tools/schemas/vam_render@1.schema.json`, детект `../../tools/vn/src/vn/pipeline.py:173`, установщик-детектор `../../tools/install-vam.ps1`.
 
 ## Быстрый ответ
 
@@ -167,41 +167,48 @@ capture:
 
 ## 5. Что делает `vn assets vam validate`
 
-Код: `../../tools/vn/src/vn/cli.py:687-709` → `../../tools/vn/src/vn/assets/vam.py:32-78`. Флаги: `--scope <подпуть>`, `--no-provenance`.
+Код: `../../tools/vn/src/vn/cli.py:786-808` → `../../tools/vn/src/vn/assets/vam.py` (обёртка, 24 строки) → общий валидатор `../../tools/vn/src/vn/assets/sources.py:145-206`. Флаги: `--scope <подпуть>`, `--no-provenance`. **Обновлено ADR-0012:** три структурные копии сведены к одному контракту; различия источников — данные (`SourceKind`, `sources.py:47-67`).
 
 | Шаг | Что происходит | Строка |
 |---|---|---|
-| 1 | Рекурсивный обход `assets_src/vam/**/*.render.yaml`. Нет каталога — тихий пустой отчёт | `vam.py:40-43` |
-| 2 | Валидация по JSON Schema. Ошибка схемы → декларация **пропускается целиком**, дальше по ней не проверяется ничего | `vam.py:48-51` |
-| 3 | Существование сцены: `assets_src/<scene>` **или** `assets_src/<scene>.manifest.json`. Иначе error `«сцены … нет ни локально, ни в манифестах (vn assets push после сохранения сцены VaM)»` | `vam.py:54-59` |
-| 4 | Дубликат `output` между декларациями → error | `vam.py:61-65` |
-| 5 | Нет файла выхода → **только warning** `«выход … ещё не захвачен»`, обработка декларации останавливается | `vam.py:68-70` |
-| 6 | Выход есть и не задан `--no-provenance` → пишется/обновляется `<output>.provenance.json` | `vam.py:71-77` |
+| 1 | Рекурсивный обход `assets_src/vam/**/*.render.yaml`. Нет каталога — тихий пустой отчёт | `sources.py:154`, `:151-152` |
+| 2 | Валидация по JSON Schema. Ошибка схемы → декларация **пропускается целиком**, дальше по ней не проверяется ничего | `sources.py:160-163` |
+| 3 | Существование сцены: `assets_src/<scene>` **или** `assets_src/<scene>.manifest.json`. Иначе error `«сцены … нет ни локально, ни в манифестах (vn assets push после экспорта сцены)»` | `sources.py:166-172` |
+| 4 | Дубликат `output` между декларациями → error | `sources.py:174-179` |
+| 5 | `id` не соответствует выходу (пересчёт той же арифметикой, что у конвейера) → error | `sources.py:183-188` |
+| 6 | Нет файла выхода → **только warning** `«выход … ещё не получен»`, обработка декларации останавливается | `sources.py:190-193` |
+| 7 | `capture.resolution` против фактического файла → error при расхождении | `_check_resolution`, `sources.py:252-286` |
+| 8 | `capture.mode` (`sequence`/`screenshot`) против типа выхода и `capture.fps` против фактического fps мастера → error | `_check_sequence`, `sources.py:209-249` (молчит без `ffprobe`) |
+| 9 | Выход есть и не задан `--no-provenance` → пишется/обновляется `<output>.provenance.json` | `sources.py:198-205` |
 
 Exit 1 при любой ошибке, иначе 0.
 
 **Чего валидатор НЕ делает** (симметрично DAZ):
 
 - не открывает и не парсит сцену VaM — это чистая проверка существования файла;
-- не сверяет `capture.resolution` с реальным размером PNG;
-- не проверяет, что `id` согласован с `output` (`id: cg/ch01/beach` + `output: png/cg/ch99/other.png` пройдут);
 - не требует `license` — его отсутствие ловит `vn assets licenses`, и то как WARN (`../../tools/vn/src/vn/assets/licenses.py:104-108`);
 - не проверяет наличие плагинов, версий пакетов, ничего про саму инсталляцию VaM;
 - ничего не захватывает и не запускает.
 
+Сверка `capture.resolution` с файлом и согласованность `id` ↔ `output` в этом списке были до ADR-0012 — теперь это шаги 5 и 7 выше.
+
 ### Провенанс
 
-`record_vam` (`../../tools/vn/src/vn/assets/provenance.py:299-301`) кладёт в начало цепочки шаг `{kind: "vam_render", source: {path, hash}, declaration, settings}`, где `settings` — дословный снимок блока `capture`. Хэши — blake3. Переобъявление источника **заменяет** предыдущий `*_render`-шаг и сохраняет хвост `comfyui`/`manual` (`provenance.py:266-291`). Это и даёт цепочку `vam_render → comfyui` для гибрида из §1.
+`record_render` (`../../tools/vn/src/vn/assets/provenance.py:279-304`) кладёт в начало цепочки шаг `{kind: "vam_render", source: {path, hash}, declaration, settings}`, где `settings` — дословный снимок блока `capture`. Хэши — blake3. Переобъявление источника **заменяет** предыдущий `*_render`-шаг и сохраняет хвост `comfyui`/`manual` (`provenance.py:294-299`). Это и даёт цепочку `vam_render → comfyui` для гибрида из §1.
 
-### Релизный гейт: важная асимметрия
+### Релизный гейт
 
-`../../tools/vn/src/vn/release.py:358-367` вызывает тот же валидатор с `write_provenance=False`. Но ветка PASS написана как `elif vrep.checked:` — **при нуле деклараций гейт не печатает про VaM ничего**. Сравните с DAZ (`release.py:347-356`), где `else:` даёт `PASS  DAZ-декларации: 0 проверено`. Фактический прогон сегодня:
+`../../tools/vn/src/vn/release.py:517-525` вызывает тот же валидатор с `write_provenance=False`. Ветвление симметрично DAZ (`release.py:506-514`) и Sims 4 (`:528-537`): `errors → FAIL`, иначе `warnings → WARN`, иначе `else → PASS`. Поэтому при нуле деклараций гейт печатает три строки:
 
 ```
  PASS  DAZ-декларации: 0 проверено
+ PASS  VaM-декларации: 0 проверено
+ PASS  Sims4-декларации: 0 проверено
 ```
 
-— и ни одной строки про VaM или Sims 4. То есть **отсутствие VaM-контента в гейте невидимо**, а незахваченный выход даёт WARN, а не FAIL: декларация, по которой ничего не сняли, релиз не блокирует.
+Прошлая асимметрия (`elif vrep.checked:`, из-за которой пустая VaM-зона молчала) в коде **исправлена** — если встретите это утверждение в старых заметках, оно устарело.
+
+Что осталось честной дырой: **незахваченный выход даёт WARN, а не FAIL** — декларация, по которой ничего не сняли, релиз не блокирует.
 
 ## 6. Автоматизация: что возможно и что подключено
 
@@ -302,14 +309,14 @@ vn release validate --flavor public
 python -m pytest tools/vn/tests/test_provenance.py -q   # включая test_vam_validate_and_chain
 ```
 
-Эталон на 2026-08-08: `assets_src/vam/` содержит только `.gitkeep` (0 байт); `vn pipeline doctor` даёт `WARN Virt-a-Mate: не установлен (опционально)`; `vn release validate --flavor public` — 16 PASS, exit 0, **строки про VaM нет**.
+Эталон на 2026-08-18 (HEAD `db28ce6`): `assets_src/vam/` содержит только `.gitkeep` (0 байт); `vn pipeline doctor` даёт `WARN Virt-a-Mate: не установлен (опционально)`; `vn release validate --flavor public` — 19 строк (18 PASS + 1 WARN про черновые дубли озвучки), exit 0, и **строка про VaM в них есть всегда** — `PASS VaM-декларации: 0 проверено` (безусловная `else`-ветка, `release.py:517-526`).
 
 ## Для AI-агента
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/assets/vam.py` (весь, 78 строк), `../../tools/schemas/vam_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:266-301` (`_record_render`/`record_vam`), `../../tools/vn/src/vn/cli.py:682-709`, `../../tools/vn/src/vn/pipeline.py:143-190` (`_steam_libraries`/`vam_path`) и `:543-546` (doctor), `../../tools/vn/src/vn/release.py:358-367`, `../../tools/install-vam.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md` (§2a), `../pipeline/phase-0.md:107-130` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/assets/vam.py` (весь, 24 строки) и общий валидатор `../../tools/vn/src/vn/assets/sources.py` (весь, 286 строк), `../../tools/schemas/vam_render@1.schema.json`, `../../tools/vn/src/vn/assets/provenance.py:279-304` (`record_render`), `../../tools/vn/src/vn/cli.py:781-808`, `../../tools/vn/src/vn/pipeline.py:143-193` (`_steam_libraries`/`vam_path`) и `:544-548` (doctor), `../../tools/vn/src/vn/release.py:517-525`, `../../tools/install-vam.ps1`, `../adr/0006-daz-comfyui-video-pipeline.md` (§2a), `../pipeline/phase-0.md:107-130` |
 | **Не трогать** | `assets_src/vam/.gitkeep` (маркер зоны), `game/assets/**` и `game/generated/**` (производные), `<output>.provenance.json` — сайдкары пишет `vn assets vam validate`, ручная правка ломает `provenance verify` по хэшу |
-| **Зависимости (что ломается ниже по течению)** | Декларация → `provenance@1`-сайдкар → `vn assets provenance verify` → релизный гейт (`release.py:337-345`); `license` → `tools/vn/src/vn/assets/licenses.py:53-109` → гейт (`release.py:408-417`); `output` в `png/cg/**` → `png2webp_cg` + `png2webp_cg_thumb` → `image cg …` от компилятора; `output` в `video_src/**` → `video2webm` + `mov_meta@1` |
+| **Зависимости (что ломается ниже по течению)** | Декларация → `provenance@1`-сайдкар → `vn assets provenance verify` → релизный гейт (`release.py:496-504`); `license` → `tools/vn/src/vn/assets/licenses.py:53-109` → гейт (`release.py:584-592`); `output` в `art/cg/**` → `img_cg` + `img_thumb` → `image cg …` от компилятора; `output` в `video_src/**` → `video2webm` + `mov_meta@1` |
 | **Валидация** | `vn assets vam validate` → `vn assets provenance verify` → `vn assets licenses` → `vn content lint` → `vn build` → `vn release validate --flavor public` → `python -m pytest tools/vn/tests/test_provenance.py -q` |
 | **Частые ошибки** | 1) Считать, что тулинг умеет запускать VaM: `vam_path()` только печатает путь, автоматизации захвата нет вообще. 2) Добавлять поле в `capture` — `additionalProperties: false`, любая «своя» пара ключ-значение = твёрдая ошибка схемы; расширение = новая версия схемы. 3) Ссылаться на `.var` в `scene` — паттерн принимает только `json/vac/vap`. 4) Ждать FAIL там, где код даёт WARN: незахваченный выход, декларация без `license`, отсутствие VaM в doctor. 5) Искать VaM в `docs/ARCHITECTURE.md` — там **ноль** упоминаний, норма живёт в ADR-0006/0007 и `docs/pipeline/phase-0.md`. 6) Класть сцены/`.var` в git — ADR-0004 порог 50 МБ красит линт и CI |

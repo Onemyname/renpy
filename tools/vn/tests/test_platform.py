@@ -76,16 +76,38 @@ def test_steam_app_build_requires_depots(tmp_path, repo_root):
 
 
 def test_steam_stage_content_unpacks_dist(tmp_path, repo_root):
+    """Форматы distribute различаются по платформам: win — zip, linux — tar.bz2
+    (SDK 00build.rpy). Раскладка обязана понимать оба, иначе Linux-депот молча
+    не доезжает, а команда падает после корректной сборки."""
+    import tarfile
+
     root = _steam_root(tmp_path, repo_root)
     dist = root / "build" / "dist" / "0.0.1-public"
     dist.mkdir(parents=True)
     with zipfile.ZipFile(dist / "vn-0.0.1-win.zip", "w") as zf:
         zf.writestr("vn.exe", b"bin")
+    payload = dist / "vn.sh"
+    payload.write_bytes(b"#!/bin/sh\n")
+    with tarfile.open(dist / "vn-0.0.1-linux.tar.bz2", "w:bz2") as tf:
+        tf.add(payload, arcname="vn.sh")
+    payload.unlink()
+
     staged, errors = steam_stage_content(root, "public")
-    assert staged == ["windows"]
-    assert (root / "build" / "steam" / "content" / "public" / "windows" / "vn.exe").is_file()
-    # linux/mac зипов нет — честные ошибки, а не молчание
-    assert any("linux" in e for e in errors) and any("mac" in e for e in errors)
+    assert sorted(staged) == ["linux", "windows"], errors
+    content = root / "build" / "steam" / "content" / "public"
+    assert (content / "windows" / "vn.exe").is_file()
+    assert (content / "linux" / "vn.sh").is_file()
+    # mac-депот не объявлен в project.yaml -> его артефакт и не требуется
+    assert errors == []
+
+
+def test_steam_stage_content_reports_missing_declared_platform(tmp_path, repo_root):
+    """Депот объявлен, а артефакта нет — честная ошибка, а не пустой депот."""
+    root = _steam_root(tmp_path, repo_root)
+    (root / "build" / "dist" / "0.0.1-public").mkdir(parents=True)
+    staged, errors = steam_stage_content(root, "public")
+    assert staged == []
+    assert any("windows" in e for e in errors) and any("linux" in e for e in errors)
 
 
 def test_steam_stage_content_without_dist(tmp_path, repo_root):

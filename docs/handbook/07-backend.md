@@ -56,7 +56,7 @@ vn test smoke                              # прогон главы автоп�
 | `dlc_*` | состояние пака | пак | **нет ни одной** |
 | `persistent` | межсейвовые данные; имена **обязаны** начинаться с `vn_` (C9) | `*.vars.yaml` со `store: persistent` | деклараций нет; во framework: `persistent.vn_achievements`, `persistent.vn_gallery_unlocked` |
 
-Правило `store == id главы` проверяет линтер: `tools/vn/src/vn/content/lint.py:312-317` (компилятор эту проверку не делает).
+Правило `store == id главы` проверяет линтер: `tools/vn/src/vn/content/lint.py:348-352` (компилятор эту проверку не делает).
 
 **Правило `_`-префикса.** Ren'Py не кладёт в сейв переменные, начинающиеся с `_`. Поэтому:
 
@@ -109,9 +109,9 @@ vars:
 
 1. **Сцена не может трогать необъявленную переменную.** Build-bridge вытаскивает из авторского `.rpy` фактические `var_reads`/`var_writes` по ast-контексту (`050_build_bridge.rpy:15-37`), а `validate_scene` сверяет их с Variable Registry: `tools/vn/src/vn/content/scenes.py:145-159`. Незадекларированный атрибут — **ошибка**, а в главе со `status: draft` — предупреждение (G15). Формулировка ошибки: «молчаливый фантом-стор вне сейва/миграций (G5)».
 2. **Направленная сверка с манифестом сцены.** Если в `scene.yaml` объявлен блок `vars: {reads: [...], writes: [...]}` — расхождение с фактом даёт предупреждения (`scenes.py:160-175`). Если блока нет — молчит. Живой пример декларации: `content/chapters/ch01_awakening/scenes/s010_intro.scene.yaml` (`vars.writes: [ch01.met_mira]`).
-3. **`store == id главы`** для `chapters/*/vars.yaml` — `lint.py:312-317`.
+3. **`store == id главы`** для `chapters/*/vars.yaml` — `lint.py:348-352`.
 4. **C9:** `store: persistent` + имя без `vn_` → `CompileError` (`compile.py:100-104`).
-5. **G7:** выпущенная переменная не может молча исчезнуть — `lint.py:364-369` сверяет `content/registry/id_registry.json` с существующими. **Гарантия сейчас инертна:** все четыре массива реестра пусты, потому что штампуются только главы со `status: release` (`release.py:69-95`), а `ch01` — `draft`.
+5. **G7:** выпущенная переменная не может молча исчезнуть — `lint.py:399-404` сверяет `content/registry/id_registry.json` с существующими. **Гарантия сейчас инертна:** все четыре массива реестра пусты, потому что штампуются только главы со `status: release` (`release.py:69-95`), а `ch01` — `draft`.
 
 ### Реальный генерат
 
@@ -422,9 +422,9 @@ label <old>:
 |---|---|
 | `installed(pack_id)` | `pack_id == "core"` или наличие в `VN_PACKS` (генерат) |
 | `owned(pack_id)` | `core` → True; не установлен → False; есть провайдер → его вердикт; **иначе True** |
-| `set_ownership_provider(fn)` | **NOT IMPLEMENTED: у метода ноль вызывающих во всём репозитории** |
+| `set_ownership_provider(fn)` | **IMPLEMENTED (ADR-0014)**: единственный вызывающий — `035_platform.rpy:75`, `init 999`, и только если движок поднял Steam |
 
-Практический итог: **`owned()` сегодня всегда возвращает True для любого установленного пака.** Steam-проверка владения не подключена, `label splashscreen`, где она должна была бы инициализироваться, не существует. Гейт логический и от копирования `.rpa` не защищает — так и задумано (G9), но полагаться на него как на DRM нельзя. Потребители: `game/generated/screens/chapter_select.gen.rpy`, `080_achievements.rpy:41`, `090_gallery.rpy:44`. Подробнее — [30-packs-and-dlc.md](30-packs-and-dlc.md).
+Практический итог: **под Steam `owned()` честно спрашивает платформу, вне Steam — всегда True для любого установленного пака.** Провайдер (`_steam_owns_pack`, `035_platform.rpy:55-68`) отвечает по `dlc_installed(steam_dlc_appid)`; у пака без `steam_dlc_appid` — True, при ошибке API — fail-open True. Подключается это не в `label splashscreen` (такой метки в проекте нет — устаревшее указание в докстринге `030_flow.rpy:67`), а в `init 999` после загрузки реестров. Гейт логический и от копирования `.rpa` не защищает — так и задумано (G9), но полагаться на него как на DRM нельзя. Потребители: `game/generated/screens/chapter_select.gen.rpy`, `080_achievements.rpy:41`, `090_gallery.rpy:44`. Подробнее — [30-packs-and-dlc.md](30-packs-and-dlc.md), [39-platforms.md](39-platforms.md).
 
 Смежное: `project.yaml` описывает у флейворов список `packs`, но **гейтом он не является** — `VN_PACKS` перечисляет все паки независимо от флейвора (NOT IMPLEMENTED).
 
@@ -525,10 +525,10 @@ def vn_log(msg):
 * **Не полагаться на `state[...]` без `.get()`.** Старый сейв мог не знать ключа.
 * **Не делать переходы между сценами через `jump`/`call` из авторского `.rpy`.** Только `return "<exit_id>"`; всё остальное запретит `validate_scene`.
 * **Не выносить логику восстановления в `config.after_load_callbacks`.** Контракт G5: control flow после загрузки — только в `label after_load`; коллбэки — чистая валидация без переходов.
-* **Не полагаться на `owned()` как на защиту.** Сейчас всегда True.
+* **Не полагаться на `owned()` как на защиту.** Под Steam он спрашивает платформу (`dlc_installed`), вне Steam — всегда True; при ошибке API — fail-open True. Это гейт витрины, не DRM (§8).
 * **Не рассчитывать, что `flavor` в dev что-то ограничивает.** `game/build_id.json` отсутствует → `nsfw=True`, `early_content=True`, весь контент виден.
 * **Не возвращать в `build_id.json` сам patron-токен.** Файл уезжает игроку целиком; в схеме `build_info@2` есть только производная метка `patron_tag` (ADR-0011). Поля `patron_token` в рантайме больше нет — `vn_build.patron_token` вернёт `AttributeError`.
-* **Не переиспользовать удалённый id** (сцены, главы, персонажа, переменной). G7: id неизменяемы навсегда; исчезновение выпущенного id ловит `lint.py:348-369` — но только если `id_registry.json` непустой, а он наполняется лишь при релизе главы со `status: release`.
+* **Не переиспользовать удалённый id** (сцены, главы, персонажа, переменной). G7: id неизменяемы навсегда; исчезновение выпущенного id ловит `lint.py:383-420` — но только если `id_registry.json` непустой, а он наполняется лишь при релизе главы со `status: release`.
 * **Не считать, что `vn.check_scene_stack()` что-то чинит.** Он только логирует; восстановление — задача `unwind_call_stack()` в обвязке и shim-метках.
 
 ---
@@ -539,7 +539,7 @@ def vn_log(msg):
 vn content lint                  # переменные сцен против Variable Registry, store==id главы, G7
 vn build                         # полная сборка; падает на разрыве цепочки миграций
 vn build --check                 # ничего не пишет; exit 1 = генерат протух относительно источников
-python -m pytest tools/vn/tests -q          # 253 теста; test_saves.py — эмиссия миграций и снапшота
+python -m pytest tools/vn/tests -q          # 254 теста; test_saves.py — эмиссия миграций и снапшота
 vn save check                    # JSON-заголовки 2 фикстур: schema/версия/сцена, без unpickle
 vn save corpus                   # обе фикстуры грузятся в реальной игре, after_load гоняет миграции
 vn test smoke                    # автопилот проходит главу; .vncache/smoke/state.json = финальный снапшот
@@ -564,4 +564,4 @@ vn test smoke                    # автопилот проходит глав�
 | **Не трогать** | `game/generated/**` целиком (генерат `vn build`), `game/assets/**`, `game/tl/**`, `.vncache/**`, `ci/fixtures/rpyc-line/**` (линия statement-имён — правится только через `vn save corpus --add`) |
 | **Зависимости** | новая переменная → `defaults.gen.rpy` + `snapshot.gen.rpy` + Variable Registry линтера + возможная миграция; бамп `save_schema` → обязательный файл миграции + резерв номера + перепроверка корпуса; правка `API_LEVEL` → `VN_API_LEVEL` в компиляторе + манифесты паков + `test_engine_compat`; правка `030_flow.rpy` → обвязка всех сцен, которую эмитит `tools/vn/src/vn/content/scenes.py:197-273` |
 | **Валидация** | `vn content lint && vn build --check && python -m pytest tools/vn/tests -q && vn save corpus` |
-| **Частые ошибки** | 1) правка `game/generated/state/*.gen.rpy` вместо декларации — исчезнет на следующей сборке; 2) бамп `save_schema` без файла миграции или без резерва номера — красная сборка; 3) миграция, обходящая `state.keys()`, — там лежат `ch01.PY2`/`g.PY2` и retired-переменные; 4) попытка «починить» строки `[vn] snapshot: … пропущен (не-простой тип _Feature)` — это штатный фильтр, а не баг; 5) вывод из `docs/ARCHITECTURE.md`, что `vn.safe_jump` / `vn.scene_enter` / `vn_pos_scene` / `vn.register_system` существуют — их нет в коде; 6) допущение, что `owned()` кого-то ограничивает — провайдера владения никто не устанавливает; 7) обращение к `vn_build.patron_token` — поля больше нет, в `build_info@2` лежит только производная метка `patron_tag` (ADR-0011); 8) ожидание, что корпус сейвов «просто грузит» — фикстур две, и `schema1-demo` обязана поднять схему до 2 через миграцию `0002`, иначе `vn save corpus` красный |
+| **Частые ошибки** | 1) правка `game/generated/state/*.gen.rpy` вместо декларации — исчезнет на следующей сборке; 2) бамп `save_schema` без файла миграции или без резерва номера — красная сборка; 3) миграция, обходящая `state.keys()`, — там лежат `ch01.PY2`/`g.PY2` и retired-переменные; 4) попытка «починить» строки `[vn] snapshot: … пропущен (не-простой тип _Feature)` — это штатный фильтр, а не баг; 5) вывод из `docs/ARCHITECTURE.md`, что `vn.safe_jump` / `vn.scene_enter` / `vn_pos_scene` / `vn.register_system` существуют — их нет в коде; 6) допущение, что `owned()` ограничивает кого-то в standalone-сборке — провайдер подключается только при живом Steam (`035_platform.rpy:75`), иначе вердикт всегда True; 7) обращение к `vn_build.patron_token` — поля больше нет, в `build_info@2` лежит только производная метка `patron_tag` (ADR-0011); 8) ожидание, что корпус сейвов «просто грузит» — фикстур две, и `schema1-demo` обязана поднять схему до 2 через миграцию `0002`, иначе `vn save corpus` красный |

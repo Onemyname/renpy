@@ -239,7 +239,7 @@ ARCHITECTURE.md:2505 (и :2781) требует ledger-журнал с «пенс
 Прямо в ветке меню: `$ ch01.met_mira = True` (`s010_intro.scene.rpy:10`).
 
 Переменную обязательно объявить заранее, иначе будет **ошибка сборки** (для `status: draft` —
-warning, `scenes.py:151`):
+warning, `scenes.py:235`):
 `ch01.met_mira пишется, но не объявлена в Variable Registry ... — молчаливый фантом-стор вне сейва/миграций (G5)`.
 
 | Что объявляем | Файл | Пример |
@@ -453,7 +453,7 @@ vn test smoke --lang pseudo --picks 0,0
 ### Чеклист «новый диалог» (реплики без выбора)
 
 1. Файл: `content/chapters/chNN_<slug>/scenes/sNNN_<slug>.scene.rpy`. Нет сцены — создать пару
-   файлов: `vn scene new ch01 rooftop` (следующий номер с шагом 10, `cli.py:467-482`).
+   файлов: `vn scene new ch01 rooftop` (следующий номер с шагом 10, `cli.py:488-503`).
 2. Писать в `label chNN_sNNN__body:`; **никаких `id`** — их проставит тулинг.
 3. Персонажу нужен `define` — проверить, что он есть в `content/characters/<id>/character.yaml`,
    и добавить id в `participants:` парного YAML.
@@ -532,12 +532,12 @@ vn test smoke --lang pseudo --picks 0,0
 vn loc keys --check     # id проставлены, ledger свеж (главный гейт этого файла)
 vn build                # lint -> ассеты -> компиляция; ошибки контракта сцен здесь
 vn content graph        # развилки глазами (Mermaid); паки не сканируются
-vn loc report           # покрытие переводов: сейчас de/en/pseudo 115/115, fuzzy 0
+vn loc report           # покрытие переводов: сейчас de/en/pseudo 130/130, fuzzy 0
 vn test smoke --picks 0,0
 vn test smoke --picks 0,1          # вторая ветка; путь — .vncache/smoke/picks.log
 vn test smoke --lang pseudo --picks 0,0   # переполнения текста
 "$RENPY_SDK/renpy.exe" . lint
-python -m pytest tools/vn/tests -q         # 138 тестов
+python -m pytest tools/vn/tests -q         # 254 теста
 ```
 
 В bash-сессии `RENPY_SDK` не наследуется — экспортируйте вручную:

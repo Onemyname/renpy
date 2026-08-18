@@ -133,7 +133,7 @@ vn test smoke --picks 0,0                    # автопрохождение, �
 |---|---|---|
 | `image vn_ctc` :36 | `Transform(Solid(gui.accent_color), xysize=(14,14), rotate=45)` — ромб «жду клика» | `screen say` (`core_screens.rpy:37`) |
 | `transform vn_ctc_blink` :38 | ATL-цикл 0.7 с: alpha 1.0↔0.3 + `yoffset` 0↔4 | там же |
-| `transform vn_toast_in` :44 | alpha 0→1, `yoffset -14`→0 за 0.25 с | `screen notify` (`core_screens.rpy:435`) |
+| `transform vn_toast_in` :44 | alpha 0→1, `yoffset -14`→0 за 0.25 с | `screen notify` (`core_screens.rpy:457-459`) |
 
 **Компоненты**
 
@@ -157,7 +157,7 @@ vn test smoke --picks 0,0                    # автопрохождение, �
 | `say(who, what)` | `core_screens.rpy:21` | реплика | прозрачное окно + `vn_scrim`; id `window`/`who`/`what` сохранены (контракт движка); CTC-ромб; **зарезервирована колонка под side-image — сам side-image NOT IMPLEMENTED** |
 | `input(prompt)` | `core_screens.rpy:59` | ввод текста | тот же scrim |
 | `navigation()` | `core_screens.rpy:71` | левая рельса / колонка меню | ветвится по `main_menu`; пункт «Главы» только если `vn_registry.chapters()`; пункт «Галерея» только если `vn_gal.categories()` (:97) |
-| `main_menu()` | `core_screens.rpy:153` | главное меню | `tag menu`; wordmark `[config.name!t]`; «Продолжить» появляется по `renpy.newest_slot()` (:169) |
+| `main_menu()` | `core_screens.rpy:156` | главное меню | `tag menu`; wordmark `[config.name!t]`; «Продолжить» появляется по `renpy.newest_slot()` (:169) |
 | `save()` / `load()` / `file_menu` | `core_screens.rpy:224,228,232` | сейвы | 4 страницы + autopage, сетка 3×2 из `vn_save_slot` |
 | `preferences()` | `core_screens.rpy:260` | настройки | экран/текст/громкости/пропуск + `language_picker`; никаких настроек шрифта |
 | `language_picker()` | `core_screens.rpy:343` | список языков | данные **только** из `vn_lang.available()`; шрифт пункта из манифеста языка с fallback (:370); `viewport` со всеми четырьмя `vscrollbar_*` — без них полоса не рисуется |
@@ -213,8 +213,8 @@ content/ui/panels.yaml  --(ui_panel@1)-->  game/assets/ui/<id>.webp   (lossless 
 | `choice` | 14 | 27 | **54×54** | `choice.rpy:67` |
 | `choice_chosen` | 14 | 15 | **30×30** | `choice.rpy:71` |
 | `choice_hover` | 14 | 30 | **60×60** | `choice.rpy:68`, `gallery.rpy:186` |
-| `chip` | 8 | 11 | **22×22** | `gallery.rpy:167,224` |
-| `chip_active` | 8 | 11 | **22×22** | `gallery.rpy:168,225` |
+| `chip` | 8 | 11 | **22×22** | `gallery.rpy:180,237` |
+| `chip_active` | 8 | 11 | **22×22** | `gallery.rpy:181,238` |
 | `panel` | 18 | 56 | **112×112** | никто |
 | `slot` | 10 | 11 | **22×22** | `gallery.rpy:185,189` |
 | `toast` | 12 | 38 | **76×76** | никто |
@@ -343,8 +343,8 @@ vn loc report                              # все языки 100%, fuzzy 0
 vn test smoke --picks 0,0                  # автопрохождение; скриншоты .vncache/smoke/shot*.png
 vn test smoke --lang pseudo                # псевдолокаль +40% длины строк — проверка вёрстки
 vn test smoke --lang de
-python -m pytest tools/vn/tests -q         # 253 теста (в т.ч. 9 в test_ui_panels.py)
-vn release validate --flavor public        # релизный гейт (19 проверок), если готовите релиз
+python -m pytest tools/vn/tests -q         # 254 теста (в т.ч. 9 в test_ui_panels.py)
+vn release validate --flavor public        # релизный гейт (20 проверок), если готовите релиз
 ```
 
 **Скриншоты смотреть глазами обязательно.** Движковый lint не ловит визуальные поломки: сплющенный 9-patch, обрезанный текст, тофу вместо глифов, съехавший стек выборов. `vn build --check` в CI падает с «`game/assets` не свеж», если объявленная панель не собрана, и «генерат не свеж», если `ui_frames.gen.rpy` отстал.
@@ -359,9 +359,9 @@ vn release validate --flavor public        # релизный гейт (19 пр�
 |---|---|---|
 | Разрешение | IMPLEMENTED | `gui.init(1920, 1080)` — единственная виртуальная сетка; движок масштабирует всю поверхность под окно. Отдельных раскладок под другие пропорции нет, брейкпоинтов нет |
 | Клавиатура | PARTIALLY IMPLEMENTED | выбор — цифры 1–9 (`choice.rpy:49-51`); просмотрщик галереи — `K_LEFT`/`K_RIGHT`/`K_ESCAPE`/`game_menu` (`gallery.rpy:144-148`); Shift+J в dev-сборке. Остальные экраны полагаются на штатную навигацию движка |
-| Геймпад / controller-first | IMPLEMENTED ([ADR-0014](../adr/0014-platform-services.md), [39-platforms.md](39-platforms.md) §7) | скролл-пресет `vn_scroll_props` + `vn_ui.reveal` (докрутка к клавиатурному фокусу), `vn_modal_dialog` с B/Esc и `default_focus` на безопасной кнопке, `keyboard_focus False` у quick menu (уходит из dpad-пути), пад-биндинги в `20_ui/input.rpy` (L3=skip, R3=auto, LB/RB=листание вьюпортов), `FilePage("quick")`, LB/RB в просмотрщике галереи. Не проверено: живой пад — smoke под `RENPY_VARIANT` пад-события не шлёт |
+| Геймпад / controller-first | PARTIALLY IMPLEMENTED ([ADR-0014](../adr/0014-platform-services.md); приёмы — [39-platforms.md](39-platforms.md) §7, шесть открытых дефектов и разбор экран за экраном — [42-big-picture.md](42-big-picture.md)) | скролл-пресет `vn_scroll_props` + `vn_ui.reveal` (докрутка к клавиатурному фокусу), `vn_modal_dialog` с B/Esc и `default_focus` на безопасной кнопке, `keyboard_focus False` у quick menu (уходит из dpad-пути), пад-биндинги в `20_ui/input.rpy` (L3=skip, R3=auto, LB/RB=листание вьюпортов), `FilePage("quick")`, LB/RB в просмотрщике галереи. Не проверено: живой пад — smoke под `RENPY_VARIANT` пад-события не шлёт |
 | Масштабирование шрифта игроком | IMPLEMENTED | сегмент «авто / крупный / обычный» в `screen preferences()` (`core_screens.rpy:320-343`) → `vn.set_ui_scale` → `gui.ui_scale` (`20_ui/scale.rpy`). Авто = 1.4 на Steam Deck / Big Picture. **Только увеличение** (< 1.0 сплющит 9-patch панели ADR-0009) |
-| Safe-area ТВ (overscan) | IMPLEMENTED | `gui.overscan_pad = 48` в Big Picture (`scale.rpy:42`); прижатые к кромке оверлеи сдвигаются на этот токен (`quick_menu.rpy:17,19`, `gallery.rpy:134`, `build_overlay.rpy:15-16`) |
+| Safe-area ТВ (overscan) | PARTIALLY IMPLEMENTED | `gui.overscan_pad = 48` в Big Picture (`scale.rpy:42`); токен применён в трёх файлах / четырёх местах (`quick_menu.rpy:17,19`, `gallery.rpy:134`, `build_overlay.rpy:15-16`), ещё два элемента сидят внутри полосы 48 px без пада — [42-big-picture.md](42-big-picture.md) §4 |
 | Высокая контрастность / альтернативная палитра | NOT IMPLEMENTED | одна тёмная палитра, переключателя нет; `theme.yaml` фазы 2 не существует |
 | Озвучка интерфейса (self-voicing) | NOT IMPLEMENTED (проектных средств) | ни настройки, ни `alt`-подписей у декоративных элементов |
 | Локализация вёрстки | IMPLEMENTED | шрифт пункта языка берётся из манифеста пакета с fallback (`core_screens.rpy:370`); псевдолокаль `--lang pseudo` — штатный способ проверить, переживёт ли вёрстка +40% длины |

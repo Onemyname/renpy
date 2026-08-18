@@ -1,9 +1,9 @@
 # 14. Локализация
 
-> **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 115/115; на те же say-id опирается озвучка (`voice@1`, см. [23-audio.md](23-audio.md) §8). **Но:** номера say-id переиспользуемы после удаления реплики (нет high-watermark), RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам.
+> **Статус подсистемы:** IMPLEMENTED — round-trip PO работает целиком (`vn loc keys/add/extract/import/pseudo/report`), 3 языковых пакета живут в репозитории, покрытие 130/130; на те же say-id опирается озвучка (`voice@1`, см. [23-audio.md](23-audio.md) §8). **Но:** номера say-id переиспользуемы после удаления реплики (нет high-watermark), RTL/множественные формы/POT/CAT — NOT IMPLEMENTED, `vn loc report` не умеет гейтить сам.
 > **Отвечает на вопрос:** «Как добавить язык, как перевести новую строку, как не сломать переводы правкой сцены и что проверит релизный гейт».
 
-Локализация — единственная подсистема, которая пишет **в авторские исходники** (`vn loc keys` дописывает `id` прямо в `content/**/scenes/*.scene.rpy`) и полностью генерирует зону `game/tl/` (gitignored, `.gitignore:4`). Тулинг: `tools/vn/src/vn/loc/keys.py` (249 строк) и `tools/vn/src/vn/loc/po.py` (566 строк), CLI-группа `tools/vn/src/vn/cli.py:962-1086`. Рантайм: `game/framework/00_core/040_localization.rpy` (named stores `vn_lang` и `vn_loc`). Норматив — `../ARCHITECTURE.md` §5 (строки 2448-2916), архитектурное решение — `../adr/0005-language-packages-and-runtime-registry.md`.
+Локализация — единственная подсистема, которая пишет **в авторские исходники** (`vn loc keys` дописывает `id` прямо в `content/**/scenes/*.scene.rpy`) и полностью генерирует зону `game/tl/` (gitignored, `.gitignore:4`). Тулинг: `tools/vn/src/vn/loc/keys.py` (249 строк) и `tools/vn/src/vn/loc/po.py` (610 строк), CLI-группа `tools/vn/src/vn/cli.py:962-1086`. Рантайм: `game/framework/00_core/040_localization.rpy` (named stores `vn_lang` и `vn_loc`). Норматив — `../ARCHITECTURE.md` §5 (строки 2448-2916), архитектурное решение — `../adr/0005-language-packages-and-runtime-registry.md`.
 
 ## Быстрый ответ
 
@@ -296,9 +296,9 @@ def t(key):
 `vn loc report` (`po.py:555-566`, печать `cli.py:1073-1086`) выводит по строке на язык:
 
 ```
-de: 115/115 (100%), fuzzy: 0
-en: 115/115 (100%), fuzzy: 0
-pseudo: 115/115 (100%), fuzzy: 0
+de: 130/130 (100%), fuzzy: 0
+en: 130/130 (100%), fuzzy: 0
+pseudo: 130/130 (100%), fuzzy: 0
 ```
 
 Математика: `total` — **глобальный, одинаковый для всех языков** (домены `ch01`=16, `ch90`=3, `common`=96); `translated` считает только не-fuzzy; `fuzzy` отдельно; `missing` не считается и не печатается. **Exit code всегда 0** — команда информационная (в `.github/workflows/nightly.yml:49` она именно такая).
@@ -352,7 +352,7 @@ fonts:
 vn loc keys --check          # id на месте, ledger свеж
 vn build                     # включает loc import; упадёт на битой разметке перевода
 vn loc report                # глазами: нет ли просевшего языка и fuzzy
-vn release validate --flavor public    # среди 19 проверок — гейт покрытия 98%
+vn release validate --flavor public    # среди 20 проверок — гейт покрытия 98%
 ```
 
 ### Расширять с осторожностью
@@ -407,12 +407,12 @@ vn release validate --flavor public    # среди 19 проверок — ге
 
 ```bash
 vn loc keys --check     # все say/menu с id, ledger свеж (CI: .github/workflows/ci.yml:64)
-vn loc report           # ожидаем de/en/pseudo — 115/115 (100%), fuzzy 0
+vn loc report           # ожидаем de/en/pseudo — 130/130 (100%), fuzzy 0
 vn build --check        # + валидация разметки переводов, без записи
 vn build                # полный прогон, регенерирует game/tl/
-vn release validate --flavor public    # 19 проверок, включая покрытие ≥ 98%
-python -m pytest tools/vn/tests/test_loc.py -q    # 23 теста локализации
-python -m pytest tools/vn/tests -q                # 138 тестов целиком
+vn release validate --flavor public    # 20 проверок, включая покрытие ≥ 98%
+python -m pytest tools/vn/tests/test_loc.py -q    # 25 тестов локализации
+python -m pytest tools/vn/tests -q                # 254 теста целиком
 ```
 
 Ручная проверка в игре: запустить, переключить язык в настройках, убедиться что меняются **и диалоги, и интерфейс**. На `pseudo` (виден только при `config.developer`) вся видимая строка должна быть акцентирована и обрамлена `[...]`; не изменившийся текст = литерал мимо `vn_loc.t()`.

@@ -3,7 +3,7 @@
 > **Статус подсистемы:** IMPLEMENTED — конвейер `assets_src/` → `game/assets/` работает целиком: контентно-адресуемый кэш, точечная очистка осиротевших, профили `full`/`draft`. **Обновлено ADR-0012:** зона мастеров переехала в `assets_src/art/` (`png/` — алиас), форматы/разрешения/варианты задаются `project.yaml: render`, отгружаются оверсэмпл-варианты `@N`, любой неподобранный файл — ошибка сборки. **Но** три соседние подсистемы написаны и ни разу не запускались в этом репозитории: хранилище сырцов (`~/vn-assets-store` не существует), провенанс (ноль сайдкаров), PSD-нарезка (ноль `.psd`, ноль тестов). Ветка `copy_audio` ожила: зона источника приведена к норме `assets_src/audio_stems/`, но звуковых файлов в репозитории пока ноль.
 > **Отвечает на вопрос:** «Куда положить картинку / видео / звук, как это должно называться и что запустить, чтобы оно появилось в игре».
 
-Ассет-конвейер — это один модуль `tools/vn/src/vn/assets/pipeline.py` (512 строк) плюс спутники: `video.py`, `ui.py`, `psd.py`, `storage.py`, `provenance.py`, `licenses.py`. Он берёт сырцы из `assets_src/`, прогоняет через версионированные трансформации и кладёт game-ready результат в `game/assets/` — зону, которой **нет в git**. Ren'Py-имена образов (`image bg rooftop day`, `layeredimage mira`) эмитит уже не он, а Content Compiler по факту собранных файлов — см. [Сквозной конвейер](08-content-pipeline.md).
+Ассет-конвейер — это один модуль `tools/vn/src/vn/assets/pipeline.py` (1045 строк) плюс спутники: `video.py`, `ui.py`, `psd.py`, `storage.py`, `provenance.py`, `licenses.py`. Он берёт сырцы из `assets_src/`, прогоняет через версионированные трансформации и кладёт game-ready результат в `game/assets/` — зону, которой **нет в git**. Ren'Py-имена образов (`image bg rooftop day`, `layeredimage mira`) эмитит уже не он, а Content Compiler по факту собранных файлов — см. [Сквозной конвейер](08-content-pipeline.md).
 
 ## Быстрый ответ
 
@@ -35,43 +35,44 @@ vn assets cache --dry-run        # сколько мусора накопил к
 
 **Честно про `vn bootstrap`:** ARCHITECTURE.md (G4, `:59`, `:425`, `:818`) обещает, что bootstrap *скачивает* готовые `game/assets/` + `game/generated/` + `game/tl/` из remote cache / CI-артефактов, чтобы сценарист и QA работали без asset-тулчейна. Это **NOT IMPLEMENTED**; текущая команда собирает всё локально, и её собственный докстринг это признаёт (`cli.py:205-206`). Практическое следствие: без Python-окружения с Pillow и без ffmpeg игру из чекаута не запустить. Аварийный режим `vn build --use-artifact <sha>` (14 упоминаний в ARCHITECTURE.md) — **NOT IMPLEMENTED**, флага не существует.
 
-## 2. Полная таблица трансформаций (7 штук)
+## 2. Полная таблица трансформаций (10 штук)
 
-Реестр версий — `../../tools/vn/src/vn/assets/pipeline.py:38-46`. Версия входит в ключ кэша: бамп `png2webp_bg` не инвалидирует аудио- или видео-ветку (норма G13).
+Реестр версий — `../../tools/vn/src/vn/assets/pipeline.py:54-65` (`TRANSFORMS`). Версия входит в ключ кэша: бамп `img_bg` не инвалидирует аудио- или видео-ветку (норма G13).
+
+**Имена изменил ADR-0012.** Прежние `png2webp_*` в коде не существуют — grep по ним даёт ноль. Растровые ветки называются по классу ассетов, а класс → трансформация — это `CLASS_TRANSFORM` (`pipeline.py:68-69`): `spr → img_sprite`, `bg → img_bg`, `cg → img_cg`, `shot → img_shot`.
 
 | Транформация | Вход | Выход (относительно `game/assets/`) | Параметры | Верс. | Код |
 |---|---|---|---|---|---|
-| `png2webp_sprite` | `assets_src/png/characters/<key>/<pose>/base.png` и `.../{outfits,faces,overlays}/<name>.png`; плюс staging `.vncache/psd_png/characters/...` | `spr/<key>/<pose>/base@2.webp`, `spr/<key>/<pose>/<group>/<name>@2.webp` | WebP `quality=95` (full) / `50` (draft), `method=4`, без ресайза | `1` | `pipeline.py:110-135`, `:223` |
-| `png2webp_bg` | `assets_src/png/backgrounds/<loc>/<variant>.png` | `bg/<loc>/<variant>.webp` | `quality=90` / `50` | `1` | `pipeline.py:137-144`, `:225` |
-| `png2webp_cg` | `assets_src/png/cg/<...>/<name>.png` (вложенность любая) | `cg/<...>/<name>.webp` | `quality=90` / `50` | `1` | `pipeline.py:148-156`, `:227` |
-| `png2webp_cg_thumb` | тот же файл, вторая задача | `cg/<...>/<name>.thumb.webp` | `quality=80` **фиксировано**, `max_side=512` через `Image.thumbnail(..., LANCZOS)` | `1` | `pipeline.py:157`, `:228-231` |
-| `ui_panel` | **не файл**, а декларация: каждая панель из `content/ui/panels.yaml` | `ui/<panel_id>.webp` | WebP `lossless=True, quality=100`, `method=4` (full) / `0` (draft) | `1` | `pipeline.py:205-216`, `:237-248` |
-| `copy_audio` | `assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg` | `audio/<kind>/<id>.ogg` | побайтовое копирование (`src.read_bytes()`) | `1` | `pipeline.py:159-170`, `:232-233` |
-| `video2webm` | `assets_src/video_src/<group>/…/<name>.{mp4,mov,mkv,webm,m4v,avi}` (+ опц. `<name>.video.yaml`) | `mov/<group>/…/<name>.webm` | VP9 1-pass, см. §2.2 | `1` | `pipeline.py:172-203`, `video.py:101-120` |
-| *(псевдо)* `mov_meta` | тот же прогон | `mov/…/<name>.webm.meta.json` (`mov_meta@1`) | JSON `indent=1, sort_keys=True` | версия берётся от `video2webm` | `pipeline.py:314`, `:367-391` |
+| `img_sprite` | `assets_src/art/characters/<key>/<pose>/base.<ext>` и `.../{outfits,faces,overlays}/<name>.<ext>`, плюс `<key>/side/<name>.<ext>`; плюс staging `.vncache/psd_png/characters/...` | `spr/<key>/<pose>/base[@N].webp`, `spr/<key>/<pose>/<group>/<name>[@N].webp`, `spr/<key>/side/<name>[@N].webp` | `quality` класса `spr` (по умолчанию 95 `full` / 50 `draft`), `keep_alpha`, целевой размер по `variants` | `2` | `pipeline.py:280-349`, `_image_jobs:212-260`, `_transform:625-630` |
+| `img_bg` | `assets_src/art/backgrounds/<...>/<name>.<ext>` (вложенность любая) | `bg/<...>/<name>[@N].webp` + `<name>.thumb.webp` | `quality` класса `bg` (90 / 50), альфа запрещена | `2` | `pipeline.py:351-368` |
+| `img_cg` | `assets_src/art/cg/<...>/<name>.<ext>` | `cg/<...>/<name>[@N].webp` + `<name>.thumb.webp` | `quality` класса `cg` (90 / 50), альфа запрещена | `2` | `pipeline.py:351-368` |
+| `img_shot` | `assets_src/art/shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>].<ext>` (ADR-0013) | `shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>][@N].webp` | `quality` класса `shot` (90 / 50); `env` — без альфы и задаёт холст, остальные слои — с альфой и на том же холсте | `1` | `pipeline.py:370-412` |
+| `img_thumb` | тот же файл растрового класса с `thumb: true` (`bg`, `cg`), вторая задача | `<...>/<name>.thumb.webp` | `max_side` и `quality` из `render.thumb` (512 / 80), `Image.thumbnail(..., LANCZOS)` | `2` | `_image_jobs:250-259`, `_thumb_ext:263-267`, `_transform:631-635` |
+| `ui_panel` | **не файл**, а декларация: каждая панель из `content/ui/panels.yaml` | `ui/<panel_id>.webp` | WebP `lossless=True, quality=100`, `method=4` (full) / `0` (draft) | `1` | `pipeline.py:471-483`, `_transform_ui_panel:641-656` |
+| `copy_audio` | `assets_src/audio_stems/{bgm,amb,sfx}/<id>.ogg` | `audio/<kind>/<id>.ogg` | побайтовое копирование (`src.read_bytes()`) | `1` | `pipeline.py:414-430`, `_transform:636-637` |
+| `voice_opus` | `assets_src/voice/<lang>/<chNN>/<line_id>.(wav\|flac\|ogg\|opus)` | `voice/<lang>/<chNN>/<line_id>.opus` | ffmpeg: Opus 96k, громкость к −19 LUFS (`voice.py:290-306`) | `1` | `pipeline.py:432-466`, `pipeline.py:771` |
+| `video2webm` | `assets_src/video_src/<group>/…/<name>.{mp4,mov,mkv,webm,m4v,avi}` (+ опц. `<name>.video.yaml`) | `mov/<group>/…/<name>[@N].webm` | VP9 1-pass, см. §2.2 | `2` | `_video_jobs:533-599`, `video.py:101-120` |
+| `mov_poster` | тот же видео-мастер | `mov/…/<name>.poster.webp` — постер-кадр для `Movie(image=)` и сетки галереи | кадр из видео → WebP | `1` | `pipeline.py:755`, `:846` |
+| *(псевдо)* `mov_meta` | тот же прогон | `mov/…/<name>.webm.meta.json` (`mov_meta@1`) | JSON `indent=1, sort_keys=True` | версия берётся от `video2webm` | `pipeline.py:689` |
 
-Общее ядро PNG-энкода (`pipeline.py:82-91`) — всё принудительно приводится к RGBA:
+**Качество и форматы больше не константы в коде.** Их источник — `project.yaml: render.classes.<c>` поверх дефолтов `render_config.py:42-114`; `_transform` только читает `job.params["quality"][profile]` (`pipeline.py:625-630`). Поэтому «поднять качество CG» — правка `project.yaml`, а не конвейера, и она сама инвалидирует свою ветку кэша (`params_digest`, `render_config.py:245-250`).
 
-```python
-with Image.open(src) as im:
-    im = im.convert("RGBA")
-    if max_side:
-        im.thumbnail((max_side, max_side), Image.LANCZOS)
-    im.save(buf, format="WEBP", quality=quality, method=4)
-```
+Ядро энкода — `imaging.encode` (`assets/imaging.py`): приведение к целевому размеру по `variants`, `keep_alpha` по политике класса (`alpha: require|forbid|any`), выходной формат из `out_format`.
 
-**`copy_audio` — зона источника `assets_src/audio_stems/`** (`pipeline.py:161`), как и в нормативных документах (`docs/ARCHITECTURE.md:393`, `docs/conventions/folder-layout.md:29`). Раньше код искал `assets_src/audio/`, каталога с таким именем в репозитории нет — ветка не срабатывала никогда; расхождение устранено правкой кода (норма дороже: смена имени зоны потребовала бы ADR). Регрессия закрыта тестом `test_audio_stems_branch_copies_ogg` (`tools/vn/tests/test_assets.py`). Каталоги `assets_src/audio_stems/{bgm,amb,sfx}/` заведены (пока с одними `.gitkeep`), но `content/audio/{bgm,sfx}.yaml` всё ещё имеют `tracks: {}` — **вторая, декларативная половина звука по-прежнему пуста**. Рецепт — в §13.6.
+**`copy_audio` — зона источника `assets_src/audio_stems/`** (`pipeline.py:415`), как и в нормативных документах (`docs/ARCHITECTURE.md:393`, `docs/conventions/folder-layout.md:29`). Раньше код искал `assets_src/audio/`, каталога с таким именем в репозитории нет — ветка не срабатывала никогда; расхождение устранено правкой кода (норма дороже: смена имени зоны потребовала бы ADR). Регрессия закрыта тестом `test_audio_stems_branch_copies_ogg` (`tools/vn/tests/test_assets.py`). Каталоги `assets_src/audio_stems/{bgm,amb,sfx}/` заведены (пока с одними `.gitkeep`), но `content/audio/{bgm,sfx}.yaml` всё ещё имеют `tracks: {}` — **вторая, декларативная половина звука по-прежнему пуста**. Рецепт — в §13.6.
 
 ### 2.1 Дополнительные жёсткие правила discovery
 
 | Правило | Что будет | Код |
 |---|---|---|
-| Каждый сегмент пути и `stem` файла обязан матчить `^[a-z][a-z0-9_]*$` | error, задача пропускается | `pipeline.py:48`, `:94-99` |
-| В каталоге позы нет `base.png` | error «нет обязательного base.png» | `pipeline.py:124` |
-| Два источника претендуют на один выход (ручной PNG + нарезка PSD) | error «два источника претендуют на один выход» | `pipeline.py:289-290` |
-| Видео лежит без группы (`video_src/<name>.mp4`) | error «видео кладутся в группу» | `pipeline.py:190-193` |
-| Есть видео-сырцы, но нет ffmpeg/ffprobe | error, весь discovery обрывается | `pipeline.py:179-186` |
-| Любая ошибка discovery | **цикл задач не выполняется вообще** — нарушение имени не может каскадом снести `game/assets` | `pipeline.py:271-272` |
+| Каждый сегмент пути и `stem` файла обязан матчить `^[a-z][a-z0-9_]*$` | error, задача пропускается | `SLUG_RE:77`, `_check_slug:132-138` |
+| В каталоге позы нет `base.<ext>` | error «нет обязательного base.* (список форматов класса)» | `pipeline.py:321-324` |
+| В каталоге шота нет слоя `env.<ext>` | error «нет обязательного слоя env.*» | `pipeline.py:392-395` |
+| Два источника претендуют на один выход (ручной растр + нарезка PSD) | error «два источника претендуют на один выход» | `pipeline.py:702-704` |
+| Видео лежит без группы (`video_src/<name>.mp4`) | error «видео кладутся в группу» | `pipeline.py:567-570` |
+| Есть видео-сырцы, но нет ffmpeg/ffprobe | error, видео-трек не собирается | `pipeline.py:553-559` |
+| Есть мастера озвучки, но нет ffmpeg | error, голосовая ветка не собирается | `pipeline.py:447-451` |
+| Любая ошибка discovery | **цикл задач не выполняется вообще** — нарушение имени не может каскадом снести `game/assets` | `pipeline.py:680-683` |
 
 ### 2.2 Видео: пресет
 
@@ -92,17 +93,21 @@ ffmpeg -y -hide_banner -loglevel error -i <src>
 
 | Транформация | `full` | `draft` | Код |
 |---|---|---|---|
-| `png2webp_sprite` | quality 95 | quality 50 | `pipeline.py:223` |
-| `png2webp_bg` | quality 90 | quality 50 | `pipeline.py:225` |
-| `png2webp_cg` | quality 90 | quality 50 | `pipeline.py:227` |
-| `png2webp_cg_thumb` | quality 80 | quality 80 (**идентично**) | `pipeline.py:231` |
-| `copy_audio` | копия | копия (идентично) | `pipeline.py:233` |
-| `ui_panel` | lossless, `method=4` | lossless, `method=0` (быстрее, **те же пиксели**) | `pipeline.py:246-247` |
+| `img_sprite` | quality 95 | quality 50 | `render_config.py:88`, применение — `pipeline.py:625-630` |
+| `img_bg` | quality 90 | quality 50 | `render_config.py:65` |
+| `img_cg` | quality 90 | quality 50 | `render_config.py:76` |
+| `img_shot` | quality 90 | quality 50 | `render_config.py:102` |
+| `img_thumb` | quality 80 | quality 80 (**идентично**) | `render_config.py:57` (`render.thumb`) |
+| `copy_audio` | копия | копия (идентично) | `pipeline.py:636-637` |
+| `voice_opus` | Opus 96k / −19 LUFS | то же (идентично) | `voice.py:290-306` |
+| `ui_panel` | lossless, `method=4` | lossless, `method=0` (быстрее, **те же пиксели**) | `pipeline.py:653-654` |
 | `video2webm` | crf 30, `cpu-used 2`, потолок 1080 | crf 42, `cpu-used 8`, потолок `min(max_height, 720)` | `video.py:86-95` |
 
-Значения по умолчанию: `vn assets build` → `full` (`cli.py:516`); `vn assets watch` → **`draft`** (`cli.py:551`); `vn dev` при правке `assets_src/` → `draft` (`cli.py:243-246`); `vn build` → `full` (`cli.py:86-87`).
+Числа `quality` — не константы кода, а дефолты render-профиля; `project.yaml: render.classes.<c>.quality` их переопределяет.
 
-**Грабля:** профиль входит в ключ кэша *и* в сравнение свежести (`pipeline.py:310`, `:409`). После `vn assets build --profile draft` команда `vn build --check` объявит все выходы несвежими («источник изменился»), потому что сравнивает с `profile: full`. Перед пушем — пересоберите `full`. Обратное тоже верно: `full` и `draft` блобы сосуществуют в кэше, переключение профилей туда-сюда удваивает его объём.
+Значения по умолчанию: `vn assets build` → `full` (`cli.py:536-537`); `vn assets watch` → **`draft`** (`cli.py:605-607`); `vn dev` при правке `assets_src/` → `draft` (`cli.py:265-268`); `vn build` → `full` (`cli.py:90-91`).
+
+**Грабля:** профиль входит в ключ кэша *и* в сравнение свежести (`pipeline.py:724-725`, `:867`). После `vn assets build --profile draft` команда `vn build --check` объявит все выходы несвежими («источник изменился»), потому что сравнивает с `profile: full`. Перед пушем — пересоберите `full`. Обратное тоже верно: `full` и `draft` блобы сосуществуют в кэше, переключение профилей туда-сюда удваивает его объём.
 
 ## 4. Именование — справочник
 
@@ -111,7 +116,7 @@ ffmpeg -y -hide_banner -loglevel error -i <src>
 ### 4.1 Логические id ассетов
 
 `^(bg|cg|spr|mov|ui|vfx|bgm|amb|sfx)/[a-z0-9_/]+$` (`naming.md:17`). Пример: `bg/school_gate/day`, `mov/demo/ambient`.
-Из девяти префиксов производятся восемь: `bg`, `cg`, `spr`, `mov`, `ui` и `bgm|amb|sfx` (ветка `copy_audio`, §2 — работает, но сырцов в репозитории пока нет). `vfx` — **NOT IMPLEMENTED**, схемы `vfx@1` в `tools/schemas/` нет. Отдельно живут id слоёв послойных шотов — `shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>]` (§13.7): они наравне с `bg|cg|spr|mov` считаются выпущенными id ассетов в `id_registry@1`/`renames@1`.
+Из девяти префиксов производятся восемь: `bg`, `cg`, `spr`, `mov`, `ui` и `bgm|amb|sfx` (ветка `copy_audio`, §2 — работает, но сырцов в репозитории пока нет). `vfx` — **NOT IMPLEMENTED**, схемы `vfx@1` в `tools/schemas/` нет. Отдельно живут два id-пространства вне этих девяти: слои послойных шотов `shots/<chNN>/<sNNN>/<shot>/<layer>[__<variant>]` (§13.7) и дубли озвучки `voice/<lang>/<chNN>/<line_id>` (транскод `voice_opus`, §2) — первые наравне с `bg|cg|spr|mov` считаются выпущенными id ассетов в `id_registry@1`/`renames@1`.
 
 ### 4.2 Пути: сырец → выход
 
@@ -152,7 +157,7 @@ blob = root/".vncache"/"assets"/key[:2]/key
 | `video2webm` | `blake3(байты видео + b"\x00" + байты сайдкара)` (`pipeline.py:299-303`) | правка `<name>.video.yaml` инвалидирует выход |
 | `ui_panel` | `blake3(json.dumps(spec, sort_keys=True))` **одной панели** (`pipeline.py:304-308`, `ui.py:37-40`) | правка одной панели не перерисовывает остальные; но правка косметического поля `doc:` тоже инвалидирует блоб |
 
-**Раскладка на диске:** `.vncache/assets/<2 hex>/<64 hex>` — двухсимвольный fan-out, имя файла = полный blake3. Сейчас: 24 блоба, 147,5 КБ; манифест перечисляет 20 выходов, из них один (`mov_meta`) блоба не имеет → 19 «живых», 5 устаревших.
+**Раскладка на диске:** `.vncache/assets/<2 hex>/<64 hex>` — двухсимвольный fan-out, имя файла = полный blake3. Сейчас: 53 блоба, 500,7 КБ; манифест перечисляет 55 выходов. Разница в два — это видео: у трансформации `video2webm` один блоб даёт три выхода (`.webm`, сайдкар `.webm.meta.json` по `mov_meta@1` и постер-кадр `.poster.webp`, `pipeline.py:726-735`).
 
 **Все записи атомарны** — `<name>.tmp` + `os.replace` (`pipeline.py:71-79`). Причина в комментарии кода: обрезанный кэш-блоб «отравлял бы сборки навсегда». Выход в `game/assets/` перезаписывается только если байты отличаются (`pipeline.py:352-356`) — иначе выход помечается `fresh` и mtime сохраняется.
 
@@ -179,7 +184,7 @@ vn assets cache --gc        # удалить
  "outputs": {"spr/mira/a/base@2.webp": {
    "src": "assets_src/png/characters/mira/a/base.png",
    "src_hash": "00d4f13f…", "out_hash": "81599b48…",
-   "transform": "png2webp_sprite@1", "profile": "full"}}}
+   "transform": "img_sprite@2", "profile": "full"}}}
 ```
 
 **Удаление осиротевших идёт ТОЛЬКО по диффу манифеста** — дерево `game/assets/` никогда не сканируется (`pipeline.py:416-433`):
@@ -212,20 +217,21 @@ for orphan in sorted(candidates):
 | `game/generated/**`, `game/tl/**` | **нет** | `.gitignore:2`, `:4` |
 | `.vncache/**` (кэш + манифест сборки) | **нет** | `.gitignore:21` |
 | `.vnstorage.local.yaml` | **нет** | `.gitignore:22` |
-| `game/fonts/*.ttf|otf|woff2` | да, **через LFS** | `.gitattributes:3-5` |
-| `docs/**/*.png|jpg` | да, **через LFS** | `.gitattributes:6-7` |
+| `game/fonts/*.ttf|otf|woff2` | да, **через LFS** | `.gitattributes:11-13` |
+| `docs/**/*.png|jpg` | да, **через LFS** | `.gitattributes:14-15` |
+| `assets_src/**` — растр, аудио, видео, PSD, `.duf`, `.var`, `.zip`, `.package` | да, **через LFS** (22 правила) | `.gitattributes:18-39` |
 
-**В LFS только это.** Сырцы ассетов в LFS **не** заведены — `.gitattributes:2` прямо говорит: game-ready ассеты не коммитятся вовсе, сырцы должны жить в S3 через манифесты.
+**Мастера сырцов в LFS заведены — это переписал ADR-0012** (`.gitattributes:17-39`, 22 правила). Game-ready ассеты не коммитятся вовсе (`.gitattributes:1-2`). Объектное хранилище (`vn assets push`) остаётся для не-растровых гигантов — PSD, Tray-бандлы, `.duf`, исходники видео (комментарий `.gitattributes:9-10`).
 
-**ADR-0004** (`../adr/0004-local-png-sources-in-git.md`) временно разрешает небольшие демо-PNG прямо в `assets_src/png/`, пока не развёрнуто хранилище. Порог **enforced в тулинге**, а не на словах — `tools/vn/src/vn/content/lint.py:47`, `:371-399`:
+**ADR-0004** (`../adr/0004-local-png-sources-in-git.md`) разрешал небольшие демо-PNG прямо в зоне мастеров; **ADR-0012 переписал правило**: мастера легальны в git, но обязаны идти через LFS. Порог **enforced в тулинге**, а не на словах — `tools/vn/src/vn/content/lint.py:47`, `:422-452`:
 
-| Суммарный вес **нетекстовых** байт в `assets_src/` | Реакция линта |
+| Состояние `assets_src/` | Реакция линта |
 |---|---|
-| ≤ 30 МБ (60 % порога) | тихо |
-| > 30 МБ | warning «пора переводить сырцы в хранилище» |
-| > 50 МБ (`ADR0004_BINARY_LIMIT_MB`) | **error**, красный `vn build` и красный CI |
+| нетекстовый файл, которому `git check-attr filter` не отдаёт `lfs` | **error** на каждый такой файл: «бинарь в assets_src не покрыт Git LFS» (`lint.py:436-441`) |
+| сумма таких файлов **мимо LFS** > 50 МБ (`ADR0004_BINARY_LIMIT_MB`) | **error**, красный `vn build` и красный CI (`lint.py:445-452`) |
+| всё в LFS | тихо — LFS кладёт в историю указатель на ~130 байт, поэтому вес мастеров под порог не идёт |
 
-Из подсчёта исключаются `.json/.yaml/.yml/.md/.txt/.gitkeep`. Фактическое состояние: 11 бинарных файлов, **129,3 КБ** — 0,25 % порога. Запас огромный, но он же и означает, что переезд на хранилище пока не форсируется.
+**Warn-порога «30 МБ / 60 % от лимита» в коде нет** — если встретите его в старых заметках, это устаревшее описание до-ADR-0012 версии проверки. Покрытие спрашивается у самого git (`_lfs_tracked`, `lint.py:76-102`), из подсчёта исключаются `.json/.yaml/.yml/.md/.txt/.gitkeep` (`lint.py:429-432`). Фактическое состояние: 28 бинарных файлов, ~1,0 МБ, **все покрыты LFS** → счётчик порога равен нулю; `vn content lint` — 0 ошибок, 0 предупреждений.
 
 ## 8. Хранилище сырцов
 
@@ -321,9 +327,9 @@ vn assets provenance verify [--scope png/cg]
 4. Граф **не инлайнится**: `store_workflow` кладёт `{"prompt": api, "workflow": ui}` в бэкенд `"default"` под ключ `workflows/<blake3(api-граф)>` (`provenance.py:128-147`). Инлайн `step["workflow"]` — только fallback, когда хранилище недоступно.
 5. Нет графа и нет `--note` → `ProvenanceError`. С `--note` пишется шаг `{"kind": "manual", …}`.
 
-**`verify`** (`provenance.py:319-380`) — ERROR: битый JSON, нарушение схемы, артефакт пропал, хэш артефакта разошёлся, хэш локального источника шага разошёлся («артефакт больше не воспроизводим из этой цепочки»). WARNING: comfyui-шаг без инлайн-графа, чей `workflow_hash` не резолвится в хранилище; источник не найден ни локально, ни в манифесте; хэш манифеста источника отличается.
+**`verify`** (`provenance.py:317-378`) — ERROR: битый JSON, нарушение схемы, артефакт пропал, хэш артефакта разошёлся, хэш локального источника шага разошёлся («артефакт больше не воспроизводим из этой цепочки»). WARNING: comfyui-шаг без инлайн-графа, чей `workflow_hash` не резолвится в хранилище; источник не найден ни локально, ни в манифесте; хэш манифеста источника отличается.
 
-**Шаги-происхождения** (`_record_render`, `provenance.py:266-291`) пишутся не руками, а командами `vn assets {daz,vam,sims4} validate`: `*_render`-шаг встаёт в **голову** цепочки, последующие AI/ручные шаги сохраняются, прошлый шаг-происхождение заменяется («у артефакта один источник»). Практика — [DAZ Studio](17-daz-studio.md), [Генерация изображений](20-image-generation.md).
+**Шаги-происхождения** (`record_render`, `provenance.py:279-304`) пишутся не руками, а командами `vn assets {daz,vam,sims4} validate`: `*_render`-шаг встаёт в **голову** цепочки, последующие AI/ручные шаги сохраняются, прошлый шаг-происхождение заменяется («у артефакта один источник»). Практика — [DAZ Studio](17-daz-studio.md), [Генерация изображений](20-image-generation.md).
 
 ## 10. Лицензии ассетов
 
@@ -505,7 +511,7 @@ vn build             # -> layeredimage shot_ch01_s030 в game/generated/registry
 
 | Задача | Что править | Обязательно после |
 |---|---|---|
-| Поменять качество WebP фонов | `pipeline.py:225` | **бампнуть** `TRANSFORMS["png2webp_bg"]` в `pipeline.py:38-46` — иначе старые блобы кэша выдадут старые пиксели как «свежие» |
+| Поменять качество WebP фонов | `project.yaml: render.classes.bg.quality` (дефолт — `render_config.py:65`) | бампать `TRANSFORMS` **не нужно**: качество едет в `params_digest` и само инвалидирует ветку кэша (`render_config.py:245-250`). Бамп `TRANSFORMS["img_bg"]` (`pipeline.py:54-65`) нужен, только если меняется сам код энкода |
 | Поменять пресет ffmpeg | `video.py:101-111` | бампнуть `TRANSFORMS["video2webm"]` (правило зафиксировано комментарием `pipeline.py:37`, но **ничем не проверяется**) |
 | Добавить новую трансформацию | запись в `TRANSFORMS`; ветка в `_discover` (`pipeline.py:102-218`); ветка в `_transform` (`pipeline.py:221-234`) или отдельная функция как у `ui_panel`/`video2webm` | тест в `tools/vn/tests/test_assets.py`; строка в таблице §2 этого файла и в `../conventions/naming.md` |
 | Добавить исходную зону (`fonts/`, `seq/`, `spine/`) | `_discover`; сейчас известны ровно пять корней: `png/characters`, `png/backgrounds`, `png/cg`, `audio_stems`, `video_src` + декларация `content/ui/panels.yaml` | ADR: зоны из ARCHITECTURE §2.2 (`.rpa`, атласы, AVIF, ProRes-мастера) — NOT IMPLEMENTED |
@@ -523,7 +529,7 @@ vn build             # -> layeredimage shot_ch01_s030 в game/generated/registry
 - **Не класть аудио в `assets_src/audio/`** — такой зоны нет ни в коде, ни в нормативном дереве; единственный вход конвейера — `assets_src/audio_stems/{bgm,amb,sfx}/` (§13.6). Файл в неизвестной зоне не соберётся, и сборка об этом промолчит.
 - **Не пушить сырцы без лока** — `push` откажет (G14). И не считать лок защитой: он не атомарный, без TTL, владелец = `git config user.name`, `--force` снимает чужой без следа.
 - **Не запускать `vn build --check` на чистом чекауте с PSD-источниками.** `slice_all_psd` в режиме `check` пропускается (`pipeline.py:263-268`), `_discover` читает пустой `.vncache/psd_png/` — и все PSD-производные выходы объявляются осиротевшими.
-- **Не превышать 50 МБ бинарей в `assets_src/`** — красный линт, красный CI. Предупреждение начинается с 30 МБ.
+- **Не кладите в `assets_src/` бинарь, не покрытый правилом LFS в `.gitattributes`** — это ошибка линта на первом же файле (и 50 МБ таких файлов суммарно — вторая ошибка). Warn-порога на 30 МБ в коде нет.
 - **Не переименовывать собранный ассет, не пройдя через сырец.** Id ассетов неизменяемы (G7); переименование = новый id + запись в `content/renames.yaml`.
 - **Не ждать, что `.vncache/video-tmp/` подметёт `vn assets cache --gc`** — GC знает только `.vncache/assets`.
 
@@ -541,18 +547,18 @@ vn assets video validate            # все game/assets/mov/**
 vn content lint                     # в т.ч. порог ADR-0004
 python -m pytest tools/vn/tests/test_assets.py tools/vn/tests/test_ui_panels.py \
   tools/vn/tests/test_video.py tools/vn/tests/test_storage.py \
-  tools/vn/tests/test_provenance.py tools/vn/tests/test_licenses.py -q   # 44 теста
-vn release validate --flavor public  # 19 проверок, включая лицензии, провенанс, видео, бюджеты
+  tools/vn/tests/test_provenance.py tools/vn/tests/test_licenses.py -q   # 46 тестов
+vn release validate --flavor public  # 20 проверок, включая лицензии, провенанс, видео, бюджеты
 ```
 
-Эталонное состояние репозитория на 2026-08-08: `assets_src/` — 11 бинарных файлов / 129,3 КБ; `game/assets/` — 20 файлов; `.vncache/assets/` — 24 блоба / 147,5 КБ; манифест — 20 выходов.
+Эталонное состояние репозитория на 2026-08-18 (HEAD `db28ce6`): `assets_src/` — 28 бинарных файлов / 964,0 КБ (14 из них — черновые дубли озвучки `voice/ru/ch01/*.wav`); `game/assets/` — 55 файлов / 501,6 КБ; `.vncache/assets/` — 53 блоба / 500,7 КБ; манифест — 55 выходов.
 
 ## Для AI-агента
 
 | | |
 |---|---|
-| **Читать перед изменением** | `../../tools/vn/src/vn/assets/pipeline.py` (весь: 499 строк, discovery+кэш+манифест+GC), `../../tools/vn/src/vn/assets/video.py`, `../../tools/vn/src/vn/assets/ui.py`, `../../tools/vn/src/vn/assets/psd.py`, `../../tools/vn/src/vn/assets/storage.py`, `../../tools/vn/src/vn/assets/provenance.py`, `../../tools/vn/src/vn/assets/licenses.py`, `../../tools/vn/src/vn/cli.py:511-955` (группа `vn assets`), `../conventions/naming.md`, `../adr/0004-local-png-sources-in-git.md`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../adr/0009-generated-ui-panels.md` |
+| **Читать перед изменением** | `../../tools/vn/src/vn/assets/pipeline.py` (весь: 1045 строк, discovery+кэш+манифест+GC), `../../tools/vn/src/vn/assets/video.py`, `../../tools/vn/src/vn/assets/ui.py`, `../../tools/vn/src/vn/assets/psd.py`, `../../tools/vn/src/vn/assets/storage.py`, `../../tools/vn/src/vn/assets/provenance.py`, `../../tools/vn/src/vn/assets/licenses.py`, `../../tools/vn/src/vn/cli.py:511-955` (группа `vn assets`), `../conventions/naming.md`, `../adr/0004-local-png-sources-in-git.md`, `../adr/0006-daz-comfyui-video-pipeline.md`, `../adr/0009-generated-ui-panels.md` |
 | **Не трогать** | `game/assets/**` (производная зона, `.gitignore:3`), `game/generated/**` (`.gitignore:2`), `.vncache/**` — кэш, манифест сборки, staging PSD (`.gitignore:21`). Любая правка там будет затёрта; правка `.vncache/assets-manifest.json` вручную ломает удаление осиротевших |
-| **Зависимости (что ломается ниже по течению)** | `tools/vn/src/vn/content/images.py` строит `image bg/cg/mov` и `layeredimage` **по факту собранных файлов** — пропавший выход даёт ошибку компилятора или битую ссылку в рантайме; `tools/vn/src/vn/content/compile.py:139-227` резолвит `*.thumb.webp` для галереи; `tools/vn/src/vn/assets/ui.py:119-137` эмитит `vn_frame_*`; `release.py:28-53` считает бюджеты (`assets_total_mb 500`, `video_total_mb 300`, `video_file_mb 40`); `release.py:191-202` строит NSFW-глобы из реальных каталогов; `release.py:408-426` — гейты лицензий и статуса хранилища |
-| **Валидация** | `vn assets build` → `vn assets validate` → `vn build --check` → `vn content lint` → `python -m pytest tools/vn/tests -q` (138 тестов) → `vn release validate --flavor public` |
+| **Зависимости (что ломается ниже по течению)** | `tools/vn/src/vn/content/images.py` строит `image bg/cg/mov` и `layeredimage` **по факту собранных файлов** — пропавший выход даёт ошибку компилятора или битую ссылку в рантайме; `tools/vn/src/vn/content/compile.py:139-227` резолвит `*.thumb.webp` для галереи; `tools/vn/src/vn/assets/ui.py:119-137` эмитит `vn_frame_*`; `release.py:29-53` считает бюджеты (`assets_total_mb 20000`, `video_total_mb 8000`, `video_file_mb 512` — ADR-0012); `release.py:191-202` строит NSFW-глобы из реальных каталогов; `release.py:408-426` — гейты лицензий и статуса хранилища |
+| **Валидация** | `vn assets build` → `vn assets validate` → `vn build --check` → `vn content lint` → `python -m pytest tools/vn/tests -q` (254 теста) → `vn release validate --flavor public` |
 | **Частые ошибки** | 1) Менять параметр трансформации, не бампнув её версию в `TRANSFORMS` (`pipeline.py:38-46`) — кэш отдаст старые байты как свежие. 2) Считать, что `game/assets/` можно получить из git или через `vn bootstrap` без тулчейна — remote-fetch **NOT IMPLEMENTED**, bootstrap собирает локально. 3) Опираться на `docs/ARCHITECTURE.md` как на описание построенного: `game/assets/registry.json` (:1085), `assets_src/video/` (:858), side-mask alpha (:1143), VP9 2-pass и профили `hd`/`mobile` (:1179), `vfx@1` (:1074), зоны `.rpa`/атласов/AVIF (§2.2) — всё NOT IMPLEMENTED. 4) Ожидать, что `vn assets build` эмитит Ren'Py-`define` — это делает компилятор. 5) Класть звук мимо `assets_src/audio_stems/{bgm,amb,sfx}/` — иначе трансформация `copy_audio` его не увидит и промолчит (§2, §13.6) |
