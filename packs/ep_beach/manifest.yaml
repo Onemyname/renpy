@@ -5,4 +5,4 @@ version: 1.0.0
 title_key: meta.packs.ep_beach.title
 api_level: {min: 1, below: 2}
 requires:
-  core: ">=0.1.0 <1"
+  core: ">=0.1.0 <2"
