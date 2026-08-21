@@ -456,19 +456,21 @@ def test_e2e_keys_check_detects_stale_ledger(repo_root):
     assert rep.missing == []                                  # чистый репозиторий свеж
 
     ledger_path = repo_root / "loc" / "ledger" / "ch01.json"
-    original = ledger_path.read_text(encoding="utf-8")
+    # Байты, не текст: тест мутирует БОЕВОЙ файл репозитория, и восстановление
+    # через write_text на Windows возвращало его с CRLF — фантомный дифф после
+    # каждого прогона набора (аудит 2026-08-21, п.3).
+    original = ledger_path.read_bytes()
     try:
-        data = json.loads(original)
+        data = json.loads(original.decode("utf-8"))
         sid = sorted(data["says"])[0]
         data["says"][sid]["text"] += " (устарело)"
-        ledger_path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        ledger_path.write_bytes(
+            (json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
+            .encode("utf-8"))
         rep2 = assign_ids(repo_root, check=True)
         assert any("ch01.json устарел" in m for m in rep2.missing)
     finally:
-        ledger_path.write_text(original, encoding="utf-8")
+        ledger_path.write_bytes(original)
 
 # ── High-watermark say-id: номер не переиспользуется (P1-8) ───────────────────
 
