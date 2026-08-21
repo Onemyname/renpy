@@ -927,7 +927,10 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
         add("WARN", f"озвучка: {len(vo.drafts)} черновых дублей (draft) — "
                     f"{vo.drafts[0]}")
     elif vo.coverage:
-        add("PASS", f"озвучка: {len(vo.coverage)} шардов глава×язык покрыты полностью")
+        accepted = (f"; {len(vo.accepted)} драфтов приняты явно (accepted, ADR-0020)"
+                    if vo.accepted else "")
+        add("PASS", f"озвучка: {len(vo.coverage)} шардов глава×язык покрыты "
+                    f"полностью{accepted}")
 
     from .assets.licenses import validate_licenses
 

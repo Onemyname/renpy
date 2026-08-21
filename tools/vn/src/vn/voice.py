@@ -53,6 +53,9 @@ class VoiceReport:
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     drafts: list[str] = field(default_factory=list)      # "<lang>: <line_id>"
+    # Драфты, ЯВНО принятые как релизное качество (accepted: true, ADR-0020):
+    # гейт по ним молчит, но список виден — принятие не превращается в невидимость.
+    accepted: list[str] = field(default_factory=list)    # "<lang>: <line_id>"
     holes: list[str] = field(default_factory=list)       # "<lang>: <line_id>"
     # (chapter, lang) -> (покрыто, всего реплик главы)
     coverage: dict[tuple[str, str], tuple[int, int]] = field(default_factory=dict)
@@ -167,7 +170,14 @@ def validate(root: Path) -> VoiceReport:
                 continue
             covered += 1
             if spec["status"] == STATUS_DRAFT:
-                rep.drafts.append(f"{lang}: {lid}")
+                if spec.get("accepted"):
+                    rep.accepted.append(f"{lang}: {lid}")
+                else:
+                    rep.drafts.append(f"{lang}: {lid}")
+            elif spec.get("accepted"):
+                rep.errors.append(
+                    f"{rel}: {lid}: accepted у final-дубля бессмыслен — флаг "
+                    f"существует для принятых драфтов (ADR-0020), уберите его")
             if master_path(root, lang, lid) is None:
                 rep.errors.append(
                     f"{rel}: {lid}: объявлен, но мастера нет в "
@@ -294,7 +304,11 @@ def import_takes(root: Path, src_dir: Path, lang: str,
             "schema": "voice@1", "chapter": ch_id, "lang": lang, "lines": {}}
         doc.setdefault("lines", {})
         for f in takes:
-            doc["lines"][f.stem] = dict(doc["lines"].get(f.stem) or {}, status=status)
+            spec = dict(doc["lines"].get(f.stem) or {}, status=status)
+            # Новый дубль обнуляет принятие старого (ADR-0020): accepted относился
+            # к конкретному черновику, а не к реплике навсегда.
+            spec.pop("accepted", None)
+            doc["lines"][f.stem] = spec
         _write_manifest(mf, doc)
         rep.updated_manifests.append(mf.relative_to(root).as_posix())
     return rep
@@ -349,6 +363,8 @@ def _write_manifest(path: Path, doc: dict) -> None:
     for lid in sorted(lines):
         spec = lines[lid]
         fields_ = [f"status: {spec['status']}"]
+        if spec.get("accepted"):
+            fields_.append("accepted: true")
         if spec.get("actor"):
             fields_.append(f"actor: {spec['actor']}")
         out.append(f"  {lid}: {{{', '.join(fields_)}}}")

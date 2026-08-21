@@ -1493,8 +1493,9 @@ def voice_validate(show_report: bool):
             click.echo(f"  непокрыто {h}")
     if not rep.ok:
         _fail(f"voice: {len(rep.errors)} ошибок")
-    click.secho(f"voice: OK (драфтов: {len(rep.drafts)}, непокрыто: {len(rep.holes)})",
-                fg="green")
+    accepted = f", принятых драфтов: {len(rep.accepted)}" if rep.accepted else ""
+    click.secho(f"voice: OK (драфтов: {len(rep.drafts)}{accepted}, "
+                f"непокрыто: {len(rep.holes)})", fg="green")
 # ── vn save ───────────────────────────────────────────────────────────────────
 
 FIXTURES_DIR = "ci/fixtures/saves"

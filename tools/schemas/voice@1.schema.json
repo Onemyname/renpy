@@ -26,6 +26,10 @@
             "enum": ["draft", "final"],
             "description": "draft — TTS/черновой дубль (warning в релизном гейте), final — записанный дубль"
           },
+          "accepted": {
+            "type": "boolean",
+            "description": "Только для draft: черновик ЯВНО принят как релизное качество (ADR-0020) — релизный гейт не даёт WARN по этой реплике; новые драфты без флага по-прежнему WARN. Снимается заменой дубля на final (vn voice import)"
+          },
           "actor": {"type": "string", "minLength": 1}
         },
         "required": ["status"],
