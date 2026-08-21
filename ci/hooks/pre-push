@@ -1,0 +1,33 @@
+#!/bin/sh
+# Локальный гейт вместо CI (ADR-0020): быстрый lint контента перед каждым пушем.
+# Файл версионируется здесь (ci/hooks/), потому что .git/hooks не в git.
+# Установка: sh ci/hooks/install.sh   Аварийный обход: git push --no-verify.
+#
+# Этот hook ЗАМЕНЯЕТ штатный pre-push git-lfs — поэтому обязан сам вызвать
+# git lfs pre-push последним шагом, иначе LFS-объекты не уедут с пушем.
+
+ROOT="$(git rev-parse --show-toplevel)" || exit 2
+
+VN=""
+for c in "$ROOT/.venv/Scripts/vn.exe" "$ROOT/.venv/bin/vn"; do
+    if [ -x "$c" ]; then VN="$c"; break; fi
+done
+[ -n "$VN" ] || VN="$(command -v vn 2>/dev/null)"
+
+if [ -z "$VN" ]; then
+    echo >&2 "pre-push: CLI vn не найден (ни .venv, ни PATH) — lint-гейт не прогнать."
+    echo >&2 "Установка: python -m venv .venv && .venv/Scripts/pip install -r tools/vn.lock -e \"tools/vn[dev]\""
+    echo >&2 "Осознанный обход: git push --no-verify"
+    exit 2
+fi
+
+echo "pre-push: vn content lint (ADR-0020)…"
+if ! (cd "$ROOT" && "$VN" content lint); then
+    echo >&2 "pre-push: lint красный — пуш остановлен. Обход: git push --no-verify"
+    exit 1
+fi
+
+# git-lfs: сохранённый вызов штатного hook'а, который этот файл заменил.
+command -v git-lfs >/dev/null 2>&1 || {
+    echo >&2 "pre-push: git-lfs не найден на PATH — LFS-объекты не уедут"; exit 2; }
+exec git lfs pre-push "$@"
