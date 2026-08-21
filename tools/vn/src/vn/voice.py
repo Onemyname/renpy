@@ -641,7 +641,10 @@ def _synth_wav(tts: Tts, text: str, out_wav: Path) -> None:
     """Один WAV бэкендом. Текст идёт на stdin (его читают и piper, и say): реплики
     в argv упирались бы в лимит длины команды и в экранирование кавычек."""
     out_wav.parent.mkdir(parents=True, exist_ok=True)
-    proc = subprocess.run(tts.argv(out_wav), input=text, text=True, capture_output=True)
+    # encoding обязателен: text=True без него кодирует stdin локалью ОС (на
+    # Windows — cp1251), а piper читает utf-8 — кириллица роняла синтез.
+    proc = subprocess.run(tts.argv(out_wav), input=text, capture_output=True,
+                          text=True, encoding="utf-8")
     if proc.returncode != 0:
         raise VoiceError(f"{tts.backend}: код {proc.returncode}: "
                          f"{(proc.stderr or proc.stdout).strip()[:500]}")
