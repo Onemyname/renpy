@@ -393,7 +393,7 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     lane, caches, legacy = rpyc_cache_lane(root, dest_suffix)
     if legacy:
         click.secho(f"rpyc-перенос: линии {lane.name} нет, взята старая раскладка "
-                    f"build/rpyc-cache/{caches[-1].name} (до разделения по флейворам) — "
+                    f"ci/rpyc-cache/{caches[-1].name} (до разделения по флейворам) — "
                     f"эта сборка запишет линию", fg="yellow")
     if caches:
         latest = caches[-1]

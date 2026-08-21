@@ -3,8 +3,10 @@
 # (lint, бюджеты G19, провенанс, DAZ/VaM/Sims4-декларации, свежесть ассетов/генерата,
 # сейв-корпус) и падает на FAIL — тег на красном коммите не даст дистрибутив.
 # Флейвор применяет NSFW-исключение (public = SFW).
-# .rpyc переносится между релизами через actions/cache (G6: statement-имена — основа
-# save-совместимости; vn package восстанавливает кэш с перезаписью и сохраняет новый).
+# .rpyc переносится между релизами через ci/rpyc-cache/ В GIT (G6, ADR-0020):
+# statement-имена — основа save-совместимости; vn package восстанавливает кэш с
+# перезаписью и пишет новый снимок. Job НЕ коммитит обновлённую линию — снимок
+# попадает в git руками при подготовке следующего релиза.
 
 name: release
 
@@ -68,12 +70,9 @@ jobs:
           fi
           chmod +x "$RENPY_SDK/renpy.sh" || true
 
-      - name: Кэш .rpyc прошлых релизов (G6, отдельно на флейвор)
-        uses: actions/cache@v4
-        with:
-          path: build/rpyc-cache
-          key: rpyc-${{ matrix.flavor }}-${{ github.ref_name }}
-          restore-keys: rpyc-${{ matrix.flavor }}-
+      # Шага actions/cache для .rpyc больше нет: линия имён живёт в git
+      # (ci/rpyc-cache/, ADR-0020) и приезжает обычным checkout. Восстановленный
+      # поверх git-содержимого кэш Actions затирал бы свежую линию устаревшей.
 
       - name: Релизный гейт + сборка флейвора (vn release build)
         env:

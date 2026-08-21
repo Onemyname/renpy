@@ -569,7 +569,7 @@ def test_steam_preflight_requires_explicit_save_directory(tmp_path, repo_root):
 
 def _rpyc_cache(root, *rel_versions):
     for rel in rel_versions:
-        (root / "build" / "rpyc-cache" / rel).mkdir(parents=True, exist_ok=True)
+        (root / "ci" / "rpyc-cache" / rel).mkdir(parents=True, exist_ok=True)
 
 
 def test_rpyc_lane_is_per_flavor(tmp_path):

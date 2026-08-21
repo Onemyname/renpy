@@ -470,7 +470,11 @@ def steam_preflight(root: Path, flavor: str) -> list[tuple[str, str]]:
     return checks
 
 
-RPYC_CACHE_REL = "build/rpyc-cache"
+# В git (ci/, вне build/): кэш — ЕДИНСТВЕННЫЙ носитель statement-имён выпущенных
+# релизов (G6). Раньше жил в build/ и переносился кэшем GitHub Actions; с отключением
+# CI (ADR-0020) копия в gitignored-каталоге на одной машине = потеря save-совместимости
+# от первого же rm -rf build. Вес — единицы МБ на релиз, это дешевле сломанных сейвов.
+RPYC_CACHE_REL = "ci/rpyc-cache"
 # Линия для прямого `vn package` (без флейвора): ручной прогон не должен затирать
 # релизную линию, из которой следующий релиз возьмёт statement-имена.
 RPYC_LANE_DEV = "dev"
@@ -479,7 +483,7 @@ RPYC_LANE_DEV = "dev"
 def rpyc_cache_lane(root: Path, dest_suffix: str = "") -> tuple[Path, list[Path], bool]:
     """Линия кэша `.rpyc` и её содержимое: `(каталог линии, версии, взят ли legacy)`.
 
-    Кэш разложен по флейворам — `build/rpyc-cache/<линия>/<версия>/`. Наборы `.rpyc`
+    Кэш разложен по флейворам — `ci/rpyc-cache/<линия>/<версия>/`. Наборы `.rpyc`
     у флейворов разные (в public нет глав patron-паков), а перенос statement-имён из
     чужой линии — ровно тот случай, от которого страхует G6: сейв игрока public
     подцепил бы имена сборки, которой у него нет.

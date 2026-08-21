@@ -72,14 +72,8 @@ jobs:
           fi
           chmod +x "$RENPY_SDK/renpy.sh" || true
 
-      - name: Кэш .rpyc прошлых релизов (G6, только чтение)
-        # Restore, а не cache: statement-имена берутся из релизной линии (release.yml),
-        # и ручная Steam-выкладка не должна становиться их источником истины.
-        uses: actions/cache/restore@v4
-        with:
-          path: build/rpyc-cache
-          key: rpyc-${{ inputs.flavor }}-${{ github.ref_name }}
-          restore-keys: rpyc-${{ inputs.flavor }}-
+      # Шага restore для .rpyc больше нет: линия имён живёт в git
+      # (ci/rpyc-cache/, ADR-0020) и приезжает обычным checkout.
 
       - name: Релизный гейт + сборка флейвора (vn release build)
         env:

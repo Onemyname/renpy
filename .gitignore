@@ -9,9 +9,13 @@ game/build_id.json
 *.rpyc
 *.rpymc
 *.rpyb
-# Линия statement-имён фикстур сейв-корпуса — ЕДИНСТВЕННЫЕ .rpyc в git (G6):
+# Линия statement-имён фикстур сейв-корпуса — в git (G6):
 # без неё фикстуры валидны только на машине, где создавались
 !ci/fixtures/rpyc-line/**
+# Кэш .rpyc выпущенных релизов — носитель save-совместимости (G6). С отключением
+# CI (ADR-0020) кэша Actions больше нет; копия в gitignored build/ жила бы на одной
+# машине и умерла бы от первого rm -rf build.
+!ci/rpyc-cache/**
 log.txt
 errors.txt
 traceback.txt
