@@ -1,0 +1,33 @@
+{
+ "artifact": {
+  "hash": {
+   "algo": "blake3",
+   "hex": "8942e7d0a73903b82320d13e0d196ed13ebfaa2ea3092c65ec61210d8679784b"
+  },
+  "path": "art/cg/ch01/mock_pipeline_probe.png"
+ },
+ "chain": [
+  {
+   "declaration": "daz/ch01/mock_pipeline_probe.render.yaml",
+   "kind": "daz_render",
+   "settings": {
+    "camera": "cam_main",
+    "renderer": "iray",
+    "resolution": [
+     3840,
+     2160
+    ]
+   },
+   "source": {
+    "hash": {
+     "algo": "blake3",
+     "hex": "7031e5d0ef2e24a1a3360749b528f3cd5f60a32db83bd0cb6fcd94917f016e07"
+    },
+    "path": "daz/ch01/mock_pipeline_probe/scene.duf"
+   }
+  }
+ ],
+ "pipeline": "vn 0.1.0",
+ "schema": "provenance@1",
+ "updated_at": "2026-08-21T09:31:44+00:00"
+}

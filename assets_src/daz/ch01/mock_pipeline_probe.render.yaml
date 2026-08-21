@@ -1,0 +1,17 @@
+# ⚠️ MOCK-РЕНДЕР (аудит 2026-08-21, п.11): выход — placeholder-плашка PIL, НЕ арт.
+# Существует, чтобы DAZ-конвейер (декларация -> валидация -> провенанс -> лицензия
+# -> сборка) был прогнан end-to-end, а не оставался UNEXERCISED. Замена настоящим
+# рендером: та же декларация, перерендерить output и прогнать vn assets daz validate.
+# Удалять id без renames.yaml нельзя после штампа реестра (G7) — только заменять.
+schema: daz_render@1
+id: cg/ch01/mock_pipeline_probe
+source: daz/ch01/mock_pipeline_probe/scene.duf
+output: art/cg/ch01/mock_pipeline_probe.png
+render:
+  resolution:
+  - 3840
+  - 2160
+  renderer: iray
+  camera: cam_main
+license:
+- g9_starter_essentials
