@@ -1,7 +1,39 @@
 {
-  "schema": "id_registry@1",
-  "chapters": [],
-  "scenes": [],
-  "characters": [],
-  "vars": []
+ "assets": [
+  "bg/rooftop/day",
+  "bg/school_gate/day",
+  "cg/ch01/rooftop_day",
+  "cg/ch01/rooftop_sunset",
+  "mov/demo/ambient",
+  "shots/ch01/s030/sunset",
+  "shots/ch01/s030/sunset/env",
+  "shots/ch01/s030/sunset/mira__casual",
+  "shots/ch01/s030/sunset/mira__school",
+  "spr/mira/a/base",
+  "spr/mira/a/faces/angry",
+  "spr/mira/a/faces/neutral",
+  "spr/mira/a/faces/smile",
+  "spr/mira/a/outfits/casual",
+  "spr/mira/a/outfits/school"
+ ],
+ "chapters": [
+  "ch01",
+  "ch90"
+ ],
+ "characters": [
+  "mira"
+ ],
+ "scenes": [
+  "ch01_s010",
+  "ch01_s020",
+  "ch01_s030",
+  "ch90_s010"
+ ],
+ "schema": "id_registry@1",
+ "vars": [
+  "ch01.met_mira",
+  "g.mira_outfit",
+  "g.route",
+  "g.scenes_seen"
+ ]
 }

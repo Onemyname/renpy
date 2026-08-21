@@ -1,6 +1,6 @@
 schema: chapter@1
 id: ch01                             # слуг awakening — только в имени папки
 title_key: meta.chapters.ch01.title
-status: draft                        # draft | playtest | release (G15)
+status: release                      # draft | playtest | release (G15)
 entry_scene: s010
 scene_order: [s010, s020, s030]

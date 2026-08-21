@@ -7,14 +7,14 @@
     "ch01_s020",
     "ch01_s030"
    ],
-   "status": "draft"
+   "status": "release"
   },
   "ch90": {
    "pack": "ep_beach",
    "scenes": [
     "ch90_s010"
    ],
-   "status": "draft"
+   "status": "release"
   }
  },
  "schema": "release_manifest@1",

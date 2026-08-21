@@ -1,6 +1,6 @@
 schema: chapter@1
 id: ch90
 title_key: meta.chapters.ch90.title
-status: draft
+status: release
 entry_scene: s010
 scene_order: [s010]
