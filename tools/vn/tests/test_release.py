@@ -492,13 +492,30 @@ def test_pack_gate_open_in_dev_checkout(tmp_path, monkeypatch):
 
 # ── Готовность к Steam-поставке до получения App ID ──────────────────────────
 
-def test_steam_preflight_is_useful_without_appid(repo_root):
-    """Главный сценарий: приложения у Valve ещё нет. Пустой App ID обязан быть
-    пунктом TODO, а не провалом — иначе команда бесполезна ровно тогда, когда
-    она нужнее всего, и владелец не узнает, что остальное готово."""
+def test_steam_preflight_is_useful_without_appid(tmp_path, repo_root):
+    """Сценарий «приложения у Valve ещё нет»: пустой App ID обязан быть пунктом
+    TODO, а не провалом — иначе команда бесполезна ровно тогда, когда она нужнее
+    всего. На синтетическом корне: в репозитории App ID заполнен плейсхолдером
+    (симуляция Steam, 2026-08-21), и «пустого» состояния у repo_root больше нет."""
+    import shutil
+
+    import yaml
+
     from vn.release import steam_preflight
 
-    checks = steam_preflight(repo_root, "public")
+    root = tmp_path / "repo"
+    root.mkdir()
+    shutil.copy(repo_root / "project.yaml", root / "project.yaml")
+    shutil.copytree(repo_root / "content" / "achievements",
+                    root / "content" / "achievements")
+    shutil.copytree(repo_root / "game", root / "game",
+                    ignore=shutil.ignore_patterns("assets", "generated", "tl",
+                                                  "saves", "cache"))
+    proj = yaml.safe_load((root / "project.yaml").read_text(encoding="utf-8"))
+    proj["platform"] = {"steam": {"appid": None}}
+    (root / "project.yaml").write_text(yaml.safe_dump(proj, allow_unicode=True,
+                                                      sort_keys=False), encoding="utf-8")
+    checks = steam_preflight(root, "public")
     states = [st for st, _ in checks]
     assert "FAIL" not in states, [m for st, m in checks if st == "FAIL"]
     assert any(st == "TODO" and "App ID" in m for st, m in checks)
