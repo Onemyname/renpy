@@ -89,10 +89,12 @@ def _fake_generated(tmp_path, *, extra_rpyc=True, corrupt=False, schema=None,
     outputs = {}
     for rel, text in files.items():
         path = src / rel
-        path.write_text(text, encoding="utf-8")
+        # Байтами, не write_text: на Windows текстовый режим пишет CRLF, и хеш
+        # от text.encode() перестаёт совпадать с файлом — verify() честно падал.
+        path.write_bytes(text.encode("utf-8"))
         outputs[rel] = cc._b3(text.encode("utf-8"))
     if corrupt:
-        (src / "version.gen.rpy").write_text("подменено\n", encoding="utf-8")
+        (src / "version.gen.rpy").write_bytes("подменено\n".encode("utf-8"))
     if extra_rpyc:
         # .rpyc в артефакте есть законно (upload идёт после renpy lint и pytest),
         # и в outputs их нет — «лишних файлов не должно быть» проверять нельзя.

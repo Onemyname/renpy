@@ -407,9 +407,11 @@ def test_tts_backend_autoselect_prefers_piper(tmp_path, repo_root, monkeypatch):
 
     tts = resolve_tts(root, "ru")
     assert tts.backend == "piper" and tts.voice == str(model)
+    # Пути — через str(Path(...)): на Windows argv несёт обратные слеши,
+    # и литерал "/fake/piper" сравнивался бы с "\\fake\\piper".
     assert tts.argv(Path("/tmp/o.wav")) == [
-        "/fake/piper", "--model", str(model), "--output-file", "/tmp/o.wav",
-        "--length-scale", "1.000"]
+        str(Path("/fake/piper")), "--model", str(model),
+        "--output-file", str(Path("/tmp/o.wav")), "--length-scale", "1.000"]
 
 
 def test_tts_piper_flag_dialect_is_probed(tmp_path, repo_root, monkeypatch):

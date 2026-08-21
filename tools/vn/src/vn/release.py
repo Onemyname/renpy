@@ -225,8 +225,11 @@ def _extract_archive(archive: Path, dest: Path) -> None:
 
     if archive.name.endswith(".tar.bz2"):
         with tarfile.open(archive, "r:bz2") as tf:
-            tf.extractall(dest)
+            # filter="data": санация путей/прав; с Python 3.14 распаковка без
+            # filter меняет поведение (DeprecationWarning уже сейчас).
+            tf.extractall(dest, filter="data")
         return
+    # zipfile параметра filter не имеет: пути санирует сам extractall.
     with zipfile.ZipFile(archive) as zf:
         zf.extractall(dest)
 

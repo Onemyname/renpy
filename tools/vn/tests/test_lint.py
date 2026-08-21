@@ -21,6 +21,12 @@ def _copy_skeleton(repo_root, tmp_path):
     shutil.copytree(repo_root / "content", tmp_path / "content")
     shutil.rmtree(tmp_path / "content" / "chapters")
     (tmp_path / "content" / "chapters").mkdir()
+    # Реестр выпущенных id — вместе с главами: скелет «без глав» с боевым
+    # реестром давал бы G7-ошибки «выпущенная сцена исчезла» в каждом тесте
+    # (реестр репозитория непуст с 1.0.0). Тесты реестра пишут своё содержимое.
+    (tmp_path / "content" / "registry" / "id_registry.json").write_text(
+        '{"schema": "id_registry@1", "chapters": [], "scenes": [], '
+        '"characters": [], "vars": [], "assets": []}\n', encoding="utf-8")
     for d in REQUIRED_DIRS:
         (tmp_path / d).mkdir(parents=True, exist_ok=True)
     return tmp_path
