@@ -28,3 +28,13 @@ achievements:
     desc_key: ach.chapter_explorer.desc
     trigger: {var: g.scenes_seen}
     goal: {total: 3}
+
+  # Скрытая (hidden): в списке до получения — «???» / «Скрытое достижение»
+  # (экран achievements.rpy), игрок узнаёт о ней фактом получения. В Steamworks
+  # у неё дополнительно ставится флаг Hidden — vn release preflight напоминает.
+  # Триггер — бит спойлерной ветки: на крышу поднялись, не встретив Миру.
+  roof_alone:
+    name_key: ach.roof_alone.name
+    desc_key: ach.roof_alone.desc
+    hidden: true
+    trigger: {beat: roof_alone}

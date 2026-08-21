@@ -35,6 +35,16 @@ msgid "Выше крыш"
 msgstr "[[Вышę крыш~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ach.roof_alone.desc"
+msgid "Подняться на крышу, ни с кем не встретившись"
+msgstr "[[Пǫдняться нą крышų, нį с кęм нę встрęтįвшįсь~~~~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ach.roof_alone.name"
+msgid "Один над городом"
+msgstr "[[Ǫдįн нąд гǫрǫдǫм~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:gal.cg_ch01_concept.title"
 msgid "Концепт: крыша"
 msgstr "[[Кǫнцęпт: крышą~~~~~]"

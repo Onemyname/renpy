@@ -19,6 +19,9 @@ strings:
   ach.met_mira.desc: "Подойти к воротам и встретить Миру"
   ach.reached_rooftop.name: "Выше крыш"
   ach.reached_rooftop.desc: "Добраться до крыши"
+  # roof_alone — скрытая: до получения экран показывает «???» и не читает эти ключи
+  ach.roof_alone.name: "Один над городом"
+  ach.roof_alone.desc: "Подняться на крышу, ни с кем не встретившись"
 
   # ── Экран краха (последний эшелон, 20_ui/screens/crash_screen.rpy) ─────────
   ui.crash.title: "Что-то пошло не так"

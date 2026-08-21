@@ -647,6 +647,16 @@ msgctxt "string:ui.prefs.achievements"
 msgid "Достижения"
 msgstr "Errungenschaften"
 
+#. UI/мета-строка
+msgctxt "string:ach.roof_alone.desc"
+msgid "Подняться на крышу, ни с кем не встретившись"
+msgstr "Erreiche das Dach, ohne jemandem zu begegnen"
+
+#. UI/мета-строка
+msgctxt "string:ach.roof_alone.name"
+msgid "Один над городом"
+msgstr "Allein über der Stadt"
+
 #~ msgctxt "string:ui.history.hint"
 #~ msgid "Esc — закрыть"
 #~ msgstr "Esc — schließen"

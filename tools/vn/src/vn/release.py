@@ -438,7 +438,12 @@ def steam_preflight(root: Path, flavor: str) -> list[tuple[str, str]]:
     for f in sorted(ach_dir.glob("*.yaml")) if ach_dir.is_dir() else []:
         for aid, spec in sorted((load_yaml(f).get("achievements") or {}).items()):
             goal = (spec or {}).get("goal") or {}
-            rows.append(f"{aid} (прогресс до {goal['total']})" if goal.get("total") else aid)
+            row = f"{aid} (прогресс до {goal['total']})" if goal.get("total") else aid
+            # Скрытость в Steam — флаг Hidden в партнёрке, через API его не
+            # выставить: без напоминания секрет спойлерится витриной Steam.
+            if (spec or {}).get("hidden"):
+                row += " [HIDDEN — отметить Hidden в Steamworks]"
+            rows.append(row)
     checks.append(("PASS", f"ачивки для партнёрки ({len(rows)}): {', '.join(rows)}") if rows else
                   ("WARN", "ачивок не объявлено — раздел Achievements в Steamworks не нужен"))
 
