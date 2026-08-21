@@ -11,3 +11,5 @@ title_key: meta.packs.nsfw.title
 api_level: {min: 1, below: 2}
 requires:
   core: ">=0.1.0 <2"
+# ПЛЕЙСХОЛДЕР (симуляция Steam, 2026-08-21): заменить номером DLC из Steamworks.
+steam_dlc_appid: 485
