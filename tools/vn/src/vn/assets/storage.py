@@ -24,7 +24,7 @@ from pathlib import Path
 
 import blake3
 
-from ..repo import load_yaml
+from ..repo import load_yaml, write_text_lf
 
 MANIFEST_SUFFIX = ".manifest.json"
 
@@ -103,9 +103,9 @@ class FileBackend:
             return holder
         path = self._lock(lock_key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(
+        write_text_lf(path, json.dumps(
             {"by": owner, "at": datetime.now(timezone.utc).isoformat(timespec="seconds")},
-            ensure_ascii=False), encoding="utf-8")
+            ensure_ascii=False))
         return None
 
     def release_lock(self, lock_key: str, owner: str, force: bool = False) -> str | None:
@@ -205,8 +205,8 @@ def push(root: Path, paths: list[Path], storage: str = "default") -> SyncReport:
             "uploaded_by": owner,
             "uploaded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
-        mf_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=1,
-                                      sort_keys=True) + "\n", encoding="utf-8")
+        write_text_lf(mf_path, json.dumps(manifest, ensure_ascii=False, indent=1,
+                                      sort_keys=True) + "\n")
         rep.pushed.append(f"{rel} v{version}")
     return rep
 

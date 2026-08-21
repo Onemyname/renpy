@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .content.compile import CHAPTER_DIR_RE, SCENE_YAML_RE
-from .repo import chapter_zones, git_sha, git_tag_exists, load_project, load_yaml
+from .repo import chapter_zones, git_sha, git_tag_exists, load_project, load_yaml, write_text_lf
 
 MANIFEST_REL = "ci/release-manifest.json"
 BUILD_INFO_REL = "game/build_id.json"
@@ -191,8 +191,8 @@ def stamp_id_registry(root: Path) -> int:
     reg.setdefault("schema", "id_registry@1")
     if added:
         reg_path.parent.mkdir(parents=True, exist_ok=True)
-        reg_path.write_text(json.dumps(reg, ensure_ascii=False, indent=1,
-                                       sort_keys=True) + "\n", encoding="utf-8")
+        write_text_lf(reg_path, json.dumps(reg, ensure_ascii=False, indent=1,
+                                       sort_keys=True) + "\n")
     return added
 
 
@@ -599,13 +599,13 @@ def update_changelog(root: Path, force: bool = False) -> ReleaseReport:
         head, _, tail = old.partition("\n")
         # Пустая строка перед следующим заголовком обязательна: без неё markdown
         # склеивает «## Не выпущено» с последним абзацем нового раздела.
-        changelog.write_text(head + "\n\n" + "\n".join(lines) + "\n"
-                             + tail.lstrip("\n"), encoding="utf-8")
+        write_text_lf(changelog, head + "\n\n" + "\n".join(lines) + "\n"
+                             + tail.lstrip("\n"))
 
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(json.dumps(
+    write_text_lf(manifest_path, json.dumps(
         {"schema": "release_manifest@1", "version": project["version"], "chapters": cur},
-        ensure_ascii=False, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     # Автоштамп реестра выпущенных id (G7): сеть безопасности наполняется сама.
     rep.stamped = stamp_id_registry(root)
     return rep
@@ -739,8 +739,7 @@ def write_build_info(root: Path, info: dict) -> Path:
     if errors:
         raise ReleaseError("build-info не проходит схему:\n  " + "\n  ".join(errors))
     path = root / BUILD_INFO_REL
-    path.write_text(json.dumps(info, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-                    encoding="utf-8")
+    write_text_lf(path, json.dumps(info, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     return path
 
 

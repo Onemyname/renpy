@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from ..repo import write_text_lf
 
 CHAPTER_DIR_RE = re.compile(r"^ch(\d{2})_")
 # id персонажа: та же форма, что в character@1 (tools/schemas/character@1.schema.json).
@@ -74,11 +75,11 @@ def new_chapter(root: Path, slug: str) -> Path:
     ch_dir = chapters / f"{ch_id}_{slug}"
     scenes = ch_dir / "scenes"
     scenes.mkdir(parents=True)
-    (ch_dir / "chapter.yaml").write_text(_chapter_yaml(ch_id, slug), encoding="utf-8")
-    (ch_dir / "vars.yaml").write_text(_vars_yaml(ch_id), encoding="utf-8")
+    write_text_lf((ch_dir / "chapter.yaml"), _chapter_yaml(ch_id, slug))
+    write_text_lf((ch_dir / "vars.yaml"), _vars_yaml(ch_id))
     full_id = f"{ch_id}_s010"
-    (scenes / "s010_intro.scene.yaml").write_text(_scene_yaml("s010"), encoding="utf-8")
-    (scenes / "s010_intro.scene.rpy").write_text(_scene_rpy(full_id), encoding="utf-8")
+    write_text_lf((scenes / "s010_intro.scene.yaml"), _scene_yaml("s010"))
+    write_text_lf((scenes / "s010_intro.scene.rpy"), _scene_rpy(full_id))
     return ch_dir
 
 
@@ -111,13 +112,11 @@ def new_stub(root: Path, chapter: str, short_id: str) -> Path:
         raise ScaffoldError(f"сцена {short_id} уже существует в {ch_dir.name}")
     full_id = f"{ch_id}_{short_id}"
     yaml_path = scenes / f"{short_id}_stub.scene.yaml"
-    yaml_path.write_text(f"schema: scene@1\nid: {short_id}\nexits: {{}}\n", encoding="utf-8")
-    (scenes / f"{short_id}_stub.scene.rpy").write_text(
+    write_text_lf(yaml_path, f"schema: scene@1\nid: {short_id}\nexits: {{}}\n")
+    write_text_lf((scenes / f"{short_id}_stub.scene.rpy"),
         f"label {full_id}__body:\n"
         "    \"Заглушка: сцена в разработке.\"\n"
-        "    return\n",
-        encoding="utf-8",
-    )
+        "    return\n")
     return yaml_path
 
 
@@ -136,8 +135,8 @@ def new_scene(root: Path, chapter: str, slug: str) -> Path:
     short_id = f"s{num:03d}"
     full_id = f"{ch_id}_{short_id}"
     yaml_path = scenes / f"{short_id}_{slug}.scene.yaml"
-    yaml_path.write_text(_scene_yaml(short_id), encoding="utf-8")
-    (scenes / f"{short_id}_{slug}.scene.rpy").write_text(_scene_rpy(full_id), encoding="utf-8")
+    write_text_lf(yaml_path, _scene_yaml(short_id))
+    write_text_lf((scenes / f"{short_id}_{slug}.scene.rpy"), _scene_rpy(full_id))
     return yaml_path
 
 
@@ -209,14 +208,14 @@ def new_character(root: Path, char_id: str, name: str = "", color: str = "",
         raise ScaffoldError(f"{decl.relative_to(root).as_posix()} уже есть — скаффолд "
                             f"никогда не перезаписывает декларацию")
     decl.parent.mkdir(parents=True, exist_ok=True)
-    decl.write_text(_character_yaml(char_id, name or char_id.capitalize(),
+    write_text_lf(decl, _character_yaml(char_id, name or char_id.capitalize(),
                                     color or _character_color(char_id),
-                                    pose, outfit, emotion), encoding="utf-8")
+                                    pose, outfit, emotion))
     created = [decl]
     masters = root / "assets_src" / "art" / "characters" / char_id
     if not masters.is_dir():
         masters.mkdir(parents=True, exist_ok=True)
         keep = masters / ".gitkeep"
-        keep.write_text("", encoding="utf-8")
+        write_text_lf(keep, "")
         created.append(keep)
     return created

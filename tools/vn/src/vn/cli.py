@@ -19,7 +19,7 @@ from pathlib import Path
 import click
 
 from . import __version__
-from .repo import RepoError, find_root
+from .repo import RepoError, find_root, write_text_lf
 
 # Сколько примеров ОДНОГО класса предупреждений печатать, прежде чем свернуть
 # остаток в «ещё N однотипных». Предупреждения вида «одно на главу» или «одно на
@@ -511,7 +511,7 @@ def content_graph(out):
     root = _root()
     text = build_graph(root)
     if out:
-        Path(out).write_text(text, encoding="utf-8")
+        write_text_lf(Path(out), text)
         click.secho(f"граф записан: {out}", fg="green")
     else:
         click.echo(text)
@@ -1036,7 +1036,7 @@ def assets_provenance_workflow(artifact: Path, out: Path | None):
               "перезапишите провенанс из исходного PNG")
     payload = json.dumps(graph, ensure_ascii=False, indent=1, sort_keys=True)
     if out:
-        Path(out).write_text(payload + "\n", encoding="utf-8")
+        write_text_lf(Path(out), payload + "\n")
         click.secho(f"граф сохранён: {out} (seed {step.get('seed')}, "
                     f"модель {step.get('model')})", fg="green")
     else:
@@ -1943,7 +1943,7 @@ def test_screens(timeout_s: int, variant: str):
     shots = root / ".vncache" / "screens"
     tour_file = root / ".vncache" / "screens-tour.json"
     tour_file.parent.mkdir(parents=True, exist_ok=True)
-    tour_file.write_text(_json.dumps(tour, ensure_ascii=False), encoding="utf-8")
+    write_text_lf(tour_file, _json.dumps(tour, ensure_ascii=False))
     env = {"VN_AUTOPILOT_SCREENS_FILE": str(tour_file)}
     if variant:
         env["RENPY_VARIANT"] = variant
@@ -2054,14 +2054,14 @@ def test_paths(picks_list: tuple, timeout_s: int, strict: bool):
     missing_scenes = sorted(set(declared_scenes) - visited)
     missing_choices = sorted(set(declared_choices) - taken)
     out = root / ".vncache" / "paths" / "coverage.json"
-    out.write_text(_json.dumps({
+    write_text_lf(out, _json.dumps({
         "schema": "qa_coverage@1",
         "runs": len(traces),
         "scenes": {"declared": sorted(declared_scenes), "visited": sorted(visited),
                    "missing": missing_scenes},
         "choices": {"declared": sorted(declared_choices), "taken": sorted(taken),
                     "missing": missing_choices},
-    }, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    }, ensure_ascii=False, indent=1) + "\n")
     click.echo(f"покрытие: сцены {len(visited)}/{len(declared_scenes)}, выборы "
                f"{len(taken)}/{len(declared_choices)} -> "
                f"{out.relative_to(root).as_posix()}")
@@ -2285,9 +2285,8 @@ def release_build(flavor: str, patron_token: str | None, packages: tuple, timeou
         ctx.invoke(package, packages=packages, timeout_s=timeout_s,
                    dest_suffix=f"-{flavor}")
         dist = root / "build" / "dist" / f"{info['version']}-{flavor}"
-        (dist / "build-info.json").write_text(
-            json.dumps(info, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-            encoding="utf-8")
+        write_text_lf((dist / "build-info.json"),
+            json.dumps(info, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     finally:
         clear_build_info(root)   # dev-чекаут не должен носить чужой флейвор
         (root / "game" / "THIRD-PARTY-NOTICES.md").unlink(missing_ok=True)
@@ -2349,7 +2348,7 @@ def release_steam(flavor: str, branch: str):
         _fail("steam: контент депотов не собран")
     out = root / "build" / "steam" / f"app_build_{flavor}.vdf"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(vdf, encoding="utf-8")
+    write_text_lf(out, vdf)
     click.secho(f"steam: {out.relative_to(root)} готов; платформы: "
                 f"{', '.join(staged)}; аплоад: steamcmd +run_app_build (README)",
                 fg="green")

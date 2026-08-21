@@ -28,7 +28,7 @@ from ..assets.pipeline import (
     sprite_tree,
 )
 from ..assets.render_config import load_render_config
-from ..repo import load_yaml
+from ..repo import load_yaml, write_text_lf
 from ..schemas import SchemaRegistry
 from .images import LAYER_ORDER, check_matrix
 
@@ -294,8 +294,7 @@ def sheet(root: Path, char_id: str, out_dir: Path | None = None,
         cells.append((name, f"{pose} · {outfit} · {emotion}"))
 
     rep = validate(root, only=char_id)
-    (out_dir / "index.html").write_text(_index_html(char_id, doc, cells, rep),
-                                        encoding="utf-8")
+    write_text_lf((out_dir / "index.html"), _index_html(char_id, doc, cells, rep))
     return out_dir / "index.html"
 
 
@@ -307,10 +306,9 @@ def sheet_index(root: Path, pages: dict[str, Path]) -> Path:
     items = "".join(
         f'<li><a href="{html.escape(p.parent.name)}/index.html">'
         f"{html.escape(cid)}</a></li>" for cid, p in sorted(pages.items()))
-    out.write_text(
+    write_text_lf(out,
         "<!doctype html>\n<meta charset=\"utf-8\">\n<title>Листы арт-ревью</title>\n"
         "<style>body{font:15px/1.6 system-ui,sans-serif;margin:24px;background:#18181b;"
         "color:#e4e4e7}a{color:#93c5fd}</style>\n"
-        f"<h1>Листы арт-ревью ({len(pages)})</h1>\n<ul>{items}</ul>\n",
-        encoding="utf-8")
+        f"<h1>Листы арт-ревью ({len(pages)})</h1>\n<ul>{items}</ul>\n")
     return out

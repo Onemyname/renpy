@@ -22,6 +22,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from .repo import write_text_lf
 
 QA_DOC_REL = "docs/handbook/43-steam-qa.md"
 KIT_REL = "build/deck-kit"
@@ -224,13 +225,12 @@ def write_kit(root: Path, items: list[ChecklistItem], summary: dict,
     kit.mkdir(parents=True)
     written: list[str] = []
 
-    (kit / "summary.json").write_text(
-        json.dumps(summary, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-        encoding="utf-8")
+    write_text_lf((kit / "summary.json"),
+        json.dumps(summary, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     written.append("summary.json")
 
-    (kit / "checklist.md").write_text(
-        render_checklist(items, summary, automated), encoding="utf-8")
+    write_text_lf((kit / "checklist.md"),
+        render_checklist(items, summary, automated))
     written.append("checklist.md")
 
     for variant, files in sorted(shots.items()):

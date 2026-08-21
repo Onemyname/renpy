@@ -30,7 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .repo import load_yaml
+from .repo import load_yaml, write_text_lf
 
 LINE_ID_RE = re.compile(r"^(ch\d{2})_s\d{3}_\d{4}$")
 LANG_RE = re.compile(r"^[a-z]{2,3}(_[A-Z]{2})?$")
@@ -353,7 +353,7 @@ def _write_manifest(path: Path, doc: dict) -> None:
             fields_.append(f"actor: {spec['actor']}")
         out.append(f"  {lid}: {{{', '.join(fields_)}}}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(out) + "\n", encoding="utf-8")
+    write_text_lf(path, "\n".join(out) + "\n")
 
 
 # ── TTS-черновики (§4.9, C5) ──────────────────────────────────────────────────

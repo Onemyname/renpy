@@ -40,6 +40,7 @@ from pathlib import Path, PurePosixPath
 from . import __version__
 from .content import compile as cc
 from .schemas import SchemaRegistry
+from .repo import write_text_lf
 
 # Имя артефакта и workflow заданы в .github/workflows/ci.yml (шаг upload-artifact:
 # name: generated-${{ github.sha }}, retention-days: 30). Расходиться им нельзя —
@@ -226,9 +227,8 @@ def install(root: Path, unpacked: Path, sha: str, run_id: int,
                                                     time.gmtime()),
         "installed_by": __version__,
     }
-    (gen / cc.MANIFEST_NAME).write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-        encoding="utf-8")
+    write_text_lf((gen / cc.MANIFEST_NAME),
+        json.dumps(manifest, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     outputs = manifest.get("outputs") or {}
     return ArtifactInfo(sha=sha, run_id=run_id, created_at=created_at,
                         tool=str(manifest.get("tool") or "?"),

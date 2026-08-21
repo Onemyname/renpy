@@ -22,6 +22,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from ..repo import write_text_lf
 
 SAY_ID_RE = re.compile(r"^(?P<scene>ch\d{2}_s\d{3})_(?P<num>\d{4})$")
 MENU_ID_RE = re.compile(r'vn_menu\s*=\s*"(?P<id>ch\d{2}_s\d{3}_m\d{3})"')
@@ -254,7 +255,7 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
             ledger["menus"][menu_id] = {"items": menu["items"]}
 
         if not check and lines != original:
-            rpy.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            write_text_lf(rpy, "\n".join(lines) + "\n")
             rep.changed.append(rpy.relative_to(root).as_posix())
             originals[rpy] = "\n".join(original) + ("\n" if original else "")
 
@@ -323,7 +324,7 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
                                 f"(say с хвостовым комментарием?)")
         if problems:
             for p, original_text in originals.items():
-                p.write_text(original_text, encoding="utf-8")
+                write_text_lf(p, original_text)
             raise KeysError(
                 "верификация раунд-трипа не прошла — файлы ОТКАЧЕНЫ:\n"
                 + "\n".join(problems)
@@ -336,7 +337,7 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
         path = ledger_dir / f"{ch_id}.json"
         data = json.dumps(ledger, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
         if not path.is_file() or path.read_text(encoding="utf-8") != data:
-            path.write_text(data, encoding="utf-8")
+            write_text_lf(path, data)
             rep.ledgers.append(f"loc/ledger/{ch_id}.json")
     _reconcile_stale_ledgers(root, {ch_id for ch_id, _f, _p in scene_files},
                              check=False, rep=rep)

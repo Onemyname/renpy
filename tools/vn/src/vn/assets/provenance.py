@@ -19,6 +19,7 @@ from pathlib import Path
 import blake3
 
 from .. import __version__
+from ..repo import write_text_lf
 
 PROV_SUFFIX = ".provenance.json"
 
@@ -70,8 +71,7 @@ def _write(root: Path, artifact: Path, doc: dict) -> Path:
     doc["pipeline"] = f"vn {__version__}"
     doc["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     out = prov_path(artifact)
-    out.write_text(json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-                   encoding="utf-8")
+    write_text_lf(out, json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     return out
 
 

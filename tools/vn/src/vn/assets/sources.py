@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..repo import load_yaml
+from ..repo import load_yaml, write_text_lf
 from ..schemas import SchemaRegistry
 from . import provenance as prov
 
@@ -133,12 +133,11 @@ def scaffold(root: Path, kind: SourceKind, logical_id: str, scene: str,
     if dest.exists():
         raise FileExistsError(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(
+    write_text_lf(dest,
         f"# Декларация {kind.label}: что и чем снято. Проверяется "
         f"vn assets {kind.dirname} validate.\n"
         f"# Лицензии использованных продуктов — content/licenses.yaml, поле license.\n"
-        + yaml.safe_dump(decl, allow_unicode=True, sort_keys=False),
-        encoding="utf-8")
+        + yaml.safe_dump(decl, allow_unicode=True, sort_keys=False))
     return dest
 
 

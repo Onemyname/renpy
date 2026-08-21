@@ -32,6 +32,7 @@ import sys
 from pathlib import Path
 
 import blake3
+from ..repo import write_text_lf
 
 
 class AnalyzeError(RuntimeError):
@@ -116,7 +117,7 @@ def analyze_scene_files(root: Path, files: list[Path]) -> dict:
             % (proc.returncode, listing, proc.stdout[-2000:], proc.stderr[-2000:])
         )
     data = json.loads(out.read_text(encoding="utf-8"))
-    cache_file.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    write_text_lf(cache_file, json.dumps(data, ensure_ascii=False))
     out.unlink()
     listing.unlink()
     return data["files"]

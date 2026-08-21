@@ -30,7 +30,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .repo import load_yaml
+from .repo import load_yaml, write_text_lf
 
 # Файл автопилота подкладывается в dev-зону генерата и удаляется после прогона.
 QA_DIR_REL = "game/generated/qa"
@@ -195,7 +195,7 @@ def autopilot_run(root: Path, shots: Path, extra_env: dict, timeout_s: int,
         shutil.rmtree(qa_dir)
     qa_dir.mkdir(parents=True)
     autopilot = qa_dir / AUTOPILOT_NAME
-    autopilot.write_text(AUTOPILOT_RPY, encoding="utf-8")
+    write_text_lf(autopilot, AUTOPILOT_RPY)
 
     exe = sdk / ("renpy.exe" if sys.platform == "win32" else "renpy.sh")
     env = dict(os.environ, VN_AUTOPILOT="1", VN_AUTOPILOT_DIR=str(shots), **extra_env)
@@ -287,8 +287,7 @@ def write_record(root: Path, name: str, why: str, art: RunArtifacts, *,
     base = root / REPLAY_DIR_REL
     base.mkdir(parents=True, exist_ok=True)
     path = base / f"{name}{REPLAY_SUFFIX}"
-    path.write_text(json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-                    encoding="utf-8")
+    write_text_lf(path, json.dumps(doc, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     return path
 
 

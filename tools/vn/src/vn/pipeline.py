@@ -25,7 +25,7 @@ from pathlib import Path
 import click
 
 from . import __version__
-from .repo import load_yaml
+from .repo import load_yaml, write_text_lf
 from .schemas import SchemaRegistry
 
 MODELS_MANIFEST_REL = "tools/comfyui-models.yaml"
@@ -282,9 +282,8 @@ def _load_lock(models_root: Path) -> dict:
 
 
 def _save_lock(models_root: Path, data: dict) -> None:
-    (models_root / MODELS_LOCK_NAME).write_text(
-        json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-        encoding="utf-8")
+    write_text_lf((models_root / MODELS_LOCK_NAME),
+        json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
 
 
 def model_status(entry: dict, models_root: Path | None, lock: dict) -> ModelStatus:

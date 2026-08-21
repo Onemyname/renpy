@@ -22,7 +22,7 @@ from pathlib import Path
 import blake3
 
 from .. import __version__
-from ..repo import chapter_zones, git_sha, load_project, load_yaml
+from ..repo import chapter_zones, git_sha, load_project, load_yaml, write_text_lf
 from . import scenes as sc
 from .analyze import AnalyzeError, analyze_scene_files
 from .images import ImagesReport, emit_images, load_locations
@@ -1364,8 +1364,6 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "source": {"kind": "local"},
     }
     gen.mkdir(parents=True, exist_ok=True)
-    old_manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    write_text_lf(old_manifest_path,
+        json.dumps(manifest, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     return result

@@ -12,6 +12,15 @@ class RepoError(RuntimeError):
     pass
 
 
+def write_text_lf(path: Path, text: str) -> None:
+    """Единственный способ писать текст в репозиторий: UTF-8 + LF на любой ОС.
+
+    Голый `Path.write_text` на Windows транслирует `\\n` в CRLF, а `.gitattributes`
+    требует LF — каждый прогон тулинга оставлял бы фантомные диффы, в которых
+    тонет настоящий (ловилось на loc/ledger). Все записи текста идут сюда."""
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
 def find_root(start: Path | None = None) -> Path:
     p = (start or Path.cwd()).resolve()
     for cand in [p, *p.parents]:
