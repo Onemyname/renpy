@@ -32,6 +32,23 @@ def _copy_skeleton(repo_root, tmp_path):
     return tmp_path
 
 
+def test_lint_catches_migration_chain_gap(repo_root, tmp_path):
+    """Тот же инвариант «lint зелёный => build не падает»: дыру в цепочке миграций
+    (G5) компилятор ронял всегда, а lint — то есть и pre-push hook — не знал о ней
+    вовсе. Правило одно на обоих (content/migrations.py)."""
+    root = _copy_skeleton(repo_root, tmp_path)
+    mig = root / "content" / "migrations"
+    (mig / "0003_gap.py").write_text("def migrate(state):\n    return state\n",
+                                     encoding="utf-8")
+    reg = mig / "registry.yaml"
+    reg.write_text(reg.read_text(encoding="utf-8")
+                   + "  - {number: 3, slug: gap, by: test}\n", encoding="utf-8")
+
+    rep = lint(root)
+    # save_schema в project.yaml = 2, номер 3 лишний: цепочка != ожидаемой
+    assert any("content/migrations: цепочка" in e for e in rep.errors), rep.errors
+
+
 def test_lint_catches_broken_language_packages(repo_root, tmp_path):
     """Инвариант «lint зелёный => build не падает»: битые пакеты языков
     (ADR-0005) обязаны краснить lint ДО того, как build упадёт LocError."""
@@ -333,3 +350,26 @@ def test_lint_catches_chapter_number_collision(repo_root, tmp_path):
 
     rep = lint(root)
     assert any("номер главы ch01 уже занят" in e for e in rep.errors), rep.errors
+
+
+def test_lint_reports_broken_migration_registry_instead_of_crashing(repo_root, tmp_path):
+    """Линтер обязан ДОЛОЖИТЬ, а не упасть: битый registry.yaml уже получил
+    внятную ошибку от схемы, и трейсбек из секции миграций спрятал бы её за стеком."""
+    root = _copy_skeleton(repo_root, tmp_path)
+    (root / "content" / "migrations" / "registry.yaml").write_text(
+        "schema: migrations_registry@1\nreserved:\n  - not-a-mapping\n",
+        encoding="utf-8")
+
+    rep = lint(root)                       # падения быть не должно
+    assert rep.errors, "битый реестр брони обязан краснить lint"
+
+
+def test_lint_catches_migration_slug_not_matching_reservation(repo_root, tmp_path):
+    """Бронь номера без сверки слага — формальность: под номером в реестре может
+    стоять совсем другая миграция, и разбор истории сейвов уйдёт по ложному следу."""
+    root = _copy_skeleton(repo_root, tmp_path)
+    mig = root / "content" / "migrations"
+    (mig / "0002_route_prologue.py").rename(mig / "0002_something_else.py")
+
+    rep = lint(root)
+    assert any("slug не совпадает с бронью" in e for e in rep.errors), rep.errors

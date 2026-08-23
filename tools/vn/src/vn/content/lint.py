@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..repo import load_yaml
 from ..schemas import SchemaRegistry
+from . import migrations as mig
 
 CHAPTER_DIR_RE = re.compile(r"^ch(\d{2})_([a-z][a-z0-9_]{2,30})$")
 SCENE_FILE_RE = re.compile(r"^s(\d{3})_([a-z][a-z0-9_]{2,40})\.scene\.(yaml|rpy)$")
@@ -469,6 +470,18 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                 f"({biggest.stat().st_size / 1024 / 1024:.1f} МБ). Заведите их в LFS "
                 f"(.gitattributes) либо в хранилище (vn assets lock + push)"
             )
+
+    # ── 6b. Цепочка миграций сейвов (G5) ─────────────────────────────────────
+    # Правила — те же, что у компилятора (content/migrations.py). Без этой секции
+    # дыра в цепочке проходила бы lint и pre-push, а падала на vn build: инвариант
+    # «lint зелёный => build не падает» (см. REQUIRED_FILES) был бы неверен.
+    if "project.yaml" not in invalid:
+        _save_schema = (docs.get("project.yaml") or {}).get("save_schema")
+        if isinstance(_save_schema, int):
+            _mig_errors = mig.collect(root / "content" / "migrations", _save_schema,
+                                      lambda path: _rel(root, path))[1]
+            for msg in _mig_errors:
+                rep.error(msg)
 
     # ── 7. Layout (1.2) ──────────────────────────────────────────────────────
     if layout:

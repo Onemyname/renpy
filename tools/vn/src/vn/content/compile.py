@@ -23,6 +23,7 @@ import blake3
 
 from .. import __version__
 from ..repo import chapter_zones, git_sha, load_project, load_yaml, write_text_lf
+from . import migrations as mig
 from . import scenes as sc
 from .analyze import AnalyzeError, analyze_scene_files
 from .images import ImagesReport, emit_images, load_locations
@@ -611,38 +612,18 @@ def _emit_migrations(migrations: list[tuple[int, str, str]], sources) -> str:
 
 def _collect_migrations(root: Path, src, project: dict, errors: list[str]):
     """content/migrations/NNNN_slug.py: номер = целевая schema; цепочка непрерывна
-    от 2 до save_schema; каждый номер зарезервирован в registry.yaml (G5)."""
-    mig_re = re.compile(r"^(\d{4})_([a-z][a-z0-9_]+)\.py$")
+    от 2 до save_schema; каждый номер зарезервирован в registry.yaml (G5).
+
+    Сами правила — в content/migrations.py: на тех же правилах обязан краснеть
+    линтер, иначе дыра в цепочке проходит pre-push и падает только здесь."""
     mig_dir = root / "content" / "migrations"
-    reserved: dict[int, dict] = {}
     reg_path = mig_dir / "registry.yaml"
     if reg_path.is_file():
-        rel, _d = src(reg_path)
-        for r in load_yaml(reg_path).get("reserved") or []:
-            reserved[r["number"]] = r
-    migrations: list[tuple[int, str, str]] = []
-    for f in sorted(mig_dir.glob("*.py")) if mig_dir.is_dir() else []:
-        m = mig_re.match(f.name)
-        if not m:
-            errors.append(f"content/migrations/{f.name}: имя вне конвенции NNNN_slug.py")
-            continue
-        number = int(m.group(1))
-        rel, _d = src(f)
-        if number not in reserved:
-            errors.append(
-                f"{rel}: номер {number} не зарезервирован в content/migrations/registry.yaml "
-                f"(параллельные ветки получат конфликт номеров, G5)"
-            )
-        migrations.append((number, f.name, f.read_text(encoding="utf-8")))
-    migrations.sort()
-    numbers = [n for n, _f, _s in migrations]
-    expected = list(range(2, project["save_schema"] + 1))
-    if numbers != expected:
-        errors.append(
-            f"content/migrations: цепочка {numbers} != ожидаемой {expected} "
-            f"(номер миграции = целевая save_schema; дыры и лишние номера запрещены)"
-        )
-    return migrations
+        src(reg_path)
+    found, chain_errors = mig.collect(mig_dir, project["save_schema"],
+                                      lambda path: src(path)[0])
+    errors.extend(chain_errors)
+    return [(number, f.name, f.read_text(encoding="utf-8")) for number, f in found]
 
 
 def _emit_overrides(renames: dict, sources,
