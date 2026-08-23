@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from helpers import write_project
+from helpers import mk_root_with_schemas, write_project
 
 from vn.assets.pipeline import build_assets
 from vn.pipeline import find_ffmpeg, find_ffprobe
@@ -91,6 +91,48 @@ def test_sidecar_options_and_invalidation(tmp_path):
     sidecar.write_text("schema: video_src@1\nloop: true\n", encoding="utf-8")
     res2 = build_assets(root)
     assert "mov/demo/anim.webm" in res2.built + res2.from_cache
+
+
+def test_sidecar_schema_is_enforced_on_the_build_path(tmp_path, repo_root):
+    """G16 ровно там, где sidecar читается: незнакомый ключ энкодер игнорирует, а
+    отсутствие `schema:` не превращает файл в «опций нет». До этого битую
+    декларацию ловил только `vn content lint`, и сборка видео молча отдавала не то,
+    что объявлено."""
+    root = mk_root_with_schemas(tmp_path, repo_root)
+    src = root / "assets_src/video_src/demo/anim.mp4"
+    _make_video(src)
+    sidecar = src.with_name("anim.video.yaml")
+    out = root / "game/assets/mov/demo/anim.webm"
+
+    sidecar.write_text("schema: video_src@1\nkeep_sound: true\n", encoding="utf-8")
+    res = build_assets(root)
+    text = "\n".join(res.errors)
+    assert "anim.video.yaml" in text and "keep_sound" in text
+    assert not out.exists()             # отказ, а не тихая сборка по дефолтам
+
+    sidecar.write_text("loop: false\n", encoding="utf-8")
+    assert any("schema" in e for e in build_assets(root).errors)
+
+    sidecar.write_text("schema: video_src@1\ncrf: 999\n", encoding="utf-8")
+    assert any("crf" in e for e in build_assets(root).errors)
+
+    sidecar.write_text("schema: video_src@1\nloop: false\n", encoding="utf-8")
+    res = build_assets(root)
+    assert res.errors == [] and out.is_file()
+
+
+def test_broken_sidecar_yaml_is_an_error_not_a_traceback(tmp_path, repo_root):
+    """Синтаксически битый sidecar — претензия художнику, а не трассировка стека
+    из середины сборки."""
+    root = mk_root_with_schemas(tmp_path, repo_root)
+    src = root / "assets_src/video_src/demo/anim.mp4"
+    _make_video(src)
+    src.with_name("anim.video.yaml").write_text(
+        "schema: video_src@1\n  loop: [\n", encoding="utf-8")
+
+    res = build_assets(root)
+    assert any("anim.video.yaml" in e and "не парсится" in e for e in res.errors)
+    assert not (root / "game/assets/mov/demo/anim.webm").exists()
 
 
 def test_video_naming_and_group_required(tmp_path):

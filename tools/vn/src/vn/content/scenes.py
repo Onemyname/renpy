@@ -162,8 +162,20 @@ def _validate_refs(unit: SceneUnit, rep: SceneCompileReport, complain,
             if not isinstance(expr, str):
                 continue
             # Ссылка на логический id — только если это голый идентификатор.
-            # Строковый литерал/выражение статически не разрешаются: пропускаем.
+            # Строковый литерал — это сырой путь, запрещённый C18. Сложные
+            # выражения (вызов, переменная, конкатенация) статически не
+            # разрешаются: пропускаем — иначе легальный `voice vn.voice_path(...)`
+            # и подобные формы стали бы нарушением.
             if not AUDIO_ID_RE.match(expr.strip()):
+                is_literal, value = _literal_exit(expr)
+                if is_literal and isinstance(value, str) and not _is_audio_spec(value):
+                    complain(
+                        f"{src}:{ref['line']}: {ref['stmt']} {expr} — сырой путь в "
+                        f"play/queue запрещён (C18): такой трек выпадает из проверок "
+                        f"(существование файла, kind↔канал) и молча замолкает при "
+                        f"переименовании ассета. Объявите трек в content/audio/*.yaml "
+                        f"и играйте по логическому id"
+                    )
                 continue
             tid = expr.strip()
             if tid not in audio_tracks:

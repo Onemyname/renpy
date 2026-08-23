@@ -61,17 +61,34 @@ def _ffprobe() -> Path:
     return p
 
 
-def load_opts(sidecar: Path, registry=None) -> tuple[dict, list[str]]:
-    """Опции энкода из <name>.video.yaml поверх дефолтов. Возвращает (opts, errors)."""
+def load_opts(sidecar: Path, registry=None, rel: str | None = None
+              ) -> tuple[dict, list[str]]:
+    """Опции энкода из <name>.video.yaml поверх дефолтов. Возвращает (opts, errors).
+
+    registry — реестр схем (G16): sidecar проверяется ТАМ, ГДЕ ЧИТАЕТСЯ. Без
+    проверки энкодер молча игнорирует незнакомый ключ, а сборка видео отдаёт не то,
+    что объявлено; ловил это только `vn content lint`, но команда сборки проверкой
+    не является. None = сверять не с чем (синтетический корень без tools/schemas).
+    rel — как назвать файл в тексте ошибки (путь от корня репозитория)."""
     opts = dict(DEFAULT_OPTS)
     if not sidecar.is_file():
         return opts, []
     from ..repo import load_yaml
 
-    doc = load_yaml(sidecar)
+    label = rel or sidecar.name
+    try:
+        doc = load_yaml(sidecar)
+    except Exception as e:
+        # Битый YAML раньше улетал трейсбеком из середины сборки: читать его
+        # должен художник, а не трассировка стека.
+        return opts, [f"{label}: не парсится: {e}"]
+    # Пустой sidecar (или не отображение) — не «опций нет», а документ без
+    # обязательного schema:. Претензию формулирует схема, здесь только не падаем.
+    if not isinstance(doc, dict):
+        doc = {}
     errors: list[str] = []
     if registry is not None:
-        errors = registry.validate(doc, sidecar.as_posix())
+        errors = registry.validate(doc, label)
         if errors:
             return opts, errors
     for key in DEFAULT_OPTS:

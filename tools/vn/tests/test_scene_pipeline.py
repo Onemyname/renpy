@@ -230,15 +230,51 @@ def test_audio_kind_channel_mismatch_is_error():
     assert len(rep.errors) == 1
 
 
-def test_audio_literal_and_expression_skipped():
-    """Строковый литерал и сложное выражение статически не разрешаются — не ругаемся."""
-    rep = sc.SceneCompileReport()
+def test_audio_raw_path_is_c18_violation():
+    """Сырой путь в play — нарушение C18: физические пути живут только в
+    декларациях content/audio/*.yaml, иначе трек выпадает из проверок и
+    молча замолкает при переименовании ассета."""
     a = _analysis(audio_refs=[
         {"line": 4, "stmt": "play music", "file": '"assets/audio/bgm/x.ogg"', "channel": None},
-        {"line": 5, "stmt": "play music", "file": "tracks[i]", "channel": None},
+        {"line": 5, "stmt": "queue sound", "file": "'sfx/door.ogg'", "channel": None},
+    ])
+    rep = sc.SceneCompileReport()
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep, audio_tracks={})
+    assert len(rep.errors) == 2
+    assert any("C18" in e and "assets/audio/bgm/x.ogg" in e for e in rep.errors)
+
+    # Строгость — общая для ссылочных проверок (G15): draft ругается warning'ом.
+    draft = sc.SceneCompileReport()
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "draft", draft, audio_tracks={})
+    assert draft.errors == []
+    assert len(draft.warnings) == 2
+
+
+def test_audio_engine_spec_is_not_a_raw_path():
+    """`<silence 3.0>` и родня — спецификация движка, а не путь: файла за ней
+    может не быть вовсе, а объявить её в content/audio/*.yaml нечем. Под запрет
+    сырых путей (C18) она не попадает, иначе штатная пауза стала бы ошибкой."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(audio_refs=[
+        {"line": 4, "stmt": "play music", "file": '"<silence 3.0>"', "channel": None},
+        {"line": 5, "stmt": "queue music", "file": "'<from 2 to 5>bgm_calm'", "channel": None},
     ])
     sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep, audio_tracks={})
-    assert rep.errors == []
+    assert rep.errors == [] and rep.warnings == []
+
+
+def test_audio_expression_skipped():
+    """Сложное выражение статически не разрешается — молчим: иначе легальные
+    формы вроде vn.voice_path(...) и выбора трека по индексу стали бы ошибкой."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(audio_refs=[
+        {"line": 4, "stmt": "play music", "file": "tracks[i]", "channel": None},
+        {"line": 5, "stmt": "play voice", "file": 'vn.voice_path("ch01_s010_001")',
+         "channel": None},
+        {"line": 6, "stmt": "play sound", "file": '"a" + suffix', "channel": None},
+    ])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep, audio_tracks={})
+    assert rep.errors == [] and rep.warnings == []
 
 
 def test_refs_draft_downgrades_to_warning():

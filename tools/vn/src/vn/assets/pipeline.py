@@ -507,14 +507,19 @@ def _discover(root: Path, rep: AssetBuildResult,
                   if f.is_file() and not _is_sidecar(f)]
         for f in vfiles:
             consumed.add(f)
+        # Отсутствие ffmpeg — причина не СОБИРАТЬ, но не причина молчать о
+        # раскладке: конвенция пути и формат проверяются по данным, инструмент им
+        # не нужен. Пока проверки стояли за этим гейтом, на машине без ffmpeg
+        # опечатка в пути пряталась за сообщением про ffmpeg (и тест на неё падал).
+        has_ffmpeg = True
         if vfiles:
             from ..pipeline import find_ffmpeg
 
-            if find_ffmpeg() is None:
+            has_ffmpeg = find_ffmpeg() is not None
+            if not has_ffmpeg:
                 rep.errors.append(
                     "assets_src/voice: есть мастера озвучки, но ffmpeg не найден "
                     "(vn pipeline doctor) — голосовая ветка не собирается")
-                vfiles = []
         for f in vfiles:
             rel = _rel(root, f)
             parts = f.relative_to(voice_src).parts
@@ -528,6 +533,8 @@ def _discover(root: Path, rep: AssetBuildResult,
                     f"{rel}: формат {f.suffix} не поддержан "
                     f"({', '.join(MASTER_EXTS)})")
                 continue
+            if not has_ffmpeg:
+                continue      # раскладка проверена, транскодировать нечем
             jobs.append(Job(f, "voice_opus",
                             f"voice/{parts[0]}/{parts[1]}/{f.stem}.opus", {}))
 
@@ -664,16 +671,42 @@ def _video_jobs(root: Path, rep: AssetBuildResult, cfg: RenderConfig,
             rep.errors.append(
                 f"{_rel(root, f)}: формат не поддержан видео-треком "
                 f"({', '.join(videomod.VIDEO_EXTS)})")
+    # Sidecar без своего мастера: опечатка в имени (anim.video.yaml рядом с
+    # anim2.mp4) не применилась бы НИКАК — sidecar исключён из vfiles как
+    # sidecar, а из orphan-мастеров как несуществующий выход. Молчание тут
+    # означает «объявил loop, а в игре не зациклилось, и никто не сказал».
+    stems = {f.with_suffix("") for f in media}
+    for sc in sorted(vsrc.rglob("*" + videomod.SIDECAR_SUFFIX)):
+        if sc.is_file() and sc.parent / sc.name[:-len(videomod.SIDECAR_SUFFIX)] \
+                not in stems:
+            rep.errors.append(
+                f"{_rel(root, sc)}: sidecar без видео-мастера того же имени — "
+                f"опечатка в имени или мастер не добавлен (декларация не применится)")
     if not media:
         return []
 
     from ..pipeline import find_ffmpeg, find_ffprobe
 
-    if find_ffmpeg() is None or find_ffprobe() is None:
+    # Как и в голосовой ветке: без инструментов нечего СОБИРАТЬ, но проверки
+    # деклараций (группа, слаг, схема sidecar) идут по данным и обязаны отработать —
+    # иначе на машине без ffmpeg ошибка в декларации прячется за сообщением про него.
+    has_tools = find_ffmpeg() is not None and find_ffprobe() is not None
+    if not has_tools:
         rep.errors.append(
             "assets_src/video_src: есть видео-мастера, но ffmpeg/ffprobe не найдены "
             "(vn pipeline doctor) — видео-трек не собирается")
-        return []
+
+    # G16: sidecar-декларацию читает ЭТА ветка, значит она же обязана её проверить.
+    # Без реестра битый sidecar собирался молча, а незнакомый ключ энкодер
+    # игнорировал — «vn assets video build» отдавала не то, что объявлено, и
+    # расхождение всплывало только на vn content lint.
+    # Реестра нет только у синтетических корней (тесты) — там сверять не с чем.
+    schemas_dir = root / "tools" / "schemas"
+    registry = None
+    if schemas_dir.is_dir():
+        from ..schemas import SchemaRegistry
+
+        registry = SchemaRegistry(schemas_dir)
 
     mov = cfg.cls("mov")
     heights = {int(k): int(v) for k, v in (mov.spec.get("heights") or {}).items()}
@@ -688,10 +721,12 @@ def _video_jobs(root: Path, rep: AssetBuildResult, cfg: RenderConfig,
         if not _check_slug(rep, rel, *parts[:-1], f.stem):
             continue
         sidecar = f.with_name(f.stem + videomod.SIDECAR_SUFFIX)
-        opts, opt_errors = videomod.load_opts(sidecar)
+        opts, opt_errors = videomod.load_opts(sidecar, registry, _rel(root, sidecar))
         if opt_errors:
             rep.errors.extend(opt_errors)
             continue
+        if not has_tools:
+            continue      # декларации проверены, энкодировать нечем (ffprobe тоже)
         try:
             src_h = videomod.summarize(f)["height"]
         except videomod.VideoError as e:

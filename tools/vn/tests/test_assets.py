@@ -418,3 +418,25 @@ def test_graph_export(repo_root):
     assert "ch01_s010" in text
     assert '-->|"gate"| ch01_s020' in text
     assert "vn_end" in text                 # финальная сцена без exits
+
+
+def test_video_sidecar_without_master_is_an_error(tmp_path):
+    """Опечатка в имени sidecar не применилась бы НИКАК: как sidecar он исключён
+    из мастеров, как несуществующий выход — из orphan-очистки. То есть «объявил
+    loop, в игре не зациклилось, и никто не сказал». Проверка идёт по данным,
+    поэтому обязана срабатывать и без ffmpeg (иначе на машине без него ошибка
+    декларации спряталась бы за сообщением про инструмент)."""
+    root = mk_root(tmp_path)
+    vsrc = root / "assets_src" / "video_src" / "demo"
+    vsrc.mkdir(parents=True)
+    (vsrc / "clip.mp4").write_bytes(b"x")               # мастер
+    (vsrc / "clip.video.yaml").write_text(
+        "schema: video_src@1\nloop: true\n", encoding="utf-8")
+    (vsrc / "clipp.video.yaml").write_text(             # опечатка в имени
+        "schema: video_src@1\nloop: true\n", encoding="utf-8")
+
+    rep = build_assets(root)
+    assert any("clipp.video.yaml" in e and "без видео-мастера" in e
+               for e in rep.errors), rep.errors
+    assert not any("clip.video.yaml:" in e and "без видео-мастера" in e
+                   for e in rep.errors), "исправный sidecar не должен ругаться"
