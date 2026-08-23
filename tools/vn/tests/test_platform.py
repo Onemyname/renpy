@@ -210,8 +210,10 @@ def test_main_menu_exposes_persistent_collections(repo_root):
     src = (repo_root / "game" / "framework" / "20_ui" / "screens"
            / "core_screens.rpy").read_text(encoding="utf-8")
     menu = src.split("screen main_menu():", 1)[1].split("\nstyle ", 1)[0]
-    for screen_name, gate in (("gallery", "vn_gal.categories()"),
-                              ("achievements", "vn_ach.visible_ids()")):
+    # Гейт — дешёвый предикат «есть ли что показывать»: главное меню рисуется
+    # постоянно, и строить ради ответа «да/нет» отсортированный реестр нельзя.
+    for screen_name, gate in (("gallery", "vn_gal.has_visible()"),
+                              ("achievements", "vn_ach.has_visible()")):
         assert f'ShowMenu("{screen_name}")' in menu, \
             f"{screen_name} недостижим из главного меню"
         assert gate in menu, f"{screen_name} в главном меню без гейта {gate}"

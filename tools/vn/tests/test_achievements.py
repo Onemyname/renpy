@@ -131,7 +131,8 @@ def test_screen_exists_and_is_reachable_from_navigation(repo_root):
 
     nav = (repo_root / NAV).read_text(encoding="utf-8")
     assert 'ShowMenu("achievements")' in nav
-    assert "if vn_ach.visible_ids():" in nav
+    # Дешёвый предикат, а не построение списка: рельсу рисует каждый экран меню.
+    assert "if vn_ach.has_visible():" in nav
 
 
 def test_screen_holds_no_achievement_data(repo_root):

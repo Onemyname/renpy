@@ -107,19 +107,19 @@ screen navigation():
                     # Галерея (ADR-0010): доступна из обоих контекстов; пункт
                     # исчезает, если галерея пуста или её элементы скрыты
                     # флейвором/владением — гейт в vn_gal, не здесь.
-                    if vn_gal.categories():
+                    if vn_gal.has_visible():
                         textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_nav_button" default_focus (gui.focus_rail if _here == "gallery" else 0)
                     # Достижения (achievements@1): как и галерея, доступны из
                     # обоих контекстов (прогресс в persistent). Пункт исчезает,
                     # если ачивок нет или все скрыты флейвором/владением — гейт
-                    # в vn_ach.visible_ids(), не здесь.
-                    if vn_ach.visible_ids():
+                    # в vn_ach.has_visible(), не здесь.
+                    if vn_ach.has_visible():
                         textbutton vn_loc.t("ui.nav.achievements") action ShowMenu("achievements") style "vn_nav_button" default_focus (gui.focus_rail if _here == "achievements" else 0)
                     # Карта главы (ADR-0021): проекция скомпилированного графа.
                     # Доступна из обоих контекстов — что игрок видел, помнит
                     # persistent. Пункт исчезает, если ни одна глава не
                     # принадлежит игроку: гейт в vn_story, не здесь.
-                    if vn_story.chapter_list():
+                    if vn_story.has_chapters():
                         textbutton vn_loc.t("ui.chart.open") action ShowMenu("story_flow") style "vn_nav_button" default_focus (gui.focus_rail if _here == "story_flow" else 0)
                     if not main_menu:
                         textbutton vn_loc.t("ui.nav.history") action ShowMenu("history") style "vn_nav_button" default_focus (gui.focus_rail if _here == "history" else 0)
@@ -222,11 +222,11 @@ screen main_menu():
         # Галерея и достижения — из ГЛАВНОГО меню тоже, а не только из игрового:
         # их состояние живёт в persistent и не зависит от сейва, поэтому игрок,
         # вышедший в меню, обязан видеть открытое, не начиная игру заново.
-        # Гейты — те же, что в рельсе (vn_gal.categories() / vn_ach.visible_ids()):
+        # Гейты — те же, что в рельсе (vn_gal.has_visible() / vn_ach.has_visible()):
         # пустой раздел не показывается, дублирования условий нет.
-        if vn_gal.categories():
+        if vn_gal.has_visible():
             textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_main_item"
-        if vn_ach.visible_ids():
+        if vn_ach.has_visible():
             textbutton vn_loc.t("ui.nav.achievements") action ShowMenu("achievements") style "vn_main_item"
         textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_main_item"
         # «Выйти» — только на десктопе (та же причина и тот же гейт, что в рельсе
@@ -431,7 +431,7 @@ screen preferences():
                 # и остаются выключенными, пока игрок не отметит цели на карте
                 # главы: подсветка «правильного» варианта на первом прохождении
                 # отнимает у выбора смысл.
-                if vn_story.chapter_list():
+                if vn_story.has_chapters():
                     vbox:
                         spacing gui.sp_m
                         $ _g8 = vn_loc.t("ui.chart.title").upper()

@@ -194,6 +194,11 @@ init -980 python in vn_ach:
     # all_ids() остаётся «всё, что есть в реестре» — платформенная регистрация
     # ачивок в Steam (035_platform.rpy) идёт по нему, а не по видимым.
 
+    def has_visible():
+        """Есть ли хоть одна видимая ачивка — без построения списка (см. рельсу
+        навигации: вопрос задаётся на каждом экране игрового меню)."""
+        return any(visible(aid) for aid in _registry())
+
     def visible_ids():
         """Видимые игроку ачивки в стабильном порядке (по id, как all_ids)."""
         return [ach_id for ach_id in all_ids() if visible(ach_id)]

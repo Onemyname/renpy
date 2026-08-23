@@ -496,3 +496,47 @@ def test_chapter_map_never_prints_titles_of_unseen_scenes(repo_root):
     guide = store.split("def guide_note(", 1)[1].split("\n    def ", 1)[0]
     assert "display_title(" in guide and "join(title(" not in guide, \
         "подсказка гайда печатает заголовок непройденной цели"
+
+
+def test_navigation_rail_gates_are_cheap_predicates(repo_root):
+    """Рельсу рисует каркас vn_game_menu, то есть КАЖДЫЙ экран игрового меню —
+    и предикция ShowMenu тоже. Гейты её пунктов обязаны отвечать «да/нет», а не
+    строить и сортировать реестры.
+
+    Раньше пункт «Галерея» гейтился через categories(), который на каждую
+    категорию звал items(), а тот фильтровал и сортировал ВЕСЬ реестр: O(C·N log N)
+    на показ рельсы. Ачивки и карта — тем же способом."""
+    nav = (repo_root / "game" / "framework" / "20_ui" / "screens"
+           / "core_screens.rpy").read_text(encoding="utf-8")
+    # Гейты продублированы в главном меню (тот же вопрос — «есть ли что
+    # показывать» — и тот же аргумент про цену), поэтому проверяются оба экрана.
+    # Только код: комментарии рядом называют функции по именам.
+    rail = "\n".join(_strip_comment(ln) for ln in nav.splitlines())
+    for cheap in ("vn_gal.has_visible()", "vn_ach.has_visible()",
+                  "vn_story.has_chapters()"):
+        assert cheap in rail, f"гейт рельсы не переведён на дешёвый предикат: {cheap}"
+    for costly in ("vn_gal.categories()", "vn_ach.visible_ids()",
+                   "vn_story.chapter_list()"):
+        assert costly not in rail, f"рельса снова строит список: {costly}"
+
+
+def test_conflict_lookup_and_plan_are_not_recomputed_per_frame(repo_root):
+    """compatible() зовут пачками: карточка КАЖДОГО узла спрашивает conflicts()
+    по всем целям, план — по каждой паре целей, подсказка гайда — на КАЖДЫЙ
+    пункт меню в точке выбора. Линейный скан списка конфликтов (до 4096 пар)
+    платился в каждом кадре.
+
+    Кэш плана обязан сбрасываться по смене целей: молчаливо устаревшая карта
+    хуже медленной."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "100_story_graph.rpy").read_text(encoding="utf-8")
+
+    comp = src.split("def compatible(", 1)[1].split("\n    def ", 1)[0]
+    assert "_conflicts_set()" in comp, "матрица конфликтов снова сканируется списком"
+    assert "for x, y in" not in comp
+
+    plan = src.split("def plan(", 1)[1].split("\n    def ", 1)[0]
+    assert "_plan_cache" in plan, "план пересчитывается на каждый вызов"
+    for mutator in ("def toggle_target(", "def clear_targets("):
+        body = src.split(mutator, 1)[1].split("\n    def ", 1)[0]
+        assert "_drop_plan_cache()" in body, f"{mutator} не сбрасывает кэш плана"
