@@ -181,4 +181,8 @@ label after_load:
             if _applied_schema < _target_schema:
                 vn_log("migrations incomplete: %s -> %s (target %s)"
                        % (_loaded_schema, _applied_schema, _target_schema))
+    # Догон триггеров по переменным: состояние пришло из сейва, а не с якоря
+    # (подробно — vn.recheck_triggers). После миграций, чтобы триггеры видели
+    # уже актуальное состояние.
+    $ vn.recheck_triggers()
     return

@@ -423,6 +423,39 @@ def test_store_unlocks_shot_by_tag_and_attribute(repo_root, tmp_path):
     assert gal2.is_unlocked("shot_sunset") is False
 
 
+def test_gallery_screen_keeps_ui_state_out_of_saves(repo_root):
+    """Вкладка и зум — состояние ЭКРАНА. Любой изменённый store-`default` движок
+    кладёт в ever_been_changed, то есть в КАЖДЫЙ сейв и в rollback-лог (SDK
+    rollback.py: freeze/roots): вкладка галереи ехала в сейв игрока, возвращалась
+    из него при загрузке, а откат за вход в меню её сбрасывал. Префикс «_» от
+    этого не спасает — фильтра по нему в roots нет."""
+    screen = (repo_root / "game" / "framework" / "20_ui" / "screens"
+              / "gallery.rpy").read_text(encoding="utf-8")
+    store_defaults = [ln for ln in screen.splitlines() if ln.startswith("default ")]
+    assert store_defaults == [], \
+        f"состояние экрана объявлено store-default (уедет в сейв): {store_defaults}"
+    assert "default category = None" in screen and "default zoom = False" in screen
+
+
+def test_store_unlocks_shot_with_several_attributes(repo_root, tmp_path):
+    """Имя шота из двух и более атрибутов: свои атрибуты обязаны найтись ВСЕ, а
+    липкие от предыдущего кадра и произвольный их порядок не мешают. Сверка по
+    склеенной строке («sunset rain» одним атрибутом) не совпала бы никогда — такой
+    элемент навсегда остался бы «Закрыто» у игрока, который кадр видел. Генерат
+    сегодня такое имя не даёт (ссылка шота без пробелов), поэтому имя ставится в
+    реестр прямо: тест страхует стор от расширения схемы."""
+    registry = _registry_from(tmp_path, _shot_item(), SHOTS_DOCS)
+    registry["shot_sunset"]["image_name"] = "shot_ch01_s030 sunset rain"
+    gal = _store_module(repo_root, registry, seen_images={
+        ("shot_ch01_s030", "rain", "mira_casual", "sunset"): True})
+    assert gal.is_unlocked("shot_sunset") is True
+
+    # Один из своих атрибутов не показан — элемент закрыт.
+    gal2 = _store_module(repo_root, registry,
+                         seen_images={("shot_ch01_s030", "sunset"): True})
+    assert gal2.is_unlocked("shot_sunset") is False
+
+
 def test_store_shot_unlock_accepts_historical_name(repo_root, tmp_path):
     registry = _registry_from(tmp_path, _shot_item(), SHOTS_DOCS)
     registry["shot_sunset"]["image_name_history"] = ["shot_ch01_s030 dusk"]

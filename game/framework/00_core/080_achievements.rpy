@@ -57,7 +57,11 @@ init -980 python in vn_ach:
         if not goal:
             return 0
         value = _var_value(((_registry().get(ach_id) or {}).get("trigger") or {}).get("var"))
-        if isinstance(value, (list, tuple, set, dict)):
+        # Именно __len__, а не isinstance по (list, dict, set): в сторе эти имена —
+        # Revertable-аналоги (SDK renpy/minstore.py:41-53), и обычный список,
+        # пришедший из миграции (json.loads), они бы не распознали — счётчик
+        # прогрессивной ачивки молча стал бы нулём.
+        if hasattr(value, "__len__") and not isinstance(value, str):
             value = len(value)
         elif not isinstance(value, (int, float)) or isinstance(value, bool):
             value = 0
@@ -106,8 +110,8 @@ init -980 python in vn_ach:
         """Обновить прогресс ачивки. Возвращает True, если цель достигнута.
 
         Порог уведомления (step) считается по УЖЕ сообщённому значению, а не по
-        текущему: check() зовётся после каждой смены состояния, и без этого
-        игрок получал бы попап на каждый чих."""
+        текущему: check() зовётся на каждом якоре сцены, и без этого игрок
+        получал бы попап на каждый чих."""
         goal = goal_of(ach_id)
         if not goal:
             return False
@@ -128,8 +132,14 @@ init -980 python in vn_ach:
         return False
 
     def check(scene_id=None, beat_id=None):
-        """Прогон триггеров: зовётся обвязкой сцены (checkpoint), vn.beat и
-        после каждой смены состояния. Дёшево: словарь на десятки записей."""
+        """Прогон триггеров: зовётся с ЯКОРЕЙ (vn.checkpoint / vn.beat /
+        vn.chapter_done) и догоном после загрузки (vn.recheck_triggers).
+        Дёшево: словарь на десятки записей.
+
+        Следствие для триггера по переменной: он срабатывает на первом якоре ПОСЛЕ
+        присваивания, а не в момент присваивания — якорей по присваиваниям
+        компилятор не расставляет (это правило, а не недосмотр: беззвучных
+        промежуточных состояний в сцене больше, чем ачивок)."""
         granted = []
         for ach_id, spec in _registry().items():
             if has(ach_id):

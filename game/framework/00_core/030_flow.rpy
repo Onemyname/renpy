@@ -9,9 +9,21 @@ init -999 python in vn:
     API_LEVEL = 1
 
     # ── Обвязка сцен (C15) ───────────────────────────────────────────────────
+    def in_replay():
+        """Идёт ли реплей сцены из галереи (ADR-0021). Движок изолирует СТОРЫ, но
+        не persistent: без этого гейта пересмотр кадра начислял бы достижения,
+        открывал галерею и накручивал прогресс главы заново."""
+        return bool(getattr(renpy.store, "_in_replay", None))
+
     def checkpoint(scene_id):
         """Вход в сцену: якорь восстановления позиции сейва (раздел 6) и
-        триггер достижений/галереи, привязанных к сцене."""
+        триггер достижений/галереи, привязанных к сцене.
+
+        В реплее (ADR-0021) прогресс не пишется: сцена уже пройдена, и повторный
+        просмотр не должен ни выдавать ачивки, ни двигать счётчики."""
+        if in_replay():
+            renpy.store.vn_scene = scene_id
+            return
         renpy.store.vn_scene = scene_id
         # save_name — штатное имя текущего места в игре: движок кладёт его в
         # заголовок сейв-слота И открывает по нему фазу Steam Timeline
@@ -25,29 +37,61 @@ init -999 python in vn:
         seen = renpy.store.g.scenes_seen
         if scene_id not in seen:
             seen.append(scene_id)
-        _ach_notify(renpy.store.vn_ach.check(scene_id=scene_id))
-        _gallery_notify(renpy.store.vn_gal.check(scene_id=scene_id))
+        # Флоучарт (ADR-0021) показывает и то, что игрок видел в ПРОШЛЫХ
+        # прохождениях: g.scenes_seen живёт в сейве, поэтому «когда-либо
+        # виденное» ведётся рядом в persistent (C9, плоское имя vn_).
+        ever = renpy.store.vn_story.ever_seen()
+        if scene_id not in ever:
+            ever[scene_id] = True
+        _notify_progress(renpy.store.vn_ach.check(scene_id=scene_id),
+                         renpy.store.vn_gal.check(scene_id=scene_id))
 
     def beat(beat_id=None):
         """Мелкий якорь внутри сцены: триггер достижений/галереи и точка
         расширения для телеметрии/автотестов (фаза 2)."""
         if beat_id is not None:
-            _ach_notify(renpy.store.vn_ach.check(beat_id=beat_id))
-            _gallery_notify(renpy.store.vn_gal.check(beat_id=beat_id))
+            _notify_progress(renpy.store.vn_ach.check(beat_id=beat_id),
+                             renpy.store.vn_gal.check(beat_id=beat_id))
 
     def chapter_done(chapter_id):
         """Глава пройдена: якорь для галереи/достижений «за прохождение».
         Зовётся обвязкой финальной сцены главы (компилятор) и вручную не нужен."""
-        _ach_notify(renpy.store.vn_ach.check(beat_id="chapter_done:%s" % chapter_id))
-        _gallery_notify(renpy.store.vn_gal.check(chapter_done=chapter_id))
+        _notify_progress(
+            renpy.store.vn_ach.check(beat_id="chapter_done:%s" % chapter_id),
+            renpy.store.vn_gal.check(chapter_done=chapter_id))
 
-    def _ach_notify(granted):
-        """Уведомление о выданном достижении — тем же штатным каналом, что у
-        галереи. Под Steam попап рисует оверлей, но он есть не у всех игроков
-        (standalone, оверлей выключен настройкой), а «получил и не заметил» —
-        худший исход для ачивки: она вся про обратную связь."""
+    def recheck_triggers():
+        """Догон триггеров, привязанных не к якорю, а к ПЕРЕМЕННОЙ.
+
+        Триггеры прогоняются на якорях (checkpoint/beat/chapter_done), а переменная
+        может измениться в хвосте сцены — после последнего якоря. Игрок, который
+        там сохранился и вышел, иначе получал бы ачивку (и элемент галереи) только
+        на входе в следующую сцену следующей сессии: after_load триггеры не гонял.
+        Зовётся из label after_load (020_state.rpy) — единственная точка, где
+        состояние приходит извне, а не из якоря."""
+        _notify_progress(renpy.store.vn_ach.check(),
+                         renpy.store.vn_gal.check())
+
+    def _notify_progress(granted, opened):
+        """ОДНО уведомление на тик про ачивки и галерею.
+
+        renpy.notify держит один слот: второй вызов в том же тике прячет экран и
+        показывает заново (SDK: display_notify), то есть первый текст игрок не
+        увидит вовсе. А ачивка и элемент галереи регулярно открываются одним
+        якорем — в 1.0.0 это гарантировано на главном пути (сцена ch01_s030
+        открывает и ачивку, и видео галереи). Тост по вёрстке однострочный
+        (screen notify), поэтому части идут разделителем, а не переносом."""
+        parts = [t for t in (_ach_text(granted), _gallery_text(opened)) if t]
+        if parts:
+            renpy.notify(" · ".join(parts))
+
+    def _ach_text(granted):
+        """Текст о выданном достижении или None. Под Steam попап рисует оверлей,
+        но он есть не у всех игроков (standalone, оверлей выключен настройкой), а
+        «получил и не заметил» — худший исход для ачивки: она вся про обратную
+        связь. Поэтому уведомляем сами, тем же каналом, что и галерея."""
         if not granted:
-            return
+            return None
         names = renpy.store.vn_ach.names(granted)
         n = len(granted)
         key = "ui.ach.granted_one" if n == 1 else "ui.ach.granted_many"
@@ -56,19 +100,19 @@ init -999 python in vn:
             text = text.replace("[name]", names[0])
         else:
             text = text.replace("[n]", str(n))
-        renpy.notify(text)
+        return text
 
-    def _gallery_notify(opened):
-        """Уведомление о новом контенте галереи — через штатный notify-экран
-        (тот же канал, что у остальных сообщений; своей системы не вводим)."""
+    def _gallery_text(opened):
+        """Текст о новом материале галереи или None — штатный notify-канал, тот же,
+        что у остальных сообщений; своей системы уведомлений не вводим."""
         if not opened:
-            return
+            return None
         n = len(opened)
         key = "ui.gallery.unlocked_one" if n == 1 else "ui.gallery.unlocked_many"
         text = renpy.store.vn_loc.t(key)
         if n > 1:
             text = text.replace("[n]", str(n))
-        renpy.notify(text)
+        return text
 
     def check_scene_stack():
         """Инвариант G7: глубина call-стека на границе сцены = 0."""

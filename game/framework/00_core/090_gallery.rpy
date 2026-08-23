@@ -57,18 +57,24 @@ init -980 python in vn_gal:
         предыдущего кадра, причём порядок таких атрибутов — из множества, то есть
         произвольный (SDK 00layeredimage_ren.py: _choose_attributes). Поэтому
         renpy.seen_image («кортеж целиком») дал бы ложное «закрыто», и шот
-        засчитывается по ТЕГУ образа сцены плюс атрибуту шота."""
+        засчитывается по ТЕГУ образа сцены плюс атрибутам шота — как ПОДМНОЖЕСТВО
+        показанного имени: свои атрибуты обязаны быть все, лишние (липкие от
+        предыдущего кадра) не мешают. Подмножество, а не пересечение по склеенной
+        строке: имя из двух и более атрибутов иначе не совпало бы никогда, то есть
+        такой элемент навсегда остался бы «закрыт» у игрока, который кадр видел."""
         seen = getattr(persistent, "_seen_images", None) or {}
         wanted = {}
         for name in _image_names(spec):
-            tag, _, attr = name.partition(" ")
-            wanted.setdefault(tag, set()).add(attr)
+            parts = name.split()
+            if len(parts) < 2:
+                continue      # тег без атрибутов: «видел любой кадр тега» — не открытие
+            wanted.setdefault(parts[0], []).append(frozenset(parts[1:]))
         for key in seen:
             if not isinstance(key, tuple) or not key:
                 continue
-            attrs = wanted.get(key[0])
-            if attrs and attrs.intersection(key[1:]):
-                return True
+            for attrs in wanted.get(key[0], ()):
+                if attrs.issubset(key[1:]):
+                    return True
         return False
 
     def is_unlocked(item_id):
@@ -91,9 +97,10 @@ init -980 python in vn_gal:
                         return True
         return bool(_store().get(item_id))
 
-    def unlock(item_id, silent=False):
+    def unlock(item_id):
         """Разблокировать явно (идемпотентно). Возвращает True, только если
-        состояние изменилось — на этом строится уведомление."""
+        состояние изменилось: на возвращаемом значении и строится уведомление
+        (check -> vn._gallery_notify) — второй, отложенной очереди для этого нет."""
         spec = _registry().get(item_id)
         if spec is None:
             vn_log("gallery unknown item: %s" % item_id)
@@ -101,17 +108,7 @@ init -980 python in vn_gal:
         if not visible(item_id) or is_unlocked(item_id):
             return False
         _store()[item_id] = True
-        if not silent:
-            _pending.append(item_id)
         return True
-
-    _pending = []
-
-    def take_pending():
-        """Забрать очередь только что открытых элементов (для уведомления)."""
-        global _pending
-        out, _pending = list(_pending), []
-        return out
 
     def _var_value(ref):
         store_name, _, attr = ref.partition(".")
@@ -120,7 +117,8 @@ init -980 python in vn_gal:
 
     def check(scene_id=None, beat_id=None, chapter_done=None):
         """Прогон якорей — зовётся из тех же точек, что и достижения
-        (vn.checkpoint / vn.beat / завершение главы). Дёшево: десятки записей."""
+        (vn.checkpoint / vn.beat / завершение главы) плюс догоном после загрузки
+        (vn.recheck_triggers). Дёшево: десятки записей."""
         opened = []
         for item_id, spec in _registry().items():
             if is_unlocked(item_id):

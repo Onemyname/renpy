@@ -332,9 +332,21 @@ def test_grant_notifies_player(repo_root):
     каналом, что у галереи."""
     flow = (repo_root / "game" / "framework" / "00_core"
             / "030_flow.rpy").read_text(encoding="utf-8")
-    assert "def _ach_notify(" in flow
-    # Все три якоря выдачи проходят через уведомление, иначе часть ачивок молчит
-    assert flow.count("_ach_notify(renpy.store.vn_ach.check(") == 3
+    assert "def _ach_text(" in flow and "def _notify_progress(" in flow
+    # Все точки выдачи проходят через уведомление, иначе часть ачивок молчит:
+    # три якоря (checkpoint / beat / chapter_done) и догон после загрузки
+    # (recheck_triggers — переменная могла измениться в хвосте сцены).
+    assert flow.count("_notify_progress(") == 5      # 4 вызова + определение
+    assert flow.count("renpy.store.vn_ach.check(") == 4
+    # Галерейная половина обязана идти тем же вызовом: иначе её удаление никто
+    # не заметит, а ачивка с элементом галереи регулярно открываются одним якорем.
+    assert flow.count("renpy.store.vn_gal.check(") == 4
+    assert flow.count("renpy.notify(") == 1, \
+        "второй notify в тике затирает первый — игрок увидит только одно из двух"
+    assert "def recheck_triggers(" in flow
+    state = (repo_root / "game" / "framework" / "00_core"
+             / "020_state.rpy").read_text(encoding="utf-8")
+    assert "vn.recheck_triggers()" in state, "догон обязан вызываться из after_load"
     store = (repo_root / "game" / "framework" / "00_core"
              / "080_achievements.rpy").read_text(encoding="utf-8")
     assert "def names(" in store, "уведомление обязано показывать НАЗВАНИЕ, а не id"
