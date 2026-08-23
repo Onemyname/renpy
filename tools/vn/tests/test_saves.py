@@ -1,4 +1,9 @@
-"""Сейв-инфраструктура (G5): валидация цепочки миграций, эмиттеры snapshot/migrations."""
+"""Сейв-инфраструктура (G5): валидация цепочки миграций, эмиттеры snapshot/migrations,
+решения рантайм-стора vn_state (снапшот и прогон цепочки)."""
+
+import sys
+import textwrap
+import types
 
 import pytest
 
@@ -95,3 +100,184 @@ def test_migration_chain_executes_like_runtime():
     state = json.loads(json.dumps({"g.route": "common", "vn_save_schema": 1}))
     state = ns["migrate"](state)
     assert state["g.route"] == "prologue"
+
+
+# ── Рантайм-стор vn_state: снапшот и прогон цепочки ──────────────────────────
+# Блок `python in vn_state` — обычный Python, а его внешний мир это renpy.store,
+# vn_log и vn_compat. Подставляем ровно их и проверяем РЕШЕНИЯ (что попало в
+# снапшот, что записалось обратно в сторы), а не наличие строк. Тот же приём, что
+# в test_gallery.py; отличие одно: код исполняется в __dict__ настоящего модуля,
+# потому что тесту надо подменять глобалы стора (MIGRATIONS, SNAPSHOT_*), которые
+# в игре наполняет генерат.
+
+STATE_REL = "game/framework/00_core/020_state.rpy"
+
+
+# Ren'Py подменяет в КАЖДОМ сторе имена list/dict/set на Revertable-аналоги
+# (SDK renpy/minstore.py:41-53), а значения в сторах — соответственно Revertable.
+# Без этой подмены тест врёт: `isinstance(x, dict)` внутри блока значит совсем не
+# то, что в обычном питоне, и ошибку такого рода поймал бы только живой движок
+# (так и случилось однажды с проверкой «миграция вернула dict»).
+
+class _RevList(list):
+    pass
+
+
+class _RevDict(dict):
+    pass
+
+
+class _RevSet(set):
+    pass
+
+
+def _revertable(value):
+    if isinstance(value, dict):
+        return _RevDict((k, _revertable(v)) for k, v in value.items())
+    if isinstance(value, list):
+        return _RevList(_revertable(v) for v in value)
+    if isinstance(value, set):
+        return _RevSet(_revertable(v) for v in value)
+    return value
+
+
+def _state_module(repo_root, stores: dict, monkeypatch, save_schema: int = 1):
+    """Стор vn_state без движка. stores: {имя стора: {переменная: значение}} —
+    так их наполняют generated/state/defaults.gen.rpy и snapshot.gen.rpy.
+    Значения кладутся в стор Revertable-обёртками, а имена list/dict/set в блоке
+    подменяются, как это делает движок (см. комментарий выше).
+
+    Подставной `store` живёт в sys.modules весь тест (monkeypatch), а не только на
+    время exec: apply_snapshot берёт vn_compat ленивым импортом в момент вызова —
+    в игре стор vn_compat создаётся позже этого блока (C8)."""
+    tail = (repo_root / STATE_REL).read_text(encoding="utf-8") \
+        .partition("python in vn_state:")[2]
+    assert tail, f"{STATE_REL}: блок `python in vn_state:` не найден"
+    body = []
+    for line in tail.splitlines():
+        if line.strip() and not line.startswith("    "):
+            break                     # блок кончился (label after_load и т. п.)
+        body.append(line)
+
+    modules = {name: types.SimpleNamespace(**{k: _revertable(v) for k, v in values.items()})
+               for name, values in stores.items()}
+    renpy_store = types.SimpleNamespace(vn_save_schema=save_schema, **modules)
+    log: list[str] = []
+    fake_store = types.ModuleType("store")
+    fake_store.renpy = types.SimpleNamespace(store=renpy_store)
+    fake_store.vn_log = log.append
+    # Revertable-конвертация движка: тесту важно, ЧТО записано в стор, а не в какой
+    # обёртке движка это лежит.
+    fake_store.vn_compat = types.SimpleNamespace(revertable=lambda v: v)
+
+    mod = types.ModuleType("vn_state")
+    # Ровно как движок: имена типов в сторе — Revertable-аналоги.
+    mod.__dict__.update(list=_RevList, dict=_RevDict, set=_RevSet)
+    monkeypatch.setitem(sys.modules, "store", fake_store)
+    exec(compile(textwrap.dedent("\n".join(body)), STATE_REL, "exec"), mod.__dict__)
+    mod.SNAPSHOT_STORES = tuple(stores)
+    mod.SNAPSHOT_VARS = tuple((s, v) for s, values in stores.items() for v in values)
+    mod.stores = modules
+    mod.log = log
+    return mod
+
+
+def test_snapshot_skips_value_that_breaks_json_roundtrip(repo_root, monkeypatch):
+    """set внутри объявленного списка не должен доезжать до json.dumps в
+    run_migrations: там он падает уже ВНУТРИ label after_load, то есть загрузка
+    старого сейва превращается в крэш-скрин вместо игры. Проверка типа по верхнему
+    уровню (list — простой тип) такое пропускала."""
+    st = _state_module(repo_root, {"g": {"route": "common", "tags": [{"a", "b"}]}},
+                       monkeypatch)
+    snap = st.snapshot()
+    assert snap["g.route"] == "common"
+    assert "g.tags" not in snap
+    assert any("g.tags" in line for line in st.log)
+
+
+def test_migrations_write_back_only_what_changed(repo_root, monkeypatch):
+    """json-раундтрип нужен миграциям, но он же теряет форму (ключи dict ->
+    строки). Переменная, которой миграция не касалась, обязана остаться как была:
+    иначе {1: ...} молча становится {"1": ...} у всех игроков, и следующий d[1]
+    промахивается."""
+    st = _state_module(repo_root, {"g": {"route": "common", "day_log": {1: "a"}}},
+                       monkeypatch)
+
+    def to_prologue(state):
+        state["g.route"] = "prologue"
+        return state
+
+    st.MIGRATIONS = [(2, to_prologue)]
+    assert st.run_migrations(1) == 2
+    assert st.stores["g"].route == "prologue"      # миграция применена
+    assert st.stores["g"].day_log == {1: "a"}      # чужая переменная не тронута
+
+
+def test_migration_chain_gap_breaks_the_chain(repo_root, monkeypatch):
+    """Миграция N ждёт состояние ПОСЛЕ N−1: исполнять её поверх непройденной
+    предыдущей нельзя. Цепочка обрывается на дыре, и сейв не помечается
+    актуальным (after_load ставит схему по фактически применённой) — иначе
+    повторная загрузка уже ничего не починит."""
+    calls = []
+
+    def mig(number):
+        def _m(state):
+            calls.append(number)
+            state["g.route"] = "after%d" % number
+            return state
+        return _m
+
+    st = _state_module(repo_root, {"g": {"route": "common"}}, monkeypatch)
+    st.MIGRATIONS = [(3, mig(3))]
+    assert st.run_migrations(1) == 1               # схема не поднялась
+    assert calls == []                             # дыра 1 -> 3: ничего не исполнено
+    assert st.stores["g"].route == "common"
+
+    st2 = _state_module(repo_root, {"g": {"route": "common"}}, monkeypatch)
+    st2.MIGRATIONS = [(2, mig(2)), (4, mig(4))]
+    assert st2.run_migrations(1) == 2              # 2 применена, на 4 обрыв
+    assert calls == [2]
+    assert st2.stores["g"].route == "after2"
+
+
+def test_full_chain_applies_every_step(repo_root, monkeypatch):
+    """Регрессия к обрыву на дыре: непрерывная цепочка обязана проходить целиком."""
+    seen = []
+
+    def step(number):
+        def _m(state):
+            seen.append(number)
+            return state
+        return _m
+
+    st = _state_module(repo_root, {"g": {"route": "common"}}, monkeypatch)
+    st.MIGRATIONS = [(2, step(2)), (3, step(3))]
+    assert st.run_migrations(1) == 3
+    assert seen == [2, 3]
+
+
+def test_migration_that_forgot_return_breaks_the_chain(repo_root, monkeypatch):
+    """Забытый return — типичная описка автора миграции. Дальше идти нельзя
+    (следующая получила бы None), падать трейсбеком у игрока — тем более:
+    поведение то же, что на дыре, схема остаётся прежней."""
+    st = _state_module(repo_root, {"g": {"route": "common"}}, monkeypatch)
+    st.MIGRATIONS = [(2, lambda state: None), (3, lambda state: state)]
+    assert st.run_migrations(1) == 1
+    assert st.stores["g"].route == "common"
+    assert any("вместо dict" in line for line in st.log)
+
+
+def test_migration_result_that_is_not_json_is_written_and_logged(repo_root, monkeypatch):
+    """Миграция нарушила свой контракт и положила не-json значение. Терять её
+    результат молча нельзя, падать на сравнении «до/после» — тоже: значение
+    записывается, а факт нарушения уходит в лог."""
+    st = _state_module(repo_root, {"g": {"route": "common"}}, monkeypatch)
+
+    def bad(state):
+        state["g.route"] = {"a", "b"}      # set — не сериализуется
+        return state
+
+    st.MIGRATIONS = [(2, bad)]
+    assert st.run_migrations(1) == 2
+    assert st.stores["g"].route == {"a", "b"}
+    assert any("не сериализуется" in line for line in st.log)

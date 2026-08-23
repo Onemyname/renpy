@@ -10,7 +10,17 @@ default vn_menu = None
 default vn_scene = None
 
 init -999 python in vn_state:
+    import builtins as _builtins
+
     from store import renpy, vn_log
+
+    # В сторах Ren'Py имена list/dict/set подменены Revertable-аналогами
+    # (SDK renpy/minstore.py:41-53), поэтому проверять тип по имени `dict` здесь
+    # нельзя: json.loads отдаёт ОБЫЧНЫЙ dict, а он не является RevertableDict —
+    # и проверка «миграция вернула dict» отвергала бы корректный результат.
+    # Поймано save-корпусом на живом движке; юнит-тест этого не видит, если не
+    # воспроизвести подмену (см. tools/vn/tests/test_saves.py).
+    _PLAIN_DICT = _builtins.dict
 
     # Цепочка миграций: генерат (фаза 2) наполняет из content/migrations/*.py.
     # Контракт (G5, раздел 6): migrate(state: dict) -> dict над плоским снапшотом stores.
@@ -25,6 +35,26 @@ init -999 python in vn_state:
     SNAPSHOT_STORES = ()
 
     _SIMPLE = (str, int, float, bool, list, dict, type(None))
+
+    def _json_safe(value):
+        """Переживёт ли значение json-раундтрип цепочки миграций (run_migrations).
+
+        isinstance по ВЕРХНЕМУ уровню на это не отвечает: set внутри объявленного
+        списка проходит проверку типа, а json.dumps падает уже на нём — то есть
+        внутри label after_load, и загрузка старого сейва превращается в крэш-скрин
+        вместо игры. Оракул совместимости здесь только сам json: угадывать за него,
+        какие вложенные типы сериализуемы, значит держать вторую реализацию json.
+
+        Цена решения: такая переменная выпадает из видимости миграций (снапшот
+        обещает показывать ВСЁ, см. ниже). Выбор между «миграция её не увидит» и
+        «игрок не загрузит сейв» сделан в пользу первого, а факт пропуска пишется
+        в лог отдельной строкой — с именем переменной, чтобы автор миграции знал."""
+        import json as _json
+        try:
+            _json.dumps(value)
+        except (TypeError, ValueError):
+            return False
+        return True
 
     def snapshot():
         """stores -> плоский dict простых типов (ключи 'store.var').
@@ -43,12 +73,23 @@ init -999 python in vn_state:
                     vn_log("snapshot: %s.%s пропущен (не-простой тип %s)"
                            % (store_name, var, type(value).__name__))
                     continue
+                if not _json_safe(value):
+                    vn_log("snapshot: %s.%s пропущен (внутри значения тип, не "
+                           "переживающий json-раундтрип миграций)" % (store_name, var))
+                    continue
                 out["%s.%s" % (store_name, var)] = value
         out["vn_save_schema"] = getattr(renpy.store, "vn_save_schema", None)
         return out
 
     def apply_snapshot(state):
-        """dict -> stores. Значения проходят Revertable-конвертацию (rollback, G5)."""
+        """dict -> stores. Значения проходят Revertable-конвертацию (rollback, G5).
+        Пишутся только присутствующие в state ключи: run_migrations передаёт сюда
+        ФАКТИЧЕСКИ изменённое, а не весь снапшот (см. там же, почему).
+
+        Путь удаления здесь отсутствует по построению: `del state[key]` в миграции
+        ничего не сбрасывает — переменная останется в сторе с прежним значением.
+        Сброс делается ПРИСВАИВАНИЕМ нужного значения, а выведенная из схемы
+        переменная убирается из деклараций (и тогда её просто никто не читает)."""
         from store import vn_compat
         for store_name, var in SNAPSHOT_VARS:
             key = "%s.%s" % (store_name, var)
@@ -64,17 +105,53 @@ init -999 python in vn_state:
         Возвращает номер последней применённой миграции."""
         import json as _json
         state = _json.loads(_json.dumps(snapshot()))
+        # Канонический снимок «до цепочки», по ключам. Значения сразу превращаются
+        # в строки, поэтому мутация state миграцией на него не влияет — второй
+        # разбор снапшота для этого не нужен. Сравниваем сериализации, а не
+        # значения: иначе True и 1 считались бы одинаковыми.
+        before = {k: _json.dumps(v, sort_keys=True) for k, v in state.items()}
         applied = from_schema
         for number, migrate in MIGRATIONS:
             if number <= from_schema:
                 continue
             if number != applied + 1:
-                vn_log("migration chain gap: %d -> %d" % (applied, number))
+                # Миграция N ждёт состояние ПОСЛЕ N-1; поверх непройденной
+                # предыдущей её исполнять нельзя, поэтому цепочка обрывается —
+                # схема останется прежней, и after_load честно скажет «incomplete»
+                # (иначе сейв помечался бы актуальным, не пройдя шаг). Непрерывность
+                # гарантирует компилятор (_collect_migrations), так что сюда доходит
+                # только генерат, собранный в обход сборки.
+                vn_log("migration chain gap: %d -> %d — цепочка прервана" % (applied, number))
+                break
             vn_log("migration %04d" % number)
-            state = migrate(state)
+            result = migrate(state)
+            if not isinstance(result, _PLAIN_DICT):
+                # Контракт migrate(state) -> dict; типичная описка — забытый return.
+                # Дальше идти нельзя (следующая миграция получила бы None), а падать
+                # трейсбеком у игрока — тем более: обрываем цепочку как на дыре.
+                vn_log("migration %04d вернула %s вместо dict — цепочка прервана"
+                       % (number, type(result).__name__))
+                break
+            state = result
             applied = number
         if applied != from_schema:
-            apply_snapshot(state)
+            # Обратно пишем ТОЛЬКО фактически изменённое: json-раундтрип нужен
+            # миграциям, но он же приводит ключи dict к строкам, и запись им всего
+            # снапшота портила бы переменные, которых ни одна миграция не касалась.
+            changed = {}
+            for k, v in state.items():
+                try:
+                    same = _json.dumps(v, sort_keys=True) == before.get(k)
+                except (TypeError, ValueError):
+                    # Миграция положила не-json значение (нарушение своего же
+                    # контракта). Записать его всё равно надо — иначе результат
+                    # миграции потеряется молча, — но факт обязан быть в логе.
+                    vn_log("migration: %s не сериализуется в json — "
+                           "миграция нарушает контракт плоского состояния" % k)
+                    same = False
+                if not same:
+                    changed[k] = v
+            apply_snapshot(changed)
         return applied
 
 

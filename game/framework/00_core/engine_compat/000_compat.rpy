@@ -3,9 +3,17 @@
 # покрыто контракт-тестом (tools/vn/tests/, canary-джоба CI гоняет их на свежем Ren'Py).
 
 init -950 python in vn_compat:
+    import builtins as _builtins
     import os
 
     from store import renpy
+
+    # В сторах Ren'Py имена list/dict/set подменены Revertable-аналогами
+    # (SDK renpy/minstore.py:41-53). Значит проверять тип по этим именам здесь
+    # нельзя: json.loads и чистый python отдают ОБЫЧНЫЕ контейнеры, которые
+    # экземплярами Revertable-классов не являются — и конвертация ниже молча
+    # ничего не делала бы ровно в том случае, ради которого написана.
+    _PLAIN = (_builtins.dict, _builtins.list, _builtins.set)
 
     def call_stack_depth():
         """Глубина call-стека. renpy.call_stack_depth() документирован в новых версиях;
@@ -23,11 +31,11 @@ init -950 python in vn_compat:
         КОНТРАКТ-ТЕСТ: test_engine_compat::test_revertable_types."""
         from renpy.revertable import RevertableDict, RevertableList, RevertableSet
 
-        if isinstance(value, dict):
+        if isinstance(value, _PLAIN[0]):
             return RevertableDict({k: revertable(v) for k, v in value.items()})
-        if isinstance(value, list):
+        if isinstance(value, _PLAIN[1]):
             return RevertableList(revertable(v) for v in value)
-        if isinstance(value, set):
+        if isinstance(value, _PLAIN[2]):
             return RevertableSet(revertable(v) for v in value)
         return value
 
