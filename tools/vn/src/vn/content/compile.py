@@ -649,7 +649,8 @@ def _collect_migrations(root: Path, src, project: dict, errors: list[str]):
 
 def _emit_overrides(renames: dict, sources,
                     registry_scenes: list[str] | None = None,
-                    known_scenes: set[str] | None = None) -> str:
+                    known_scenes: set[str] | None = None,
+                    known_labels: set[str] | None = None) -> str:
     out = [_header(sources)]
     scene_renames: dict = renames.get("scenes") or {}
     deleted: dict = renames.get("deleted_scenes") or {}
@@ -657,6 +658,22 @@ def _emit_overrides(renames: dict, sources,
     overrides = dict(scene_renames)
     overrides.update({old: spec["fallback"] for old, spec in deleted.items()})
     overrides.update(labels)
+
+    # Ключ renames — СТАРЫЙ id, которого в сборке уже нет. Если он в сборке есть,
+    # shim-метка продублирует настоящую, и Ren'Py откажется грузить игру целиком:
+    # «The label X is defined twice» (renpy/script.py). Плюс label_overrides делает
+    # живую сцену недостижимой. Направление пары ниоткуда не следует по значению
+    # ключа, поэтому перепутать его — типовая ошибка, а сообщение движка указывает
+    # на два файла в game/generated (зона, которой нет в git), а не на renames.yaml.
+    clash = sorted(set(overrides) & (known_labels or known_scenes or set()))
+    if clash:
+        raise CompileError(
+            "content/renames.yaml: " + ", ".join(clash) +
+            " — объявлены переименованными или удалёнными, но такие метки есть в "
+            "сборке. Shim-метка продублирует их, и игра не загрузится вовсе. "
+            "Пара записывается как `старый_id: новый_id`; старого id в дереве "
+            "остаться не должно")
+
     out.append("init -100 python:")
     out.append("    # update, а не define: DLC-паки могут дополнять карту (C12).")
     out.append(f"    config.label_overrides.update({overrides!r})")
@@ -1335,7 +1352,13 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "registry/menus.gen.rpy": _emit_menus(menus, ui_strings, source_lang, [proj_src]),
         "registry/overrides.gen.rpy": _emit_overrides(
             renames, overrides_sources, registry_scenes=registry_scenes,
-            known_scenes={u.full_id for u in units}),
+            known_scenes={u.full_id for u in units},
+            # Все метки, которые эта сборка определяет: обвязка сцены, её
+            # реплей-метка и авторские ветки из AST. Секция renames.labels
+            # адресует именно авторские метки, и дубликат там так же фатален.
+            known_labels={u.full_id for u in units}
+            | {f"{u.full_id}__replay" for u in units}
+            | {l["name"] for u in units for l in (u.analysis.get("labels") or [])}),
         "registry/flow.gen.rpy": flow_out,
     }
     outputs.update(scene_outputs)

@@ -162,3 +162,30 @@ def test_stale_key_touches_only_version_file():
 
     data = b'define config.version = "0.1.4+dd1cb3e"\n'
     assert _stale_key("registry/scenes.gen.rpy", data) == data
+
+
+def test_shim_label_is_never_emitted_for_a_live_scene():
+    """Вторая линия к тому же инварианту, но со стороны компилятора: даже если
+    линтер обойдут (--no-lint, прямой вызов compile), генерат с дубликатом метки
+    выпускать нельзя — Ren'Py на таком не стартует вовсе.
+
+    Проверяются обе секции: scenes (переименование) и labels (авторская ветка).
+    """
+    from vn.content.compile import _emit_overrides
+
+    src = [("content/renames.yaml", "0" * 16)]
+    live = {"ch01_s010", "ch01_s020"}
+
+    with pytest.raises(CompileError, match="ch01_s010"):
+        _emit_overrides({"scenes": {"ch01_s010": "ch01_s020"}}, src,
+                        known_scenes=live, known_labels=live)
+
+    with pytest.raises(CompileError, match="ch01_s010__body"):
+        _emit_overrides({"labels": {"ch01_s010__body": "ch01_s010__intro"}}, src,
+                        known_scenes=live,
+                        known_labels=live | {"ch01_s010__body"})
+
+    # Честное переименование — старого id в сборке нет — проходит и даёт shim.
+    out = _emit_overrides({"scenes": {"ch01_s005": "ch01_s010"}}, src,
+                          known_scenes=live, known_labels=live)
+    assert "label ch01_s005:" in out and "jump ch01_s010" in out

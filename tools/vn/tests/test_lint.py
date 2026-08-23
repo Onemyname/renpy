@@ -373,3 +373,25 @@ def test_lint_catches_migration_slug_not_matching_reservation(repo_root, tmp_pat
 
     rep = lint(root)
     assert any("slug не совпадает с бронью" in e for e in rep.errors), rep.errors
+
+
+def test_lint_catches_rename_of_a_scene_that_still_exists(repo_root, tmp_path):
+    """Ключ renames — СТАРЫЙ id, которого в дереве уже нет.
+
+    Если он есть, компилятор выпустит shim-метку рядом с настоящей, и Ren'Py
+    откажется грузить игру целиком («The label X is defined twice»). Направление
+    пары ниоткуда не следует по значению ключа, поэтому записать её наоборот —
+    типовая ошибка; а сообщение движка укажет на два файла в game/generated —
+    зону, которой нет в git, — а не на renames.yaml.
+
+    Инвариант «lint зелёный => build не падает»: раньше renames читались здесь
+    только как «разрешение сцене исчезнуть», обратной проверки не было."""
+    root = _copy_skeleton(repo_root, tmp_path)
+    _mk_chapter(root, ch_id="ch03", scenes={"s010": {"go": "s020"}, "s020": {}},
+                order=["s010", "s020"])
+    (root / "content" / "renames.yaml").write_text(
+        "schema: renames@1\nscenes: {ch03_s010: ch03_s020}\n"
+        "deleted_scenes: {}\nlabels: {}\nvars: {}\nassets: {}\n", encoding="utf-8")
+
+    rep = lint(root)
+    assert any("ch03_s010" in e and "есть в дереве" in e for e in rep.errors), rep.errors

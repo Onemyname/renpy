@@ -414,6 +414,20 @@ def lint(root: Path, layout: bool = True) -> LintReport:
             for name in (data.get("vars") or {}):
                 existing_vars.add(f"{store}.{name}")
 
+    # Обратная сторона того же правила, и без неё инвариант «lint зелёный =>
+    # build не падает» неверен: ключ renames — СТАРЫЙ id, которого в дереве уже
+    # нет. Если он есть, компилятор выпустит shim-метку рядом с настоящей, и
+    # Ren'Py откажется грузить игру («label defined twice»). Направление пары
+    # ниоткуда не следует по значению ключа, поэтому перепутать его — типовая
+    # ошибка, а движок укажет на два файла в game/generated, а не сюда.
+    for moved in sorted(scene_moves & existing_full_ids):
+        rep.error(
+            f"content/renames.yaml: {moved} объявлена переименованной или "
+            f"удалённой, но сцена с таким id есть в дереве — shim-метка "
+            f"продублирует её label и игра не загрузится. Пара пишется как "
+            f"`старый_id: новый_id`"
+        )
+
     for released in id_reg.get("scenes", []):
         if released not in existing_full_ids and released not in scene_moves:
             rep.error(
