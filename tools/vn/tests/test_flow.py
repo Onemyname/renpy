@@ -1034,3 +1034,48 @@ def test_body_assign_survives_a_conditional_exit_list(tmp_path):
         "присваивание тела вычтено вместе с присваиванием пункта — сцена за "
         "условием ch88.flag объявлена недостижимой")
     assert model.preconds["ch88_s040"] == [{"ch88.flag": True}]
+
+
+def test_conflict_matrix_does_not_grow_quadratically():
+    """Матрица конфликтов обязана расти ЛИНЕЙНО по числу сцен.
+
+    Одноточечный бюджет (500 сцен за N секунд) класс сложности не ловит — ADR-0021
+    сам ставит гейту эту задачу, а поймать её можно только двумя точками. Прежний
+    обход был честным квадратом: cap ограничивал число НАЙДЕННЫХ пар, а не сам
+    перебор, поэтому на здоровом графе (конфликтов мало) цикл всегда проходил
+    n(n−1)/2. Замер до правки на этой же модели: 500 сцен — 0.23 с, 2000 — 4.5 с,
+    8000 — 51 с, то есть на целевых 20 000 (G19) минуты на КАЖДЫЙ vn content
+    compile, и в отчёте сборки этого не видно.
+
+    Модель синтетическая и без движка: мерить надо матрицу, а не разбор AST.
+    Порог по ОТНОШЕНИЮ времён, а не по абсолютному: абсолютное зависит от
+    раннера, отношение — от алгоритма."""
+    import time
+
+    from vn.content.flow import Constraint, FlowModel, SceneNode, compute_compat
+
+    def build(n, per_chapter=50):
+        m = FlowModel()
+        for i in range(n):
+            ch = i // per_chapter
+            sid = "ch%04d_s%04d" % (ch, i)
+            key = f"{DECISION_PREFIX}ch%04d_m001" % ch
+            node = SceneNode(id=sid, chapter="ch%04d" % ch, pack="core", order=i)
+            node.reach = [{key: Constraint(allow=frozenset({0}))},
+                          {key: Constraint(allow=frozenset({1}))}]
+            m.scenes[sid] = node
+        return m
+
+    def measure(n):
+        m = build(n)
+        t = time.perf_counter()
+        compute_compat(m)
+        return time.perf_counter() - t
+
+    measure(200)                       # прогрев: первый вызов платит за импорты
+    small, big = measure(1000), measure(4000)
+    # Линейный рост дал бы ×4, квадратичный — ×16. Потолок ×8 отделяет одно от
+    # другого с запасом на дрожание раннера и на константу индекса.
+    assert big < max(small * 8, 0.5), (
+        f"матрица конфликтов растёт быстрее линейного: {small:.3f} c на 1000 сцен "
+        f"против {big:.3f} c на 4000 (×{big / max(small, 1e-9):.1f})")

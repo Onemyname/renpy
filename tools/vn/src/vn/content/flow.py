@@ -805,19 +805,52 @@ def compute_compat(model: FlowModel, cap: int = 4096) -> None:
     # мутируют, и их состояния относятся к разным моментам прохождения.
     decs = {sid: [{k: v for k, v in w.items() if k.startswith(DECISION_PREFIX)}
                   for w in model.scenes[sid].reach] for sid in ids}
+
+    # Пары-кандидаты, а не все n(n−1)/2.
+    #
+    # Конфликт возможен ТОЛЬКО между сценами, чьи миры ограничивают ОБЩИЙ ключ
+    # решения: без общего ключа world_and всегда что-то возвращает, то есть пара
+    # заведомо совместима. А сцена, у которой хоть один мир не несёт решений
+    # вовсе, совместима со всеми — её можно не рассматривать совсем.
+    #
+    # Прежний обход был честным квадратом и на здоровом графе (конфликтов мало)
+    # проходил его целиком: cap ограничивал только число НАЙДЕННЫХ пар. Замер:
+    # 500 сцен — 0.12 с, 2000 — 2.1 с, 8000 — 36 с (чистое ×4 на удвоение), то
+    # есть на целевых 20 000 сцен (G19) — минуты на каждый vn content compile,
+    # и в отчёте сборки этого не видно. Индекс делает число кандидатов линейным
+    # по числу сцен на реальной топологии: решения локальны для главы, а
+    # межглавные требования подмешиваются тем же ключом `@menu_id`
+    # (_foreign_requirements), поэтому индексом покрыты и они.
+    by_key: dict[str, list[str]] = {}
+    free: set[str] = set()
+    for sid in ids:
+        worlds = decs[sid]
+        if not worlds or any(not w for w in worlds):
+            free.add(sid)
+            continue
+        for key in {k for w in worlds for k in w}:
+            by_key.setdefault(key, []).append(sid)
+
+    candidates: set[tuple[str, str]] = set()
+    for group in by_key.values():
+        for i, a in enumerate(group):
+            for b in group[i + 1:]:
+                candidates.add((a, b) if a < b else (b, a))
+
     out: list[tuple[str, str]] = []
-    for i, a in enumerate(ids):
-        for b in ids[i + 1:]:
-            if any(world_and(wa, wb) is not None
-                   for wa in decs[a] for wb in decs[b]):
-                continue
-            out.append((a, b))
-            if len(out) > cap:
-                model.warnings.append(
-                    f"граф: конфликтующих пар больше {cap} — матрица не эмитится, "
-                    f"рантайм считает совместимость по мирам на лету")
-                model.incompatible = []
-                return
+    for a, b in sorted(candidates):
+        if a in free or b in free:
+            continue
+        if any(world_and(wa, wb) is not None
+               for wa in decs[a] for wb in decs[b]):
+            continue
+        out.append((a, b))
+        if len(out) > cap:
+            model.warnings.append(
+                f"граф: конфликтующих пар больше {cap} — матрица не эмитится, "
+                f"рантайм считает совместимость по мирам на лету")
+            model.incompatible = []
+            return
     model.incompatible = out
 
 
