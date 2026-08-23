@@ -173,9 +173,19 @@ init -999 python in vn:
 
         def __init__(self):
             self._provider = None
+            # Ответ провайдера на процесс. Владение DLC без перезапуска Steam не
+            # меняется, а сам провайдер подключается один раз на init 999 — то
+            # есть сценария «купил, не выходя из игры» тут не было и раньше.
+            # Зато цена была: owned() зовётся из visible() КАЖДОГО элемента
+            # галереи и КАЖДОЙ ачивки, а visible() — на каждом якоре сцены и на
+            # каждой сборке экрана. Под Steam это steam.dlc_installed(), то есть
+            # FFI-вызов; на четырёх сотнях элементов выходили тысячи вызовов на
+            # один кадр.
+            self._owned_cache = {}
 
         def set_ownership_provider(self, fn):
             self._provider = fn
+            self._owned_cache = {}      # сменился источник — кэш недействителен
 
         def installed(self, pack_id):
             if pack_id == "core":
@@ -196,11 +206,18 @@ init -999 python in vn:
         def owned(self, pack_id):
             if pack_id == "core":
                 return True
+            cached = self._owned_cache.get(pack_id)
+            if cached is not None:
+                return cached
             if not self.installed(pack_id):
+                self._owned_cache[pack_id] = False
                 return False
             if self._provider is not None:
-                return bool(self._provider(pack_id))
-            return True
+                rv = bool(self._provider(pack_id))
+            else:
+                rv = True
+            self._owned_cache[pack_id] = rv
+            return rv
 
     pack_registry = _PackRegistry()
 

@@ -28,11 +28,16 @@ screen gallery():
 
     default category = None         # None -> первая доступная категория
 
-    $ _cats = vn_gal.categories()
+    # ОДИН проход по реестру на сборку экрана вместо ~(2·Nкатегорий + 2):
+    # экран пересобирается на каждой интеракции, то есть на каждом движении мыши
+    # по сетке, и повторные обходы реестра платились в каждом кадре.
+    $ _view = vn_gal.overview()
+    $ _cats = [(c[0], c[1]) for c in _view["cats"]]
+    $ _counts = {c[0]: (c[2], c[3]) for c in _view["cats"]}
     $ _cat_ids = [c[0] for c in _cats]
     $ _cur = category if category in _cat_ids else (
         _cat_ids[0] if _cat_ids else None)
-    $ _done, _total = vn_gal.progress()
+    $ _done, _total = _view["done"], _view["total"]
 
     use vn_game_menu(vn_loc.t("ui.nav.gallery")):
         vbox:
@@ -45,7 +50,7 @@ screen gallery():
                 hbox:
                     spacing gui.sp_xs
                     for _cid, _cspec in _cats:
-                        $ _cd, _ct = vn_gal.progress(_cid)
+                        $ _cd, _ct = _counts[_cid]
                         textbutton "%s  %d/%d" % (vn_loc.t(_cspec["title_key"]), _cd, _ct):
                             style "vn_gal_tab"
                             # ScreenVariable адресует переменную ВЕРХНЕГО экрана —
@@ -63,7 +68,7 @@ screen gallery():
                 # Пад/клавиатура (аудит ui.md P0 №2): ряды за фолдом ysize
                 # недостижимы фокусом — ячейки докручивают сетку через
                 # vn_ui.reveal (hovered ловит и клавиатурный фокус).
-                $ _items = vn_gal.items(_cur)
+                $ _items = _view["by_cat"].get(_cur) or []
                 $ _rows = (len(_items) + 2) // 3
                 vpgrid id "vp_gallery":
                     properties vn_scroll_props
@@ -75,7 +80,8 @@ screen gallery():
                         # Первая ячейка забирает default focus у рельсы (§5.1):
                         # иначе слепой A уводил из галереи в «Сохранение».
                         use vn_gal_cell(_iid, _spec, _i // 3, _rows,
-                                        focus_default=(_i == 0))
+                                        focus_default=(_i == 0),
+                                        is_open=_view["open"].get(_iid, False))
 
 
 # ── Ячейка сетки: открытая (превью) или закрытая (заглушка без контента) ──────
@@ -83,8 +89,12 @@ screen gallery():
 # отклонён): выпади целый ряд закрытых из фокус-цепочки — следующий открытый
 # ряд за фолдом стал бы недостижим (reveal некому дёрнуть).
 
-screen vn_gal_cell(item_id, spec, row=None, rows=None, focus_default=False):
-    $ _open = vn_gal.is_unlocked(item_id)
+screen vn_gal_cell(item_id, spec, row=None, rows=None, focus_default=False,
+                   is_open=None):
+    # Состояние приходит из общего прохода (overview): спрашивать его на каждую
+    # ячейку заново значило бы платить обход реестра в каждом кадре сетки.
+    # None — вызов не из галереи (просмотрщик, дев-зона): спросим сами.
+    $ _open = vn_gal.is_unlocked(item_id) if is_open is None else is_open
     button:
         # Стиль ОДИН на оба состояния, и это принципиально: у закрытой ячейки был
         # свой стиль ровно ради hover_background = обычному фону, то есть ради

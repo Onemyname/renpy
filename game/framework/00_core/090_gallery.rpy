@@ -31,6 +31,44 @@ init -980 python in vn_gal:
             persistent.vn_gallery_unlocked = {}
         return persistent.vn_gallery_unlocked
 
+    # ── Кэши горячего пути ───────────────────────────────────────────────────
+    # Оба живут ПРОЦЕСС, а не сейв: это ответы про уже известное состояние, и
+    # писать их в persistent из выражения экрана было бы побочным эффектом в
+    # предикции (запрещено правилом чистоты экранов).
+    _seen_index_cache = None      # {тег: [frozenset(атрибуты), ...]}
+    _seen_index_len = -1          # по чему инвалидируем: размер _seen_images
+    _unlocked_cache = {}          # item_id -> True (разблокировка монотонна)
+
+    def _seen_index():
+        """Индекс показанных кадров по ТЕГУ образа.
+
+        Без него _seen_shot линейно сканировал весь persistent._seen_images, а
+        ранний выход там есть только при попадании — то есть для ЗАКРЫТОГО шота
+        (а закрытым он остаётся почти всю игру) цена равна размеру словаря.
+        Множитель сверху двойной: is_unlocked зовётся из vn_gal.check на каждом
+        якоре сцены И из экрана галереи по ~2 раза на элемент при каждой сборке
+        экрана, а SL2 пересобирает экран на каждой интеракции — то есть на каждом
+        движении мыши по сетке.
+
+        Размер _seen_images растёт не по числу файлов, а по числу РАЗЛИЧНЫХ
+        комбинаций атрибутов: движок пишет имя КАК ПОКАЗАНО, с липкими
+        атрибутами, а у layeredimage это резолвнутый набор всех слоёв — на
+        целевом масштабе это десятки тысяч ключей.
+
+        Инвалидация по длине: ключ может быть только добавлен (движок никогда не
+        удаляет из _seen_images), поэтому длина — точный признак изменения."""
+        global _seen_index_cache, _seen_index_len
+        seen = getattr(persistent, "_seen_images", None) or {}
+        if _seen_index_cache is not None and len(seen) == _seen_index_len:
+            return _seen_index_cache
+        index = {}
+        for key in seen:
+            if isinstance(key, tuple) and key:
+                index.setdefault(key[0], []).append(frozenset(key[1:]))
+        _seen_index_cache = index
+        _seen_index_len = len(seen)
+        return index
+
     def visible(item_id):
         """Показывать ли элемент: NSFW скрыт в SFW-сборке, чужие паки — по
         владению (G9), скрытая категория прячет свои элементы целиком."""
@@ -62,18 +100,15 @@ init -980 python in vn_gal:
         предыдущего кадра) не мешают. Подмножество, а не пересечение по склеенной
         строке: имя из двух и более атрибутов иначе не совпало бы никогда, то есть
         такой элемент навсегда остался бы «закрыт» у игрока, который кадр видел."""
-        seen = getattr(persistent, "_seen_images", None) or {}
-        wanted = {}
+        index = _seen_index()
         for name in _image_names(spec):
             parts = name.split()
             if len(parts) < 2:
                 continue      # тег без атрибутов: «видел любой кадр тега» — не открытие
-            wanted.setdefault(parts[0], []).append(frozenset(parts[1:]))
-        for key in seen:
-            if not isinstance(key, tuple) or not key:
-                continue
-            for attrs in wanted.get(key[0], ()):
-                if attrs.issubset(key[1:]):
+            wanted = frozenset(parts[1:])
+            # Смотрим только кадры СВОЕГО тега, а не весь словарь увиденного.
+            for shown in index.get(parts[0], ()):
+                if wanted.issubset(shown):
                     return True
         return False
 
@@ -86,16 +121,26 @@ init -980 python in vn_gal:
         unlock = spec.get("unlock") or {}
         if unlock.get("always"):
             return True
+        # Разблокировка монотонна в пределах процесса: открытый элемент закрыться
+        # уже не может. Кэш снимает повторный опрос движка на каждой перерисовке
+        # сетки — но НЕ в persistent: запись оттуда шла бы из выражения экрана.
+        if _unlocked_cache.get(item_id):
+            return True
         if unlock.get("seen_image"):
             if spec["kind"] == "shot":
                 if _seen_shot(spec):
+                    _unlocked_cache[item_id] = True
                     return True
             else:
                 # image_name — имя образа через пробелы (cg ch01 rooftop_day).
                 for name in _image_names(spec):
                     if renpy.seen_image(name):
+                        _unlocked_cache[item_id] = True
                         return True
-        return bool(_store().get(item_id))
+        if _store().get(item_id):
+            _unlocked_cache[item_id] = True
+            return True
+        return False
 
     def unlock(item_id):
         """Разблокировать явно (идемпотентно). Возвращает True, только если
@@ -161,6 +206,31 @@ init -980 python in vn_gal:
         никакие тотальные числа не хранятся."""
         rows = items(category)
         return sum(1 for iid, _s in rows if is_unlocked(iid)), len(rows)
+
+    def overview():
+        """Всё, что нужно экрану галереи, за ОДИН проход по реестру.
+
+        Экран пересчитывал производные заново на каждой сборке: categories()
+        (внутри items() на каждую категорию), progress() по всем, progress(cid)
+        в цикле по вкладкам, items(_cur) и is_unlocked в каждой ячейке — итого
+        порядка (2·Nкатегорий + 2) проходов visible() и ~2N вызовов is_unlocked.
+        А SL2 пересобирает экран на каждой интеракции и на каждом
+        restart_interaction, то есть на каждом движении мыши по сетке.
+
+        Возвращает {"cats": [(id, spec, открыто, всего)], "done", "total",
+        "by_cat": {id: [(item_id, spec)]}, "open": {item_id: bool}}."""
+        by_cat, opened = {}, {}
+        for iid, spec in items():
+            by_cat.setdefault(spec["category"], []).append((iid, spec))
+            opened[iid] = is_unlocked(iid)
+        cats = []
+        for cid, cspec in _categories().items():
+            rows = by_cat.get(cid) or []
+            if not rows:
+                continue        # пустая категория во вкладках не показывается
+            cats.append((cid, cspec, sum(1 for i, _s in rows if opened[i]), len(rows)))
+        return {"cats": cats, "by_cat": by_cat, "open": opened,
+                "done": sum(1 for v in opened.values() if v), "total": len(opened)}
 
     def unlocked_ids(category=None):
         return [iid for iid, _s in items(category) if is_unlocked(iid)]

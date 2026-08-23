@@ -507,3 +507,66 @@ def test_store_looks_of_flat_item_are_asset_and_variants(repo_root, tmp_path):
     gal = _store_module(repo_root, registry)
     assert gal.looks(registry["cg_a"]) == ["assets/cg/ch01/a.webp",
                                            "assets/cg/ch01/b.webp"]
+
+
+def test_gallery_hot_path_does_not_scan_all_seen_images(repo_root):
+    """Горячий путь галереи не имеет права быть линейным по |_seen_images|.
+
+    _seen_shot обходил весь словарь показанных кадров, а ранний выход там есть
+    только при ПОПАДАНИИ — то есть для закрытого шота (а закрытым он остаётся
+    почти всю игру) цена равна размеру словаря. Множитель двойной: is_unlocked
+    зовётся из vn_gal.check на каждом якоре сцены и из экрана по ~2 раза на
+    элемент при каждой сборке, а SL2 пересобирает экран на каждой интеракции —
+    на каждом движении мыши по сетке. Размер _seen_images растёт не по числу
+    файлов, а по числу комбинаций атрибутов: у layeredimage это резолвнутый
+    набор всех слоёв, то есть десятки тысяч ключей на целевом масштабе.
+
+    Замер класса (алгоритм, 800 вызовов = одна сборка экрана на 400 элементах):
+    12000 ключей — 387 мс линейным сканом против 0.23 мс по индексу."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "090_gallery.rpy").read_text(encoding="utf-8")
+
+    shot = src.split("def _seen_shot(", 1)[1].split("\n    def ", 1)[0]
+    assert "_seen_index()" in shot, "_seen_shot не пользуется индексом по тегу"
+    # Только КОД: докстринг про _seen_images объясняет механику и остаётся.
+    shot_code = shot.split('"""', 2)[-1]
+    assert "_seen_images" not in shot_code, \
+        "_seen_shot снова читает весь словарь показанных кадров"
+
+    index = src.split("def _seen_index(", 1)[1].split("\n    def ", 1)[0]
+    assert "len(seen)" in index, "индекс не инвалидируется по размеру _seen_images"
+
+    unlocked = src.split("def is_unlocked(", 1)[1].split("\n    def ", 1)[0]
+    assert "_unlocked_cache" in unlocked, "повторный опрос движка не кэшируется"
+
+
+def test_gallery_screen_walks_the_registry_once_per_build(repo_root):
+    """Экран пересчитывал производные заново на каждой сборке: categories()
+    (внутри items() на категорию), progress() по всем, progress(cid) в цикле по
+    вкладкам, items(_cur) и is_unlocked в каждой ячейке. Это ~(2·Nкатегорий + 2)
+    обходов реестра и ~2N вызовов is_unlocked на КАЖДЫЙ кадр сетки."""
+    src = (repo_root / "game" / "framework" / "20_ui" / "screens"
+           / "gallery.rpy").read_text(encoding="utf-8")
+    body = src.split("screen gallery():", 1)[1].split("\nscreen ", 1)[0]
+
+    assert body.count("vn_gal.overview()") == 1, "общий проход зовётся не один раз"
+    for banned in ("vn_gal.progress(", "vn_gal.items(", "vn_gal.categories("):
+        assert banned not in body, f"{banned} снова обходит реестр внутри экрана"
+
+    cell = src.split("screen vn_gal_cell(", 1)[1].split("\nscreen ", 1)[0]
+    assert "is_open" in cell, "ячейка снова спрашивает состояние сама"
+
+
+def test_pack_ownership_is_memoized(repo_root):
+    """owned() зовётся из visible() каждого элемента галереи и каждой ачивки, то
+    есть на каждом якоре сцены и на каждой сборке экрана. Под Steam это
+    steam.dlc_installed() — FFI-вызов; без кэша выходили тысячи вызовов на кадр.
+
+    Кэш безопасен: владение DLC без перезапуска Steam не меняется, а провайдер и
+    так подключается один раз на init 999."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "030_flow.rpy").read_text(encoding="utf-8")
+    owned = src.split("def owned(self, pack_id):", 1)[1].split("\n    def ", 1)[0]
+    assert "_owned_cache" in owned, "владение паком спрашивается у платформы каждый раз"
+    setter = src.split("def set_ownership_provider(", 1)[1].split("\n        def ", 1)[0]
+    assert "_owned_cache" in setter, "смена провайдера не сбрасывает кэш"
