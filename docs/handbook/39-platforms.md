@@ -35,7 +35,7 @@ steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0
 ```
 
-Проверено на репозитории 2026-08-18: `platform.steam.appid: null` (`../../project.yaml:15`), поэтому `platform.gen.rpy` эмитит `define config.steam_appid = None`, движок молча не трогает Steam, а `vn release steam` честно падает: `ошибка: platform.steam.appid не задан в project.yaml`. **Это рабочее состояние, а не поломка** — игра полноценна как standalone.
+Проверено на репозитории 2026-08-22: `platform.steam.appid: 480` — **плейсхолдер Valve** (Spacewar), поэтому `platform.gen.rpy` эмитит `define config.steam_appid = 480`. Steam всё равно не включается: активация сборки — это наличие steam_api-библиотеки рядом с исполняемым файлом, а её в SDK нет, и `vn release steam` предупреждает об этом по каждой платформе. `appid: null` (пустое значение) — отдельное состояние «Steam выключен во всех сборках»; на нём построена часть тестов. **Оба состояния рабочие, а не поломка** — игра полноценна как standalone. Что заменить перед реальной выкладкой — `docs/decisions/owner-decisions.md` §2.
 
 **Включение Steam — два независимых редактирования `project.yaml`, а не одно.** `appid` объявлен схемой как `["integer", "null"]` и физически присутствует со значением `null`; ключа `depots` в файле **нет вообще**. Поэтому после заполнения одного `appid` придёт вторая ошибка — `platform.steam.depots пуст — задайте номера депотов по платформам` (`release.py:234-237`).
 
@@ -226,7 +226,7 @@ Steam включается **двумя независимыми вещами**,
 
 | Артефакт | Где живёт | В git? |
 |---|---|---|
-| App ID, номера депотов | `project.yaml: platform.steam` (схема — `../../tools/schemas/project@1.schema.json:11-38`; `depots` допускает **ровно** `windows`/`linux`/`mac` при `additionalProperties: false`, `:23-32`) | **да** — публичные, не секреты. Но сегодня в файле есть только `appid: null`, ключа `depots` нет |
+| App ID, номера депотов | `project.yaml: platform.steam` (схема — `../../tools/schemas/project@1.schema.json:11-38`; `depots` допускает **ровно** `windows`/`linux`/`mac` при `additionalProperties: false`, `:23-32`) | **да** — публичные, не секреты. Сегодня в файле плейсхолдеры Valve: `appid: 480`, депоты 481–483 |
 | `pack_id → DLC App ID` | `packs/<id>/manifest.yaml: steam_dlc_appid` (`../../tools/schemas/pack_manifest@1.schema.json:32-35`) | да |
 | `define config.steam_appid`, `VN_STEAM_DLC` | генерат `game/generated/platform.gen.rpy` | нет (генерат) |
 | `steam_api64.dll` / `libsteam_api.so` / `libsteam_api.dylib` | `$RENPY_SDK/lib/py3-{windows-x86_64,linux-x86_64,mac-universal}/` | **нет — лицензия Valve** |
@@ -516,14 +516,14 @@ RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0
 - **Не заводить таблицу «наш id ачивки → API Name Steamworks»**. Совпадение побуквенное, маппингов нет намеренно.
 - **Не задавать `config.steam_appid` присваиванием в `init python`** — движок читает его на `init -1499`, раньше любого пользовательского кода. Только `define` из генерата.
 - **Не делать ownership-гейт fail-closed.** Ошибка `dlc_installed` = `True` + строка в лог. Гейт логический (G9), не DRM.
-- **Не считать `appid: null` поломкой** — это штатное «Steam выключен», и половина тестов проекта опирается на такое поведение.
+- **Не считать `appid: null` поломкой** — это штатное «Steam выключен», и половина тестов проекта опирается на такое поведение. И не считать нынешний `appid: 480` рабочим номером: это Spacewar Valve, заливка в него невозможна.
 - **Не уменьшать `gui.ui_scale` ниже 1.0** — сплющит генерируемые 9-patch панели (ADR-0009).
 - **Не делать копию экрана под Deck/ТВ/мобилку.** Один display-профиль, различия — через токены `gui.*`.
 - **Не переопределять дефолтные пад-биндинги движка** (A/B/X/Y, LB/LT, RB, RT, Start/Guide) — только дополнять свободное.
 - **Не считать `vn release steam` аплоадом.** Она готовит VDF и раскладку; `steamcmd` запускает человек или CI с секретами вне репозитория.
 - **Не выкладывать в release-ветку, не прогнав на живом Steam Deck** — smoke под `RENPY_VARIANT` проверяет вёрстку, но не пад, не оверлей и не Steam API.
 - **Не ждать `vn release validate` проверки платформы** — в гейте из **20** проверок Steam-проверок нет ни одной; всё платформенное валидируется в `vn release steam` и тестах ([29-build-and-release.md](29-build-and-release.md) §5).
-- **Не считать `vn release steam` проходящей целиком** — раскладка депотов работает (§3.4), но приложения в Steamworks нет: `appid: null` и ключа `depots` в `project.yaml` нет, поэтому команда честно падает exit 1 на первом же шаге. Аплоад делает человек через `steamcmd`, на живом Steam не проверялось ничего.
+- **Не считать `vn release steam` проходящей целиком** — раскладка депотов и VDF работают (§3.4) и прогнаны на плейсхолдерных номерах, но приложения в Steamworks нет, аплоад делает человек через `steamcmd`, и на живом Steam не проверялось ничего. Без собранных архивов всех объявленных платформ команда останавливается: `steam: контент депотов не собран`.
 - **Не утверждать, что платформа «работает», на основании эмуляции вариантов** — `RENPY_VARIANT` заменяет список вариантов и не запускает ни Steam, ни пад (§7.1). Живого прогона на Windows, mac, Linux и Deck в проекте не было.
 
 ---
@@ -540,7 +540,7 @@ python -m pytest tools/vn/tests/test_engine_compat.py::test_steam_engine_contrac
 
 # Генерат платформы
 vn build && cat game/generated/platform.gen.rpy
-#   define config.steam_appid = None      <- appid: null в project.yaml
+#   define config.steam_appid = None      <- appid: null в project.yaml (сейчас там 480)
 #   define VN_STEAM_DLC = {}
 
 # Controller-first вёрстка без Deck (скриншоты смотреть глазами)
@@ -559,7 +559,7 @@ ls build/steam/                                    # app_build_public.vdf + cont
 vn release validate --flavor public
 ```
 
-Эталон на 2026-08-18: `platform.steam.appid: null`, `platform.gen.rpy` выключает Steam, `vn release steam --flavor public` завершается `ошибка: platform.steam.appid не задан в project.yaml …` (exit 1) — ожидаемое поведение репозитория без Steamworks-приложения. `test_platform.py` — 10 тестов, из них ни один не требует SDK; `test_steam_engine_contract` — skip без `RENPY_SDK`. Прогонов на живом Windows, mac, Linux и Steam Deck **не было** — их отсутствие и есть текущий статус QA (§2).
+Эталон на 2026-08-22: `platform.steam.appid: 480` (плейсхолдер), `platform.gen.rpy` эмитит его как есть, `vn release steam --flavor public` доходит до раскладки депотов и останавливается на отсутствующих архивах платформ — ожидаемое поведение репозитория без Steamworks-приложения и без steam_api-библиотек. `test_platform.py` — 10 тестов, из них ни один не требует SDK; `test_steam_engine_contract` — skip без `RENPY_SDK`. Прогонов на живом Windows, mac, Linux и Steam Deck **не было** — их отсутствие и есть текущий статус QA (§2).
 
 ---
 
@@ -571,7 +571,7 @@ vn release validate --flavor public
 | **Не трогать** | `game/generated/platform.gen.rpy` — генерат (`.gitignore`); `build/steam/**` — артефакт `vn release steam`; steam_api-библиотеки — их в репозитории нет и добавлять нельзя; дефолтные пад-биндинги движка (`00keymap.rpy` в SDK) |
 | **Зависимости (что ломается ниже по течению)** | Правка `035_platform.rpy` → ачивки, ownership-гейт (`chapter_select`, галерея, ачивки), `controller_first()` → `gui.ui_scale` и `config.default_fullscreen`. Правка `scale.rpy` → **все** кегли `gui.*` и минимумы `2*Borders` панелей ADR-0009. Правка `input.rpy` → раскладка пада во всех контекстах. Правка `_emit_platform` → свежесть генерата (`vn build --check`) и `test_platform.py`. Добавление `steam_dlc_appid` → `VN_STEAM_DLC` и поведение `owned()` |
 | **Валидация** | `python -m pytest tools/vn/tests/test_platform.py -q` → 13 passed → `python -m pytest tools/vn/tests -q` → 400 passed (без `RENPY_SDK` — 271 passed + 7 skipped) → `test_engine_compat::test_steam_engine_contract` (с `RENPY_SDK`) → `RENPY_VARIANT="steam_deck medium touch" vn test smoke --picks 0,0` + просмотр `.vncache/smoke/` глазами → `vn release steam --flavor public` (при заполненном appid) → `vn release validate --flavor patron` (у `public` штатный FAIL по зрелости контента) |
-| **Частые ошибки** | 1) Добавлять платформенное ветвление в экран или сцену — точка касания ровно одна, и это под тестом (`test_platform.py:183-193`). 2) Считать, что `owned()` по-прежнему всегда `True` — с ADR-0014 под Steam у пака с `steam_dlc_appid` он честно даёт `False`; описание «провайдера никто не подключает» в старых текстах устарело. 3) Читать `vn release steam` как аплоад — она только готовит VDF и раскладку депотов. 4) Ожидать Steam в локальной сборке: без steam_api в `$RENPY_SDK/lib/py3-*/` и с `appid: null` любая сборка — standalone, это норма. 5) Уменьшать `gui.ui_scale` (< 1.0) — ADR-0009 запрещает, сплющит панели. 6) Верить `../ARCHITECTURE.md` §6.7 про `steam_appid` в манифесте пака — поле называется `steam_dlc_appid`, а `steam_appid` схемой запрещён. 7) Искать Steam-проверку в релизном гейте — её там нет (и проверок в нём **20**, не 19). 8) Считать Steam Cloud недоделкой: кода нет осознанно (§6). 9) Утверждать, что `vn release steam` отработает целиком — раскладка депотов работает (§3.4), но `appid`/`depots` в `project.yaml` не заполнены, аплоад ручной, живого прогона не было. 10) Писать «Steam Deck поддержан и проверен» — проверена только вёрстка через `RENPY_VARIANT`; живого устройства не было, и это надо называть прямо |
+| **Частые ошибки** | 1) Добавлять платформенное ветвление в экран или сцену — точка касания ровно одна, и это под тестом (`test_platform.py:183-193`). 2) Считать, что `owned()` по-прежнему всегда `True` — с ADR-0014 под Steam у пака с `steam_dlc_appid` он честно даёт `False`; описание «провайдера никто не подключает» в старых текстах устарело. 3) Читать `vn release steam` как аплоад — она только готовит VDF и раскладку депотов. 4) Ожидать Steam в локальной сборке: без steam_api в `$RENPY_SDK/lib/py3-*/` любая сборка — standalone независимо от `appid`, это норма. 5) Уменьшать `gui.ui_scale` (< 1.0) — ADR-0009 запрещает, сплющит панели. 6) Верить `../ARCHITECTURE.md` §6.7 про `steam_appid` в манифесте пака — поле называется `steam_dlc_appid`, а `steam_appid` схемой запрещён. 7) Искать Steam-проверку в релизном гейте — её там нет (и проверок в нём **20**, не 19). 8) Считать Steam Cloud недоделкой: кода нет осознанно (§6). 9) Утверждать, что `vn release steam` отработает целиком — раскладка депотов работает (§3.4), но `appid`/`depots` в `project.yaml` плейсхолдерные, аплоад ручной, живого прогона не было. 10) Писать «Steam Deck поддержан и проверен» — проверена только вёрстка через `RENPY_VARIANT`; живого устройства не было, и это надо называть прямо |
 
 ---
 

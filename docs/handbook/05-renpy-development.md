@@ -118,8 +118,9 @@ vn dev               # watch по content/ + assets_src/ и запущенная
 | `autopilot_active()` | `:106` | IMPLEMENTED — гейт по env `VN_AUTOPILOT` |
 | `autopilot_tick()` | `:109` | IMPLEMENTED — скриншот + `renpy.queue_event("dismiss")`; на тике 0 пишет `startup.txt` (cold start) |
 | `autopilot_choose(items)` | `:130` | IMPLEMENTED — выбор пункта меню по `VN_AUTOPILOT_PICKS` |
-| `autopilot_boot()` | `:152` | IMPLEMENTED — смена языка (`@source` = сброс) и `renpy.load(slot)` |
+| `autopilot_boot()` | `:152` | IMPLEMENTED — смена языка (`@source` = сброс), `renpy.load(slot)` и вход в главу по `VN_AUTOPILOT_CHAPTER` тем же путём, что карточка главы: `renpy.jump_out_of_context(entry_label)` (ADR-0021) |
 | `autopilot_screens()` | `:166` | IMPLEMENTED / UNDOCUMENTED — `VN_AUTOPILOT_SCREENS=gallery,preferences`; **ни один флаг CLI эту переменную не выставляет** |
+| `autopilot_replays()` | — | IMPLEMENTED — пересмотр каждой сцены графа во всех состояниях входа по `VN_AUTOPILOT_REPLAYS`, отчёт `replays.json` (гейт `vn test revisit`) |
 | `autopilot_finish(reason)` | `:186` | IMPLEMENTED — `RESULT.txt`, `state.json`, `gallery.json`, `renpy.quit(save=False)` |
 
 **Store `vn_registry`** (`010_registry.rpy`): `chapters()` `:7`, `menus()` `:12`, `scene_label(full_id)` `:16` (функция-тождество — метка сцены равна её id).
@@ -261,12 +262,14 @@ label ch01_s020:                                       # (1)
 
 | Инструмент | Файл | Как включается |
 |---|---|---|
-| консоль разработчика (Shift+O) | `90_debug/010_dev.rpy:7-8` | `config.console = True` — **безусловно** |
-| jump-меню по сценам (**Shift+J**) | `90_debug/020_jump_menu.rpy:5-11` | `if config.developer: config.overlay_screens.append("vn_debug_hotkeys")`; экран `vn_debug_jump` рисует `vpgrid cols 4` по `VN_SCENES` и прыгает через `Function(renpy.jump_out_of_context, sc["label"])` (`:29-31`) |
+| консоль разработчика (Shift+O) | `90_debug/010_dev.rpy:14-15` | `config.console = bool(config.developer)` — гейт по dev |
+| jump-меню по сценам (**Shift+J**) | `90_debug/020_jump_menu.rpy:7-9` | `if config.developer: config.overlay_screens.append("vn_debug_hotkeys")`; экран `vn_debug_jump` рисует `vpgrid cols 4` по `VN_SCENES` и прыгает через `Function(renpy.jump_out_of_context, sc["label"])` (`:31-33`) |
 
-`010_dev.rpy:4-6` объясняет, почему там честное `True`, а не `config.console = config.developer`: **в init-фазе `config.developer` ещё равен строке `"auto"`**, то есть truthy, и такая запись включила бы консоль и в релизе.
+Раньше здесь стояло безусловное `config.console = True`, а комментарий объяснял его тем, что в init-фазе `developer` — ещё truthy-строка `"auto"`. **Для Ren'Py 8.5.3 это неверно** (проверено по SDK), и `010_dev.rpy:4-13` теперь говорит именно это: `renpy/common/00compat.rpy:377-387` читает `script_version.txt` в `config.script_version`, а `renpy/common/00library.rpy:347-360` (`init -1000`) по нему выставляет `config.developer` — `False` в собранном дистрибутиве (файл есть) и `True` при запуске исходников (файла нет). Строку `"auto"` хранит только `config.original_developer`: хук `renpy/defaultstore.py:105-109` булевизирует даже явно присвоенную `"auto"`. То есть в голом `init`-блоке (приоритет 0) гейт читает настоящий bool — он и написан прямо здесь, переносить в `init 999` незачем. Так же это сформулировано в [28-debugging.md](28-debugging.md) §2.3.
 
-**Исключение из релиза** — `game/options.rpy:24-26`:
+Вывод от этого не меняется: **на один гейт полагаться нельзя** — dev-код убирает из поставки классификация сборки.
+
+**Исключение из релиза** — `game/options.rpy:41-43`:
 
 ```python
 build.classify("game/framework/90_debug/**", None)
@@ -274,7 +277,7 @@ build.classify("game/generated/qa/**", None)
 build.classify("game/generated/manifest.json", None)
 ```
 
-Риск, который надо помнить: у консоли **нет рантайм-гейта**. Безопасность держится целиком на этой строке `build.classify`. Регрессия в упаковке = консоль в релизной сборке. Оба файла `90_debug/**` пользуются голыми литералами `_("…")` (`020_jump_menu.rpy:21,22,32`) — это единственные литералы в UI-слое, и они допустимы ровно потому, что файл в релиз не едет.
+Риск, который надо помнить: рантайм-гейт консоли — **второй** слой, основная защита держится на этой строке `build.classify`. Регрессия в упаковке = файл в релизной сборке, и тогда консоль удержит только `bool(config.developer)`. Оба файла `90_debug/**` пользуются голыми литералами `_("…")` (`020_jump_menu.rpy:23,24,34`) — это единственные литералы в UI-слое, и они допустимы ровно потому, что файл в релиз не едет.
 
 `vn_debug_jump` честно предупреждает на экране: **состояние глав не выставляется**, переменные останутся текущими (`:22`). Прыжок в сцену — не то же самое, что её прохождение.
 
@@ -338,7 +341,7 @@ build.classify("game/generated/manifest.json", None)
 - **Не задавать `config.version` в `game/options.rpy`** — его эмитит `generated/version.gen.rpy` из `project.yaml` + git sha. Сам sha на свежесть генерата больше не влияет: `--check` сравнивает `version.gen.rpy` с нормализованным sha (`_stale_key`, `compile.py`), поэтому коммит без правок `content/` генерат устаревшим не делает. Бамп semver в `project.yaml` при этом ловится по-прежнему.
 - **Не писать `jump` из сцены в сцену.** Компилятор это ловит; переход — `return "<exit_id>"` + `exits:` в `scene.yaml`.
 - **Не делать условные пункты `menu:`** (`menu: "Вариант" if cond:`) — запрещено компилятором, ломает перевод по индексу.
-- **Не писать `config.console = config.developer`** в init-фазе — `developer` там строка `"auto"`.
+- **Не полагаться на один гейт для dev-инструментов.** `config.console = bool(config.developer)` в `90_debug/010_dev.rpy:15` — это второй слой; основная защита в том, что из поставки файл убирает `build.classify("game/framework/90_debug/**", None)` (`options.rpy:41`). И не возвращать безусловное `True` под предлогом строки `"auto"` в init-фазе: для 8.5.3 это неверно, движок разрешает `config.developer` в bool на `init -1000` (§9).
 - **Не заводить `image`/`Character` руками** — их эмитит компилятор из `content/`. Исключение — служебный `vn_black`.
 - **Не трогать undocumented API движка вне `engine_compat/`** (G18).
 - **Не заводить второе присваивание `config.exception_handler`.** Поле одно, выживет последнее по init-порядку; единственный обработчик живёт в `070_crash.rpy:82`, и `tools/vn/tests/test_crash_handler.py` это стережёт.
@@ -355,12 +358,12 @@ vn content lint                        # декларации, граф, layout 
 vn content compile --check             # генерат актуален? (тут ловится контракт .rpy)
 vn build                               # полный проход: lint -> assets -> compile -> loc import
 vn build --check                       # ничего не пишет; падает, если генерат отстал
-python -m pytest tools/vn/tests -q     # 373 теста, в т.ч. контракт-тесты engine_compat
+python -m pytest tools/vn/tests -q     # весь набор, в т.ч. контракт-тесты engine_compat
 vn play                                # запуск руками
 vn test smoke                          # in-process автопилот: прогон сцен + бюджет cold start
 vn save corpus                         # 2 фикстуры сейвов загружаются и мигрируют
                                        #   (schema1-demo реально гоняет миграцию 0002)
-vn release validate --flavor public    # релизный гейт, 21 проверка
+vn release validate --flavor public    # релизный гейт, 22 проверки
 ```
 
 Правили `00_core/**` или `20_ui/**` — минимум: `vn build && vn test smoke`. Правили что-то, связанное со стеком вызовов, сейвами или миграциями — плюс `python -m pytest tools/vn/tests -q && vn save corpus`.

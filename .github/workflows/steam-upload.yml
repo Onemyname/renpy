@@ -3,10 +3,12 @@
 # на теге работает release.yml, он же остаётся источником артефактов для GitHub Release.
 # Логика — в vn (release build -> release steam), здесь только аплоад через steamcmd.
 #
-# ВНИМАНИЕ: пока platform.steam.appid в project.yaml = null, workflow осознанно
-# падает на шаге `vn release steam` с текстом «заполните App ID» — приложения в
-# Steamworks ещё нет, выкладывать некуда. Что нужно донастроить руками (App ID,
-# депоты, секреты, config.vdf для 2FA) — ci/steam/README.md.
+# ВНИМАНИЕ: в project.yaml стоят ПЛЕЙСХОЛДЕРЫ (с 2026-08-21) — appid: 480 (публичный
+# тестовый Spacewar от Valve) и депоты 481-483; на них конвейер прогнан целиком, но
+# приложения в Steamworks ещё нет, так что выкладывать пока некуда. Сам workflow
+# отключён на стороне GitHub (disabled_manually, ADR-0020), а без секретов
+# STEAM_USERNAME/STEAM_CONFIG_VDF шаг аплоада — зелёный no-op. Что донастроить
+# руками (реальные App ID и депоты, секреты, config.vdf для 2FA) — ci/steam/README.md.
 
 name: steam-upload
 

@@ -1,6 +1,6 @@
 # 43. Предрелизная приёмка: Steam и Steam Deck
 
-> **Статус подсистемы:** PARTIALLY IMPLEMENTED — автоматизирован «холодный» слой (373 pytest-теста, движковый lint, smoke-автопилот в реальном движке, сейв-корпус с реальными миграциями, `vn test oversample`, релизный гейт из 21 проверки) плюс ночная съёмка вёрстки в двух геймпадных профилях (`nightly.yml`, джоба `controller-first`), но **всё Steam-специфичное по-прежнему проверяется только руками и только на живой машине**: ни `vn test smoke`, ни pytest не видят Steam-инициализации, оверлея, `dlc_installed` и событий геймпада. Сегодня недоступны две большие части чек-листа: **нет App ID** (`../../project.yaml:15` — `appid: null`) и **нет физического Steam Deck**.
+> **Статус подсистемы:** PARTIALLY IMPLEMENTED — автоматизирован «холодный» слой (373 pytest-теста, движковый lint, smoke-автопилот в реальном движке, сейв-корпус с реальными миграциями, `vn test oversample`, релизный гейт из 21 проверки) плюс ночная съёмка вёрстки в двух геймпадных профилях (`nightly.yml`, джоба `controller-first`), но **всё Steam-специфичное по-прежнему проверяется только руками и только на живой машине**: ни `vn test smoke`, ни pytest не видят Steam-инициализации, оверлея, `dlc_installed` и событий геймпада. Сегодня недоступны две большие части чек-листа: **нет App ID** (в `project.yaml` плейсхолдер 480 — Spacewar Valve; см. `../decisions/owner-decisions.md` §2) и **нет физического Steam Deck**.
 > **Отвечает на вопрос:** «Что именно я обязан проверить перед тем, как переключить Steam-ветку в `default` — какой командой, что смотреть глазами и что считать провалом».
 
 Этот файл — рабочий чек-лист, а не теория. Как включается Steam и что откуда берётся — [40-steamworks.md](40-steamworks.md); архитектура платформенного слоя и controller-first приёмы — [39-platforms.md](39-platforms.md); уровни тестов вообще — [27-testing.md](27-testing.md).
@@ -102,7 +102,7 @@ Initialized steam.                                   <- движок (00steam.rp
 
 **Провал:** в логе `Failed to initialize steam: …`; или строка `[vn] platform: standalone` при живом клиенте и положенной библиотеке; или игра вообще не стартует (в этом случае смотреть `traceback.txt`).
 
-**Сегодня: BLOCKED** — `appid: null`, приложения в Steamworks нет. Проверяется только то, что при `appid: null` игра корректно работает как standalone (§1.3).
+**Сегодня: BLOCKED** — приложения в Steamworks нет (в `project.yaml` плейсхолдер 480). Проверяется только то, что без steam_api-библиотек игра корректно работает как standalone (§1.3).
 
 ### 1.2 Первый запуск (чистый профиль)
 
@@ -447,7 +447,7 @@ image mov demo ambient = Movie(play="assets/mov/demo/ambient.webm", loop=True, i
 | `RENPY_VARIANT="steam_deck medium touch"` | вёрстку controller-first, масштаб, safe-area | ввод с пада, Steam API, тач-жесты |
 | CI: `ci.yml` (на каждый push) | lint → build → `loc keys --check` → движковый lint → `test oversample` → `compile --check` → pytest | Steam, Deck, ручные пункты |
 | CI: `nightly.yml` | джоба `smoke`: smoke-матрица (4 прогона), `save check`, `save corpus`, релизная сборка обоих флейворов. Джоба `controller-first`: прогон в двух геймпадных профилях (`steam_deck medium touch`, `steam_big_picture`) + шоты `main_menu,preferences,gallery,chapter_select` артефактом | Steam, Deck на железе, ручные пункты; пад-события не эмитируются и здесь. **Внимание:** релизная сборка обоих флейворов в этой джобе сейчас проходит: гейт зрелости контента даёт WARN, пока `release`-глав нет; покраснеет она с первой такой главой ([29 §5.1](29-build-and-release.md#maturity-gate-rule)) |
-| CI: `steam-upload.yml` (только ручной запуск) | что `release build` → `release steam` проходят целиком и VDF генерируется | сам аплоад: без секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` шаг — no-op, и при `appid: null` workflow падает раньше |
+| CI: `steam-upload.yml` (только ручной запуск) | что `release build` → `release steam` проходят целиком и VDF генерируется | сам аплоад: без секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` шаг — no-op, и с плейсхолдерным `appid: 480` дойдёт до steamcmd, где Valve его отвергнет |
 
 Итог: **автоматика закрывает «игра собирается, запускается, проходится и грузит сейвы». Всё, что делает Steam-сборку Steam-сборкой, закрывается только руками.**
 

@@ -113,7 +113,7 @@ Ren'Py умеет писать ещё несколько файлов, ни од
 
 | Клавиша | Что | Гейт | Источник |
 |---|---|---|---|
-| **Shift+O** | консоль Ren'Py (eval/exec в контексте игры) | `config.console or config.developer` (`00console.rpy:427`) | `../../game/framework/90_debug/010_dev.rpy:7-8` — `config.console = True` **безусловно** |
+| **Shift+O** | консоль Ren'Py (eval/exec в контексте игры) | `config.console or config.developer` (`00console.rpy:427`) | `../../game/framework/90_debug/010_dev.rpy` — `config.console = bool(config.developer)`, то есть только в исходниках |
 | **Shift+D** | Developer Menu | `config.developer` | движок, `renpy/common/_developer/developer.rpym:27` |
 | **Shift+J** | наше QA-меню прыжка по сценам | `config.developer` | `../../game/framework/90_debug/020_jump_menu.rpy:5-11` |
 | **Shift+R** | перезагрузка скрипта на месте | `config.developer` | движок; в `vn dev` это основной цикл (`cli.py`) |
@@ -139,15 +139,15 @@ define VN_SCENES = ({'id': 'ch01_s010', 'label': 'ch01_s010', 'chapter': 'ch01'}
 
 Два независимых механизма:
 
-1. **`config.developer` вычисляется движком.** Значение по умолчанию — `"auto"`; движок разрешает его в `renpy/common/00library.rpy:353-360`: `config.developer = True`, если `config.script_version` пуст (запуск исходников через SDK), и `False` в собранном дистрибутиве. Проект `config.developer` нигде не присваивает — только читает (`crash_screen.rpy:48,64`, `040_localization.rpy:82`, `020_jump_menu.rpy:6`).
-2. **Файлы вырезаются из сборки** (`../../game/options.rpy:24-26`):
+1. **`config.developer` вычисляется движком.** Значение по умолчанию — `"auto"`; движок разрешает его в `renpy/common/00library.rpy:353-360`: `config.developer = True`, если `config.script_version` пуст (запуск исходников через SDK), и `False` в собранном дистрибутиве. Проект `config.developer` нигде не присваивает — только читает (`crash_screen.rpy:48,64`, `040_localization.rpy:82`, `020_jump_menu.rpy:8`).
+2. **Файлы вырезаются из сборки** (`../../game/options.rpy:41-43`):
    ```renpy
    build.classify("game/framework/90_debug/**", None)
    build.classify("game/generated/qa/**", None)
    build.classify("game/generated/manifest.json", None)
    ```
 
-**Дефект (PARTIAL).** `config.console = True` в `010_dev.rpy:8` — безусловное, рантайм-гейта нет. Единственная защита — `build.classify`. Регрессия в упаковке (например, кто-то удалил строку `:24`) откроет игроку консоль в релизе. Комментарий `010_dev.rpy:4-6` объясняет, почему нельзя написать `config.console = config.developer`: в init-фазе `developer` ещё строка `"auto"`, то есть truthy. Правильное исправление — не в init-фазе, а поздним `init 999`-гейтом; сейчас **NOT IMPLEMENTED**.
+**Гейт консоли — IMPLEMENTED (2026-08-22).** `010_dev.rpy` ставит `config.console = bool(config.developer)`, то есть в дистрибутиве консоли не будет даже при регрессии упаковки (кто-то удалил `build.classify("game/framework/90_debug/**", None)`, `options.rpy:41`). До этого стояло безусловное `True`, а комментарий объяснял отказ от гейта тем, что в init-фазе `developer` — ещё truthy-строка `"auto"`; для Ren'Py 8.5.3 это **неверно**: движок разрешает `developer` на `init -1000` (пункт 1 выше), и хук `renpy/defaultstore.py:105-109` булевизирует даже явно присвоенную `"auto"`. Гейт остаётся **вторым** слоем: основная защита — вырезание всей зоны `90_debug` из поставки.
 
 Проверить, что dev-инструменты не уехали в релиз, можно по распакованному дистрибутиву:
 
@@ -472,7 +472,7 @@ vn build                                         # job build-test (:67)
 vn loc keys --check                              # (:70)
 "$RENPY_SDK/renpy.exe" . lint                    # (:73) — в CI это renpy.sh под xvfb
 vn content compile --check                       # (:76)
-python -m pytest tools/vn/tests -q               # (:79) — 373 теста
+python -m pytest tools/vn/tests -q               # (:79) — весь набор
 ```
 
 Если локально зелено, а CI красный — проверьте по порядку:
@@ -546,10 +546,9 @@ vn_scene, vn_menu      # где мы и какое меню последним �
 
 Приоритетные, дешёвые и полезные доработки — по возрастанию стоимости:
 
-1. **Рантайм-гейт консоли.** В `../../game/framework/90_debug/010_dev.rpy` перенести включение в `init 999` и написать `config.console = bool(config.developer)` — к этому моменту `developer` уже разрешён движком из `"auto"`. Снимает зависимость безопасности релиза от одной строки `build.classify`.
-2. **Флаг `--screens` у `vn test smoke`.** Пробросить `VN_AUTOPILOT_SCREENS` из CLI (`cli.py`) — механика в рантайме уже есть и работает (`030_flow.rpy:166-184`), не хватает только флага и строки в nightly.
-3. **Убрать шум снапшота.** В `020_state.rpy:39-45` отфильтровать `__future__._Feature` и `basestring` до `vn_log` — 12 строк мусора на каждый снапшот прячут настоящие сообщения.
-4. **`vn build --use-artifact <sha>`.** Аварийный режим из runbook: скачать артефакт `generated-<sha>` и распаковать в `game/generated/`. Сейчас делается руками.
+1. **Флаг `--screens` у `vn test smoke`.** Пробросить `VN_AUTOPILOT_SCREENS` из CLI (`cli.py`) — механика в рантайме уже есть и работает (`030_flow.rpy:166-184`), не хватает только флага и строки в nightly.
+2. **Убрать шум снапшота.** В `020_state.rpy:54-60` отфильтровать `__future__._Feature` и `basestring` до `vn_log` — 12 строк мусора на каждый снапшот прячут настоящие сообщения.
+3. **`vn build --use-artifact <sha>`.** Аварийный режим из runbook: скачать артефакт `generated-<sha>` и распаковать в `game/generated/`. Сейчас делается руками.
 
 Чего **не** делать в рамках «улучшения отладки»: вводить сетевую телеметрию и автоотправку crash-репортов — это оффлайн-игра, и модель «игрок прислал файл из `crash/`» осознанная.
 
@@ -583,13 +582,13 @@ vn build --check                       # check: генерат свеж
 "$RENPY_SDK/renpy.exe" . lint          # родной lint движка по game/**
 vn test smoke --picks 0,0              # smoke: OK: vn_end_of_content (21 скриншот)
 vn save check && vn save corpus        # 2 фикстуры: целы, грузятся, миграция 0002 исполняется
-python -m pytest tools/vn/tests -q     # 400 passed
+python -m pytest tools/vn/tests -q     # весь набор зелёный
 ```
 
 После правок в `game/framework/90_debug/**` или `game/options.rpy` дополнительно:
 
 ```bash
-vn release validate --flavor public    # 21 проверка релизного гейта (сейчас 0 FAIL, 2 WARN, exit 0)
+vn release validate --flavor public    # 22 проверки релизного гейта
 vn release build --flavor public --package win
 # и глазами: в build/dist/0.1.4-public/ нет framework/90_debug/ и generated/qa/
 ```
@@ -600,10 +599,10 @@ vn release build --flavor public --package win
 
 | | |
 |---|---|
-| **Читать перед изменением** | `game/framework/00_core/070_crash.rpy` (breadcrumbs + репорт), `game/framework/00_core/001_boot.rpy` (`vn_log`, `save_json_callbacks`), `game/framework/20_ui/screens/crash_screen.rpy`, `game/framework/90_debug/010_dev.rpy` и `020_jump_menu.rpy`, `game/options.rpy:17-26` (`build.classify`), `game/framework/00_core/030_flow.rpy:91-211` (`vn_qa`), `tools/vn/src/vn/cli.py` (`_autopilot_run`, `test smoke`), `tools/vn/src/vn/doctor.py`, `tools/vn/src/vn/content/analyze.py` |
+| **Читать перед изменением** | `game/framework/00_core/070_crash.rpy` (breadcrumbs + репорт), `game/framework/00_core/001_boot.rpy` (`vn_log`, `save_json_callbacks`), `game/framework/20_ui/screens/crash_screen.rpy`, `game/framework/90_debug/010_dev.rpy` и `020_jump_menu.rpy`, `game/options.rpy:19-43` (`build.classify`), `game/framework/00_core/030_flow.rpy:91-211` (`vn_qa`), `tools/vn/src/vn/cli.py` (`_autopilot_run`, `test smoke`), `tools/vn/src/vn/doctor.py`, `tools/vn/src/vn/content/analyze.py` |
 | **Не трогать** | `game/generated/**`, `game/assets/**`, `game/tl/**` (генерат — перезапишется), `*.rpyc`, `log.txt` / `errors.txt` / `traceback.txt` (пишет движок), `.vncache/**` (кэш и артефакты прогонов), `ci/fixtures/rpyc-line/**` (линия statement-имён; меняется только через `vn save corpus --add`), `ci/fixtures/saves/*.save` |
-| **Зависимости** | Удаление строки `build.classify("game/framework/90_debug/**", None)` (`options.rpy:24`) → консоль и Shift+J уезжают игроку (рантайм-гейта у консоли нет). Правка `030_flow.rpy:91-211` или блока автопилота в `choice.rpy:53-54` → виснет `vn test smoke` и, следом, `vn save corpus` и вся ночная матрица. Правка `050_build_bridge.rpy` → инвалидируется весь кэш `.vncache/analyze-*.json` (мост входит в ключ). Правка `001_boot.rpy:31-36` → меняется JSON-заголовок слота, ломается `vn save check` |
+| **Зависимости** | Удаление строки `build.classify("game/framework/90_debug/**", None)` (`options.rpy:41`) → файлы dev-зоны уезжают игроку; удержат их только рантайм-гейты (`config.console = bool(config.developer)`, `if config.developer` у Shift+J) — второй слой, а не замена первому. Правка `030_flow.rpy:91-211` или блока автопилота в `choice.rpy:53-54` → виснет `vn test smoke` и, следом, `vn save corpus` и вся ночная матрица. Правка `050_build_bridge.rpy` → инвалидируется весь кэш `.vncache/analyze-*.json` (мост входит в ключ). Правка `001_boot.rpy:31-36` → меняется JSON-заголовок слота, ломается `vn save check` |
 | **Валидация** | `vn doctor && vn build && vn build --check && vn test smoke --picks 0,0 && vn save check && python -m pytest tools/vn/tests -q`; для UI дополнительно `vn test smoke --lang pseudo` и просмотр `.vncache/smoke/shot*.png` |
-| **Частые ошибки** | 1) Искать несуществующие команды из `docs/ARCHITECTURE.md`: `vn build --use-artifact`, `vn validate`, `vn test perf`, `vn content lint --strict` — их **нет**. 2) Считать `log.txt` накопительным журналом — он обнуляется при каждом старте. 3) Диагностировать по `errors.txt` в корне, не глядя на дату — файл устаревший. 4) Заводить свой `config.exception_handler` вторым присваиванием — переживёт только последнее по init-порядку. 5) Отключать пак переименованием каталога — сборка упадёт на сверке `id` с именем папки, каталог надо выносить из `packs/`. 6) Править генерат «на минутку» — исчезнет на ближайшем `vn build`. 7) Ставить `config.console = config.developer` в init-фазе — там `developer` ещё строка `"auto"` (truthy). |
+| **Частые ошибки** | 1) Искать несуществующие команды из `docs/ARCHITECTURE.md`: `vn build --use-artifact`, `vn validate`, `vn test perf`, `vn content lint --strict` — их **нет**. 2) Считать `log.txt` накопительным журналом — он обнуляется при каждом старте. 3) Диагностировать по `errors.txt` в корне, не глядя на дату — файл устаревший. 4) Заводить свой `config.exception_handler` вторым присваиванием — переживёт только последнее по init-порядку. 5) Отключать пак переименованием каталога — сборка упадёт на сверке `id` с именем папки, каталог надо выносить из `packs/`. 6) Править генерат «на минутку» — исчезнет на ближайшем `vn build`. 7) Считать, что в init-фазе `config.developer` — truthy-строка `"auto"`: в 8.5.3 движок разрешает его на `init -1000`, так что `config.console = bool(config.developer)` — рабочий гейт, он и стоит в `010_dev.rpy:15` (§2.3); но полагаться на него одного нельзя — основная защита — вырезание `90_debug` классификацией сборки. |
 
 **Смежные файлы хендбука:** [03-getting-started.md](03-getting-started.md) (окружение и `RENPY_SDK`), [04-development-workflow.md](04-development-workflow.md) (CI-пайплайны), [05-renpy-development.md](05-renpy-development.md) (рантайм и dev-инструменты), [06-frontend.md](06-frontend.md) (экраны, экран краха), [07-backend.md](07-backend.md) (state, сейвы, миграции, crash-репортер), [08-content-pipeline.md](08-content-pipeline.md) (компилятор и генерат), [14-localization.md](14-localization.md), [16-assets.md](16-assets.md), [25-custom-engine.md](25-custom-engine.md) (`vn` CLI), [27-testing.md](27-testing.md) (тесты и автопилот как QA), [29-build-and-release.md](29-build-and-release.md), [30-packs-and-dlc.md](30-packs-and-dlc.md), [36-troubleshooting.md](36-troubleshooting.md) (каталог симптомов).

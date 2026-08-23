@@ -966,7 +966,7 @@ broken references, invalid paths. Вместе с уже существовав�
 | invalid / unreachable labels, dead code | `scenes.py`, `lint.py` §3a |
 | broken save compatibility | `lint.py` §6 (id_registry) |
 | oversized assets, invalid video | `release.py` (бюджеты), `video.py` |
-| unused assets | `pipeline.py:_orphan_masters`, `compile.py` (осиротевшие CG) |
+| unused assets | `pipeline.py: orphan_masters`, `compile.py` (осиротевшие CG) |
 | missing metadata, inconsistent naming | схемы + `lint.py` §2/§4 |
 | broken translations | ledger + PO-гейты покрытия |
 

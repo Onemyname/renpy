@@ -75,8 +75,8 @@ vn play                      # запуск игры (нужен RENPY_SDK)
 работают (штатный стек движка, ownership-провайдер паков, controller-first UI, авто-масштаб),
 `vn release steam` рендерит VDF и раскладывает депоты всех трёх платформ — Linux-пакет приходит
 `tar.bz2`, и раскладка это знает ([40-steamworks.md](40-steamworks.md) §4.3). Осталось **не**
-закрытым: приложения в Steamworks нет (`platform.steam.appid: null`, ключа `depots` в
-`project.yaml` нет — команда честно падает на первом шаге), аплоад — ручной `steamcmd`,
+закрытым: приложения в Steamworks нет — в `project.yaml` стоят плейсхолдеры Valve: `appid: 480` (Spacewar), депоты 481–483, DLC 484–485 — конвейер на них прогнан, но заливка в чужое приложение невозможна
+(`docs/decisions/owner-decisions.md` §2), аплоад — ручной `steamcmd`,
 каналов dev/beta/release нет, Android нет, на живом железе не проверено ничего. Подробности — [39-platforms.md](39-platforms.md),
 [40-steamworks.md](40-steamworks.md), [41-steam-deck.md](41-steam-deck.md), [43-steam-qa.md](43-steam-qa.md),
 [29-build-and-release.md](29-build-and-release.md) и [30-packs-and-dlc.md](30-packs-and-dlc.md).
