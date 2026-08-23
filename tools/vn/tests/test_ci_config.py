@@ -33,6 +33,9 @@ FOREIGN_CI = (".gitlab-ci.yml", ".circleci", "azure-pipelines.yml", "Jenkinsfile
 # Список ЗАМОРОЖЕН здесь: команда, реализованная без покрытия в CI, не ломает ни
 # один прогон — она просто никогда не запускается, и это выясняется у игрока.
 COMMAND_PLACEMENT = {
+    # Граф истории (ADR-0021) — build-time проверка: после сборки разбор сцен уже
+    # в кэше анализа, поэтому это секунды, а не прогон движка (см. тест ниже).
+    "vn content flow": "ci.yml",
     "vn release android preflight": "ci.yml",
     "vn release android status": "ci.yml",
     "vn release android build": "ci.yml",
@@ -41,6 +44,7 @@ COMMAND_PLACEMENT = {
     "vn test screens": "nightly.yml",
     "vn test paths": "nightly.yml",
     "vn test replay": "nightly.yml",
+    "vn test revisit": "nightly.yml",
 }
 
 # Потолок масштаба ночного корпуса. 7.6 ARCHITECTURE.md приводит замеры (macOS
@@ -252,6 +256,27 @@ def test_android_preflight_runs_after_build():
     assert checked, "ни одна джоба не зовёт android preflight — проверка выродилась"
 
 
+def test_content_flow_runs_after_build_to_reuse_the_analysis_cache():
+    """Граф истории считается по AST авторских сцен, то есть через build-bridge —
+    движок. Шаг, уехавший ВЫШЕ `vn build`, остаётся зелёным и поэтому тихим: он
+    поднимает движок второй раз на холодном кэше анализа (.vncache, ключ — байты
+    моста плюс байты сцен) и платит за это минутами из бюджета MR-пайплайна (G15).
+    После сборки тот же набор сцен уже разобран, и проверка графа стоит секунды.
+
+    Это ровно та ошибка, которую не поймает ни один прогон vn: команда одинаково
+    зелена в обоих местах, разница видна только в длительности джобы."""
+    checked = 0
+    for job, cmds in _github_jobs().items():
+        at = next((i for i, c in enumerate(cmds) if "vn content flow" in c), None)
+        if at is None:
+            continue
+        checked += 1
+        assert any(VN_BUILD.search(c) for c in cmds[:at]), (
+            f"{job}: vn content flow до сборки — разбор сцен не попадёт в кэш "
+            f"анализа vn build, и движок поднимется ещё раз (G15)")
+    assert checked, "ни одна джоба не зовёт vn content flow — проверка выродилась"
+
+
 def test_missing_external_toolchains_are_asserted_not_silenced():
     """RAPT и piper на раннере отсутствуют, и проверяется ровно одно: команда честно
     называет отсутствующий тулчейн НЕнулевым кодом. Такой шаг ломается ровно двумя
@@ -335,3 +360,45 @@ def test_no_second_ci_platform_config():
         f"второй конфиг CI: {', '.join(found)} — либо он полный и заменяет GitHub "
         f"Actions, либо его нет; наполовину живой пайплайн ночью починят вместо "
         f"настоящего")
+
+
+def test_every_root_chapter_has_a_paths_trace_in_ci():
+    """Глава, в которую не ведёт ни одно ребро (первая глава игры, эпизод, DLC),
+    достижима автопилоту только своей трассой `--picks chNN:`. Забыть её — тихая
+    поломка ровно того рода, ради которой гейт покрытия и существует: команда
+    ругается на «непройденные сцены», человек ищет баг в контенте, а причина в
+    строке запуска.
+
+    Список корневых глав берётся из ДЕКЛАРАЦИЙ (та же логика, что у команды:
+    цели рёбер из scene.yaml против набора глав), а не переписывается здесь: с
+    добавлением эпизода тест обязан краснеть сам, без правки.
+    """
+    from vn.content.graph import build_edges
+    from vn.repo import chapter_zones, load_yaml, unshipped_chapters
+
+    chapters = set()
+    for _pack_id, zone in chapter_zones(REPO_ROOT):
+        for d in sorted(p for p in zone.iterdir() if p.is_dir()):
+            if (d / "chapter.yaml").is_file():
+                chapters.add(d.name[:4])
+    _scenes, edges = build_edges(REPO_ROOT)
+    reached = {e.target[:4] for e in edges if e.target[:4] != e.scene[:4]}
+    roots = sorted(chapters - reached - unshipped_chapters(REPO_ROOT))
+    assert roots, "корневых глав нет вовсе — в игру нельзя войти"
+
+    # Первая глава реестра — та, куда ведёт Start(): её забирает трасса без
+    # префикса, и требовать для неё --picks chNN: было бы ложной строгостью.
+    entry = min(chapters)
+    checked = 0
+    for job, cmds in _github_jobs().items():
+        run = next((c for c in cmds if "vn test paths" in c), None)
+        if run is None:
+            continue
+        checked += 1
+        for ch in roots:
+            if ch == entry:
+                continue
+            assert f"--picks {ch}:" in run, (
+                f"{job}: у корневой главы {ch} нет трассы в vn test paths — "
+                f"её сцены попадут в «непройденные», хотя проблема в запуске")
+    assert checked, "ни одна джоба не зовёт vn test paths — проверка выродилась"

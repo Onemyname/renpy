@@ -245,6 +245,21 @@ init -999 python in vn_qa:
         slot = os.environ.get("VN_AUTOPILOT_LOAD")
         if slot:
             renpy.load(slot)    # не возвращается: контекст перезапускается, затем after_load
+        chapter = os.environ.get("VN_AUTOPILOT_CHAPTER")
+        if chapter:
+            # Вход в главу, у которой своя точка входа (эпизод, DLC): без него
+            # покрытие ветвления не может быть полным — Start() ведёт только в
+            # первую главу реестра, а в остальные никакая последовательность
+            # выборов не приводит.
+            #
+            # Путь ровно тот же, что у игрока: карточка главы делает
+            # Start(ch["entry_label"]) (20_ui/components.rpy), а Start — это
+            # renpy.jump_out_of_context (SDK 00action_menu.rpy). Своего способа
+            # входа автопилот не изобретает: иначе он проверял бы не игру.
+            for row in renpy.store.VN_CHAPTERS:
+                if row["id"] == chapter:
+                    renpy.jump_out_of_context(row["entry_label"])   # не возвращается
+            vn_log("autopilot: главы %s нет в реестре — старт по умолчанию" % chapter)
 
     def autopilot_tour():
         """Список экранов тура: [(имя, kwargs)].
@@ -302,6 +317,46 @@ init -999 python in vn_qa:
                               ensure_ascii=False, indent=1)
             except Exception as e:
                 vn_log("autopilot screens dump failed: %s" % e)
+
+    def autopilot_replays():
+        """Прогнать реплей КАЖДОЙ сцены графа во всех объявленных состояниях входа.
+
+        Зачем прогоном, а не проверкой компилятора: прекондиция — это обещание
+        «сцена запустится с этим состоянием», и сдержать его может только движок.
+        Ошибка внутри реплея (нет переменной, нет ассета, разъехавшийся exit)
+        видна лишь здесь. Результат — replays.json, гейт разбирает его в
+        `vn test revisit`.
+
+        Реплей не портит основной прогон: движок изолирует сторы (StoreBackup)
+        и не пишет прогресс, а config.no_replay_seen = True (100_story_graph.rpy)
+        не даёт пересмотру открывать галерею."""
+        if not os.environ.get("VN_AUTOPILOT_REPLAYS"):
+            return
+        shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
+        story = renpy.store.vn_story
+        done, failed, skipped = [], {}, []
+        for sid in sorted(story.scenes()):
+            label = story.replay_label(sid)
+            if not renpy.has_label(label):
+                skipped.append(sid)
+                continue
+            for i, state in enumerate(story.preconds(sid) or [{}]):
+                tag = "%s#%d" % (sid, i)
+                try:
+                    renpy.call_replay(label, scope=dict(state))
+                    done.append(tag)
+                except Exception as e:
+                    failed[tag] = "%s: %s" % (type(e).__name__, e)
+                    vn_log("autopilot replay %s failed: %s" % (tag, e))
+        if shots_dir:
+            try:
+                import json
+                with open(os.path.join(shots_dir, "replays.json"), "w",
+                          encoding="utf-8") as f:
+                    json.dump({"done": done, "failed": failed, "skipped": skipped},
+                              f, ensure_ascii=False, indent=1)
+            except Exception as e:
+                vn_log("autopilot replays dump failed: %s" % e)
 
     def autopilot_finish(reason):
         """Конец прогона: маркер результата + снапшот состояния + выход из процесса.
@@ -383,6 +438,9 @@ label vn_end_of_content:
         # Экраны меню/галереи снимаются ПЕРЕД выходом: к этому моменту
         # разблокировки уже произошли, и в кадре видно фактическое состояние.
         $ vn_qa.autopilot_screens()
+        # Пересмотр сцен — после тура экранов и до выхода: реплей поднимает
+        # свои контексты, и всё, что он мог бы сломать, уже снято.
+        $ vn_qa.autopilot_replays()
         $ vn_qa.autopilot_finish("OK: vn_end_of_content")
     $ renpy.say(None, vn_loc.t("ui.flow.end_of_content"))
     $ renpy.full_restart()

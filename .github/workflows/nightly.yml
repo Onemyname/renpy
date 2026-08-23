@@ -67,7 +67,14 @@ jobs:
       - name: Экраны и покрытие ветвления (vn test screens|paths)
         run: |
           xvfb-run -a vn test screens
-          xvfb-run -a vn test paths --picks 0,0 --picks 0,1 --picks 1
+          xvfb-run -a vn test paths --picks 0,0 --picks 0,1 --picks 1 --picks ch90:
+
+      # Пересмотр сцен (ADR-0021): каждое состояние входа из графа реально
+      # запускается движком. Компилятор такое не проверяет — прекондиция это
+      # обещание про рантайм, а не про декларации. Место в nightly по той же
+      # причине, что у тура экранов: один прогон движка под xvfb.
+      - name: Пересмотр сцен из графа (vn test revisit)
+        run: xvfb-run -a vn test revisit
 
       # Записанные прогоны: детерминизм пути и состояния между коммитами.
       # Записи живут в git (ci/fixtures/replays/), поэтому шаг воспроизводим.

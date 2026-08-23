@@ -537,6 +537,46 @@ def content_graph(out):
         click.echo(text)
 
 
+@content.command("flow")
+@click.option("--json", "as_json", is_flag=True,
+              help="Документ артефакта (flow@1) целиком — для диффа и ревью.")
+@click.option("--out", type=click.Path(), default=None,
+              help="Файл для артефакта (подразумевает --json; по умолчанию stdout).")
+def content_flow(as_json, out):
+    """Скомпилированный граф истории (ADR-0021): достижимость, конфликты, реплей.
+
+    Тот же документ, что уезжает в game/generated/registry/flow.gen.rpy. Без
+    --json печатается сводка; с --json — детерминированный артефакт, который
+    сравнивают диффом между сборками. В файл уезжает только артефакт: сводка
+    для человека, и молча записать её вместо графа значит подсунуть диффу не то,
+    что просили."""
+    from .content.flow import flow_json, model_from_repo, validate_flow
+
+    root = _root()
+    model = model_from_repo(root)
+    errors, warnings = validate_flow(model)
+    if as_json or out:
+        text = flow_json(model)
+        if out:
+            write_text_lf(Path(out), text)
+            click.secho(f"граф записан: {out}", fg="green")
+        else:
+            click.echo(text, nl=False)
+    else:
+        click.echo(f"сцен: {len(model.scenes)}, рёбер: {len(model.edges)}, "
+                   f"меню: {len(model.menus)}")
+        click.echo(f"конфликтующих пар: {len(model.incompatible)}")
+        for a, b in model.incompatible[:WARN_SAMPLES]:
+            click.echo(f"  {a} <-> {b}")
+        if len(model.incompatible) > WARN_SAMPLES:
+            click.echo(f"  ещё {len(model.incompatible) - WARN_SAMPLES}")
+    _echo_warnings(warnings)
+    if errors:
+        for e in errors:
+            click.secho(f"ошибка: {e}", fg="red", err=True)
+        sys.exit(1)
+
+
 # ── vn chapter / vn scene ─────────────────────────────────────────────────────
 
 @main.group()
@@ -1693,7 +1733,8 @@ save.command("migrate", help="Оффлайн-миграция файла сей�
 
 @main.group()
 def test():
-    """QA-прогоны (7.4): smoke, replay, screens, paths."""
+    """QA-прогоны (7.4): smoke, replay, screens, paths, revisit, corpus,
+    oversample, deck-kit."""
 
 
 def _autopilot_run(root: Path, shots: Path, extra_env: dict, timeout_s: int,
@@ -2008,6 +2049,52 @@ def test_screens(timeout_s: int, variant: str):
     click.secho(f"test screens: OK ({len(shown)} экранов, {art.result})", fg="green")
 
 
+@test.command("revisit")
+@click.option("--timeout", "timeout_s", default=420, help="Лимит прогона, сек.")
+def test_revisit(timeout_s: int):
+    """Пересмотр (реплей) КАЖДОЙ сцены во всех состояниях входа из графа.
+
+    Прекондиция реплея — это обещание «сцена запустится с этим состоянием»
+    (ADR-0021 §5). Сдержать его может только движок: компилятор не знает про
+    ассеты, метки и разъехавшиеся exits. Поэтому гейт прогоняет каждый вариант
+    входа и падает, если хоть один реплей кинул исключение или если сцена графа
+    осталась без обвязки __replay."""
+    from .content.flow import model_from_repo
+    from .qa import read_run, run_failures
+
+    root = _root()
+    model = model_from_repo(root)
+    expected = {f"{sid}#{i}" for sid in model.scenes
+                for i, _s in enumerate(model.preconds.get(sid) or [{}])}
+    if not expected:
+        _fail("граф истории пуст — пересматривать нечего (vn content flow)")
+    shots = root / ".vncache" / "revisit"
+    rc, timed_out = _autopilot_run(root, shots, {"VN_AUTOPILOT_REPLAYS": "1"},
+                                   timeout_s)
+    art = read_run(root, shots)
+    fails = run_failures(art, rc, timed_out, timeout_s)
+
+    done = set(art.replays.get("done") or [])
+    failed = art.replays.get("failed") or {}
+    skipped = art.replays.get("skipped") or []
+    for tag, why in sorted(failed.items()):
+        fails.append(f"{tag}: реплей упал — {why}")
+    for sid in sorted(skipped):
+        fails.append(f"{sid}: у сцены графа нет метки {sid}__replay — "
+                     f"пересмотреть её игрок не сможет")
+    for tag in sorted(expected - done - set(failed)):
+        fails.append(f"{tag}: вариант входа объявлен графом, но прогон его не сделал")
+
+    click.echo(f"пересмотр: {len(done)} из {len(expected)} вариантов входа")
+    if art.traceback:
+        click.secho(art.traceback[-1500:], fg="red")
+    if fails:
+        for f in fails:
+            click.secho(f"error: {f}", fg="red")
+        _fail(f"test revisit: {len(fails)} проблем")
+    click.secho(f"test revisit: OK ({len(done)} реплеев, {art.result})", fg="green")
+
+
 def tour_screens_ignored(root: Path) -> list[str]:
     """Список намеренно не покрытых туром экранов (qa_screens@1: ignore_defined)."""
     from .qa import SCREENS_DECL_REL
@@ -2019,7 +2106,10 @@ def tour_screens_ignored(root: Path) -> list[str]:
 
 @test.command("paths")
 @click.option("--picks", "picks_list", multiple=True,
-              help="Трасса выборов прогона (можно повторять: --picks 0,0 --picks 1).")
+              help="Трасса выборов прогона: [chNN:]<индексы через запятую>. Можно "
+                   "повторять: --picks 0,0 --picks 1 --picks ch90:. Префикс главы "
+                   "заводит прогон в её точку входа (эпизоды и DLC иначе "
+                   "недостижимы никакой последовательностью выборов).")
 @click.option("--timeout", "timeout_s", default=180, help="Лимит одного прогона, сек.")
 @click.option("--strict", is_flag=True,
               help="Непокрытая ветка — ошибка для ЛЮБОГО статуса главы (по умолчанию "
@@ -2031,12 +2121,18 @@ def test_paths(picks_list: tuple, timeout_s: int, strict: bool):
     и пункты меню из шардированного леджера (`loc/ledger/*.json`), а не из генерата:
     парсить .rpy запрещено (G24). Фактическое покрытие — из артефактов прогона:
     посещённые сцены пишет `vn.checkpoint` в `g.scenes_seen`, взятые выборы —
-    `picks.log`."""
+    `picks.log`.
+
+    Главы, в которые не ведёт ни одно ребро (корневые: первая глава игры,
+    эпизоды, DLC), требуют своей трассы: `--picks chNN:...`. Список таких глав
+    команда берёт из скомпилированного графа (ADR-0021), а не из своего
+    представления о структуре игры."""
     import json as _json
 
+    from .content.flow import model_from_repo
     from .content.graph import build_edges
     from .qa import read_run, run_failures
-    from .repo import load_yaml
+    from .repo import chapter_zones, load_yaml, unshipped_chapters
 
     root = _root()
     traces = list(picks_list) or [""]
@@ -2049,27 +2145,46 @@ def test_paths(picks_list: tuple, timeout_s: int, strict: bool):
         for menu_id, menu in sorted((doc.get("menus") or {}).items()):
             for idx in range(len(menu.get("items") or [])):
                 declared_choices.append(f"{menu_id}#{idx}")
-    for pack_id, chapters_dir in __import__("vn.repo", fromlist=["chapter_zones"]).chapter_zones(root):
+    for _pack_id, chapters_dir in chapter_zones(root):
         for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
             meta = load_yaml(d / "chapter.yaml") if (d / "chapter.yaml").is_file() else {}
             chapter_status[d.name[:4]] = str((meta or {}).get("status") or "draft")
+    # Главы паков вне флейворов игроку не уезжают (ADR-0021): требовать
+    # прохождения их развилок — значит гейтить ночную джобу тестовым контентом.
+    unshipped = unshipped_chapters(root)
+
+    # Корневые главы — из графа: в них не ведёт ни одно ребро, поэтому попасть
+    # можно только своей трассой. Первая глава игры тоже корневая, её забирает
+    # трасса без префикса.
+    flow = model_from_repo(root)
+    reached = {e.target[:4] for e in flow.edges if e.target[:4] != e.src[:4]}
+    roots = sorted({ch for ch in flow.chapters if ch not in reached}
+                   - set(unshipped))
+    covered_roots = {t.split(":", 1)[0] for t in traces if ":" in t}
+    # Трасса без префикса заходит туда, куда ведёт Start(): первая глава реестра,
+    # а реестр отсортирован по id (registry/chapters.gen.rpy).
+    if any(":" not in t for t in traces) and flow.chapters:
+        covered_roots.add(min(flow.chapters))
 
     visited: set[str] = set()
     taken: set[str] = set()
-    for i, picks in enumerate(traces):
+    for i, trace in enumerate(traces):
+        chapter, _, picks = trace.rpartition(":")
+        env = {"VN_AUTOPILOT_PICKS": picks}
+        if chapter:
+            env["VN_AUTOPILOT_CHAPTER"] = chapter
         shots = root / ".vncache" / "paths" / f"run{i}"
-        rc, timed_out = _autopilot_run(root, shots, {"VN_AUTOPILOT_PICKS": picks},
-                                       timeout_s)
+        rc, timed_out = _autopilot_run(root, shots, env, timeout_s)
         art = read_run(root, shots)
         fails = run_failures(art, rc, timed_out, timeout_s)
         if fails:
             if art.traceback:
                 click.secho(art.traceback[-1200:], fg="red")
-            _fail(f"прогон --picks {picks!r}: " + "; ".join(fails))
+            _fail(f"прогон --picks {trace!r}: " + "; ".join(fails))
         # Снапшот плоский: ключи вида "<store>.<имя>" (020_state.rpy: snapshot).
         visited |= {str(s) for s in (art.state.get("g.scenes_seen") or [])}
         taken |= {f"{p.menu_id}#{p.idx}" for p in art.picks}
-        click.echo(f"прогон {i + 1}/{len(traces)} (--picks {picks or '—'}): "
+        click.echo(f"прогон {i + 1}/{len(traces)} (--picks {trace or '—'}): "
                    f"сцен {len(visited)}, выборов {len(taken)}")
 
     missing_scenes = sorted(set(declared_scenes) - visited)
@@ -2083,22 +2198,42 @@ def test_paths(picks_list: tuple, timeout_s: int, strict: bool):
         "choices": {"declared": sorted(declared_choices), "taken": sorted(taken),
                     "missing": missing_choices},
     }, ensure_ascii=False, indent=1) + "\n")
-    click.echo(f"покрытие: сцены {len(visited)}/{len(declared_scenes)}, выборы "
-               f"{len(taken)}/{len(declared_choices)} -> "
+    # Два знаменателя, и это не украшательство: в дереве лежит тестовый контент
+    # (главы паков вне флейворов), который в гейт не входит. Без второй пары
+    # чисел зелёный «сцены 4/26» читается как дыра в покрытии.
+    gated = [s for s in declared_scenes if s[:4] not in unshipped]
+    gated_choices = [c for c in declared_choices if c[:4] not in unshipped]
+    click.echo(f"покрытие: сцены {len(visited)}/{len(declared_scenes)} "
+               f"(в гейте {len(set(gated) & visited)}/{len(gated)}), выборы "
+               f"{len(taken)}/{len(declared_choices)} "
+               f"(в гейте {len(set(gated_choices) & taken)}/{len(gated_choices)}) -> "
                f"{out.relative_to(root).as_posix()}")
 
     def _severity(item: str) -> str:
-        """draft-глава даёт предупреждение, playtest/release — ошибку (G15)."""
+        """draft-глава даёт предупреждение, playtest/release — ошибку (G15);
+        глава, которая не уезжает игроку, из гейта выпадает целиком."""
+        if item[:4] in unshipped:
+            return "skip"
         status = chapter_status.get(item[:4], "draft")
         return "error" if (strict or status in ("playtest", "release")) else "warning"
 
     errors = [m for m in missing_scenes + missing_choices if _severity(m) == "error"]
     warnings = [m for m in missing_scenes + missing_choices if _severity(m) == "warning"]
     _echo_warnings([f"не пройдено: {w} (глава draft — не блокирует)" for w in warnings])
+    # Корневая глава без трассы — не «сорок непройденных ветвей», а одна забытая
+    # строка запуска. Говорим это отдельной строкой ДО списка: иначе причина
+    # тонет в следствиях, и читающий лог начинает искать баг в контенте.
+    uncovered = [ch for ch in roots if ch not in covered_roots]
+    for ch in uncovered:
+        click.secho(f"error: глава {ch} корневая (в неё не ведёт ни одно ребро), но ни "
+                    f"одна трасса в неё не заходит — добавьте --picks {ch}:<индексы>",
+                    fg="red")
     if errors:
         for e in errors:
             click.secho(f"error: не пройдено: {e}", fg="red")
-        _fail(f"test paths: {len(errors)} непройденных ветвей в playtest/release-главах")
+    if errors or uncovered:
+        _fail(f"test paths: {len(errors)} непройденных ветвей и {len(uncovered)} "
+              f"корневых глав без трассы")
     click.secho(f"test paths: OK ({len(traces)} прогонов)", fg="green")
 
 

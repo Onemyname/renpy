@@ -535,21 +535,24 @@ save corpus: OK (2 фикстур загружены и мигрированы)
 |---|---|---|
 | `vn test smoke` | IMPLEMENTED | флаги ровно три: `--picks`, `--lang`, `--timeout` (`cli.py`) |
 | `vn test oversample` | IMPLEMENTED | флаги `--scale` (по умолчанию 2.0) и `--timeout` (`cli.py`); см. § 4а |
-| `vn test replay` | NOT IMPLEMENTED, фаза 2 | `_stub(2)`: жёлтое «эта команда появится в фазе 2», exit **3** (`cli.py`) |
-| `vn test paths` | NOT IMPLEMENTED, фаза 2 | `_stub(2)`, exit 3 |
-| `vn test screens` | NOT IMPLEMENTED, фаза 3 | `_stub(3)`, exit 3 |
+| `vn test replay` | IMPLEMENTED | повтор записанных прогонов из `ci/fixtures/replays/`; флаги `--all`, имя записи |
+| `vn test paths` | IMPLEMENTED | покрытие ветвления: несколько `--picks`, сводка «какие сцены и выборы прогоны реально прошли». Трасса вида `--picks chNN:0,1` заводит прогон в точку входа главы (эпизоды и DLC иначе недостижимы); корневая глава без трассы называется отдельной ошибкой |
+| `vn test screens` | IMPLEMENTED | тур по экранам из `content/ui/screens.yaml`; гейт структурный (открылся / есть в игре / покрыт туром) |
+| `vn test revisit` | IMPLEMENTED | пересмотр сцен из графа истории (ADR-0021): каждое состояние входа проигрывается движком |
+| `vn test corpus` | IMPLEMENTED | синтетический корпус масштаба + измерительный прогон конвейера |
+| `vn test deck-kit` | IMPLEMENTED | комплект приёмки для живого устройства (Steam Deck / ТВ) |
 | `vn test perf` | NOT IMPLEMENTED | подкоманды **не существует вовсе** — click ответит usage-ошибкой, exit 2. `ARCHITECTURE.md:3644` её описывает |
 | `vn save migrate` | NOT IMPLEMENTED, фаза 3 | `_stub(3)` (`cli.py`); миграции идут в игре, в `after_load` |
 
 **Два класса «нет команды» и их коды выхода.** `_stub(phase)` печатает жёлтое «появится в фазе N» и
-даёт **exit 3**; полный список заглушек в проекте: `vn migrate`, `vn shell` (`cli.py`),
-`vn char new|validate|sheet`, `vn save migrate`
-(`cli.py`), `vn test replay|screens|paths` (`cli.py`). Команда, которой **не
-существует вовсе** (`vn validate`, `vn test perf`, `vn build --use-artifact`), даёт usage error click
+даёт **exit 3**; заглушкой в проекте осталась ровно одна команда — `vn save migrate`
+(`cli.py`, `grep -n "_stub("` — единственное применение к реальной команде). Команда, которой **не
+существует вовсе** (`vn migrate`, `vn shell`, `vn validate`, `vn test perf`, `vn build --use-artifact`), даёт usage error click
 и **exit 2**. Путать эти два класса — прямой путь «чинить» то, чего нет.
 
-Докстринг группы всё ещё рекламирует четыре подкоманды и молчит про `oversample`:
-`"""QA-прогоны (7.4): smoke, replay, screens, paths."""` (`cli.py`).
+Докстринг группы перечисляет все восемь подкоманд (`smoke, replay, screens,
+paths, revisit, corpus, oversample, deck-kit`) — сверяйте его при добавлении
+новой: `vn test --help` — первое, куда смотрят.
 
 Отдельно — флаги, которые **заявлены в `ARCHITECTURE.md` и не существуют**: `vn test smoke --affected --shard N/M --seed <n>` и `--menu-only` (`:3530,3587,3595`), `vn test screens --update-baselines` (`:3617,3720`), `vn save corpus <dir> --report out/savecheck.json` и `--rpyc-regression` (`:3403,3600,3605`), `vn test paths --coverage edges` (`:3638`). Реальные пути артефактов тоже другие: `qa/saves-corpus/`, `tests/save_corpus/<version>/`, `.vncache/qa/smoke/` из `ARCHITECTURE.md` не существуют — есть `ci/fixtures/saves/` и `.vncache/smoke/`.
 
@@ -563,7 +566,7 @@ save corpus: OK (2 фикстур загружены и мигрированы)
 |---|---|---|
 | `.github/workflows/ci.yml` | push в **любую ветку** (`branches: ['**']`, теги не матчатся), + `workflow_dispatch`; `pull_request` намеренно нет — голова PR это тот же push | джоба `lint`: `vn content lint` (`:45`). Джоба с SDK: `vn build` (`:80`) → `vn loc keys --check` (`:83`) → `renpy.sh . lint` (`:86`) → **`vn test oversample --scale 2`** (`:91`) → `vn content compile --check` (`:94`) → `pytest tools/vn/tests -q` (`:97`); артефакт `generated-<sha>` на 30 дней (`:99-102`) |
 | `.github/workflows/nightly.yml` | cron `30 2 * * *` + dispatch | Джоба `smoke`: `vn build`, `vn loc import/report` (`:49-53`); **матрица smoke**: `--picks 0,0` / `--picks 0,1 --lang en` / `--picks 1` / `--picks 0,0 --lang pseudo` (`:55-60`); `vn save check` + `vn save corpus` (`:62-65`); релизная сборка обоих флейворов на снесённом `game/generated` (`:70-74`); артефакт `.vncache/smoke/` на 7 дней (`:76-82`). Джоба `controller-first` (`:85-151`): матрица `steam_deck medium touch` / `steam_big_picture`, `vn build` → `vn test smoke --picks 0,0` с `VN_AUTOPILOT_SCREENS`, артефакт `controller-shots-<profile>-<run_id>`. **Внимание:** шаг релизной сборки обоих флейворов сейчас проходит — гейт зрелости контента даёт WARN, пока в проекте нет ни одной главы `status: release`; он покраснеет в тот прогон, где такая глава появится ([29-build-and-release.md](29-build-and-release.md#maturity-gate-rule) §5.1 №4) |
-| `.github/workflows/steam-upload.yml` | **только** `workflow_dispatch` (входы `flavor`, `branch`) | `vn release build --flavor <f> --package win/linux/mac` → `vn release steam --flavor <f> --branch <b>` → steamcmd. Кэш `.rpyc` — restore-only. Без секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` шаг аплоада — зелёный no-op; при `appid: null` workflow падает раньше. Артефакт — только VDF |
+| `.github/workflows/steam-upload.yml` | **только** `workflow_dispatch` (входы `flavor`, `branch`) | `vn release build --flavor <f> --package win/linux/mac` → `vn release steam --flavor <f> --branch <b>` → steamcmd. Кэш `.rpyc` — restore-only. Без секретов `STEAM_USERNAME`/`STEAM_CONFIG_VDF` шаг аплоада — зелёный no-op; с плейсхолдерным `appid: 480` дойдёт до steamcmd и будет отвергнут Valve. Артефакт — только VDF |
 | `.github/workflows/canary.yml` | cron `0 3 * * 1` + dispatch | на **свежайшем** Ren'Py: `vn build` → `renpy.sh . lint` → `pytest tools/vn/tests -q` → `vn test smoke --picks 0,0` (`:46-51`) |
 | `.github/workflows/release.yml` | тег `v*` | гейт «тег == `project.yaml: version`» (`:47-54`), затем `vn release build --flavor <public\|patron>` (гейт внутри, `:78-87`); dmg на macOS-раннере (`:97-113`) |
 

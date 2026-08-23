@@ -2,10 +2,10 @@
 
 Почему один модуль. Автопилот — единственный законный способ прогнать игру
 автоматически (G23: headless-режима у Ren'Py нет, синтетический ввод на рабочий стол
-запрещён), и им пользуются пять команд: `test smoke`, `test screens`, `test paths`,
-`test replay` и `save corpus`. Пока протокол жил в `cli.py`, каждая новая команда
-копировала бы и запуск, и разбор артефактов — то есть пять мест, где можно забыть
-почистить `game/generated/qa/` или не заметить `traceback.txt`.
+запрещён), и им пользуются шесть команд: `test smoke`, `test screens`, `test paths`,
+`test replay`, `test revisit` и `save corpus`. Пока протокол жил в `cli.py`, каждая
+новая команда копировала бы и запуск, и разбор артефактов — то есть шесть мест, где
+можно забыть почистить `game/generated/qa/` или не заметить `traceback.txt`.
 
 Контракт прогона (артефакты в каталоге `--dir`, пишет рантайм —
 `game/framework/00_core/030_flow.rpy`, блок `vn_qa`):
@@ -16,6 +16,7 @@
     state.json    снапшот всех управляемых stores (включая g.scenes_seen)
     gallery.json  {unlocked, total, ids}
     screens.json  тур по экранам: что показали, что не смогли
+    replays.json  пересмотр сцен: какие реплеи прошли, какие упали
     perf.json     пик RSS процесса игры
 """
 
@@ -86,6 +87,7 @@ class RunArtifacts:
     state: dict = field(default_factory=dict)
     gallery: dict = field(default_factory=dict)
     screens: dict = field(default_factory=dict)
+    replays: dict = field(default_factory=dict)
     perf: dict = field(default_factory=dict)
     traceback: str | None = None
 
@@ -131,6 +133,7 @@ def read_run(root: Path, shots: Path) -> RunArtifacts:
     art.state = _read_json(shots / "state.json")
     art.gallery = _read_json(shots / "gallery.json")
     art.screens = _read_json(shots / "screens.json")
+    art.replays = _read_json(shots / "replays.json")
     art.perf = _read_json(shots / "perf.json")
     tb = root / "traceback.txt"
     if tb.is_file():
