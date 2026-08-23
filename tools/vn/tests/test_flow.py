@@ -697,7 +697,11 @@ def test_precondition_comes_from_the_path_not_from_default(topologies):
     для реплея тоже два.
     """
     model = topologies["model"]
-    assert model.var_types["ch84.codeword"] == {"type": "str", "default": None}
+    # Ключа default тут нет ВООБЩЕ — и модель это сохраняет, а не сплющивает в
+    # None: `default: null` схема разрешает явно, «default не написан» запрещает,
+    # и различить их обязана именно модель (иначе проверка достижимости ругается
+    # на легальную декларацию).
+    assert model.var_types["ch84.codeword"] == {"type": "str"}
     # Порядок вариантов детерминирован (миры канонизированы) и идёт по пунктам
     # меню — так его и читает просмотрщик: «как в прохождении, где …».
     assert model.preconds["ch84_s020"] == [{"ch84.codeword": "willow"},
@@ -909,3 +913,53 @@ def test_five_hundred_scenes_stay_in_seconds(tmp_path):
     # 5.9 + конфликты 0.6). Потолок с запасом: он ловит смену класса
     # сложности, а не дрожание раннера.
     assert elapsed < 18.0, f"модель 500 сцен считалась {elapsed:.1f} с"
+
+
+def test_null_default_is_a_value_not_a_missing_one(tmp_path):
+    """`default: null` — легальное состояние входа, а не отсутствие значения.
+
+    Схема vars@1 разрешает его явно и с описанием: «не выбрано/не назначено» —
+    валидный простой тип для сейва и rollback. Проверка достижимости различала
+    их по значению (`default is None`), поэтому любая str/int-переменная стора
+    g/chNN с null-дефолтом, прочитанная хоть одной сценой, роняла vn build
+    сообщением «в vars@1 нет default» — про поле, которое схема делает
+    обязательным и которое в декларации стоит. Обойти можно было только отказом
+    от null-дефолта, то есть отказом от того, что схема разрешает.
+
+    Обратная половина инварианта проверяется тут же: переменная БЕЗ ключа
+    default по-прежнему ошибка — реплей в такую сцену войти не сможет."""
+    root = tmp_path / "root"
+    specs = {
+        "ch86_null": {"store": "ch86",
+                      "vars": {"gift": {"type": "str", "default": None}},
+                      "scenes": {"s010_read": {"reads": ["ch86.gift"]}}},
+        "ch87_nokey": {"store": "ch87",
+                       "vars": {"secret": {"type": "str"}},
+                       "scenes": {"s010_read": {"reads": ["ch87.secret"]}}},
+    }
+    for dirname, spec in specs.items():
+        ch_id = dirname[:4]
+        d = root / "content" / "chapters" / dirname
+        (d / "scenes").mkdir(parents=True)
+        (d / "chapter.yaml").write_text(yaml.safe_dump(
+            {"schema": "chapter@1", "id": ch_id, "entry_scene": "s010",
+             "title_key": f"meta.chapters.{ch_id}.title", "status": "release",
+             "scene_order": ["s010"]}, allow_unicode=True, sort_keys=False),
+            encoding="utf-8")
+        (d / "vars.yaml").write_text(yaml.safe_dump(
+            {"schema": "vars@1", "store": spec["store"], "vars": spec["vars"]},
+            allow_unicode=True, sort_keys=False), encoding="utf-8")
+        for name, sc in spec["scenes"].items():
+            (d / "scenes" / f"{name}.scene.yaml").write_text(yaml.safe_dump(
+                {"schema": "scene@1", "id": name.split("_")[0],
+                 "vars": {"reads": sc["reads"]}}, allow_unicode=True,
+                sort_keys=False), encoding="utf-8")
+
+    errors, _warnings = validate_flow(build_model(root))
+    assert [e for e in errors if "ch86" in e] == [], (
+        "null-дефолт принят за отсутствие значения — сборка падает на легальной "
+        "по схеме декларации")
+    assert [e for e in errors if "ch87.secret" in e], (
+        "переменная без ключа default обязана оставаться ошибкой")
+    # И само состояние входа: реплей входит в сцену с None, а не «никак».
+    assert build_model(root).preconds["ch86_s010"] == [{"ch86.gift": None}]

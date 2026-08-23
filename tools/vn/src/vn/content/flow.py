@@ -433,10 +433,16 @@ def _var_types(root: Path, packs=None) -> VAR_TYPES:
         if not store or store == "persistent":
             continue
         for name, spec in (doc.get("vars") or {}).items():
-            out[f"{store}.{name}"] = {
-                "type": (spec or {}).get("type"),
-                "default": (spec or {}).get("default"),
-            }
+            entry = {"type": (spec or {}).get("type")}
+            # Ключ переносится, только если он ОБЪЯВЛЕН. `default: null` и
+            # «default не написан» — разные вещи: первое схема vars@1 разрешает
+            # явно («не выбрано/не назначено»), второе она запрещает, и именно
+            # второе делает вход в реплей неопределимым. Плоское .get() слило бы
+            # их в один None, и проверка достижимости ругалась бы на легальную
+            # декларацию (см. validate_flow).
+            if "default" in (spec or {}):
+                entry["default"] = spec["default"]
+            out[f"{store}.{name}"] = entry
     return out
 
 
@@ -817,12 +823,12 @@ def compute_preconds(model: FlowModel) -> None:
                         f"состояние входа в реплей не определить")
                     continue
                 con = wv.get(var)
-                value = con.witness(spec.get("default")) if con is not None \
+                # None здесь — полноценное значение, а не «значения нет»: vars@1
+                # разрешает default: null («не выбрано»), и реплей входит в сцену
+                # ровно с ним. Признак настоящей беды — отсутствие переменной в
+                # реестре, и он проверен выше.
+                state[var] = con.witness(spec.get("default")) if con is not None \
                     else spec.get("default")
-                if value is None and spec.get("default") is None \
-                        and con is not None and con.allow == frozenset({None}):
-                    value = None
-                state[var] = value
             if state not in variants:
                 variants.append(state)
         model.preconds[sid] = variants
@@ -927,16 +933,23 @@ def validate_flow(model: FlowModel) -> tuple[list[str], list[str]]:
         node = model.scenes[sid]
         if not node.reach:
             continue                    # недостижимость ловит lint (раздел 3a)
-        for variants in [model.preconds.get(sid) or []]:
-            for state in variants:
-                for var, value in sorted(state.items()):
-                    spec = model.var_types.get(var) or {}
-                    if value is None and spec.get("default") is None \
-                            and spec.get("type") not in (None, "dict", "list"):
-                        errors.append(
-                            f"{sid}: читает {var}, но ни один путь до сцены не даёт "
-                            f"ей значения и в vars@1 нет default — реплей сцены "
-                            f"не сможет собрать состояние входа")
+        for state in model.preconds.get(sid) or []:
+            for var, value in sorted(state.items()):
+                spec = model.var_types.get(var) or {}
+                # Признак беды — ОТСУТСТВИЕ ключа default, а не то, что значение
+                # вышло None. Раньше здесь стояло `spec.get("default") is None`,
+                # и это ложное срабатывание по построению: `default: null` схема
+                # vars@1 разрешает явно и с описанием («не выбрано/не назначено»
+                # — валидный простой тип для сейва и rollback). Любая str/int
+                # стора g/chNN с null-дефолтом, прочитанная хоть одной сценой,
+                # роняла vn build сообщением «в vars@1 нет default» — про поле,
+                # которое схема делает обязательным и которое в декларации есть.
+                if value is None and "default" not in spec \
+                        and spec.get("type") not in (None, "dict", "list"):
+                    errors.append(
+                        f"{sid}: читает {var}, но ни один путь до сцены не даёт "
+                        f"ей значения и в vars@1 нет default — реплей сцены "
+                        f"не сможет собрать состояние входа")
     opaque = sorted({f"{e.src}.{e.exit_id}" for e in model.edges if e.opaque})
     for ref in opaque:
         warnings.append(
