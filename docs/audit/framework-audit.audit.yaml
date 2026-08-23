@@ -93,7 +93,15 @@ items:
     - 'сценарий отказа: 1) Взять любой сейв проекта: `python -c "import zipfile,pickletools,io; z=zipfile.ZipFile(''ci/fixtures/saves/schema2-demo.save'');
       [print(op.name,arg) for op,arg,_ in list(pickletools.genops(io.BytesIO(z.read(''log''))))[:60]]"`.
       В первом же …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - docs/ARCHITECTURE.md
+    - docs/handbook/05-renpy-development.md
+    - docs/handbook/07-backend.md
+    - docs/handbook/45-architecture-rules.md
+    - docs/conventions/naming.md
+    tests:
+    - tools/vn/tests/test_saves.py::test_docs_do_not_claim_that_underscore_vars_skip_the_save
   FWA-006:
     title: (P1) Выражения `when` из exits не валидируются НИ ОДНИМ гейтом сборки — опечатка даёт NameError
       у игрока
@@ -105,7 +113,13 @@ items:
     - 'сценарий отказа: В любой сцене поправить условие в scene.yaml с опечаткой: `exits: {next: [{when:
       "ch72.donaton >= 5000", to: s030}, {to: s040}]}`. Прогнать `vn content lint` (OK), `vn build`
       (OK), `renpy lint` (0 предупреждений), pytest (зелёный). В игре …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/scenes.py
+    - game/framework/00_core/030_flow.rpy
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_when_condition_is_validated_against_the_variable_registry
+    - tools/vn/tests/test_scene_pipeline.py::test_when_validation_checks_names_not_shape
   FWA-007:
     title: '(P1) Дакинг под голос выключен: движок читает preference emphasize_audio, который по умолчанию
       False и нигде не включается'
@@ -117,7 +131,14 @@ items:
     - 'сценарий отказа: 1) Объявить bgm-трек в content/audio/bgm.yaml и поставить `music: bgm/<id>`
       в content/chapters/ch01_awakening/scenes/s010_intro.scene.yaml; vn build. 2) Запустить игру
       и дойти до первой реплики ch01_s010_0001 — озвучка для неё уже есть …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/045_audio.rpy
+    - game/framework/20_ui/screens/core_screens.rpy
+    - content/ui/strings.yaml
+    - docs/handbook/23-audio.md
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_voice_ducking_is_actually_enabled
   FWA-008:
     title: '(P1) _note_progress работает до проверки visible(): прогресс NSFW/непроданных и СКРЫТЫХ
       ачивок уезжает в Steam-попап и в persistent'
@@ -129,7 +150,11 @@ items:
     - 'сценарий отказа: Добавить в content/achievements/ запись вида id: nsfw_collector, pack: nsfw
       (или hidden: true), goal: {total: 10, step: 1}, trigger: {var: ''g.scenes_seen''} — то есть
       счётчик, который двигается базовым контентом. Собрать SFW-флейвор (пак …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/080_achievements.rpy
+    tests:
+    - tools/vn/tests/test_achievements.py::test_progress_is_gated_by_visibility_and_never_leaks_hidden
   FWA-009:
     title: (P1) Разблокировки в persistent лежат в dict-корнях без register_persistent — merge движка
       теряет анлоки одной из сторон
@@ -141,7 +166,13 @@ items:
     - 'сценарий отказа: Игрок со Steam Cloud и двумя машинами. PC1: прошёл главу, открылось видео
       галереи V1 -> persistent.vn_gallery_unlocked = {''V1'': True} записан в APPDATA и в <game>/saves.
       PC2 (свежая установка, облако ещё не доехало из-за оффлайна): …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/engine_compat/000_compat.rpy
+    - docs/ARCHITECTURE.md
+    tests:
+    - tools/vn/tests/test_engine_compat.py::test_persistent_containers_merge_by_union
+    - tools/vn/tests/test_engine_compat.py::test_every_persistent_accumulator_is_registered_for_merge
   FWA-010:
     title: (P1) is_unlocked для шота линейно сканирует весь persistent._seen_images — O(закрытых шотов
       × |_seen_images|) на КАЖДОМ якоре и на каждой перерисовке …
@@ -154,7 +185,15 @@ items:
     - 'сценарий отказа: Не воспроизводится на демо-контенте (6 элементов, 1 шот) — это отказ на масштабе,
       ради которого каркас и строится. Профиль: 20 глав × ~15 сцен, ~400 элементов галереи, ~100 из
       них kind: shot, наигранный persistent с ~12000 ключей …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/090_gallery.rpy
+    - game/framework/00_core/030_flow.rpy
+    - game/framework/20_ui/screens/gallery.rpy
+    tests:
+    - tools/vn/tests/test_gallery.py::test_gallery_hot_path_does_not_scan_all_seen_images
+    - tools/vn/tests/test_gallery.py::test_gallery_screen_walks_the_registry_once_per_build
+    - tools/vn/tests/test_gallery.py::test_pack_ownership_is_memoized
   FWA-011:
     title: (P1) Инлайновый беспрефиксный background у узла карты убивает hover_background — на карте
       главы не видно фокуса
@@ -166,7 +205,11 @@ items:
     - 'сценарий отказа: Steam Deck / Big Picture (или просто клавиатура на десктопе): Игра → Карта
       главы → жать dpad/стрелки, переводя фокус между узлами. Ни один узел не меняет вид — vn_frame_choice_hover
       не применяется. Мышью тоже: наведение на карточку узла не …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/20_ui/screens/story_flow.rpy
+    tests:
+    - tools/vn/tests/test_ui_panels.py::test_every_style_used_by_name_is_declared
   FWA-012:
     title: '(P1) Туман войны протекает: план и список конфликтов печатают настоящие заголовки НЕПРОЙДЕННЫХ
       сцен'
@@ -178,7 +221,12 @@ items:
     - 'сценарий отказа: Новая игра, ch71 никогда не проходилась. Игра → Карта главы → вкладка «QA-T2:
       взаимоисключающие концовки» → все узлы показаны «???» → клик по любому → «Отметить целью». Возврат
       на карту: в подвале сразу «1) <настоящий локализованный …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/100_story_graph.rpy
+    - game/framework/20_ui/screens/story_flow.rpy
+    tests:
+    - tools/vn/tests/test_ui_panels.py::test_chapter_map_never_prints_titles_of_unseen_scenes
   FWA-013:
     title: (P1) vn test deck-kit пишет в приёмочный чек-лист «вердикт OK», не прочитав RESULT.txt
     category: quality-gate
@@ -189,7 +237,11 @@ items:
     - 'сценарий отказа: Сделать в ch01 exit на ненаписанную цель (или удалить главу пака, на которую
       ссылается exit) — прогон уходит в `label vn_scene_unavailable`, который вызывает `autopilot_finish("FAIL:
       vn_scene_unavailable")` и завершает процесс кодом 0. …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/cli.py
+    tests:
+    - tools/vn/tests/test_deckkit.py::test_deck_kit_checks_the_run_verdict_not_just_the_exit_code
   FWA-014:
     title: (P1) Shim-метка renames.yaml выпускается и для ЖИВОЙ сцены — дубликат label, игра не стартует
     category: correctness
@@ -200,7 +252,13 @@ items:
     - 'сценарий отказа: Формат renames — `старый: новый`. Написать его наоборот (типовая ошибка, направление
       ниоткуда не следует по значению ключа) или переименовать сцену и забыть удалить старую пару
       файлов: 1) `content/renames.yaml`: `scenes: {ch01_s010: …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/compile.py
+    - tools/vn/src/vn/content/lint.py
+    tests:
+    - tools/vn/tests/test_lint.py::test_lint_catches_rename_of_a_scene_that_still_exists
+    - tools/vn/tests/test_compile.py::test_shim_label_is_never_emitted_for_a_live_scene
   FWA-015:
     title: '(P1) compute_compat — квадрат по всем парам сцен в каждом vn content compile (замерено:
       36 с на 8000 сцен)'
@@ -213,7 +271,11 @@ items:
     - 'сценарий отказа: `vn test corpus --scenes 8000` (генератор строит связную цепочку с меню через
       сцену, все сцены достижимы от entry_scene — corpus.py:_write_chapters), затем `vn content compile`
       на этом корпусе: к времени компиляции добавляется ~36 с, из …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_flow.py::test_conflict_matrix_does_not_grow_quadratically
   FWA-016:
     title: '(P1) Переменная с `default: null` (схемно легальная) роняет vn build с ложным сообщением'
     category: content-pipeline
@@ -224,7 +286,11 @@ items:
     - 'сценарий отказа: 1) В content/variables/core.vars.yaml добавить: ```yaml chosen_gift: type:
       str default: null doc: "Подарок; null = ещё не выбран" since: 2 ``` 2) В любой сцене прочитать
       её: в scene.yaml `vars: {reads: [g.chosen_gift]}` (или просто `if …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_flow.py::test_null_default_is_a_value_not_a_missing_one
   FWA-017:
     title: '(P1) compute_reach: пер-пунктовые присваивания учитываются по разу на КАЖДУЮ условную
       цель exit''а — присваивание тела сцены теряется, сцена объявляется …'
@@ -236,7 +302,11 @@ items:
     - 'сценарий отказа: Синтетический прогон через публичный API модуля (воспроизведён): сцена s010,
       тело пишет `$ ch01.flag = True`, пункт 0 того же меню тоже пишет `ch01.flag = True` и возвращает
       exit `go`; exit `go` объявлен списком условных целей (два ребра); …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_flow.py::test_body_assign_survives_a_conditional_exit_list
   FWA-018:
     title: (P1) Компилятор не требует, чтобы каждый путь __body завершался return — незакрытая ветка
       молча проваливается в следующую метку
@@ -249,7 +319,14 @@ items:
     - 'сценарий отказа: Сцена с двумя ветками, у которой автор забыл return в одной. Точная форма
       (модель — существующий ch01_s020, где __caught идёт в файле сразу за __body): label ch05_s010__body:
       $ vn_menu = "ch05_s010_m001" menu: "Уйти": jump ch05_s010__leave …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/050_build_bridge.rpy
+    - tools/vn/src/vn/content/scenes.py
+    - packs/qa_flow/chapters
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_label_that_can_fall_through_is_an_error
+    - tools/vn/tests/test_scene_pipeline.py::test_bridge_reports_terminality_per_label
   FWA-019:
     title: '(P1) Главы тестового пака попадут в id_registry и changelog: unshipped_chapters() применён
       к локализации и покрытию, но не к штампу выпущенных id (G7)'
@@ -261,7 +338,11 @@ items:
     - 'сценарий отказа: На текущем дереве: `python -c "import sys;sys.path.insert(0,''tools/vn/src'');from
       pathlib import Path;from vn.release import _released_ids;print(_released_ids(Path(''.''))[''chapters''])"`
       вернёт ch01, ch70, ch71, ch72, ch73 (ch90 — …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/release.py
+    tests:
+    - tools/vn/tests/test_release.py::test_unshipped_pack_ids_are_never_stamped_as_released
   FWA-020:
     title: (P2) CI-гейт «тулчейн диагностируется честно» станет вечно красным, как только ch01 озвучат
       актёры
