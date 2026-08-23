@@ -145,6 +145,19 @@ init -999 python in vn:
         while renpy.store.vn_compat.call_stack_depth() > 0:
             renpy.pop_call()
 
+    def first_entry_label():
+        """Метка входа первой доступной главы или None (пустой проект).
+
+        Существует ради ОДНОГО свойства: label start не должен заводить
+        store-переменную под копию реестра. `$ _chapters = vn_registry.chapters()`
+        клал в дефолтный стор список словарей всех глав, а рантайм-присваивание
+        делает переменную корнем сейва навсегда (python.py: ever_been_changed) —
+        и реестр уезжал в КАЖДЫЙ сейв игрока. Проверено на фактическом сейве:
+        корень `store._chapters` со всем содержимым VN_CHAPTERS. Строка в корнях
+        безвредна, реестр — нет: он растёт с каждой главой и с каждым паком."""
+        rows = renpy.store.vn_registry.chapters()
+        return rows[0]["entry_label"] if rows else None
+
     def eval_when(expr):
         """Условия переходов из exits: (scene.yaml); здесь — только исполнение.
 
@@ -525,13 +538,16 @@ init -999 python in vn_qa:
 # Реплики framework-меток — через vn_loc.t(): литерал в label не попадает
 # в PO-экстракцию (леджер собирается только из сцен) и не переводился бы (ADR-0005).
 label start:
-    $ _chapters = vn_registry.chapters()
-    if not _chapters:
+    # Одноразовое значение — СТРОКА, а не список глав: любое присваивание в
+    # дефолтный стор становится корнем сейва навсегда, и реестр уезжал бы
+    # игроку в каждом файле сохранения (см. vn.first_entry_label).
+    $ _entry = vn.first_entry_label()
+    if not _entry:
         $ renpy.say(None, vn_loc.t("ui.flow.no_content"))
         $ renpy.say(None, vn_loc.t("ui.flow.no_content_hint"))
         return
     # Маршрутизация к entry-сцене первой доступной главы (генерат кладёт метку в реестр).
-    $ renpy.jump(_chapters[0]["entry_label"])
+    $ renpy.jump(_entry)
 
 
 # Причина попадания на «сцена недоступна»: draft_todo (ветка ещё не написана),

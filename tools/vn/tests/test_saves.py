@@ -326,3 +326,33 @@ def test_docs_do_not_claim_that_underscore_vars_skip_the_save(repo_root):
     assert not guilty, (
         f"документы снова обещают несуществующее поведение движка: {guilty}. "
         f"Факт: в сейве лежат {sorted(roots)[:3]}")
+
+
+def test_start_label_does_not_bake_the_registry_into_every_save(repo_root):
+    """label start не имеет права заводить store-переменную под копию реестра.
+
+    Любое рантайм-присваивание в дефолтный стор делает переменную корнем сейва
+    НАВСЕГДА (python.py: get_changes -> ever_been_changed), а `$ _chapters =
+    vn_registry.chapters()` клал туда список словарей всех глав. Проверено на
+    фактическом сейве до правки: корень `store._chapters` со всем содержимым
+    VN_CHAPTERS; после правки в свежем сейве остаётся только `store._entry` —
+    строка. Разница не косметическая: реестр растёт с каждой главой и с каждым
+    паком, и растёт он в КАЖДОМ файле сохранения игрока.
+
+    Старые сейвы `_chapters` продолжат нести: переменная восстановится из файла
+    и останется в ever_been_changed. Вычистить её можно только миграцией, и она
+    того не стоит — значение безвредно, просто лишнее."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "030_flow.rpy").read_text(encoding="utf-8")
+    start = src.split("\nlabel start:", 1)[1].split("\nlabel ", 1)[0]
+
+    assert "vn_registry.chapters()" not in start, \
+        "точка входа снова кладёт реестр в переменную стора"
+    assert "vn.first_entry_label()" in start
+    # Обе ветки обязаны сохраниться: пустой проект должен запускаться и честно
+    # говорить, что контента нет.
+    assert "ui.flow.no_content" in start and "renpy.jump(" in start
+
+    facade = src.split("def first_entry_label(", 1)[1].split("\n    def ", 1)[0]
+    assert 'rows[0]["entry_label"] if rows else None' in facade, \
+        "фасад возвращает не строку — в сейв снова уедет структура"
