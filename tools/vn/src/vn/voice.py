@@ -12,7 +12,7 @@ assets_src/voice/<lang>/<chNN>/<line_id>.<ext>; в game/assets/voice/ их
 
 Роли отчёта:
   errors   — структурные поломки: id вне ledger, манифест без мастера,
-             мастер-сирота без строки манифеста;
+             мастер-сирота без строки манифеста, два мастера одного дубля;
   drafts   — реплики со status: draft (в релизном гейте — WARN);
   holes    — реплики главы, НЕ покрытые манифестом языка, который для этой
              главы начали озвучивать (в релизном гейте — FAIL, §4.9).
@@ -147,6 +147,17 @@ def master_path(root: Path, lang: str, line_id: str) -> Path | None:
     return None
 
 
+def _drop_stale_masters(root: Path, lang: str, line_id: str, keep_ext: str) -> None:
+    """Убрать мастера того же дубля в ОСТАЛЬНЫХ форматах: master_path берёт первое
+    расширение из MASTER_EXTS, поэтому оставленный .wav заглушал бы новый .opus, а
+    ассет-конвейер (voice_opus, Job на каждый файл assets_src/voice) спотыкался бы
+    об это гораздо позже — ошибкой про два источника на один выход."""
+    base = root / "assets_src" / "voice" / lang / line_id[:4]
+    for ext in MASTER_EXTS:
+        if ext != keep_ext:
+            (base / (line_id + ext)).unlink(missing_ok=True)
+
+
 def validate(root: Path) -> VoiceReport:
     rep = VoiceReport()
     manifests = load_manifests(root, rep.errors)
@@ -194,6 +205,9 @@ def validate(root: Path) -> VoiceReport:
     # Источник истины один (манифест), расхождение в обе стороны — ошибка.
     vsrc = root / "assets_src" / "voice"
     if vsrc.is_dir():
+        # (lang, chNN, line_id) -> имена файлов: дубль в двух форматах сиротой не
+        # считается (stem-то объявлен), поэтому его ловит отдельная проверка ниже.
+        by_line: dict[tuple[str, str, str], list[str]] = {}
         for f in sorted(vsrc.rglob("*")):
             if not f.is_file() or f.suffix.lower() not in MASTER_EXTS:
                 continue
@@ -203,11 +217,24 @@ def validate(root: Path) -> VoiceReport:
                     f"assets_src/voice/{'/'.join(parts)}: путь вне конвенции "
                     f"voice/<lang>/<chNN>/<line_id>.<ext>")
                 continue
-            lang, _ch, _name = parts
+            lang, ch, name = parts
             if f.stem not in declared.get(lang, set()):
                 rep.errors.append(
                     f"assets_src/voice/{'/'.join(parts)}: мастер без строки в "
                     f"voice-манифесте — объявите реплику или удалите файл")
+                continue      # необъявленному дублю совет «оставьте нужный» не про то
+            by_line.setdefault((lang, ch, f.stem), []).append(name)
+        # У line_id ровно один мастер. Иначе озвучка берёт первый по MASTER_EXTS —
+        # то есть возможно черновик вместо записанного финала, — а ассет-конвейер
+        # (voice_opus) красит релизный гейт гораздо позже и невнятным «два
+        # источника претендуют на один выход».
+        for (lang, ch, lid), names in sorted(by_line.items()):
+            if len(names) > 1:
+                rep.errors.append(
+                    f"assets_src/voice/{lang}/{ch}/: у {lid} несколько мастеров "
+                    f"({', '.join(sorted(names))}) — оставьте нужный дубль, "
+                    f"остальные удалите: озвучка возьмёт первый по "
+                    f"{'|'.join(MASTER_EXTS)}, и это может быть не он")
     return rep
 
 
@@ -254,6 +281,15 @@ class ImportReport:
     errors: list[str] = field(default_factory=list)
 
 
+def _rel_to(path: Path, base: Path) -> str:
+    """Путь для сообщения — от каталога импорта, а не одно имя файла: пачку дублей
+    студия отдаёт подкаталогами, и одинаковые имена в них — штатный случай."""
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        return path.name
+
+
 def import_takes(root: Path, src_dir: Path, lang: str,
                  status: str = STATUS_FINAL) -> ImportReport:
     """Разложить дубли по мастер-зоне и обновить манифесты.
@@ -274,6 +310,7 @@ def import_takes(root: Path, src_dir: Path, lang: str,
 
     chapter_dir_by_id = {d.name[:4]: d for d in _chapter_dirs(root)}
     per_chapter: dict[str, list[Path]] = {}
+    seen: dict[str, Path] = {}      # line_id -> первый файл пачки с этим id
     for f in files:
         m = LINE_ID_RE.match(f.stem)
         if not m:
@@ -288,15 +325,44 @@ def import_takes(root: Path, src_dir: Path, lang: str,
             rep.errors.append(
                 f"{f.name}: реплики нет в ledger {ch_id} — опечатка в имени дубля?")
             continue
+        # Две версии одного дубля в пачке: в разных форматах обе легли бы мастерами
+        # одного line_id, а в одном — вторая молча затёрла бы первую. Какая из них
+        # нужна, знает только студия, поэтому это отказ, а не догадка. Пути — от
+        # каталога импорта: пачка приходит подкаталогами (takes/day1, takes/day2),
+        # и по одним именам файлов конфликт не разобрать.
+        if f.stem in seen:
+            rep.errors.append(
+                f"{_rel_to(f, src_dir)}: тот же line_id уже пришёл как "
+                f"{_rel_to(seen[f.stem], src_dir)} — в пачке две версии дубля, "
+                f"оставьте одну")
+            continue
+        seen[f.stem] = f
+        # Черновиком поверх записанного финала — только осознанно: раскладка
+        # вытесняет мастер прежнего формата, то есть дубль актёра исчез бы с диска
+        # (шапка модуля обещает обратное: final автоматика не перезаписывает).
+        if status == STATUS_DRAFT:
+            mf = chapter_dir_by_id[ch_id] / "voice" / f"{lang}{MANIFEST_SUFFIX}"
+            prev = (load_yaml(mf).get("lines") or {}).get(f.stem) if mf.is_file() else None
+            if prev and prev.get("status") == STATUS_FINAL:
+                rep.errors.append(
+                    f"{_rel_to(f, src_dir)}: у реплики уже есть записанный дубль "
+                    f"(status: final) — черновик поверх него не кладём. Нужна "
+                    f"замена? Импортируйте как финал (без --draft) либо сначала "
+                    f"уберите строку из {mf.relative_to(root).as_posix()}")
+                continue
         per_chapter.setdefault(ch_id, []).append(f)
     if rep.errors:
         return rep    # ничего не раскладываем: половинчатый импорт хуже отказа
 
     for ch_id, takes in sorted(per_chapter.items()):
         for f in takes:
-            dest = root / "assets_src" / "voice" / lang / ch_id / (f.stem + f.suffix.lower())
+            ext = f.suffix.lower()
+            dest = root / "assets_src" / "voice" / lang / ch_id / (f.stem + ext)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(f, dest)
+            # Финал .opus поверх чернового .wav — обычный случай, и прежний мастер
+            # обязан уйти: иначе у line_id их два (см. _drop_stale_masters).
+            _drop_stale_masters(root, lang, f.stem, ext)
             rep.imported.append(dest.relative_to(root).as_posix())
 
         mf = chapter_dir_by_id[ch_id] / "voice" / f"{lang}{MANIFEST_SUFFIX}"
@@ -672,20 +738,9 @@ def _draft_translations(root: Path, lang: str, src_lang: str) -> dict[str, str]:
     загрузчик PO уже есть в loc-домене, свой парсер был бы его копией."""
     if lang == src_lang:
         return {}
-    from .loc.po import _load_translations
+    from .loc.po import load_translations
 
-    return {ctx: msgstr for ctx, (msgstr, _fuzzy) in _load_translations(root, lang).items()}
-
-
-def _drop_stale_masters(root: Path, lang: str, line_ids: list[str]) -> None:
-    """Убрать мастер того же дубля в другом формате: master_path берёт первое
-    расширение из MASTER_EXTS, поэтому оставленный .wav заглушал бы новый .opus —
-    и валидатор бы молчал, строка манифеста-то на месте."""
-    for lid in line_ids:
-        base = root / "assets_src" / "voice" / lang / lid[:4]
-        for ext in MASTER_EXTS:
-            if ext != TTS_MASTER_EXT:
-                (base / (lid + ext)).unlink(missing_ok=True)
+    return {ctx: msgstr for ctx, (msgstr, _fuzzy) in load_translations(root, lang).items()}
 
 
 def synth_drafts(root: Path, chapter_id: str, lang: str | None = None,
@@ -747,8 +802,9 @@ def synth_drafts(root: Path, chapter_id: str, lang: str | None = None,
             (takes / (lid + TTS_MASTER_EXT)).write_bytes(encode_opus(wav, enc))
             wav.unlink()
             rep.generated.append(lid)
-        # Раскладку мастеров, сверку с ledger, атомарность и запись манифестов
-        # делает импорт дублей — своего пути в assets_src у синтеза нет.
+        # Раскладку мастеров (включая вытеснение прежнего мастера в другом
+        # формате), сверку с ledger, атомарность и запись манифестов делает импорт
+        # дублей — своего пути в assets_src у синтеза нет.
         imported = import_takes(root, takes, lang, status=STATUS_DRAFT)
     finally:
         shutil.rmtree(stage, ignore_errors=True)
@@ -757,5 +813,4 @@ def synth_drafts(root: Path, chapter_id: str, lang: str | None = None,
         rep.generated.clear()      # импорт атомарен: не приписываем себе чего нет
         return rep
     rep.updated_manifests = imported.updated_manifests
-    _drop_stale_masters(root, lang, rep.generated)
     return rep

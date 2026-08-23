@@ -165,6 +165,51 @@ def test_import_is_atomic_on_bad_take(tmp_path, repo_root):
     assert not (root / "assets_src" / "voice").exists()
 
 
+def test_import_final_replaces_draft_master_in_other_format(tmp_path, repo_root):
+    """Финал в другом формате обязан вытеснить черновой мастер: master_path берёт
+    первое расширение из MASTER_EXTS, и оставленный .wav звучал бы вместо .opus."""
+    root = _mk_voice_root(tmp_path, repo_root)
+    _manifest(root, {"ch01_s010_0001": "draft"})
+    old_draft = _master(root, "ru", "ch01_s010_0001", ext=".wav")
+    takes = tmp_path / "takes"
+    takes.mkdir()
+    (takes / "ch01_s010_0001.opus").write_bytes(b"OggS-final")
+
+    rep = import_takes(root, takes, "ru")
+    assert not rep.errors
+    assert not old_draft.exists()
+    assert master_path(root, "ru", "ch01_s010_0001").suffix == ".opus"
+    assert validate(root).ok, validate(root).errors
+
+
+def test_import_rejects_two_versions_of_one_take(tmp_path, repo_root):
+    """Две версии одного дубля в пачке легли бы двумя мастерами одного line_id;
+    какая нужна — знает студия, поэтому отказ и ничего не разложено."""
+    root = _mk_voice_root(tmp_path, repo_root)
+    takes = tmp_path / "takes"
+    takes.mkdir()
+    (takes / "ch01_s010_0001.wav").write_bytes(b"riff")
+    (takes / "ch01_s010_0001.opus").write_bytes(b"OggS")
+
+    rep = import_takes(root, takes, "ru")
+    assert any("две версии дубля" in e for e in rep.errors)
+    assert not (root / "assets_src" / "voice").exists()
+
+
+def test_validate_two_masters_for_one_line_is_error(tmp_path, repo_root):
+    """Дубль, положенный руками рядом с прежним: сиротой он не считается (stem
+    объявлен), а конвейер споткнулся бы об него много позже — нужна адресная
+    ошибка здесь, с указанием, что удалить."""
+    root = _mk_voice_root(tmp_path, repo_root)
+    _manifest(root, {"ch01_s010_0001": "final"})
+    _master(root, "ru", "ch01_s010_0001", ext=".wav")
+    _master(root, "ru", "ch01_s010_0001", ext=".opus")
+
+    errs = [e for e in validate(root).errors if "ch01_s010_0001" in e]
+    assert len(errs) == 1 and "несколько мастеров" in errs[0]
+    assert ".opus" in errs[0] and ".wav" in errs[0]
+
+
 def test_release_gate_maps_holes_to_fail(tmp_path, repo_root):
     """Дыры в озвученной главе = FAIL релизного гейта (§4.9), драфты = WARN."""
     from vn.release import validate_release
@@ -511,3 +556,24 @@ def test_tts_say_end_to_end(tmp_path, repo_root):
     # стейджинг за собой убран: незамеченные wav-полуфабрикаты в .vncache — мусор,
     # который на следующем прогоне попал бы в импорт
     assert not list((root / voice.TTS_STAGE_REL).rglob("*"))
+
+
+def test_import_draft_never_destroys_a_recorded_final_take(tmp_path, repo_root):
+    """Раскладка вытесняет мастер прежнего формата, поэтому черновик поверх
+    записанного финала уничтожил бы дубль актёра на диске — а шапка модуля
+    обещает, что final автоматика не перезаписывает никогда. Отказ, а не догадка."""
+    root = _mk_voice_root(tmp_path, repo_root)
+    final = tmp_path / "takes_final"
+    final.mkdir()
+    (final / "ch01_s010_0001.wav").write_bytes(b"final-take")
+    assert voice.import_takes(root, final, "ru").errors == []
+    master = root / "assets_src" / "voice" / "ru" / "ch01" / "ch01_s010_0001.wav"
+    assert master.is_file()
+
+    draft = tmp_path / "takes_draft"
+    draft.mkdir()
+    (draft / "ch01_s010_0001.opus").write_bytes(b"tts-draft")
+    rep = voice.import_takes(root, draft, "ru", status=voice.STATUS_DRAFT)
+    assert any("уже есть записанный дубль" in e for e in rep.errors), rep.errors
+    assert master.read_bytes() == b"final-take", "дубль актёра затёрт черновиком"
+    assert not (master.with_suffix(".opus")).exists()
