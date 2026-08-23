@@ -333,14 +333,11 @@ def test_grant_notifies_player(repo_root):
     flow = (repo_root / "game" / "framework" / "00_core"
             / "030_flow.rpy").read_text(encoding="utf-8")
     assert "def _ach_text(" in flow and "def _notify_progress(" in flow
-    # Все точки выдачи проходят через уведомление, иначе часть ачивок молчит:
+    # Все точки выдачи проходят через _progress, иначе часть ачивок молчит:
     # три якоря (checkpoint / beat / chapter_done) и догон после загрузки
     # (recheck_triggers — переменная могла измениться в хвосте сцены).
-    assert flow.count("_notify_progress(") == 5      # 4 вызова + определение
-    assert flow.count("renpy.store.vn_ach.check(") == 4
-    # Галерейная половина обязана идти тем же вызовом: иначе её удаление никто
-    # не заметит, а ачивка с элементом галереи регулярно открываются одним якорем.
-    assert flow.count("renpy.store.vn_gal.check(") == 4
+    assert len(re.findall(r"(?<!notify)_progress\(", flow)) == 5   # 4 вызова + определение
+    assert flow.count("_notify_progress(") == 2                    # 1 вызов + определение
     assert flow.count("renpy.notify(") == 1, \
         "второй notify в тике затирает первый — игрок увидит только одно из двух"
     assert "def recheck_triggers(" in flow
@@ -350,3 +347,42 @@ def test_grant_notifies_player(repo_root):
     store = (repo_root / "game" / "framework" / "00_core"
              / "080_achievements.rpy").read_text(encoding="utf-8")
     assert "def names(" in store, "уведомление обязано показывать НАЗВАНИЕ, а не id"
+
+
+def test_progress_side_effects_go_through_one_replay_gate(repo_root):
+    """Реплей сцены не имеет права двигать прогресс — и гарантировать это обязана
+    конструкция, а не дисциплина автора нового якоря.
+
+    Движок изолирует СТОРЫ (renpy/game.py: call_replay -> StoreBackup +
+    clean_stores), но не persistent, а ачивки и галерея живут именно в нём.
+    Пока гейт стоял в vn.checkpoint, он не работал вовсе: метка
+    chNN_sNNN__replay зовёт не обвязку сцены, а сразу её тело, поэтому checkpoint
+    в реплее не вызывается — зато вызывается vn.beat() из тела, и пересмотр
+    кадра выдавал скрытую ачивку за непройденную ветку (ch01_s030: roof_alone).
+
+    Инвариант: vn_ach.check / vn_gal.check зовутся РОВНО из одного места, и это
+    место начинается с гейта in_replay()."""
+    flow = (repo_root / "game" / "framework" / "00_core"
+            / "030_flow.rpy").read_text(encoding="utf-8")
+    assert flow.count("renpy.store.vn_ach.check(") == 1, \
+        "выдача ачивок зовётся не из одной точки — гейт реплея снова обходится"
+    assert flow.count("renpy.store.vn_gal.check(") == 1, \
+        "разблокировка галереи зовётся не из одной точки"
+
+    body = flow.split("def _progress(", 1)[1].split("\n    def ", 1)[0]
+    code = [ln.strip() for ln in body.splitlines()
+            if ln.strip() and not ln.strip().startswith("#")]
+    # Первая исполняемая строка после докстринга — сам гейт.
+    tail = body.split('"""', 2)[-1]
+    first = next(ln.strip() for ln in tail.splitlines() if ln.strip())
+    assert first == "if in_replay():", \
+        f"первое действие _progress обязано быть гейтом реплея, а не {first!r}"
+    assert "return" in code[code.index("if in_replay():") + 1], \
+        "гейт обязан ВЫХОДИТЬ, а не просто ветвиться"
+    assert "renpy.store.vn_ach.check(" in body and "renpy.store.vn_gal.check(" in body
+
+    # Тело реплей-метки — то же, что у боевой сцены, иначе баг не воспроизводится
+    # и тест сторожит несуществующее.
+    emitter = (repo_root / "tools" / "vn" / "src" / "vn" / "content"
+               / "scenes.py").read_text(encoding="utf-8")
+    assert "__replay:" in emitter and "__body" in emitter

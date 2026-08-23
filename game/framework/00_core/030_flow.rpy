@@ -43,22 +43,41 @@ init -999 python in vn:
         ever = renpy.store.vn_story.ever_seen()
         if scene_id not in ever:
             ever[scene_id] = True
-        _notify_progress(renpy.store.vn_ach.check(scene_id=scene_id),
-                         renpy.store.vn_gal.check(scene_id=scene_id))
+        _progress({"scene_id": scene_id}, {"scene_id": scene_id})
 
     def beat(beat_id=None):
         """Мелкий якорь внутри сцены: триггер достижений/галереи и точка
         расширения для телеметрии/автотестов (фаза 2)."""
         if beat_id is not None:
-            _notify_progress(renpy.store.vn_ach.check(beat_id=beat_id),
-                             renpy.store.vn_gal.check(beat_id=beat_id))
+            _progress({"beat_id": beat_id}, {"beat_id": beat_id})
 
     def chapter_done(chapter_id):
         """Глава пройдена: якорь для галереи/достижений «за прохождение».
         Зовётся обвязкой финальной сцены главы (компилятор) и вручную не нужен."""
-        _notify_progress(
-            renpy.store.vn_ach.check(beat_id="chapter_done:%s" % chapter_id),
-            renpy.store.vn_gal.check(chapter_done=chapter_id))
+        _progress({"beat_id": "chapter_done:%s" % chapter_id},
+                  {"chapter_done": chapter_id})
+
+    def _progress(ach=None, gal=None):
+        """ЕДИНСТВЕННАЯ точка, где якорь превращается в прогресс: выдачу
+        достижений, разблокировку галереи и уведомление о них.
+
+        Гейт реплея стоит здесь, а не у каждого якоря по отдельности, и это
+        существенно. Движок изолирует СТОРЫ (StoreBackup в call_replay), но не
+        persistent — а ачивки и галерея живут именно в нём. Пока гейт стоял
+        только в checkpoint, метка chNN_sNNN__replay зовёт не обвязку сцены, а
+        сразу её тело, поэтому checkpoint в реплее не вызывается вовсе, зато
+        вызывается vn.beat() из тела — и пересмотр кадра выдавал скрытую ачивку
+        за ветку, которую игрок не проходил (ch01_s030: `$ vn.beat("roof_alone")`).
+        Тем же путём прогресс начислял и гейт `vn test revisit`, который
+        проигрывает КАЖДОЕ состояние входа.
+
+        Гейт у якоря — это правило, которое обязан помнить автор нового якоря;
+        гейт здесь — свойство конструкции. Структурный гард:
+        test_achievements::test_progress_side_effects_go_through_one_replay_gate."""
+        if in_replay():
+            return
+        _notify_progress(renpy.store.vn_ach.check(**(ach or {})),
+                         renpy.store.vn_gal.check(**(gal or {})))
 
     def recheck_triggers():
         """Догон триггеров, привязанных не к якорю, а к ПЕРЕМЕННОЙ.
@@ -69,8 +88,7 @@ init -999 python in vn:
         на входе в следующую сцену следующей сессии: after_load триггеры не гонял.
         Зовётся из label after_load (020_state.rpy) — единственная точка, где
         состояние приходит извне, а не из якоря."""
-        _notify_progress(renpy.store.vn_ach.check(),
-                         renpy.store.vn_gal.check())
+        _progress()
 
     def _notify_progress(granted, opened):
         """ОДНО уведомление на тик про ачивки и галерею.
