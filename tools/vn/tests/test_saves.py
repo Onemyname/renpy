@@ -281,3 +281,48 @@ def test_migration_result_that_is_not_json_is_written_and_logged(repo_root, monk
     assert st.run_migrations(1) == 2
     assert st.stores["g"].route == {"a", "b"}
     assert any("не сериализуется" in line for line in st.log)
+
+
+def test_docs_do_not_claim_that_underscore_vars_skip_the_save(repo_root):
+    """Правила «Ren'Py не кладёт в сейв переменные с `_`» НЕ существует.
+
+    rollback.get_roots() перебирает ever_been_changed всех store_dict'ов без
+    какой-либо фильтрации по имени; единственный фильтр по «_» в SDK —
+    loadsave.py, и он про имена СЛОТОВ. Проверяется это прямо здесь, на
+    фактическом сейве проекта: в корнях лежат store._vn_ap_shot и соседи.
+
+    Почему это важнее опечатки в документе: правило было НОРМАТИВНЫМ и повторено
+    в семи местах, то есть оно разрешало считать `_`-имена свободной scratch-зоной.
+    Обратная сторона («ничего сюжетного и никаких объектов в `_` лежать не
+    может») движком не обеспечена, а линтер её не проверяет — значит объект,
+    положенный в `_`-переменную, уедет в каждый сейв и сделает сейвы игроков
+    нечитаемыми при первом же переименовании класса."""
+    import io
+    import pickletools
+    import zipfile
+
+    fixture = repo_root / "ci" / "fixtures" / "saves" / "schema2-demo.save"
+    if not fixture.is_file():
+        pytest.skip("фикстуры сейв-корпуса нет")
+    with zipfile.ZipFile(fixture) as z:
+        ops = list(pickletools.genops(io.BytesIO(z.read("log"))))
+    roots = {a for _op, a, _pos in ops if isinstance(a, str) and a.startswith("store._")}
+    assert roots, ("в сейве нет ни одной `_`-переменной — либо фикстура сменилась, "
+                   "либо движок начал их фильтровать; проверьте утверждение заново")
+
+    # Ищем именно утверждение про «_»-префикс: «define не попадает в сейв» —
+    # правда и к делу не относится.
+    import re as _re
+
+    claim = _re.compile(
+        r'(?:`_`|"_"|underscore)[^\n]{0,120}'
+        r"(?:не кладёт в сейв|не попадают в сейв|не сохраняются в сейв|"
+        r"не пишется в сейв|не попадает в сейв)")
+    docs = [repo_root / "docs" / "ARCHITECTURE.md",
+            *sorted((repo_root / "docs" / "handbook").glob("*.md")),
+            *sorted((repo_root / "docs" / "conventions").glob("*.md"))]
+    guilty = [d.relative_to(repo_root).as_posix() for d in docs
+              if claim.search(d.read_text(encoding="utf-8"))]
+    assert not guilty, (
+        f"документы снова обещают несуществующее поведение движка: {guilty}. "
+        f"Факт: в сейве лежат {sorted(roots)[:3]}")
