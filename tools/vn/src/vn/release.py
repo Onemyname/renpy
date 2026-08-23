@@ -14,7 +14,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .content.compile import CHAPTER_DIR_RE, SCENE_YAML_RE
-from .repo import chapter_zones, git_sha, git_tag_exists, load_project, load_yaml, write_text_lf
+from .repo import (
+    chapter_zones,
+    git_sha,
+    git_tag_exists,
+    load_project,
+    load_yaml,
+    unshipped_chapters,
+    write_text_lf,
+)
 
 MANIFEST_REL = "ci/release-manifest.json"
 BUILD_INFO_REL = "game/build_id.json"
@@ -97,10 +105,18 @@ ID_REGISTRY_REL = "content/registry/id_registry.json"
 
 def _released_ids(root: Path) -> dict:
     """Текущие id по классам для штампа реестра (G7). Персонажи/переменные штампуются
-    только если есть хотя бы одна released-глава (иначе черновик не иммортализуем)."""
+    только если есть хотя бы одна released-глава (иначе черновик не иммортализуем).
+
+    Главы паков ВНЕ всех флейворов исключены: G7 защищает то, что уехало ИГРОКУ, а
+    такой контент не уезжает никому ни в одной сборке. Без вычета первый же
+    `vn release` навсегда вписал бы тестовые топологии графа (packs/qa_flow,
+    status: release по требованию гейта зрелости — ADR-0021 §6) в append-only
+    id_registry, и удаление QA-пака — штатная операция — стало бы красным линтом
+    «выпущенная сцена исчезла», снимаемым только ручной правкой реестра."""
+    unshipped = unshipped_chapters(root)
     chapters, scenes = [], []
     for ch_id, info in snapshot_content(root).items():
-        if info.get("status") == "release":
+        if info.get("status") == "release" and ch_id not in unshipped:
             chapters.append(ch_id)
             scenes.extend(info["scenes"])
     if not scenes:
@@ -115,7 +131,14 @@ def _released_ids(root: Path) -> dict:
     var_files = []
     if (root / "content" / "variables").is_dir():
         var_files += sorted((root / "content" / "variables").glob("*.vars.yaml"))
-    var_files += sorted((root / "content" / "chapters").glob("*/vars.yaml"))
+    # Переменные глав — по ЗОНАМ, а не только из content/chapters: сцены пака под
+    # G7 попадали, а его переменные — нет, хотя в сейве игрока они лежат ровно так
+    # же. Тот же обход, что у компилятора и графа (chapter_zones).
+    for _pack_id, base in chapter_zones(root):
+        for d in sorted(p for p in base.iterdir() if p.is_dir()):
+            m = CHAPTER_DIR_RE.match(d.name)
+            if m and f"ch{m.group(1)}" not in unshipped and (d / "vars.yaml").is_file():
+                var_files.append(d / "vars.yaml")
     for vf in var_files:
         doc = load_yaml(vf)
         store = doc.get("store")

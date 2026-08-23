@@ -825,3 +825,55 @@ def test_released_rpyc_lane_is_not_overwritten(tmp_path):
     assert reason and "1.0.0" in reason and "G6" in reason
     # Тег на ДРУГУЮ версию линию 1.0.0 не замораживает и наоборот.
     assert rpyc_lane_frozen(root, lane, "1.1.0") is None
+
+
+def _mk_zone_chapter(base, dirname, ch_id, scenes, status="release", store=None):
+    """Глава с декларациями сцен и (необязательно) своих переменных."""
+    d = base / dirname
+    (d / "scenes").mkdir(parents=True)
+    (d / "chapter.yaml").write_text(
+        f"schema: chapter@1\nid: {ch_id}\ntitle_key: meta.chapters.{ch_id}.title\n"
+        f"status: {status}\nentry_scene: {scenes[0]}\n"
+        f"scene_order: [{', '.join(scenes)}]\n", encoding="utf-8")
+    for sid in scenes:
+        (d / "scenes" / f"{sid}_probe.scene.yaml").write_text(
+            f"schema: scene@1\nid: {sid}\nexits: {{}}\n", encoding="utf-8")
+    if store:
+        (d / "vars.yaml").write_text(
+            f"schema: vars@1\nstore: {store}\nvars:\n  flag:\n    type: bool\n"
+            f"    default: false\n    doc: t\n    since: 1\n", encoding="utf-8")
+    return d
+
+
+def test_unshipped_pack_ids_are_never_stamped_as_released(tmp_path):
+    """G7 защищает то, что уехало ИГРОКУ. Пак вне всех флейворов не уезжает никому
+    ни в одной сборке — его id в append-only реестре быть не должно.
+
+    Иначе первый же `vn release` навсегда вписывает тестовые топологии графа
+    (packs/qa_flow: status обязан быть release, иначе гейт зрелости красит сборку
+    независимо от флейвора — ADR-0021 §6), и удаление QA-пака — штатная операция —
+    даёт красный `vn content lint` «выпущенная сцена исчезла», снимаемый только
+    ручной правкой append-only файла.
+
+    Вторая половина инварианта не менее важна: пак, который В флейворе
+    (ep_beach), обязан штамповаться — вместе со своими переменными, которые
+    раньше выпадали из сети, хотя сцены того же пака в неё попадали."""
+    from vn.release import _released_ids
+
+    root = _mk_root(tmp_path)
+    _mk_zone_chapter(root / "content" / "chapters", "ch01_core", "ch01", ["s010"],
+                store="ch01")
+    _mk_zone_chapter(root / "packs" / "ep_beach" / "chapters", "ch90_beach", "ch90",
+                ["s010"], store="ch90")
+    _mk_zone_chapter(root / "packs" / "qa_flow" / "chapters", "ch70_diamond", "ch70",
+                ["s010", "s020"], store="ch70")
+
+    ids = _released_ids(root)
+    assert ids["chapters"] == ["ch01", "ch90"], (
+        "глава пака вне флейворов попала под G7 — её id станет неизменяемым")
+    assert ids["scenes"] == ["ch01_s010", "ch90_s010"]
+    assert "ch70.flag" not in ids["vars"]
+    # Пак В флейворе — штампуется целиком, включая переменные (раньше терялись).
+    assert "ch90.flag" in ids["vars"], (
+        "переменные поставляемого пака остались без сети G7, хотя его сцены — нет")
+    assert "ch01.flag" in ids["vars"]
