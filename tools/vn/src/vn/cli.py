@@ -1885,6 +1885,7 @@ def test_deck_kit(timeout_s: int):
     окружений, машинную сводку (в т.ч. кегли в ФИЗИЧЕСКИХ пикселях Deck) и
     чек-лист, построенный из docs/handbook/43-steam-qa.md."""
     from .deckkit import KIT_REL, QA_DOC_REL, build_summary, parse_checklist, write_kit
+    from .qa import read_run, run_failures
 
     root = _root()
     if not (root / "game" / "generated" / "manifest.json").is_file():
@@ -1902,6 +1903,7 @@ def test_deck_kit(timeout_s: int):
     if not screens:
         _fail("content/ui/screens.yaml пуст — комплекту приёмки нечего снимать")
     shots: dict[str, list[Path]] = {}
+    results: dict[str, str] = {}
     for variant, env_variant in (("deck", "steam_deck medium touch"),
                                  ("big_picture", "steam_big_picture")):
         out = root / ".vncache" / f"deck-kit-{variant}"
@@ -1910,8 +1912,20 @@ def test_deck_kit(timeout_s: int):
             {"VN_AUTOPILOT_PICKS": "0", "VN_AUTOPILOT_SCREENS": screens,
              "VN_AUTOPILOT_LANG": "@source", "RENPY_VARIANT": env_variant},
             timeout_s)
-        if timed_out or rc != 0:
-            _fail(f"прогон в варианте {env_variant!r} не завершился (код {rc})")
+        # Общий контракт прогона, а не самодельная проверка по коду возврата.
+        # Код возврата у ПРОВАЛЬНОГО прогона нулевой: autopilot_finish заканчивает
+        # работу через renpy.quit(save=False), то есть QuitException(status=0).
+        # Значит `rc != 0` не ловит ни FAIL из RESULT.txt, ни traceback — а
+        # комплект приёмки после этого печатал в чек-лист литеральное «OK».
+        # Чек-лист для живого устройства: строка «OK», которой никто не проверял,
+        # хуже отсутствующей.
+        art = read_run(root, out)
+        fails = run_failures(art, rc, timed_out, timeout_s)
+        if fails:
+            if art.traceback:
+                click.secho(art.traceback[-1200:], fg="red")
+            _fail(f"прогон в варианте {env_variant!r}: " + "; ".join(fails))
+        results[variant] = art.result or "нет RESULT.txt"
         shots[variant] = sorted(out.glob("*.png"))
         if not shots[variant]:
             _fail(f"прогон {variant} не дал ни одного скриншота")
@@ -1936,8 +1950,11 @@ def test_deck_kit(timeout_s: int):
     automated.append(("релизный гейт (public)",
                       "OK" if ok else f"{len(fails)} FAIL — {fails[0]}"))
     for variant, files in sorted(shots.items()):
+        # Вердикт — ФАКТИЧЕСКИЙ из RESULT.txt, а не литерал: чек-лист уезжает
+        # человеку с устройством в руках, и строка «OK», которой никто не
+        # проверял, хуже отсутствующей.
         automated.append((f"прогон автопилота [{variant}]",
-                          f"{len(files)} скриншотов, вердикт OK"))
+                          f"{len(files)} скриншотов, {results.get(variant, '?')}"))
 
     written = write_kit(root, parse_checklist(doc), summary, shots, automated)
     items = parse_checklist(doc)

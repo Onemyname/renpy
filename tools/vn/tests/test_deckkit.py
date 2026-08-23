@@ -93,3 +93,27 @@ def test_write_kit_is_idempotent(tmp_path):
     assert (kit / "screens" / "deck" / "shot000.png").is_file()
     assert sorted(written) == ["checklist.md", "screens/deck/shot000.png", "summary.json"]
     assert len(list((kit / "screens" / "deck").iterdir())) == 1
+
+
+def test_deck_kit_checks_the_run_verdict_not_just_the_exit_code(repo_root):
+    """Комплект приёмки не имеет права писать «OK», не прочитав RESULT.txt.
+
+    Код возврата у ПРОВАЛЬНОГО прогона нулевой: vn_qa.autopilot_finish заканчивает
+    работу через renpy.quit(save=False), то есть QuitException(status=0)
+    (renpy/bootstrap.py: sys.exit(e.status)). Проверка «rc != 0» не ловит ни FAIL
+    из RESULT.txt, ни traceback — а дальше в чек-лист подставлялся ЛИТЕРАЛ
+    «вердикт OK». Чек-лист уезжает человеку с устройством в руках; строка «OK»,
+    которой никто не проверял, хуже отсутствующей.
+
+    Проверяется по исходнику команды: она обязана пользоваться общим контрактом
+    прогона (read_run/run_failures), тем же, что test screens/paths/revisit."""
+    src = (repo_root / "tools" / "vn" / "src" / "vn" / "cli.py").read_text(
+        encoding="utf-8")
+    body = src.split('@test.command("deck-kit")', 1)[1].split("\n@test.command", 1)[0]
+
+    assert "read_run(" in body and "run_failures(" in body, \
+        "прогоны комплекта проверяются мимо общего контракта"
+    assert "вердикт OK" not in body, "в чек-лист подставляется литеральный вердикт"
+    assert "art.result" in body, "фактический вердикт прогона не читается"
+    # Гейт не должен опираться ТОЛЬКО на код возврата.
+    assert "rc != 0" not in body or "run_failures" in body
