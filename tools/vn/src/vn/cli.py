@@ -1479,7 +1479,7 @@ def voice_import(src_dir: Path, lang: str, draft: bool):
 
 
 @voice.command("tts")
-@click.argument("chapter")
+@click.argument("chapter", required=False)
 @click.option("--lang", default=None,
               help="Язык дублей (по умолчанию — исходный язык проекта из loc.yaml).")
 @click.option("--char", default=None, help="Только реплики этого персонажа.")
@@ -1496,9 +1496,12 @@ def voice_import(src_dir: Path, lang: str, draft: bool):
                    "черновиков. Реплики status: final не трогаются никогда.")
 @click.option("--allow-download", is_flag=True,
               help="Разрешить скачать модель голоса piper в .vncache/piper-voices.")
-def voice_tts(chapter: str, lang: str | None, char: str | None, backend: str | None,
-              voice_name: str | None, rate: float | None, only_missing: bool,
-              allow_download: bool):
+@click.option("--check-backend", is_flag=True,
+              help="Только проверить, что TTS-бэкенд доступен и голос для языка "
+                   "разрешается. Реплики не трогаются, глава не нужна.")
+def voice_tts(chapter: str | None, lang: str | None, char: str | None,
+              backend: str | None, voice_name: str | None, rate: float | None,
+              only_missing: bool, allow_download: bool, check_backend: bool):
     """TTS-черновики непокрытых реплик главы: озвученный играбельный билд до записи актёров.
 
     Дубли помечаются status: draft (WARN релизного гейта) и лежат в общей мастер-зоне;
@@ -1507,6 +1510,29 @@ def voice_tts(chapter: str, lang: str | None, char: str | None, backend: str | N
     from .voice import TTS_DEFAULT_RATE, VoiceError, synth_drafts
 
     root = _root()
+    if check_backend:
+        # Проверка ТУЛЧЕЙНА, а не контента. Гейт «команда честно падает без
+        # piper» раньше стоял на `vn voice tts ch01 --regenerate-drafts`, но
+        # synth_drafts резолвит бэкенд ПОСЛЕ отбора реплик: реплики со
+        # status: final пропускаются безусловно, а на пустом списке функция
+        # выходит раньше резолва и возвращает 0. То есть гейт держался на том,
+        # что в ch01/ru все дубли черновые, и стал бы вечно красным в день, когда
+        # главу озвучат актёры. Здесь резолв зовётся напрямую и от контента не
+        # зависит вовсе.
+        from .loc.po import source_language
+        from .voice import resolve_tts
+
+        try:
+            tts = resolve_tts(root, lang or source_language(root).code, backend=backend,
+                              voice=voice_name, rate=rate or TTS_DEFAULT_RATE,
+                              allow_download=allow_download)
+        except (VoiceError, LocError) as e:
+            _fail(str(e))
+        click.secho(f"TTS доступен: бэкенд {tts.backend}, голос {tts.voice}",
+                    fg="green")
+        return
+    if not chapter:
+        _fail("укажите главу (vn voice tts chNN) или --check-backend")
     try:
         rep = synth_drafts(root, chapter, lang=lang, char=char, backend=backend,
                            voice=voice_name,

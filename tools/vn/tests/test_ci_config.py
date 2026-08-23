@@ -429,3 +429,26 @@ def test_reports_dir_is_ignored_by_git(repo_root):
         if created:
             probe.unlink()
     assert rc == 0, "reports/ не игнорируется git — отчёты уедут в чужой коммит"
+
+
+def test_toolchain_gate_does_not_depend_on_content_state(repo_root):
+    """Гейт «команда честно падает без тулчейна» обязан проверять ТУЛЧЕЙН.
+
+    Раньше он звал `vn voice tts ch01 --regenerate-drafts` и ждал ненулевого
+    кода. Но synth_drafts резолвит бэкенд ПОСЛЕ отбора реплик: строки со
+    status: final пропускаются безусловно, а на пустом списке функция выходит
+    раньше резолва — exit 0, то есть must_fail объявил бы «команда молчит».
+    Гейт держался ровно на том, что в ch01/ru все дубли черновые, и стал бы
+    вечно красным в день, когда главу озвучат актёры: зелёный CI зависел от
+    состояния контента, а не от окружения."""
+    ci = (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "vn voice tts --check-backend" in ci, \
+        "гейт тулчейна снова зовёт TTS по главе"
+    for banned in ("must_fail piper vn voice tts ch", "--regenerate-drafts"):
+        assert banned not in ci, f"в гейте осталась привязка к контенту: {banned}"
+
+    # И сама команда обязана существовать без обязательной главы.
+    cli = (repo_root / "tools" / "vn" / "src" / "vn" / "cli.py").read_text(
+        encoding="utf-8")
+    assert '@click.argument("chapter", required=False)' in cli
+    assert '"--check-backend"' in cli

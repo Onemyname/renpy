@@ -125,7 +125,11 @@ jobs:
           }
           must_fail RAPT vn release android status
           must_fail RAPT vn release android build --timeout 1
-          must_fail piper vn voice tts ch01 --backend piper --regenerate-drafts
+          # Резолв бэкенда, а НЕ прогон по главе: synth_drafts выбирает бэкенд
+          # ПОСЛЕ отбора реплик и на пустом списке выходит раньше него с кодом 0.
+          # Гейт держался на том, что в ch01/ru все дубли черновые, и стал бы
+          # вечно красным в день, когда главу озвучат актёры.
+          must_fail piper vn voice tts --check-backend --backend piper
 
       - name: Свежесть генерата (режим без записи, G1)
         run: xvfb-run -a vn content compile --check
