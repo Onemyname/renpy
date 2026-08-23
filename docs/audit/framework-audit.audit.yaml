@@ -354,7 +354,12 @@ items:
     - 'сценарий отказа: Перевести все строки content/chapters/ch01_awakening/voice/ru.voice.yaml в
       `status: final` (нормальный шаг после записи актёров) и запушить. Шаг «Отсутствие внешних тулчейнов
       диагностируется честно» падает с «::error::«vn voice tts ch01 …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/cli.py
+    - .github/workflows/ci.yml
+    tests:
+    - tools/vn/tests/test_ci_config.py::test_toolchain_gate_does_not_depend_on_content_state
   FWA-021:
     title: (P2) ARCHITECTURE.md объявляет три обещания ADR-0006 «superseded», сам ADR-0006 не тронут
       и остаётся в статусе «принято»
@@ -366,7 +371,12 @@ items:
     - 'сценарий отказа: Читатель открывает ADR-0006 (принято) и планирует включить `alpha: true` для
       VFX-секвенции, рассчитывая на обещанную side-mask-ветку `alphaextract` + `hstack`. Такой ветки
       в коде нет вовсе (`vn assets video seq` склеивает кадры в мастер и …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - docs/adr/0006-daz-comfyui-video-pipeline.md
+    - docs/ARCHITECTURE.md
+    tests:
+    - tools/vn/tests/test_docs_refs.py::test_audit_trackers_reference_real_files_and_tests
   FWA-022:
     title: '(P2) ADR-0021 в разделе «Последствия» утверждает обратное тому, что реализовано: переменные
       тестового пака НЕ уезжают в сейв (RTL-046 закрыт в этом же …'
@@ -379,7 +389,12 @@ items:
     - 'сценарий отказа: Читатель ADR-0021 (единственного «контракта» этой фичи) планирует добавить
       пятую тестовую главу и, доверяя разделу «Последствия», закладывает в план миграцию сейвов /
       бамп `save_schema`, потому что ADR говорит, что переменные пака уезжают …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - docs/adr/0021-story-flow-projections.md
+    - docs/audit/reclaiming-competitive.audit.yaml
+    tests:
+    - tools/vn/tests/test_release.py::test_unshipped_pack_vars_are_excluded_from_every_flavor
   FWA-023:
     title: (P2) Трассировка аудита ссылается на два несуществующих теста — сеть «CLOSED подтверждён
       тестом» дырявая с рождения
@@ -392,7 +407,11 @@ items:
     - 'сценарий отказа: Пункт аудита закрыт «подтверждён тестом X». Кто-то ломает поведение, тест
       X (под своим настоящим именем) краснеет и его чинят/удаляют — а ссылка в трекере продолжает
       указывать в пустоту и выглядит достоверной. Обратный сценарий: ревьюер …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - docs/audit/reclaiming-competitive.audit.yaml
+    tests:
+    - tools/vn/tests/test_docs_refs.py::test_audit_trackers_reference_real_files_and_tests
   FWA-024:
     title: (P2) snapshot() протаскивает в состояние миграций движковую переменную PY2 из minstore
     category: correctness
@@ -403,7 +422,13 @@ items:
     - 'сценарий отказа: `cat .vncache/corpus/state.json` -> первые ключи `"ch01.PY2": false`, `"g.PY2":
       false`. Механизм: любой named store, созданный `init python in g:`, получает копию renpy.minstore.__dict__,
       где PY2=False; snapshot() его не фильтрует. …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/engine_compat/000_compat.rpy
+    - game/framework/00_core/020_state.rpy
+    - ci/fixtures/replays/mira-casual-route.vnrec.json
+    tests:
+    - tools/vn/tests/test_saves.py::test_snapshot_excludes_engine_names
   FWA-025:
     title: (P2) Миграция, ТРОНУВШАЯ dict с не-строковыми ключами, записывает его обратно со строковыми
       — без предупреждения
@@ -415,7 +440,13 @@ items:
     - 'сценарий отказа: 1) Объявить в content/variables/economy.vars.yaml `day_log: {type: dict, default:
       {}}`, в сценах писать `$ g.day_log[g.day] = ''visited''` (g.day — int). 2) Выпустить схему 3
       с миграцией 0003, которая эту переменную дополняет: …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/compile.py
+    - game/framework/00_core/020_state.rpy
+    tests:
+    - tools/vn/tests/test_saves.py::test_non_string_dict_keys_are_refused_by_the_compiler
+    - tools/vn/tests/test_saves.py::test_migration_warns_when_it_normalises_dict_keys
   FWA-026:
     title: (P2) `$ _chapters = vn_registry.chapters()` в label start запекает копию Chapter Registry
       в каждый сейв
@@ -427,7 +458,11 @@ items:
     - 'сценарий отказа: 1) `python -c "import zipfile,pickletools,io; z=zipfile.ZipFile(''ci/fixtures/saves/schema2-demo.save'');
       print([a for _,a,_ in pickletools.genops(io.BytesIO(z.read(''log'')))][:80])"` -> в корнях присутствует
       ''store._chapters'' и следом весь …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/030_flow.rpy
+    tests:
+    - tools/vn/tests/test_saves.py::test_start_label_does_not_bake_the_registry_into_every_save
   FWA-027:
     title: (P2) compatible()/plan() пересчитываются линейным сканом матрицы конфликтов на каждой перерисовке
       экрана и на каждый пункт меню
@@ -440,7 +475,11 @@ items:
     - 'сценарий отказа: Сгенерировать главу на 50 сцен с развилкой через каждые две (та же топология,
       что в `test_flow.py::test_five_hundred_scenes_stay_in_seconds`), отметить 10 целей на карте,
       открыть карту и подвигать фокус — экран перестраивается на каждой …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/100_story_graph.rpy
+    tests:
+    - tools/vn/tests/test_ui_panels.py::test_conflict_lookup_and_plan_are_not_recomputed_per_frame
   FWA-028:
     title: (P2) Гейты рельсы + предикция ShowMenu заставляют КАЖДЫЙ экран игрового меню платить полный
       обход реестра галереи
@@ -453,7 +492,13 @@ items:
     - 'сценарий отказа: Целевой масштаб раздела 3 (20+ глав, сотни сцен): VN_GALLERY ~300 элементов
       в 4 категориях, часть из DLC-паков, прохождение накопило несколько тысяч ключей в persistent._seen_images.
       Открыть игровое меню и щёлкнуть «Настройки». На эту одну …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/090_gallery.rpy
+    - game/framework/00_core/080_achievements.rpy
+    - game/framework/20_ui/screens/core_screens.rpy
+    tests:
+    - tools/vn/tests/test_ui_panels.py::test_navigation_rail_gates_are_cheap_predicates
   FWA-029:
     title: (P2) K_PAGEUP/K_PAGEDOWN на карте главы перехвачены зумом и не доходят до вьюпорта с pagekeys
     category: dx
@@ -465,7 +510,11 @@ items:
     - 'сценарий отказа: Десктоп, клавиатура. Игра → Карта главы → глава с графом выше окна (например
       QA-T2 с семью узлами при масштабе ×1.00). Нажать PageDown: вместо прокрутки полотна вниз меняется
       масштаб. Прокрутить полотно клавиатурой нечем — стрелки уводят …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/20_ui/screens/story_flow.rpy
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_chapter_map_zoom_does_not_steal_the_viewport_page_keys
   FWA-030:
     title: (P2) Каталог reports/ не отслеживается и не в .gitignore — уедет в чужой коммит
     category: dx
@@ -493,7 +542,11 @@ items:
     - 'сценарий отказа: Смоделировать сбой дампа: временно переименовать `defined_screens` в engine_compat
       (или сделать каталог .vncache/screens недоступным на запись после старта). Прогон доходит до
       vn_end_of_content, RESULT.txt = OK, screens.json отсутствует. …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/cli.py
+    tests:
+    - tools/vn/tests/test_qa.py::test_screens_gate_fails_when_the_tour_did_not_report
   FWA-032:
     title: (P2) play-оператор сцены эмитится без if_changed — один и тот же трек в соседних сценах
       перезапускается с начала на каждом переходе
@@ -505,7 +558,12 @@ items:
     - 'сценарий отказа: 1) Объявить bgm-трек `calm_theme` в content/audio/bgm.yaml. 2) Прописать `music:
       bgm/calm_theme` в scene.yaml двух подряд идущих сцен — s010_intro и s020_school_gate главы ch01
       (переход ch01_s010 exit `gate` → ch01_s020 уже есть в …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/scenes.py
+    - docs/handbook/23-audio.md
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_play_operator_does_not_restart_the_same_track
   FWA-033:
     title: (P2) MENU_MARKER_LOOKBACK объявлен «единственным местом» правила, но loc/keys.py его не
       использует — правило продублировано трижды
@@ -517,7 +575,11 @@ items:
     - 'сценарий отказа: Изменить `MENU_MARKER_LOOKBACK` на 5 (легитимная правка: между маркером и
       `menu` захотели поставить блок комментария) и добавить в авторскую сцену 4 строки комментария
       между `$ vn_menu = "ch01_s020_m001"` и `menu:`. Тогда `vn loc keys` …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/loc/keys.py
+    tests:
+    - tools/vn/tests/test_loc.py::test_menu_marker_rule_lives_in_one_place
   FWA-034:
     title: (P2) Пакет языка можно создать с кодом исходного языка — рантайм-реестр получает дубликат
       «Русский», который никуда не переключает
@@ -529,7 +591,13 @@ items:
     - 'сценарий отказа: vn loc add ru --name Русский (команда проходит: код валиден, не "pseudo")
       → vn loc extract → vn loc import → vn build → запустить игру → Настройки → в списке языков две
       строки «Русский», обе подсвечены как выбранные, вторая ничего не …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/loc/po.py
+    - loc/po/en/common.po
+    - loc/po/de/common.po
+    tests:
+    - tools/vn/tests/test_loc.py::test_source_language_cannot_get_a_translation_package
   FWA-035:
     title: '(P2) Бюджет baseline_rss_mb молча не проверяется: perf.json не создаётся, а «нет числа»
       трактуется как «в рамках»'
@@ -541,7 +609,14 @@ items:
     - 'сценарий отказа: vn build && vn test smoke --picks 0,0 на Windows: команда печатает cold start,
       НЕ печатает «пик RSS игры» и завершается зелёным. Поднять в project.yaml budgets.baseline_rss_mb
       до 1 МБ и повторить — прогон всё равно зелёный, потому что …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/030_flow.rpy
+    - tools/vn/src/vn/release.py
+    - tools/vn/src/vn/cli.py
+    tests:
+    - tools/vn/tests/test_release.py::test_unmeasured_runtime_budget_is_a_failure_not_silence
+    - tools/vn/tests/test_platform.py::test_peak_rss_is_measured_on_every_platform
   FWA-036:
     title: (P2) Релизный гейт теряет проверку озвучки целиком, если ledger главы не собран
     category: quality-gate
@@ -552,4 +627,10 @@ items:
     - 'сценарий отказа: Удалить loc/ledger/ch01.json (или добавить главу с voice/-манифестом, для
       которой шард ещё не сгенерирован) и выполнить `vn release validate --flavor public`: в выводе
       нет ни одной строки «озвучка: …», гейт зелёный. `vn voice validate` при …'
-    status: OPEN
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/voice.py
+    - tools/vn/src/vn/release.py
+    tests:
+    - tools/vn/tests/test_voice.py::test_missing_ledger_is_an_error_not_a_warning
+    - tools/vn/tests/test_voice.py::test_release_gate_never_drops_the_voice_line
