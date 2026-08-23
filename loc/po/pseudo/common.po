@@ -107,6 +107,26 @@ msgid "Глава 1. Пробуждение"
 msgstr "[[Глąвą 1. Прǫбųждęнįę~~~~~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:meta.chapters.ch70.title"
+msgid "QA-T1: ромбы"
+msgstr "[[QÅ-T1: рǫмбы~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch71.title"
+msgid "QA-T2: взаимоисключающие концовки"
+msgstr "[[QÅ-T2: взąįмǫįсключąющįę кǫнцǫвкį~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch72.title"
+msgid "QA-T3: гейты по переменным"
+msgstr "[[QÅ-T3: гęйты пǫ пęрęмęнным~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch73.title"
+msgid "QA-T4: пропускаемые сцены"
+msgstr "[[QÅ-T4: прǫпųскąęмыę сцęны~~~~~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:meta.chapters.ch90.title"
 msgid "Эпизод: Пляж (DLC)"
 msgstr "[[Эпįзǫд: Пляж (DLC)~~~~~~~]"
@@ -130,6 +150,41 @@ msgstr "[[Пляжный эпįзǫд~~~~~]"
 msgctxt "string:meta.packs.nsfw.title"
 msgid "Контент 18+"
 msgstr "[[Кǫнтęнт 18+~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.packs.qa_flow.title"
+msgid "QA: топологии графа"
+msgstr "[[QÅ: тǫпǫлǫгįį грąфą~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s010.title"
+msgid "Утро перед школой"
+msgstr "[[Ųтрǫ пęрęд шкǫлǫй~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s020.title"
+msgid "У школьных ворот"
+msgstr "[[Ų шкǫльных вǫрǫт~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s030.title"
+msgid "Крыша на закате"
+msgstr "[[Крышą нą зąкąтę~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch90_s010.title"
+msgid "Берег"
+msgstr "[[Бęрęг~~]"
+
+#. UI/мета-строка
+msgctxt "string:qa.flow.cluster.merge"
+msgid "Слияние"
+msgstr "[[Слįянįę~~]"
+
+#. UI/мета-строка
+msgctxt "string:qa.flow.cluster.split"
+msgid "Развилка"
+msgstr "[[Рąзвįлкą~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.ach.empty"
@@ -170,6 +225,73 @@ msgstr "[[[done] įз [total]~~~~~~]"
 msgctxt "string:ui.chapters.dlc"
 msgid "DLC"
 msgstr "[[DLC~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.clear_targets"
+msgid "Сбросить цели"
+msgstr "[[Сбрǫсįть цęлį~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.conflict_with"
+msgid "Несовместимо с: [list]"
+msgstr "[[Нęсǫвмęстįмǫ с: [list]~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.empty"
+msgid "Карта этой главы пока пуста."
+msgstr "[[Кąртą этǫй глąвы пǫкą пųстą.~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.ending"
+msgid "Финал"
+msgstr "[[Фįнąл~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.open"
+msgid "Карта главы"
+msgstr "[[Кąртą глąвы~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.plan_many"
+msgid "Цели несовместимы между собой: понадобится прохождений — [n]."
+msgstr ""
+"[[Цęлį нęсǫвмęстįмы мęждų сǫбǫй: пǫнąдǫбįтся прǫхǫждęнįй — "
+"[n].~~~~~~~~~~~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.plan_one"
+msgid "Все цели ([n]) достижимы за одно прохождение."
+msgstr "[[Всę цęлį ([n]) дǫстįжįмы зą ǫднǫ прǫхǫждęнįę.~~~~~~~~~~~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.replay"
+msgid "Переиграть"
+msgstr "[[Пęрęįгрąть~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.replay_variant"
+msgid "Вариант"
+msgstr "[[Вąрįąнт~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.target_add"
+msgid "Отметить целью"
+msgstr "[[Ǫтмęтįть цęлью~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.target_remove"
+msgid "Снять отметку"
+msgstr "[[Снять ǫтмęткų~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.title"
+msgid "Карта главы"
+msgstr "[[Кąртą глąвы~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.zoom"
+msgid "Масштаб"
+msgstr "[[Мąсштąб~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.common.back"
@@ -415,6 +537,16 @@ msgid "Увеличить"
 msgstr "[[Ųвęлįчįть~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.guide.blocks"
+msgid "Закроет цель: [list]"
+msgstr "[[Зąкрǫęт цęль: [list]~~~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.guide.reason"
+msgid "Ведёт к цели: [list]"
+msgstr "[[Вęдёт к цęлį: [list]~~~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.history.empty"
 msgid "История пуста"
 msgstr "[[Įстǫрįя пųстą~~~~~]"
@@ -528,6 +660,11 @@ msgstr "[[Пǫлный экрąн~~~~]"
 msgctxt "string:ui.prefs.graphics"
 msgid "Качество текстур"
 msgstr "[[Кąчęствǫ тęкстųр~~~~~~]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.guide"
+msgid "Подсказки гайда"
+msgstr "[[Пǫдскąзкį гąйдą~~~~~~]"
 
 #. UI/мета-строка
 msgctxt "string:ui.prefs.language"

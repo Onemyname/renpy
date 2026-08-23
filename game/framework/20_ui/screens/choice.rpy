@@ -54,7 +54,21 @@ screen choice(items):
                 side "l c r":
                     spacing gui.sp_m
                     text "[_num]" style "choice_num"
-                    text vn_loc.choice_text(vn_menu, idx, i.caption) style "choice_button_text"
+                    # Встроенный гайд (ADR-0021): вторая строка под вариантом
+                    # появляется, только если игрок отметил цели на карте главы
+                    # и включил подсказки. Текст даёт стор из графа — экран не
+                    # знает ни сюжета, ни того, «какой вариант правильный».
+                    $ _note = vn_story.guide_note(vn_menu, idx)
+                    vbox:
+                        # style_prefix "choice" иначе подставил бы сюда
+                        # choice_vbox — стиль ВНЕШНЕГО стека с его xpos/ypos.
+                        style "vbox"
+                        spacing gui.sp_xs - 2
+                        text vn_loc.choice_text(vn_menu, idx, i.caption) style "choice_button_text"
+                        if _note:
+                            text _note[1]:
+                                style ("choice_guide_goal" if _note[0] == "goal"
+                                       else "choice_guide_block")
                     add _mark yalign 0.5
             # Горячие клавиши 1–9 — аффорданс клавиатуры/геймпада
             if _num <= 9:
@@ -101,3 +115,15 @@ style choice_button_text:
     line_spacing gui.sp_xs + 1
     color "#e4e4e7"
     hover_color gui.selected_color
+
+# Подсказки гайда: цель — акцентом, отклонение от плана — приглушённо. Оба
+# варианта мельче основного текста: подсказка не должна перебивать сам выбор.
+style choice_guide_goal:
+    font gui.interface_semibold_font
+    size gui.tiny_text_size
+    color gui.accent_color
+
+style choice_guide_block:
+    font gui.interface_text_font
+    size gui.tiny_text_size
+    color gui.faint_color

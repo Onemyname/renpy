@@ -219,8 +219,8 @@ msgid ""
 "Сохранение сделано в более новой версии игры. Обновите игру, чтобы "
 "продолжить."
 msgstr ""
-"Der Spielstand stammt aus einer neueren Version des Spiels. Aktualisieren "
-"Sie das Spiel, um fortzufahren."
+"Der Spielstand stammt aus einer neueren Version des Spiels. Aktualisieren Sie"
+" das Spiel, um fortzufahren."
 
 #. UI/мета-строка
 msgctxt "string:meta.packs.nsfw.title"
@@ -501,8 +501,8 @@ msgid ""
 "Вы дошли до края написанной истории: продолжение этой ветки появится в "
 "следующем обновлении."
 msgstr ""
-"Du hast den Rand der geschriebenen Geschichte erreicht: Dieser Zweig geht in"
-" einem kommenden Update weiter."
+"Du hast den Rand der geschriebenen Geschichte erreicht: Dieser Zweig geht in "
+"einem kommenden Update weiter."
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.unavailable_missing"
@@ -524,8 +524,8 @@ msgid ""
 "Сцена не смогла продолжиться. Похоже, сохранение сделано в несовместимой "
 "версии игры."
 msgstr ""
-"Die Szene konnte nicht fortgesetzt werden. Der Spielstand stammt offenbar "
-"aus einer inkompatiblen Version des Spiels."
+"Die Szene konnte nicht fortgesetzt werden. Der Spielstand stammt offenbar aus"
+" einer inkompatiblen Version des Spiels."
 
 #. UI/мета-строка
 msgctxt "string:ui.prefs.graphics"
@@ -656,6 +656,145 @@ msgstr "Erreiche das Dach, ohne jemandem zu begegnen"
 msgctxt "string:ach.roof_alone.name"
 msgid "Один над городом"
 msgstr "Allein über der Stadt"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch70.title"
+msgid "QA-T1: ромбы"
+msgstr "QA-T1: Rauten"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch71.title"
+msgid "QA-T2: взаимоисключающие концовки"
+msgstr "QA-T2: sich ausschließende Enden"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch72.title"
+msgid "QA-T3: гейты по переменным"
+msgstr "QA-T3: Variablen-Gates"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch73.title"
+msgid "QA-T4: пропускаемые сцены"
+msgstr "QA-T4: überspringbare Szenen"
+
+#. UI/мета-строка
+msgctxt "string:meta.packs.qa_flow.title"
+msgid "QA: топологии графа"
+msgstr "QA: Graph-Topologien"
+
+#. UI/мета-строка
+msgctxt "string:qa.flow.cluster.merge"
+msgid "Слияние"
+msgstr "Zusammenführung"
+
+#. UI/мета-строка
+msgctxt "string:qa.flow.cluster.split"
+msgid "Развилка"
+msgstr "Abzweigung"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.clear_targets"
+msgid "Сбросить цели"
+msgstr "Ziele zurücksetzen"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.conflict_with"
+msgid "Несовместимо с: [list]"
+msgstr "Nicht vereinbar mit: [list]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.empty"
+msgid "Карта этой главы пока пуста."
+msgstr "Die Karte dieses Kapitels ist noch leer."
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.ending"
+msgid "Финал"
+msgstr "Ende"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.open"
+msgid "Карта главы"
+msgstr "Kapitelkarte"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.plan_many"
+msgid "Цели несовместимы между собой: понадобится прохождений — [n]."
+msgstr "Die Ziele schließen sich gegenseitig aus: benötigte Durchgänge — [n]."
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.plan_one"
+msgid "Все цели ([n]) достижимы за одно прохождение."
+msgstr "Alle Ziele ([n]) sind in einem Durchgang erreichbar."
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.replay"
+msgid "Переиграть"
+msgstr "Erneut ansehen"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.replay_variant"
+msgid "Вариант"
+msgstr "Variante"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.target_add"
+msgid "Отметить целью"
+msgstr "Als Ziel markieren"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.target_remove"
+msgid "Снять отметку"
+msgstr "Markierung entfernen"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.title"
+msgid "Карта главы"
+msgstr "Kapitelkarte"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.zoom"
+msgid "Масштаб"
+msgstr "Zoom"
+
+#. UI/мета-строка
+msgctxt "string:ui.guide.blocks"
+msgid "Закроет цель: [list]"
+msgstr "Schließt das Ziel aus: [list]"
+
+#. UI/мета-строка
+msgctxt "string:ui.guide.reason"
+msgid "Ведёт к цели: [list]"
+msgstr "Führt zum Ziel: [list]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.guide"
+msgid "Подсказки гайда"
+msgstr "Guide-Hinweise"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s010.title"
+msgid "Утро перед школой"
+msgstr "Morgen vor der Schule"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s020.title"
+msgid "У школьных ворот"
+msgstr "Am Schultor"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s030.title"
+msgid "Крыша на закате"
+msgstr "Dach im Sonnenuntergang"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch90_s010.title"
+msgid "Берег"
+msgstr "Das Ufer"
+
+#~ msgctxt "string:ui.guide.recommended"
+#~ msgid "По плану"
+#~ msgstr ""
 
 #~ msgctxt "string:ui.history.hint"
 #~ msgid "Esc — закрыть"

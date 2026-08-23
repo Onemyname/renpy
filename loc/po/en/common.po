@@ -231,8 +231,7 @@ msgstr "Adult content (18+)"
 msgctxt "string:ui.crash.body"
 msgid ""
 "Игра столкнулась с ошибкой. Прогресс до последнего сохранения не пострадал."
-msgstr ""
-"The game ran into an error. Your progress up to the last save is safe."
+msgstr "The game ran into an error. Your progress up to the last save is safe."
 
 #. UI/мета-строка
 msgctxt "string:ui.crash.ignore"
@@ -509,8 +508,8 @@ msgid ""
 "Эта часть истории не входит в текущую сборку игры: эпизод или дополнение не "
 "установлены."
 msgstr ""
-"This part of the story is not included in this build of the game: the "
-"episode or add-on is not installed."
+"This part of the story is not included in this build of the game: the episode"
+" or add-on is not installed."
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.unavailable_title"
@@ -655,6 +654,145 @@ msgstr "Reach the rooftop without meeting anyone"
 msgctxt "string:ach.roof_alone.name"
 msgid "Один над городом"
 msgstr "Alone Above the City"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch70.title"
+msgid "QA-T1: ромбы"
+msgstr "QA-T1: diamonds"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch71.title"
+msgid "QA-T2: взаимоисключающие концовки"
+msgstr "QA-T2: mutually exclusive endings"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch72.title"
+msgid "QA-T3: гейты по переменным"
+msgstr "QA-T3: variable gates"
+
+#. UI/мета-строка
+msgctxt "string:meta.chapters.ch73.title"
+msgid "QA-T4: пропускаемые сцены"
+msgstr "QA-T4: skippable scenes"
+
+#. UI/мета-строка
+msgctxt "string:meta.packs.qa_flow.title"
+msgid "QA: топологии графа"
+msgstr "QA: graph topologies"
+
+#. UI/мета-строка
+msgctxt "string:qa.flow.cluster.merge"
+msgid "Слияние"
+msgstr "Merge"
+
+#. UI/мета-строка
+msgctxt "string:qa.flow.cluster.split"
+msgid "Развилка"
+msgstr "Fork"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.clear_targets"
+msgid "Сбросить цели"
+msgstr "Clear goals"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.conflict_with"
+msgid "Несовместимо с: [list]"
+msgstr "Incompatible with: [list]"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.empty"
+msgid "Карта этой главы пока пуста."
+msgstr "The map of this chapter is still empty."
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.ending"
+msgid "Финал"
+msgstr "Ending"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.open"
+msgid "Карта главы"
+msgstr "Chapter map"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.plan_many"
+msgid "Цели несовместимы между собой: понадобится прохождений — [n]."
+msgstr "These goals rule each other out: playthroughs needed — [n]."
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.plan_one"
+msgid "Все цели ([n]) достижимы за одно прохождение."
+msgstr "All goals ([n]) are reachable in a single playthrough."
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.replay"
+msgid "Переиграть"
+msgstr "Replay"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.replay_variant"
+msgid "Вариант"
+msgstr "Variant"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.target_add"
+msgid "Отметить целью"
+msgstr "Set as goal"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.target_remove"
+msgid "Снять отметку"
+msgstr "Remove goal"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.title"
+msgid "Карта главы"
+msgstr "Chapter map"
+
+#. UI/мета-строка
+msgctxt "string:ui.chart.zoom"
+msgid "Масштаб"
+msgstr "Zoom"
+
+#. UI/мета-строка
+msgctxt "string:ui.guide.blocks"
+msgid "Закроет цель: [list]"
+msgstr "Rules out the goal: [list]"
+
+#. UI/мета-строка
+msgctxt "string:ui.guide.reason"
+msgid "Ведёт к цели: [list]"
+msgstr "Leads to the goal: [list]"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.guide"
+msgid "Подсказки гайда"
+msgstr "Guide hints"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s010.title"
+msgid "Утро перед школой"
+msgstr "Morning before school"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s020.title"
+msgid "У школьных ворот"
+msgstr "At the school gate"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch01_s030.title"
+msgid "Крыша на закате"
+msgstr "Rooftop at sunset"
+
+#. UI/мета-строка
+msgctxt "string:meta.scenes.ch90_s010.title"
+msgid "Берег"
+msgstr "The shore"
+
+#~ msgctxt "string:ui.guide.recommended"
+#~ msgid "По плану"
+#~ msgstr ""
 
 #~ msgctxt "string:ui.history.hint"
 #~ msgid "Esc — закрыть"

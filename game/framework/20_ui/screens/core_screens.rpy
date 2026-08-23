@@ -115,6 +115,12 @@ screen navigation():
                     # в vn_ach.visible_ids(), не здесь.
                     if vn_ach.visible_ids():
                         textbutton vn_loc.t("ui.nav.achievements") action ShowMenu("achievements") style "vn_nav_button" default_focus (gui.focus_rail if _here == "achievements" else 0)
+                    # Карта главы (ADR-0021): проекция скомпилированного графа.
+                    # Доступна из обоих контекстов — что игрок видел, помнит
+                    # persistent. Пункт исчезает, если ни одна глава не
+                    # принадлежит игроку: гейт в vn_story, не здесь.
+                    if vn_story.chapter_list():
+                        textbutton vn_loc.t("ui.chart.open") action ShowMenu("story_flow") style "vn_nav_button" default_focus (gui.focus_rail if _here == "story_flow" else 0)
                     if not main_menu:
                         textbutton vn_loc.t("ui.nav.history") action ShowMenu("history") style "vn_nav_button" default_focus (gui.focus_rail if _here == "history" else 0)
             vbox:
@@ -414,6 +420,18 @@ screen preferences():
                     textbutton vn_loc.t("ui.prefs.ach_sync"):
                         action achievement.Sync()
                         style "vn_toggle_button"
+                # Подсказки встроенного гайда (ADR-0021). Выключены по умолчанию
+                # и остаются выключенными, пока игрок не отметит цели на карте
+                # главы: подсветка «правильного» варианта на первом прохождении
+                # отнимает у выбора смысл.
+                if vn_story.chapter_list():
+                    vbox:
+                        spacing gui.sp_m
+                        $ _g8 = vn_loc.t("ui.chart.title").upper()
+                        text _g8 style "vn_group"
+                        textbutton vn_loc.t("ui.prefs.guide"):
+                            action ToggleField(persistent, "vn_guide")
+                            style "vn_toggle_button"
                 use language_picker
 
 # Ряд «подпись + слайдер»: bar со штатным value-действием Preference(...)

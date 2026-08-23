@@ -1,4 +1,5 @@
 schema: scene@1
 id: s010
+title_key: meta.scenes.ch90_s010.title
 participants: [mira]
 exits: {}

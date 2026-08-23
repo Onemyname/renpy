@@ -1,5 +1,6 @@
 schema: scene@1
 id: s030
+title_key: meta.scenes.ch01_s030.title
 participants: [mira]
 location: rooftop/day
 vars:

@@ -1,5 +1,6 @@
 schema: scene@1
 id: s020
+title_key: meta.scenes.ch01_s020.title
 participants: [mira]
 location: school_gate/day
 vars:

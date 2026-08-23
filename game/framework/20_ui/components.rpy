@@ -112,6 +112,23 @@ define vn_scroll_props = {
     "vscrollbar_xsize": 6,
 }
 
+# Тот же приём для полотна, растущего в обе стороны (карта главы, ADR-0021):
+# горизонтальная ось добавляется к пресету, а не переоформляется заново, иначе
+# два скроллбара в одном экране разъедутся по виду.
+#
+# Префикс горизонтальной оси — именно scrollbar_ (вертикальная — vscrollbar_):
+# viewport_common разбирает свойства ровно по этим префиксам, а всё непонятое
+# уезжает в сам viewport (renpy/ui.py: split_properties) — так «hscrollbar_*»
+# молча гасит содержимое вьюпорта вместо ошибки.
+define vn_scroll_props_xy = dict(
+    vn_scroll_props,
+    scrollbars="both",
+    scrollbar_unscrollable="hide",
+    scrollbar_base_bar=Solid(gui.panel_bg_deep),
+    scrollbar_thumb=Solid(gui.panel_border2),
+    scrollbar_ysize=6,
+)
+
 init -990 python in vn_ui:
     from store import renpy, gui
 
