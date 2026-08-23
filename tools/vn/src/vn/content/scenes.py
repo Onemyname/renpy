@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import ast as pyast
+import builtins as _builtins
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -70,6 +71,66 @@ def _exit_entries(spec) -> list[dict]:
     if isinstance(spec, dict):
         return [spec]
     return list(spec)
+
+
+def _validate_when(unit, exits: dict, var_registry: set[str] | None,
+                   rep, status: str) -> None:
+    """Условия переходов `when:` из exits — против Variable Registry.
+
+    Раньше их не проверял НИКТО: схема scene@1 описывает `when` обычной строкой,
+    линтер поле не читает, компилятор вклеивает его в генерат как есть, а
+    flow.parse_condition на незнакомом имени просто объявляет ребро непрозрачным.
+    То есть опечатка `ch72.donaton` проходила renpy lint, vn content lint,
+    vn build и pytest — и превращалась в NameError у ИГРОКА, ровно в точке
+    перехода между сценами: `py_eval` исполняет выражение в словаре стора
+    (renpy/python.py), а сейв остался в предыдущей сцене.
+
+    Проверяются ИМЕНА, а не форма — это осознанно. Строгая проверка формы
+    завалила бы легальные сегодня выражения, которых не понимает parse_condition
+    (её ветка «непрозрачное условие» пропускает их намеренно, ADR-0021 §2).
+    Поэтому: каждый `<store>.<attr>` обязан быть в реестре, свободное имя
+    запрещено (в py_eval оно и так NameError), а вызовы и арифметика остаются
+    делом автора.
+    """
+    if var_registry is None:
+        return
+    complain = rep.warnings.append if status == "draft" else rep.errors.append
+    for exit_id, spec in sorted(exits.items()):
+        for entry in _exit_entries(spec):
+            expr = (entry or {}).get("when")
+            if not expr:
+                continue
+            where = f"{unit.yaml_rel}: exits.{exit_id}.when"
+            try:
+                tree = pyast.parse(str(expr), mode="eval")
+            except SyntaxError as e:
+                complain(f"{where}: {expr!r} — не разбирается как выражение Python "
+                         f"({e.msg}); в рантайме это NameError/SyntaxError у игрока")
+                continue
+            attrs, free, called = set(), set(), set()
+            for node in pyast.walk(tree):
+                if isinstance(node, pyast.Attribute) and isinstance(node.value, pyast.Name):
+                    attrs.add(f"{node.value.id}.{node.attr}")
+                elif isinstance(node, pyast.Name):
+                    free.add(node.id)
+                if isinstance(node, pyast.Call) and isinstance(node.func, pyast.Name):
+                    called.add(node.func.id)
+            # Имя стора само по себе (`ch01`) — часть Attribute, не свободное имя.
+            free -= {ref.split(".", 1)[0] for ref in attrs}
+            # Вызовы и встроенные имена: `len(g.route) > 0` — легальное условие,
+            # просто непрозрачное для графа. Проверяем СОСТОЯНИЕ, а не словарь
+            # питона: len/min/int в сторе есть всегда.
+            free -= called | set(dir(_builtins))
+            for ref in sorted(attrs - var_registry):
+                complain(
+                    f"{where}: {ref} не объявлена в Variable Registry "
+                    f"(content/variables/*.vars.yaml или chapters/*/vars.yaml). "
+                    f"Условие исполняется py_eval в сторе игрока — несуществующее "
+                    f"имя даёт NameError в момент перехода между сценами")
+            for name in sorted(free):
+                complain(
+                    f"{where}: свободное имя {name!r} — в py_eval оно не разрешится "
+                    f"(состояние адресуется только как <store>.<имя>)")
 
 
 def resolve_target(chapter_id: str, target: str) -> str:
@@ -296,6 +357,8 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
             rep.warnings.append(
                 f"{unit.yaml_rel}: exits.{exit_id} не достигается ни одним return в {src}"
             )
+
+    _validate_when(unit, exits, var_registry, rep, status)
 
     # ── Переменные (G5/C-save-integrity): фактические чтения/записи store-атрибутов
     # из build-bridge сверяются с Variable Registry. Незадекларированный атрибут =

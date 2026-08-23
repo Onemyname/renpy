@@ -685,3 +685,51 @@ def test_bridge_marks_the_menu_caption_say_as_non_interactive(repo_root, tmp_pat
     assert by_line[5]["interact"] is False, (
         "мост не отличает реплику-заголовок меню — запрет в validate_scene "
         "держится ни на чём")
+
+
+def _when_errors(when, registry={"ch01.met_mira", "g.route"}, status="release"):
+    rep = sc.SceneCompileReport()
+    unit = _unit(meta={"exits": {"next": [{"when": when, "to": "s020"},
+                                          {"to": "s030"}]}},
+                 analysis=_analysis(returns=[{"expr": "'next'", "line": 5}]))
+    sc.validate_scene(unit, {"ch01_s010", "ch01_s020", "ch01_s030"}, status, rep,
+                      var_registry=registry)
+    return [e for e in rep.errors if "when" in e], [w for w in rep.warnings if "when" in w]
+
+
+def test_when_condition_is_validated_against_the_variable_registry():
+    """`when` не проверял НИКТО: схема описывает его строкой, линтер поле не
+    читает, компилятор вклеивает как есть, а flow.parse_condition на незнакомом
+    имени просто объявляет ребро непрозрачным. Опечатка проходила весь набор
+    гейтов и превращалась в NameError у ИГРОКА — в точке перехода между сценами,
+    то есть там, где сейв остался в предыдущей сцене и продолжить нельзя."""
+    errors, _ = _when_errors("ch01.met_mirra")
+    assert len(errors) == 1 and "ch01.met_mirra" in errors[0], errors
+
+    # Свободное имя: в py_eval оно не разрешится ничем.
+    errors, _ = _when_errors("route == 'a'")
+    assert errors and "route" in errors[0]
+
+    # Не выражение вовсе.
+    errors, _ = _when_errors("ch01.met_mira and")
+    assert errors and "не разбирается" in errors[0]
+
+
+def test_when_validation_checks_names_not_shape():
+    """Форму проверять нельзя: подмножество, которое понимает parse_condition,
+    уже, чем множество легальных выражений, и её ветка «непрозрачное условие»
+    пропускает остальные НАМЕРЕННО (ADR-0021 §2). Поэтому опечатка — ошибка, а
+    непонятая, но корректная форма — не ошибка."""
+    for expr in ("ch01.met_mira", "not ch01.met_mira", "g.route == 'a'",
+                 "ch01.met_mira and g.route != 'b'",
+                 "len(g.route) > 0",                     # вызов: непрозрачно, но легально
+                 "g.route in ('a', 'b')"):               # in: вне подмножества графа
+        errors, _ = _when_errors(expr)
+        assert errors == [], f"{expr}: ложная ошибка {errors}"
+
+
+def test_when_typo_is_only_a_warning_in_a_draft_chapter():
+    """Та же градация, что у остальных проверок переменных (G15): в черновике
+    автор ещё ходит по дереву, и красная сборка мешала бы больше, чем помогала."""
+    errors, warnings = _when_errors("ch01.met_mirra", status="draft")
+    assert errors == [] and warnings and "ch01.met_mirra" in warnings[0]
