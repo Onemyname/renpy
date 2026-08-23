@@ -648,3 +648,39 @@ def test_menu_marker_rule_lives_in_one_place():
 
     src = (Path(lk.__file__)).read_text(encoding="utf-8")
     assert '- 3 <=' not in src, "в аллокаторе id снова литерал окна маркера"
+
+
+def test_source_language_cannot_get_a_translation_package(tmp_path):
+    """Пакет перевода с кодом ИСХОДНОГО языка завести нельзя.
+
+    В Ren'Py исходный язык — это language=None, отдельного пакета у него нет.
+    Пакет с тем же кодом даёт в рантайм-реестре второй пункт с тем же native-
+    названием, который никуда не переключает: игрок видит два «Русских», и выбор
+    второго не меняет ничего. Про коллизию знал ровно один потребитель
+    (`vn play --lang` схлопывает её в "@source"), а конвейер PO — нет.
+
+    Проверяются оба входа: явная команда и автодискавери, потому что каталог,
+    созданный руками мимо `vn loc add`, доезжал до game/tl/ молча."""
+    from vn.loc.po import LocError, discover_languages, scaffold_language
+
+    root = tmp_path / "repo"
+    (root / "loc").mkdir(parents=True)
+    (root / "loc" / "loc.yaml").write_text(
+        "schema: loc@2\nsource: {code: ru, name: Русский}\n", encoding="utf-8")
+
+    with pytest.raises(LocError, match="исходный язык"):
+        scaffold_language(root, "ru", name="Русский")
+
+    # Тот же пакет, созданный руками: автодискавери обязано его отбить.
+    d = root / "loc" / "po" / "ru"
+    d.mkdir(parents=True)
+    (d / "language.yaml").write_text(
+        'schema: language@1\ncode: ru\nname: "Русский"\n', encoding="utf-8")
+    with pytest.raises(LocError, match="исходный язык"):
+        discover_languages(root)
+
+    # Контраст: обычный язык заводится как и раньше.
+    import shutil
+    shutil.rmtree(d)
+    scaffold_language(root, "fr", name="Français")
+    assert [lang.code for lang in discover_languages(root)] == ["fr"]

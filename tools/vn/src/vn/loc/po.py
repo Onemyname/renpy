@@ -121,6 +121,29 @@ def _load_yaml_dict(root: Path, path: Path) -> dict:
     return doc
 
 
+def _refuse_source_code(root: Path, code: str, where: str) -> None:
+    """Пакет перевода с кодом ИСХОДНОГО языка завести нельзя.
+
+    В Ren'Py исходный язык — это `language=None`, отдельного пакета у него нет.
+    Пакет с тем же кодом даёт в рантайм-реестре второй пункт с тем же native-
+    названием, который никуда не переключает: игрок видит два «Русских», и
+    выбор второго не меняет ничего. Про коллизию знал ровно один потребитель
+    (`vn play --lang` схлопывает её в "@source"), а конвейер PO — нет.
+
+    Проверка стоит и в scaffold_language, и в автодискавери: каталог, созданный
+    руками мимо `vn loc add`, доезжал до game/tl/ молча."""
+    try:
+        src = source_language(root).code
+    except Exception:
+        return          # нет loc.yaml — проверять не с чем, не мешаем работать
+    if code == src:
+        raise LocError(
+            f"{where}: {code!r} — исходный язык проекта (loc/loc.yaml). В Ren'Py это "
+            f"language=None, отдельного пакета у него нет: такой пакет добавит в "
+            f"выбор языка второй пункт с тем же названием, который ни на что не "
+            f"переключает")
+
+
 def discover_languages(root: Path) -> list[Language]:
     """Автодискавери пакетов loc/po/*/ (ADR-0005). Каталог без language.yaml —
     ошибка с подсказкой: молча пропущенный язык = тихо непоставленный перевод."""
@@ -135,6 +158,7 @@ def discover_languages(root: Path) -> list[Language]:
                 f"loc/po/{d.name}/: нет language.yaml — пакет языка не собран; "
                 f"создайте манифест (vn loc add {d.name} --name <native>)"
             )
+        _refuse_source_code(root, d.name, f"loc/po/{d.name}/")
         doc = _load_yaml_dict(root, mf)
         code = doc.get("code")
         if code != d.name:
@@ -178,6 +202,7 @@ def scaffold_language(root: Path, code: str, name: str = "") -> Path:
         raise LocError(f"код языка {code!r} вне конвенции ^[a-z][a-z0-9_]{{1,15}}$")
     if code == "pseudo":
         raise LocError("pseudo — synthetic-пакет, его создаёт vn loc pseudo")
+    _refuse_source_code(root, code, f"vn loc add {code}")
     lang_dir = root / "loc" / "po" / code
     mf = lang_dir / "language.yaml"
     if mf.is_file():
