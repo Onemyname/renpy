@@ -865,6 +865,17 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
     else:
         add("PASS", "видео: собранные лупы валидны")
 
+    # Профиль энкода — не предупреждение: черновой VP9 (CRF 42 / ≤720p) в проданной
+    # сборке это дефект, а отличить его от production глазами по .webm нельзя.
+    # Строгую валидацию выше он проходит целиком (кодек и контейнер те же), поэтому
+    # спрашиваем факт из mov_meta.
+    v_drafts = videomod.draft_profile_outputs(root)
+    add("FAIL" if v_drafts else "PASS",
+        "профиль энкода видео: " + (
+            f"{len(v_drafts)} черновых — {v_drafts[0]}; пересоберите "
+            f"vn assets video build (без --profile draft)" if v_drafts
+            else "черновых энкодов в поставке нет"))
+
     from .content.compile import CompileError, compile_content
 
     try:

@@ -413,6 +413,35 @@ def validate_all(root: Path, file_budget_mb: float | None = None) -> tuple[list[
     return errors, warnings
 
 
+def draft_profile_outputs(root: Path) -> list[str]:
+    """Собранные лупы, у которых mov_meta.profile — не production («full»).
+
+    Профиль энкода из самого .webm не восстановить: CRF в контейнер не пишется, а
+    720p — законное разрешение для фонового плана. Единственный ФАКТ о том, чем
+    собран файл, — mov_meta.profile, поэтому релизный гейт спрашивает его.
+
+    Оверсэмпл-варианты (@N) проверяются наравне с референсными: черновой @2 уедет
+    игроку с 4K-экраном так же, как черновой референс — всем остальным. Видео БЕЗ
+    meta.json тут не считается: «нет метаданных» — это несвежий выход, и его ловит
+    проверка свежести ассетов; дублировать её претензию нечем."""
+    out: list[str] = []
+    mov = root / "game" / "assets" / "mov"
+    if not mov.is_dir():
+        return out
+    for f in sorted(mov.rglob("*.webm")):
+        meta_path = f.with_name(f.name + META_SUFFIX)
+        if not meta_path.is_file():
+            continue
+        try:
+            profile = json.loads(meta_path.read_text(encoding="utf-8")).get("profile")
+        except ValueError:
+            continue
+        if profile and profile != "full":
+            out.append(f"{f.relative_to(root).as_posix()}: собрано профилем "
+                       f"{profile!r} (черновой энкод: CRF 42 / ≤720p)")
+    return out
+
+
 def movie_tree(root: Path) -> dict[str, dict]:
     """Скан собранных лупов: {"mov/<group>/<name>.webm": meta}. Источник meta —
     сгенерированный .meta.json; без него — консервативные дефолты.

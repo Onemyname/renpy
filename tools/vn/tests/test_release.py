@@ -122,6 +122,42 @@ def test_video_budget_failures(tmp_path):
     assert not any("game/assets/mov:" in f for f in failures)
 
 
+def test_release_gate_fails_on_draft_encoded_video(tmp_path):
+    """Черновой энкод (CRF 42 / ≤720p) в проданной сборке — дефект, а не мелочь.
+    От production он отличается ТОЛЬКО записью в mov_meta: контейнер и кодек те же,
+    строгую видео-валидацию он проходит целиком — и потому уезжал в дистрибутив."""
+    from vn.assets.video import draft_profile_outputs
+    from vn.release import validate_release
+
+    root = _mk_root(tmp_path)
+    mov = root / "game" / "assets" / "mov" / "demo"
+    mov.mkdir(parents=True)
+
+    def _built(name, profile=None):
+        (mov / f"{name}.webm").write_bytes(b"\0" * 32)
+        if profile:
+            (mov / f"{name}.webm.meta.json").write_text(
+                json.dumps({"schema": "mov_meta@1", "profile": profile}),
+                encoding="utf-8")
+
+    _built("ambient", "full")
+    _built("ambient@2", "draft")    # оверсэмпл-вариант — такой же отгружаемый товар
+    _built("nometa")                # без метаданных: это несвежий выход, не профиль
+
+    drafts = draft_profile_outputs(root)
+    assert len(drafts) == 1 and "mov/demo/ambient@2.webm" in drafts[0]
+
+    checks, ok = validate_release(root, "public")
+    assert not ok
+    assert any(s == "FAIL" and "профиль энкода видео" in m for s, m in checks)
+
+    # Пересобранный production-профиль тот же файл пропускает
+    _built("ambient@2", "full")
+    assert draft_profile_outputs(root) == []
+    checks2, _ok = validate_release(root, "public")
+    assert any(s == "PASS" and "профиль энкода видео" in m for s, m in checks2)
+
+
 PACK_MANIFEST = """\
 schema: pack_manifest@1
 id: {pid}
