@@ -1085,6 +1085,12 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
                     if vo.accepted else "")
         add("PASS", f"озвучка: {len(vo.coverage)} шардов глава×язык покрыты "
                     f"полностью{accepted}")
+    elif vo.warnings:
+        # Ни ошибок, ни дыр, ни драфтов, ни покрытия — значит проверять было
+        # нечем, и молча пропускать строку нельзя: раньше при несобранном ledger
+        # озвучка просто ИСЧЕЗАЛА из чек-листа релиза, то есть «проверку
+        # выполнить не удалось» выглядело как «проверять нечего».
+        add("WARN", f"озвучка: проверка не выполнена полностью — {vo.warnings[0]}")
 
     from .assets.licenses import validate_licenses
 

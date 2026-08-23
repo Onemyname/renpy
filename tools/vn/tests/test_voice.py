@@ -577,3 +577,45 @@ def test_import_draft_never_destroys_a_recorded_final_take(tmp_path, repo_root):
     assert any("уже есть записанный дубль" in e for e in rep.errors), rep.errors
     assert master.read_bytes() == b"final-take", "дубль актёра затёрт черновиком"
     assert not (master.with_suffix(".opus")).exists()
+
+
+def test_missing_ledger_is_an_error_not_a_warning(tmp_path, repo_root):
+    """Без ledger покрытие озвучки не посчитать — значит проверка НЕ выполнена.
+
+    Раньше это было предупреждением, и последствие было тихим: `if says` внутри
+    validate выключает сразу три проверки (сверка «реплика есть в главе»,
+    покрытие, поиск дыр), а релизный гейт разбирает отчёт по
+    errors/holes/drafts/coverage и поле warnings не читает вовсе. В сумме у
+    озвученной главы без шарда ledger не было НИ FAIL, НИ WARN, НИ PASS — строка
+    про озвучку просто исчезала из чек-листа релиза, и «дыра посреди озвученной
+    главы», которую гейт обещает ловить, проходила незамеченной."""
+    import shutil
+
+    from vn.voice import validate as voice_validate
+
+    root = tmp_path / "repo"
+    (root / "content" / "chapters" / "ch01_demo").mkdir(parents=True)
+    src_voice = repo_root / "content" / "chapters" / "ch01_awakening" / "voice"
+    if not src_voice.is_dir():
+        pytest.skip("в дереве нет voice-манифестов")
+    shutil.copytree(src_voice, root / "content" / "chapters" / "ch01_demo" / "voice")
+    shutil.copytree(repo_root / "tools" / "schemas", root / "tools" / "schemas")
+    (root / "loc" / "ledger").mkdir(parents=True)     # шарда главы НЕТ
+
+    rep = voice_validate(root)
+    assert any("ledger" in e for e in rep.errors), (
+        f"несобранный ledger не стал ошибкой: errors={rep.errors[:2]} "
+        f"warnings={rep.warnings[:2]}")
+    assert rep.ok is False
+
+
+def test_release_gate_never_drops_the_voice_line(repo_root):
+    """У релизного гейта не может быть состояния «строки про озвучку нет».
+
+    Отчёт разбирается по errors/holes/drafts/coverage; если все четыре пусты, а
+    предупреждения есть — это «проверить не удалось», и сказать об этом обязан
+    сам чек-лист, а не читатель кода."""
+    src = (repo_root / "tools" / "vn" / "src" / "vn" / "release.py").read_text(
+        encoding="utf-8")
+    branch = src.split("vo = voice_validate(root)", 1)[1].split("\n    from ", 1)[0]
+    assert "vo.warnings" in branch, "предупреждения отчёта озвучки не доходят до гейта"

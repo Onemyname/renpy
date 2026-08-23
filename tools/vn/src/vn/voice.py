@@ -166,9 +166,17 @@ def validate(root: Path) -> VoiceReport:
     for ch_id, lang, rel, doc in manifests:
         says = _ledger_says(root, ch_id)
         if says is None:
-            rep.warnings.append(
-                f"{rel}: ledger loc/ledger/{ch_id}.json не собран — покрытие не "
-                f"посчитать (прогоните vn loc keys)")
+            # ОШИБКА, а не предупреждение. Без ledger не выполняются сразу три
+            # проверки: сверка «реплика есть в главе», покрытие и поиск дыр —
+            # `if says` ниже выключает их все. В релизном гейте отчёт озвучки
+            # разбирается по errors/holes/drafts/coverage, поэтому глава без
+            # шарда давала НИ FAIL, НИ WARN, НИ PASS: строка про озвучку просто
+            # исчезала из чек-листа, и «дыра посреди озвученной главы», которую
+            # гейт обещает ловить, проходила незамеченной. «Проверку выполнить
+            # нечем» — это не «проверка пройдена».
+            rep.errors.append(
+                f"{rel}: ledger loc/ledger/{ch_id}.json не собран — покрытие "
+                f"озвучки не посчитать и дыры не найти (прогоните vn loc keys)")
             says = {}
         lines = dict(doc.get("lines") or {})
         declared.setdefault(lang, set()).update(lines)
