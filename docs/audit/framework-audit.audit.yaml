@@ -1,0 +1,474 @@
+# Аудит каркаса, 2026-08-23. Заявлено 53 находки, устояло под адверсариальной
+# проверкой 49, после свёртки дубликатов — 36 самостоятельных пунктов.
+#
+# Статус пункта = проверяемый факт, а не запись в отчёте: CLOSED обязан назвать
+# файл реализации и тест (проверяет схема audit@1), WONT_FIX — обоснование.
+#
+# Префикс severity в title — как аудит их приоритизировал: P0 ломает каркас,
+# P1 архитектура и хрупкость, P2 полировка и факты в документах.
+schema: audit@1
+source: 'Аудит каркаса 2026-08-23: восемь читателей по подсистемам с адверсариальной перепроверкой
+  каждой находки (рабочий отчёт — локальный reports/audit.md, в git не едет)'
+reviewed_at: '2026-08-23'
+items:
+  FWA-001:
+    title: (P0) Гейт реплея стоит в vn.checkpoint, которую реплей не зовёт; vn.beat не гейтится —
+      скрытая ачивка выдаётся за непройденную ветку
+    category: runtime
+    evidence:
+    - 'game/framework/00_core/030_flow.rpy:53 — vn.in_replay() проверяется ТОЛЬКО в vn.checkpoint
+      (030_flow.rpy:24). Метка реплея, которую эмитит компилятор, checkpoint не вызывает принципиально
+      — tools/vn/src/vn/content/scenes.py:454-467: «боевая обвязка для этого не годится: она зовёт
+      …'
+    - 'сценарий отказа: Контент 1.0.0, без правок. 1) Новая игра, в ch01_s010 выбрать пункт, ведущий
+      к воротам → ch01.met_mira = True → ch01_s020 → ch01_s030. В s030 отрабатывает ветка `if ch01.met_mira`,
+      `$ vn.beat("roof_alone")` НЕ выполняется, скрытая ачивка …'
+    implementation:
+    - game/framework/00_core/030_flow.rpy
+    tests:
+    - tools/vn/tests/test_achievements.py::test_progress_side_effects_go_through_one_replay_gate
+    status: CLOSED
+  FWA-002:
+    title: (P0) story_node_menu рисуется тремя НЕОБЪЯВЛЕННЫМИ стилями — модалка теряет панель и уезжает
+      на диалоговый шрифт
+    category: runtime
+    evidence:
+    - 'game/framework/20_ui/screens/story_flow.rpy:207 — В screen story_node_menu: frame: style "vn_modal"
+      ... text (...) style "vn_modal_title" ... text (...) style "vn_modal_text" Стилей vn_modal /
+      vn_modal_title / vn_modal_text в репозитории НЕТ ни одного объявления (проверено grep''ом по
+      …'
+    - 'сценарий отказа: Игра → Карта главы → клик по любому узлу графа. Вместо панели на токенах появляется
+      крупный засечный (Literata 34) текст заголовка и кнопки без фона и без внутренних отступов,
+      лежащие прямо на затемнении #000000cc. Проверяется на месте …'
+    implementation:
+    - game/framework/20_ui/screens/story_flow.rpy
+    - game/framework/00_core/030_flow.rpy
+    - content/ui/screens.yaml
+    tests:
+    - tools/vn/tests/test_ui_panels.py::test_every_style_used_by_name_is_declared
+    status: CLOSED
+  FWA-003:
+    title: (P0) Раскладка mac-депота через zipfile.extractall теряет x-бит — .app в депоте не запускается
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/release.py:234 — `_extract_archive` для zip делает `with zipfile.ZipFile(archive)
+      as zf: zf.extractall(dest)` с комментарием «zipfile параметра filter не имеет: пути санирует
+      сам extractall». Санитация путей там действительно есть, а вот прав — нет: …'
+    - 'сценарий отказа: vn release build --flavor public --package win --package linux --package mac
+      (на Linux-раннере steam-upload.yml) -> vn release steam --flavor public. Шаг стейджинга распаковывает
+      build/dist/1.0.0-public/vn-1.0.0-mac.zip в …'
+    implementation:
+    - tools/vn/src/vn/release.py
+    - ci/steam/README.md
+    tests:
+    - tools/vn/tests/test_platform.py::test_zip_extraction_restores_the_executable_bit
+    - tools/vn/tests/test_platform.py::test_stage_refuses_depot_without_any_executable
+    status: CLOSED
+  FWA-004:
+    title: '(P0) Инжект voice ломает генерат, если озвученная реплика — say-menuitem внутри menu:'
+    category: content-pipeline
+    evidence:
+    - tools/vn/src/vn/content/scenes.py:348 — _inject_voice вставляет voice-оператор выше реплики
+      по номеру строки из AST и контекст не проверяет; say menuitem живёт ВНУТРИ блока menu:, где
+      движок разбирает только пункты
+    - 'сценарий отказа: реплика-заголовок меню получает say-id от vn loc keys, попадает в voice-манифест;
+      vn build зелёный, файл записан, падает загрузка игры: ParseError «expected menuitem» на сгенерированном
+      файле'
+    implementation:
+    - game/framework/00_core/050_build_bridge.rpy
+    - tools/vn/src/vn/content/scenes.py
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_say_menuitem_is_a_contract_violation
+    - tools/vn/tests/test_scene_pipeline.py::test_bridge_marks_the_menu_caption_say_as_non_interactive
+    - tools/vn/tests/test_scene_pipeline.py::test_voice_is_never_injected_into_a_menu_block
+    status: CLOSED
+  FWA-005:
+    title: '(P1) Нормативное правило «переменные с _-префиксом не попадают в сейв» — неверно: Ren''Py
+      8.5.3 их сохраняет'
+    category: documentation
+    evidence:
+    - 'docs/ARCHITECTURE.md:2992 — Раздел 6.1 фиксирует дисциплину состояния: «Транзиентные переменные...
+      объявляются с префиксом `_` — по документированному правилу Ren''Py переменные с `_`-префиксом
+      не попадают в сейв (везде, не только в screen-контексте)». То же …'
+    - 'сценарий отказа: 1) Взять любой сейв проекта: `python -c "import zipfile,pickletools,io; z=zipfile.ZipFile(''ci/fixtures/saves/schema2-demo.save'');
+      [print(op.name,arg) for op,arg,_ in list(pickletools.genops(io.BytesIO(z.read(''log''))))[:60]]"`.
+      В первом же …'
+    status: OPEN
+  FWA-006:
+    title: (P1) Выражения `when` из exits не валидируются НИ ОДНИМ гейтом сборки — опечатка даёт NameError
+      у игрока
+    category: quality-gate
+    evidence:
+    - 'game/framework/00_core/030_flow.rpy:130 — Докстринг eval_when утверждает обратное: def eval_when(expr):
+      """Условия переходов из exits: (scene.yaml). Выражение валидируется компилятором против реестра
+      переменных на этапе сборки (раздел 3.11); здесь — только исполнение.""" return …'
+    - 'сценарий отказа: В любой сцене поправить условие в scene.yaml с опечаткой: `exits: {next: [{when:
+      "ch72.donaton >= 5000", to: s030}, {to: s040}]}`. Прогнать `vn content lint` (OK), `vn build`
+      (OK), `renpy lint` (0 предупреждений), pytest (зелёный). В игре …'
+    status: OPEN
+  FWA-007:
+    title: '(P1) Дакинг под голос выключен: движок читает preference emphasize_audio, который по умолчанию
+      False и нигде не включается'
+    category: runtime
+    evidence:
+    - 'game/framework/00_core/045_audio.rpy:18 — Файл ставит только config-часть штатного механизма:
+      config.emphasize_audio_channels = ["voice"] config.emphasize_audio_volume = 0.6 config.emphasize_audio_time
+      = 0.5 Но в 8.5.3 сам механизм гейтится ИГРОВОЙ настройкой, а не конфигом. …'
+    - 'сценарий отказа: 1) Объявить bgm-трек в content/audio/bgm.yaml и поставить `music: bgm/<id>`
+      в content/chapters/ch01_awakening/scenes/s010_intro.scene.yaml; vn build. 2) Запустить игру
+      и дойти до первой реплики ch01_s010_0001 — озвучка для неё уже есть …'
+    status: OPEN
+  FWA-008:
+    title: '(P1) _note_progress работает до проверки visible(): прогресс NSFW/непроданных и СКРЫТЫХ
+      ачивок уезжает в Steam-попап и в persistent'
+    category: runtime
+    evidence:
+    - 'game/framework/00_core/080_achievements.rpy:157 — В check() ветка прогрессивных ачивок вызывается
+      раньше любого гейта видимости (080_achievements.rpy:144-161): for ach_id, spec in _registry().items():
+      if has(ach_id): continue ... elif spec.get("goal"): hit = _note_progress(ach_id) ... if …'
+    - 'сценарий отказа: Добавить в content/achievements/ запись вида id: nsfw_collector, pack: nsfw
+      (или hidden: true), goal: {total: 10, step: 1}, trigger: {var: ''g.scenes_seen''} — то есть
+      счётчик, который двигается базовым контентом. Собрать SFW-флейвор (пак …'
+    status: OPEN
+  FWA-009:
+    title: (P1) Разблокировки в persistent лежат в dict-корнях без register_persistent — merge движка
+      теряет анлоки одной из сторон
+    category: correctness
+    evidence:
+    - 'game/framework/00_core/090_gallery.rpy:196 — Весь прогресс, живущий между прохождениями, хранится
+      в словарях-корнях persistent: `default persistent.vn_gallery_unlocked = {}` (090_gallery.rpy:196,
+      читается _store() на :30-32), `default persistent.vn_achievements = {}` …'
+    - 'сценарий отказа: Игрок со Steam Cloud и двумя машинами. PC1: прошёл главу, открылось видео
+      галереи V1 -> persistent.vn_gallery_unlocked = {''V1'': True} записан в APPDATA и в <game>/saves.
+      PC2 (свежая установка, облако ещё не доехало из-за оффлайна): …'
+    status: OPEN
+  FWA-010:
+    title: (P1) is_unlocked для шота линейно сканирует весь persistent._seen_images — O(закрытых шотов
+      × |_seen_images|) на КАЖДОМ якоре и на каждой перерисовке …
+    category: scalability
+    evidence:
+    - 'game/framework/00_core/090_gallery.rpy:73 — _seen_shot (090_gallery.rpy:55-78) обходит весь
+      словарь увиденных кадров: seen = getattr(persistent, "_seen_images", None) or {} ... for key
+      in seen: if not isinstance(key, tuple) or not key: continue for attrs in wanted.get(key[0],
+      ()): …'
+    - 'сценарий отказа: Не воспроизводится на демо-контенте (6 элементов, 1 шот) — это отказ на масштабе,
+      ради которого каркас и строится. Профиль: 20 глав × ~15 сцен, ~400 элементов галереи, ~100 из
+      них kind: shot, наигранный persistent с ~12000 ключей …'
+    status: OPEN
+  FWA-011:
+    title: (P1) Инлайновый беспрефиксный background у узла карты убивает hover_background — на карте
+      главы не видно фокуса
+    category: runtime
+    evidence:
+    - 'game/framework/20_ui/screens/story_flow.rpy:146 — screen vn_flow_node: button: style "vn_flow_node"
+      ... background (vn_frame_choice_chosen if _conflict else (vn_frame_chip_active if _targeted
+      else vn_frame_slot)) а стиль (там же, строки 237-241): style vn_flow_node: background …'
+    - 'сценарий отказа: Steam Deck / Big Picture (или просто клавиатура на десктопе): Игра → Карта
+      главы → жать dpad/стрелки, переводя фокус между узлами. Ни один узел не меняет вид — vn_frame_choice_hover
+      не применяется. Мышью тоже: наведение на карточку узла не …'
+    status: OPEN
+  FWA-012:
+    title: '(P1) Туман войны протекает: план и список конфликтов печатают настоящие заголовки НЕПРОЙДЕННЫХ
+      сцен'
+    category: correctness
+    evidence:
+    - 'game/framework/20_ui/screens/story_flow.rpy:191 — Экран сам объявляет правило и сам же его
+      соблюдает в одном месте — story_flow.rpy:211: text (vn_story.title(scene_id) if vn_story.revealed(scene_id)
+      else "???") и в vn_flow_node (строки 154-158: заголовок только под `if _open`, иначе …'
+    - 'сценарий отказа: Новая игра, ch71 никогда не проходилась. Игра → Карта главы → вкладка «QA-T2:
+      взаимоисключающие концовки» → все узлы показаны «???» → клик по любому → «Отметить целью». Возврат
+      на карту: в подвале сразу «1) <настоящий локализованный …'
+    status: OPEN
+  FWA-013:
+    title: (P1) vn test deck-kit пишет в приёмочный чек-лист «вердикт OK», не прочитав RESULT.txt
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/cli.py:1940 — Прогоны комплекта приёмки проверяются только по коду возврата:
+      `if timed_out or rc != 0: _fail(...)` (:1914) и по числу скриншотов (:1916). Ни RESULT.txt,
+      ни traceback.txt не читаются — `read_run`/`run_failures` здесь не вызываются вообще …'
+    - 'сценарий отказа: Сделать в ch01 exit на ненаписанную цель (или удалить главу пака, на которую
+      ссылается exit) — прогон уходит в `label vn_scene_unavailable`, который вызывает `autopilot_finish("FAIL:
+      vn_scene_unavailable")` и завершает процесс кодом 0. …'
+    status: OPEN
+  FWA-014:
+    title: (P1) Shim-метка renames.yaml выпускается и для ЖИВОЙ сцены — дубликат label, игра не стартует
+    category: correctness
+    evidence:
+    - 'tools/vn/src/vn/content/compile.py:669 — `_emit_overrides` строит `overrides = scenes ∪ deleted_scenes
+      ∪ labels` и безусловно эмитит для КАЖДОГО ключа физическую метку: ```python for old, new in
+      sorted(overrides.items()): out.append(f"label {old}:\n $ vn.unwind_call_stack()\n …'
+    - 'сценарий отказа: Формат renames — `старый: новый`. Написать его наоборот (типовая ошибка, направление
+      ниоткуда не следует по значению ключа) или переименовать сцену и забыть удалить старую пару
+      файлов: 1) `content/renames.yaml`: `scenes: {ch01_s010: …'
+    status: OPEN
+  FWA-015:
+    title: '(P1) compute_compat — квадрат по всем парам сцен в каждом vn content compile (замерено:
+      36 с на 8000 сцен)'
+    category: scalability
+    evidence:
+    - 'tools/vn/src/vn/content/flow.py:784 — `compute_compat` перебирает все неупорядоченные пары
+      сцен: ```python for i, a in enumerate(ids): for b in ids[i + 1:]: if any(world_and(wa, wb) is
+      not None for wa in decs[a] for wb in decs[b]): continue ``` Потолок `cap=4096` ограничивает
+      …'
+    - 'сценарий отказа: `vn test corpus --scenes 8000` (генератор строит связную цепочку с меню через
+      сцену, все сцены достижимы от entry_scene — corpus.py:_write_chapters), затем `vn content compile`
+      на этом корпусе: к времени компиляции добавляется ~36 с, из …'
+    status: OPEN
+  FWA-016:
+    title: '(P1) Переменная с `default: null` (схемно легальная) роняет vn build с ложным сообщением'
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/flow.py:934 — `validate_flow` объявляет ошибкой сборки ситуацию, когда
+      прекондиция реплея получилась None: ```python if value is None and spec.get("default") is None
+      \ and spec.get("type") not in (None, "dict", "list"): errors.append(f"{sid}: читает …'
+    - 'сценарий отказа: 1) В content/variables/core.vars.yaml добавить: ```yaml chosen_gift: type:
+      str default: null doc: "Подарок; null = ещё не выбран" since: 2 ``` 2) В любой сцене прочитать
+      её: в scene.yaml `vars: {reads: [g.chosen_gift]}` (или просто `if …'
+    status: OPEN
+  FWA-017:
+    title: '(P1) compute_reach: пер-пунктовые присваивания учитываются по разу на КАЖДУЮ условную
+      цель exit''а — присваивание тела сцены теряется, сцена объявляется …'
+    category: correctness
+    evidence:
+    - 'tools/vn/src/vn/content/flow.py:685 — `build_flow` порождает по одному `FlowEdge` на пару (декларативное
+      ребро × пункт меню). У exit''а со списком условных целей (`exits: {next: [{when: ..., to: sA},
+      {to: sB}]}`) деклараций-рёбер несколько, а атрибуция у них ОДНА и та же, …'
+    - 'сценарий отказа: Синтетический прогон через публичный API модуля (воспроизведён): сцена s010,
+      тело пишет `$ ch01.flag = True`, пункт 0 того же меню тоже пишет `ch01.flag = True` и возвращает
+      exit `go`; exit `go` объявлен списком условных целей (два ребра); …'
+    status: OPEN
+  FWA-018:
+    title: (P1) Компилятор не требует, чтобы каждый путь __body завершался return — незакрытая ветка
+      молча проваливается в следующую метку
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/content/scenes.py:271 — Контракт сцены проверяется только «сверху вниз»: что
+      все return литеральны и объявлены в exits (scenes.py:248-269) и что каждый объявленный exit
+      кем-то достигается (271-275, и это лишь warning). Обратной проверки — что тело не может ДОЙТИ
+      …'
+    - 'сценарий отказа: Сцена с двумя ветками, у которой автор забыл return в одной. Точная форма
+      (модель — существующий ch01_s020, где __caught идёт в файле сразу за __body): label ch05_s010__body:
+      $ vn_menu = "ch05_s010_m001" menu: "Уйти": jump ch05_s010__leave …'
+    status: OPEN
+  FWA-019:
+    title: '(P1) Главы тестового пака попадут в id_registry и changelog: unshipped_chapters() применён
+      к локализации и покрытию, но не к штампу выпущенных id (G7)'
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/release.py:97 — `snapshot_content` в этом же дифе расширен на главы паков (обоснование
+      в его докстринге), а `_released_ids` фильтрует только по `status`: for ch_id, info in snapshot_content(root).items():
+      if info.get("status") == "release": …'
+    - 'сценарий отказа: На текущем дереве: `python -c "import sys;sys.path.insert(0,''tools/vn/src'');from
+      pathlib import Path;from vn.release import _released_ids;print(_released_ids(Path(''.''))[''chapters''])"`
+      вернёт ch01, ch70, ch71, ch72, ch73 (ch90 — …'
+    status: OPEN
+  FWA-020:
+    title: (P2) CI-гейт «тулчейн диагностируется честно» станет вечно красным, как только ch01 озвучат
+      актёры
+    category: quality-gate
+    evidence:
+    - '.github/workflows/ci.yml:128 — Шаг проверяет, что команда падает НЕнулевым кодом и называет
+      отсутствующий тулчейн: `must_fail piper vn voice tts ch01 --backend piper --regenerate-drafts`,
+      а `must_fail` считает провалом гейта именно нулевой код («вернула 0 — тулчейна …'
+    - 'сценарий отказа: Перевести все строки content/chapters/ch01_awakening/voice/ru.voice.yaml в
+      `status: final` (нормальный шаг после записи актёров) и запушить. Шаг «Отсутствие внешних тулчейнов
+      диагностируется честно» падает с «::error::«vn voice tts ch01 …'
+    status: OPEN
+  FWA-021:
+    title: (P2) ARCHITECTURE.md объявляет три обещания ADR-0006 «superseded», сам ADR-0006 не тронут
+      и остаётся в статусе «принято»
+    category: documentation
+    evidence:
+    - 'docs/ARCHITECTURE.md:1147 — В дифе `docs/ARCHITECTURE.md` разделы 2.9 переписаны с пометками
+      «**superseded ADR-0006**»: секвенции кадров («Оба таргета `meta.target` **не реализованы**»),
+      видео («матрица профилей ниже — **superseded**», нет 2-pass, нет профилей …'
+    - 'сценарий отказа: Читатель открывает ADR-0006 (принято) и планирует включить `alpha: true` для
+      VFX-секвенции, рассчитывая на обещанную side-mask-ветку `alphaextract` + `hstack`. Такой ветки
+      в коде нет вовсе (`vn assets video seq` склеивает кадры в мастер и …'
+    status: OPEN
+  FWA-022:
+    title: '(P2) ADR-0021 в разделе «Последствия» утверждает обратное тому, что реализовано: переменные
+      тестового пака НЕ уезжают в сейв (RTL-046 закрыт в этом же …'
+    category: documentation
+    evidence:
+    - 'docs/adr/0021-story-flow-projections.md:164 — ADR (статус «принято», то есть нормативный документ)
+      пишет: «**Переменные тестового пака всё-таки доезжают до сейва игрока** — и это цена решения
+      «пак вне флейворов»… Проверено на живом сейве: `ch70`…`ch73` в `1-1-LT1.save` присутствуют…
+      …'
+    - 'сценарий отказа: Читатель ADR-0021 (единственного «контракта» этой фичи) планирует добавить
+      пятую тестовую главу и, доверяя разделу «Последствия», закладывает в план миграцию сейвов /
+      бамп `save_schema`, потому что ADR говорит, что переменные пака уезжают …'
+    status: OPEN
+  FWA-023:
+    title: (P2) Трассировка аудита ссылается на два несуществующих теста — сеть «CLOSED подтверждён
+      тестом» дырявая с рождения
+    category: quality-gate
+    evidence:
+    - 'docs/audit/reclaiming-competitive.audit.yaml:171 — Схема `audit@1` требует у CLOSED-пунктов
+      поля `implementation` и `tests`, но резолвимость ссылок не проверяет никто. Прогон по всему
+      файлу (все `implementation` и `tests`, разрешение `файл::имя`) даёт две висячие ссылки: * RTL-007
+      → …'
+    - 'сценарий отказа: Пункт аудита закрыт «подтверждён тестом X». Кто-то ломает поведение, тест
+      X (под своим настоящим именем) краснеет и его чинят/удаляют — а ссылка в трекере продолжает
+      указывать в пустоту и выглядит достоверной. Обратный сценарий: ревьюер …'
+    status: OPEN
+  FWA-024:
+    title: (P2) snapshot() протаскивает в состояние миграций движковую переменную PY2 из minstore
+    category: correctness
+    evidence:
+    - 'game/framework/00_core/020_state.rpy:69 — ``` for var, value in vars(module).items(): if var.startswith("_")
+      or callable(value) or type(value).__name__ == "module": continue if not isinstance(value, _SIMPLE):
+      ``` `vars(module)` для named store возвращает StoreDict целиком, а …'
+    - 'сценарий отказа: `cat .vncache/corpus/state.json` -> первые ключи `"ch01.PY2": false`, `"g.PY2":
+      false`. Механизм: любой named store, созданный `init python in g:`, получает копию renpy.minstore.__dict__,
+      где PY2=False; snapshot() его не фильтрует. …'
+    status: OPEN
+  FWA-025:
+    title: (P2) Миграция, ТРОНУВШАЯ dict с не-строковыми ключами, записывает его обратно со строковыми
+      — без предупреждения
+    category: correctness
+    evidence:
+    - 'game/framework/00_core/020_state.rpy:154 — ``` changed = {} for k, v in state.items(): try:
+      same = _json.dumps(v, sort_keys=True) == before.get(k) ... if not same: changed[k] = v apply_snapshot(changed)
+      ``` Защита от потери формы построена только на «не трогали — не пишем». Это …'
+    - 'сценарий отказа: 1) Объявить в content/variables/economy.vars.yaml `day_log: {type: dict, default:
+      {}}`, в сценах писать `$ g.day_log[g.day] = ''visited''` (g.day — int). 2) Выпустить схему 3
+      с миграцией 0003, которая эту переменную дополняет: …'
+    status: OPEN
+  FWA-026:
+    title: (P2) `$ _chapters = vn_registry.chapters()` в label start запекает копию Chapter Registry
+      в каждый сейв
+    category: correctness
+    evidence:
+    - 'game/framework/00_core/030_flow.rpy:409 — ``` label start: $ _chapters = vn_registry.chapters()
+      ``` `vn_registry.chapters()` (010_registry.rpy:7-10) возвращает `list(getattr(renpy.store, "VN_CHAPTERS",
+      ()))` — новый список со ссылками на строки реестра. Присваивание идёт в …'
+    - 'сценарий отказа: 1) `python -c "import zipfile,pickletools,io; z=zipfile.ZipFile(''ci/fixtures/saves/schema2-demo.save'');
+      print([a for _,a,_ in pickletools.genops(io.BytesIO(z.read(''log'')))][:80])"` -> в корнях присутствует
+      ''store._chapters'' и следом весь …'
+    status: OPEN
+  FWA-027:
+    title: (P2) compatible()/plan() пересчитываются линейным сканом матрицы конфликтов на каждой перерисовке
+      экрана и на каждый пункт меню
+    category: scalability
+    evidence:
+    - 'game/framework/00_core/100_story_graph.rpy:105 — `compatible(a, b)` при каждом вызове делает
+      `getattr(renpy.store, "VN_FLOW")`, берёт список `incompatible` и сканирует его линейно (`for
+      x, y in …: if [x, y] == pair`). Верхняя граница списка — `cap=4096` пар (`flow.compute_compat`).
+      …'
+    - 'сценарий отказа: Сгенерировать главу на 50 сцен с развилкой через каждые две (та же топология,
+      что в `test_flow.py::test_five_hundred_scenes_stay_in_seconds`), отметить 10 целей на карте,
+      открыть карту и подвигать фокус — экран перестраивается на каждой …'
+    status: OPEN
+  FWA-028:
+    title: (P2) Гейты рельсы + предикция ShowMenu заставляют КАЖДЫЙ экран игрового меню платить полный
+      обход реестра галереи
+    category: scalability
+    evidence:
+    - 'game/framework/20_ui/screens/core_screens.rpy:110 — Рельса navigation (используется каркасом
+      vn_game_menu, то есть ВСЕМИ экранами меню) гейтит пункты живыми запросами к сторам: 110: if
+      vn_gal.categories(): 116: if vn_ach.visible_ids(): 122: if vn_story.chapter_list(): vn_gal.categories()
+      …'
+    - 'сценарий отказа: Целевой масштаб раздела 3 (20+ глав, сотни сцен): VN_GALLERY ~300 элементов
+      в 4 категориях, часть из DLC-паков, прохождение накопило несколько тысяч ключей в persistent._seen_images.
+      Открыть игровое меню и щёлкнуть «Настройки». На эту одну …'
+    status: OPEN
+  FWA-029:
+    title: (P2) K_PAGEUP/K_PAGEDOWN на карте главы перехвачены зумом и не доходят до вьюпорта с pagekeys
+    category: dx
+    evidence:
+    - 'game/framework/20_ui/screens/story_flow.rpy:115 — Экран объявляет два вьюпорта с пресетом,
+      где pagekeys включён (vn_scroll_props, components.rpy:104-113 — «pagekeys»: True; полоса вкладок
+      на строке 70 и полотно vp_flow на строке 88 через vn_scroll_props_xy), и одновременно вешает
+      на те же …'
+    - 'сценарий отказа: Десктоп, клавиатура. Игра → Карта главы → глава с графом выше окна (например
+      QA-T2 с семью узлами при масштабе ×1.00). Нажать PageDown: вместо прокрутки полотна вниз меняется
+      масштаб. Прокрутить полотно клавиатурой нечем — стрелки уводят …'
+    status: OPEN
+  FWA-030:
+    title: (P2) Каталог reports/ не отслеживается и не в .gitignore — уедет в чужой коммит
+    category: dx
+    evidence:
+    - reports/audit.md:1 — Три неотслеживаемых файла — `reports/audit.md`, `reports/decisions_needed.md`,
+      `reports/lint_before.txt` — датированы 2026-08-23 16:32–16:49, тогда как ВСЯ остальная незакоммиченная
+      работа (включая генерат) — 2026-08-21/22. Содержимое …
+    - 'сценарий отказа: `git add -A && git commit` в текущем дереве добавит в историю чужие незаконченные
+      черновики с пометкой «статус: черновик» и файл с BOM. Обратный сценарий не лучше: `git clean
+      -fd` при разборе дерева удалит их без предупреждения, потому что …'
+    implementation:
+    - .gitignore
+    tests:
+    - tools/vn/tests/test_ci_config.py::test_reports_dir_is_ignored_by_git
+    status: CLOSED
+    note: 'Решение владельца от 2026-08-23: рабочая зона аудитов остаётся локальной, трекер у проекта
+      один — этот файл.'
+  FWA-031:
+    title: (P2) vn test screens зеленеет с нулём пройденных экранов, если screens.json не записался
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/cli.py:2014 — Гейт целиком построен на содержимом screens.json: `shown/failed/missing/defined`
+      берутся из `art.screens`, а само сравнение «все объявленные экраны показаны» нигде не делается
+      — предполагается, что каждый экран тура попал ровно в одно из …'
+    - 'сценарий отказа: Смоделировать сбой дампа: временно переименовать `defined_screens` в engine_compat
+      (или сделать каталог .vncache/screens недоступным на запись после старта). Прогон доходит до
+      vn_end_of_content, RESULT.txt = OK, screens.json отсутствует. …'
+    status: OPEN
+  FWA-032:
+    title: (P2) play-оператор сцены эмитится без if_changed — один и тот же трек в соседних сценах
+      перезапускается с начала на каждом переходе
+    category: runtime
+    evidence:
+    - 'tools/vn/src/vn/content/scenes.py:375 — Эмиттер трека: channel = "music" if kind == "bgm" else
+      "ambient" stmt = f" play {channel} {track} fadeout 1.0 fadein 1.0" Оператор попадает в обвязку
+      КАЖДОЙ сцены (emit_scene, после `scene bg`, до `call …__body`), то есть исполняется при …'
+    - 'сценарий отказа: 1) Объявить bgm-трек `calm_theme` в content/audio/bgm.yaml. 2) Прописать `music:
+      bgm/calm_theme` в scene.yaml двух подряд идущих сцен — s010_intro и s020_school_gate главы ch01
+      (переход ch01_s010 exit `gate` → ch01_s020 уже есть в …'
+    status: OPEN
+  FWA-033:
+    title: (P2) MENU_MARKER_LOOKBACK объявлен «единственным местом» правила, но loc/keys.py его не
+      использует — правило продублировано трижды
+    category: dx
+    evidence:
+    - 'tools/vn/src/vn/content/scenes.py:21 — Новый блок в `scenes.py` заявляет: «Сколько строк допускается
+      между ними — правило одно на весь проект: его читают и аллокатор id (loc/keys.py), и графовый
+      компилятор (content/flow.py)», и заводит `MENU_MARKER_LOOKBACK = 3` + …'
+    - 'сценарий отказа: Изменить `MENU_MARKER_LOOKBACK` на 5 (легитимная правка: между маркером и
+      `menu` захотели поставить блок комментария) и добавить в авторскую сцену 4 строки комментария
+      между `$ vn_menu = "ch01_s020_m001"` и `menu:`. Тогда `vn loc keys` …'
+    status: OPEN
+  FWA-034:
+    title: (P2) Пакет языка можно создать с кодом исходного языка — рантайм-реестр получает дубликат
+      «Русский», который никуда не переключает
+    category: correctness
+    evidence:
+    - 'tools/vn/src/vn/loc/po.py:175 — scaffold_language отбраковывает только регекс кода и литерал
+      "pseudo": if not re.fullmatch(r"[a-z][a-z0-9_]{1,15}", code): raise LocError(...) if code ==
+      "pseudo": raise LocError("pseudo — synthetic-пакет ...") Про исходный язык проекта …'
+    - 'сценарий отказа: vn loc add ru --name Русский (команда проходит: код валиден, не "pseudo")
+      → vn loc extract → vn loc import → vn build → запустить игру → Настройки → в списке языков две
+      строки «Русский», обе подсвечены как выбранные, вторая ничего не …'
+    status: OPEN
+  FWA-035:
+    title: '(P2) Бюджет baseline_rss_mb молча не проверяется: perf.json не создаётся, а «нет числа»
+      трактуется как «в рамках»'
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/release.py:45 — `runtime_budget_failures` пропускает проверку, если метрики
+      нет: `if baseline_rss_mb is not None and budgets.get("baseline_rss_mb")` (и симметрично для
+      cold_start_s на :40). Метрику пишет рантайм в …'
+    - 'сценарий отказа: vn build && vn test smoke --picks 0,0 на Windows: команда печатает cold start,
+      НЕ печатает «пик RSS игры» и завершается зелёным. Поднять в project.yaml budgets.baseline_rss_mb
+      до 1 МБ и повторить — прогон всё равно зелёный, потому что …'
+    status: OPEN
+  FWA-036:
+    title: (P2) Релизный гейт теряет проверку озвучки целиком, если ledger главы не собран
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/release.py:999 — `validate_release` читает у отчёта озвучки только errors/holes/drafts/coverage:
+      `if vo.errors ... elif vo.holes ... elif vo.drafts ... elif vo.coverage: add("PASS", ...)`.
+      Поле `vo.warnings` не читается нигде. А в `voice.validate` …'
+    - 'сценарий отказа: Удалить loc/ledger/ch01.json (или добавить главу с voice/-манифестом, для
+      которой шард ещё не сгенерирован) и выполнить `vn release validate --flavor public`: в выводе
+      нет ни одной строки «озвучка: …», гейт зелёный. `vn voice validate` при …'
+    status: OPEN

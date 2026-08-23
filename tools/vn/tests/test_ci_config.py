@@ -402,3 +402,30 @@ def test_every_root_chapter_has_a_paths_trace_in_ci():
                 f"{job}: у корневой главы {ch} нет трассы в vn test paths — "
                 f"её сцены попадут в «непройденные», хотя проблема в запуске")
     assert checked, "ни одна джоба не зовёт vn test paths — проверка выродилась"
+
+
+def test_reports_dir_is_ignored_by_git(repo_root):
+    """Рабочая зона аудитов reports/ обязана быть ИГНОРИРУЕМОЙ, а не «просто не
+    добавленной».
+
+    Разница не косметическая. Неотслеживаемый каталог git показывает, но не
+    сторожит: первый же `git add -A` — команда, которую набирают на автомате —
+    утаскивает черновики отчётов в чужой коммит. Ровно так и собирается куча
+    вида «109 файлов одной пачкой». Игнорируемый каталог этого сделать не может.
+
+    Решение владельца (2026-08-23): трекер аудита у проекта один и
+    машиночитаемый — docs/audit/*.audit.yaml; проза отчётов в git не едет."""
+    import subprocess
+
+    (repo_root / "reports").mkdir(exist_ok=True)
+    probe = repo_root / "reports" / ".gitignore-probe"
+    created = not probe.exists()
+    if created:
+        probe.write_text("", encoding="utf-8")
+    try:
+        rc = subprocess.run(["git", "check-ignore", "-q", str(probe)],
+                            cwd=repo_root).returncode
+    finally:
+        if created:
+            probe.unlink()
+    assert rc == 0, "reports/ не игнорируется git — отчёты уедут в чужой коммит"
