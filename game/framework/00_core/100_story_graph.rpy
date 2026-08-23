@@ -102,14 +102,37 @@ init -980 python in vn_story:
     def _decision_sets(scene_id):
         return (node(scene_id) or {}).get("decisions") or []
 
+    # Индекс матрицы конфликтов и мемоизация плана. Оба — на процесс: артефакт
+    # неизменен, а цели меняются только действием игрока.
+    _conflict_index = None
+    _plan_cache = None          # (ключ, результат)
+
+    def _conflicts_set():
+        """Пары конфликтов как множество — вместо линейного скана списка.
+
+        Список в артефакте — до 4096 пар (потолок compute_compat), а зовут
+        compatible() пачками: карточка КАЖДОГО узла спрашивает conflicts() по
+        всем целям, план — по каждой паре целей, а подсказка гайда — на КАЖДЫЙ
+        пункт меню в точке выбора. Линейный скан там платился в каждом кадре."""
+        global _conflict_index
+        if _conflict_index is None:
+            _conflict_index = frozenset(
+                (x, y) for x, y in (_flow().get("incompatible") or []))
+        return _conflict_index
+
+    def _drop_plan_cache():
+        """Сбрасывается при смене целей — иначе карта перестаёт реагировать на
+        отметку цели, а это тише и хуже, чем медленная карта."""
+        global _plan_cache
+        _plan_cache = None
+
     def compatible(a, b):
         """Достижимы ли обе сцены в ОДНОМ прохождении. Сначала готовый список
         конфликтов из артефакта, иначе — сверка решений на лету (артефакт мог
         не эмитить матрицу: см. потолок в компиляторе)."""
-        pair = sorted((a, b))
-        for x, y in _flow().get("incompatible") or []:
-            if [x, y] == pair:
-                return False
+        pair = tuple(sorted((a, b)))
+        if pair in _conflicts_set():
+            return False
         da, db = _decision_sets(a), _decision_sets(b)
         if not da or not db:
             return True
@@ -138,10 +161,12 @@ init -980 python in vn_story:
             rows.remove(scene_id)
         else:
             rows.append(scene_id)
+        _drop_plan_cache()
         return scene_id in rows
 
     def clear_targets():
         persistent.vn_story_targets = []
+        _drop_plan_cache()
 
     def plan():
         """Разбивка целей на минимальное число прохождений: жадно набираем в
@@ -152,6 +177,10 @@ init -980 python in vn_story:
         Жадность здесь честна: точное разбиение — это раскраска графа
         конфликтов, а на десятках целей разница не наблюдаема, зато порядок
         стабилен и объясним игроку («сначала это, потом то»)."""
+        global _plan_cache
+        key = tuple(targets())
+        if _plan_cache is not None and _plan_cache[0] == key:
+            return _plan_cache[1]
         rows = [t for t in targets() if node(t) is not None]
         rows.sort(key=lambda sid: (scenes()[sid].get("chapter"),
                                    scenes()[sid].get("order", 0), sid))
@@ -163,6 +192,10 @@ init -980 python in vn_story:
                     break
             else:
                 runs.append([sid])
+        # План зовут из подвала карты и из подсказки гайда на КАЖДЫЙ пункт меню,
+        # а зависит он только от набора целей — значит считать его в каждом кадре
+        # незачем. Ключ — сам набор: сброс по toggle/clear страхует от промаха.
+        _plan_cache = (key, runs)
         return runs
 
     def current_run():
@@ -277,6 +310,12 @@ init -980 python in vn_story:
         renpy.call_replay(label, scope=state)
 
     # ── Данные для экрана флоучарта ──────────────────────────────────────────
+
+    def has_chapters():
+        """Есть ли хоть одна доступная глава — без построения и сортировки списка
+        (тот же гейт рельсы, тот же аргумент)."""
+        return any(renpy.store.vn.pack_registry.owned(spec.get("pack") or "core")
+                   for spec in chapters().values())
 
     def chapter_list():
         """Главы, доступные игроку: пак должен быть во владении (G9)."""
