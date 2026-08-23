@@ -16,8 +16,20 @@ init -900 python:
     # механизмом движка — своей математики громкостей не вводим (документировано:
     # config.emphasize_audio_*). Без озвучки конфиг безвреден: канал voice молчит.
     config.emphasize_audio_channels = ["voice"]
+    # ЛИНЕЙНАЯ доля громкости, не позиция слайдера: значение уходит прямо в
+    # renpysound.set_secondary_volume (audio.py: periodic -> set_secondary_volume,
+    # «This is linear, and is multiplied with the primary volume»). 0.6 — это
+    # ровно 60% амплитуды.
     config.emphasize_audio_volume = 0.6
     config.emphasize_audio_time = 0.5
+    # Сам механизм гейтится ИГРОВОЙ НАСТРОЙКОЙ, а не конфигом: audio.py:1247
+    # `if not renpy.game.preferences.emphasize_audio: emphasized = False`, а
+    # значение по умолчанию у неё False (renpy/preferences.py). Без этой строки
+    # три конфига выше не делали ровно ничего — дакинг был выключен всегда, и
+    # заметить это можно было только на слух, с озвучкой поверх музыки.
+    # default_* применяется на первом запуске (00defaults: _apply_default_preferences);
+    # игрок может выключить дакинг тумблером в настройках.
+    config.default_emphasize_audio = True
 
 
 # store vn создан на init -999 (030_flow.rpy); здесь только дополняем фасад.

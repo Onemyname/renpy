@@ -154,6 +154,7 @@ strings:
   ui.prefs.volume_music: "Музыка"
   ui.prefs.volume_sound: "Звук"
   ui.prefs.volume_voice: "Голос"
+  ui.prefs.duck_voice: "Приглушать музыку под голос"
 
   # ── Главы ───────────────────────────────────────────────────────────────────
   ui.chapters.dlc: "DLC"

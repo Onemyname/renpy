@@ -802,3 +802,26 @@ def test_bridge_reports_terminality_per_label(repo_root, tmp_path):
     assert terminal["ch01_s010__if_full"] is True
     assert terminal["ch01_s010__if_no_else"] is False, "путь мимо if не учтён"
     assert terminal["ch01_s010__menu_partial"] is False, "незакрытый пункт меню не учтён"
+
+
+def test_voice_ducking_is_actually_enabled(repo_root):
+    """Трёх config.emphasize_audio_* мало: механизм гейтится ИГРОВОЙ настройкой.
+
+    renpy/audio/audio.py: `if not renpy.game.preferences.emphasize_audio:
+    emphasized = False`, а значение по умолчанию у неё False
+    (renpy/preferences.py: Preference("emphasize_audio", False)). Без
+    config.default_emphasize_audio дакинг был выключен ВСЕГДА, а заметить это
+    можно только на слух и только с озвучкой поверх музыки — то есть на контенте,
+    которого в репозитории ещё нет. Справочник при этом называл подсистему
+    работающей."""
+    audio = (repo_root / "game" / "framework" / "00_core"
+             / "045_audio.rpy").read_text(encoding="utf-8")
+    assert 'config.emphasize_audio_channels = ["voice"]' in audio
+    assert "config.default_emphasize_audio = True" in audio, \
+        "дакинг сконфигурирован, но не включён — настройка по умолчанию False"
+
+    # И тумблер: механизм и так гейтится настройкой, значит игрок обязан иметь
+    # к ней доступ, иначе выключить приглушение нечем.
+    prefs = (repo_root / "game" / "framework" / "20_ui" / "screens"
+             / "core_screens.rpy").read_text(encoding="utf-8")
+    assert 'Preference("emphasize audio", "toggle")' in prefs

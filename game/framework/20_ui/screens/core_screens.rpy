@@ -363,6 +363,13 @@ screen preferences():
                     use vn_pref_slider(vn_loc.t("ui.prefs.volume_music"), Preference("music volume"))
                     use vn_pref_slider(vn_loc.t("ui.prefs.volume_sound"), Preference("sound volume"))
                     use vn_pref_slider(vn_loc.t("ui.prefs.volume_voice"), Preference("voice volume"))
+                    # Дакинг: пока звучит голос, остальные каналы приглушаются.
+                    # Тумблер здесь, а не «включено навсегда»: механизм движка и
+                    # так гейтится этой настройкой, а игроку с плохим слухом или
+                    # без озвучки в его языке приглушение музыки может мешать.
+                    textbutton vn_loc.t("ui.prefs.duck_voice"):
+                        action Preference("emphasize audio", "toggle")
+                        style "vn_toggle_button"
             vbox:
                 spacing gui.sp_l + gui.sp_s
                 vbox:
