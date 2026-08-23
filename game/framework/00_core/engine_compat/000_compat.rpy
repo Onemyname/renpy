@@ -77,3 +77,87 @@ init -950 python in vn_compat:
             return False
         fn()
         return True
+
+    # ── Слияние persistent между инсталляциями (G18) ─────────────────────────
+    #
+    # Ren'Py сливает persistent ПОФИЛДОВО, и по умолчанию побеждает более новое
+    # значение поля ЦЕЛИКОМ (persistent.py: default_merge). Для своих полей-
+    # множеств движок специально регистрирует объединение — _seen_images,
+    # _seen_audio, _seen_ever, _chosen. Наши накопители (открытая галерея,
+    # выданные ачивки, виденные сцены, цели walkthrough) — такие же множества,
+    # но не были зарегистрированы ни разу, поэтому при слиянии уникальные записи
+    # одной из сторон молча исчезали.
+    #
+    # Merge — не гипотетический путь: savelocation.init поднимает МИНИМУМ две
+    # локации на десктопе (config.savedir и <gamedir>/saves), пишет во все и
+    # сливает всё, что новее. Steam Auto-Cloud синхронизирует только первую, так
+    # что расхождение между ними — штатное состояние. Асимметрия делала дефект
+    # особенно неприятным: кадры, засчитанные движком через _seen_images,
+    # слияние переживали, а видео и аудио галереи, открытые нашим кодом, — нет.
+    #
+    # Функции обязаны быть защитными: исключение внутри update() при
+    # developer=True роняет игру на старте. Вход не-dict (persistent старой
+    # версии, None) приводим к текущему значению, а не к TypeError.
+    # КОНТРАКТ-ТЕСТ: test_engine_compat::test_persistent_containers_merge_by_union.
+
+    def _merge_dict_union(old, new, current):
+        """Объединение по ключам: анлок, сделанный на любой из машин, остаётся."""
+        out = {}
+        for src in (current, old, new):
+            if isinstance(src, _PLAIN[0]):
+                out.update(src)
+        return out
+
+    def _merge_progress_max(old, new, current):
+        """Счётчики прогресса: по каждому ключу берётся БОЛЬШЕЕ. Прогресс,
+        показанный игроку, не должен уезжать назад после синхронизации."""
+        out = {}
+        for src in (current, old, new):
+            if not isinstance(src, _PLAIN[0]):
+                continue
+            for k, v in src.items():
+                try:
+                    v = int(v)
+                except (TypeError, ValueError):
+                    continue
+                out[k] = max(out.get(k, v), v)
+        return out
+
+    def _merge_list_union(old, new, current):
+        """Список целей walkthrough: объединение с сохранением порядка."""
+        out = []
+        for src in (current, old, new):
+            if not isinstance(src, _PLAIN[1]):
+                continue
+            for v in src:
+                if v not in out:
+                    out.append(v)
+        return out
+
+    # Поле -> как сливать. Список ведётся ЗДЕСЬ, а не у каждого владельца, чтобы
+    # «накопитель в persistent» нельзя было завести, не ответив на вопрос о
+    # слиянии: забытая регистрация не падает, она молча теряет прогресс игрока.
+    PERSISTENT_MERGES = {
+        "vn_gallery_unlocked": _merge_dict_union,
+        "vn_achievements": _merge_dict_union,
+        "vn_story_seen": _merge_dict_union,
+        "vn_ach_progress": _merge_progress_max,
+        "vn_story_targets": _merge_list_union,
+    }
+
+    def register_persistent_merges():
+        """Зарегистрировать слияние своих накопителей. Возвращает список полей."""
+        fn = getattr(renpy, "register_persistent", None)
+        if fn is None:
+            vn_log("persistent: renpy.register_persistent недоступен — "
+                   "накопители будут сливаться заменой")
+            return []
+        for field, merge in sorted(PERSISTENT_MERGES.items()):
+            fn(field, merge)
+        return sorted(PERSISTENT_MERGES)
+
+
+init -949 python:
+    # Сразу после vn_compat (init -950) и задолго до первого слияния: update()
+    # движок зовёт уже на старте, из renpy.main.
+    vn_compat.register_persistent_merges()

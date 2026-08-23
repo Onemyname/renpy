@@ -237,3 +237,86 @@ def test_revertable_types(repo_root, monkeypatch):
     assert isinstance(out["a"][1]["b"], RSet)
     # Скаляры и кортежи проходят как есть — конвертировать нечего.
     assert mod.revertable("s") == "s" and mod.revertable((1, 2)) == (1, 2)
+
+
+def _compat_merges(repo_root):
+    """Функции слияния из engine_compat, исполненные как обычный python.
+
+    Текстовой проверки «функция объявлена» тут мало: сливать persistent будет
+    именно ЭТОТ код, и ошибка в нём стоит не предупреждения, а потерянного
+    прогресса игрока (а исключение внутри update() при developer=True — краха на
+    старте). Поэтому тело вырезается из .rpy и реально исполняется."""
+    import textwrap
+
+    src = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
+           / "000_compat.rpy").read_text(encoding="utf-8")
+    ns = {"_PLAIN": (dict, list, set)}
+    for name in ("_merge_dict_union", "_merge_progress_max", "_merge_list_union"):
+        head = f"    def {name}("
+        chunk = head + src.split(head, 1)[1]
+        out = []
+        for line in chunk.splitlines():
+            # Конец функции — первая непустая строка с отступом меньше тела
+            # (следующий def того же уровня, комментарий блока, init-блок).
+            if out and line.strip() and not line.startswith("        "):
+                break
+            out.append(line)
+        exec(textwrap.dedent("\n".join(out)), ns)   # noqa: S102 — свой же код
+    return ns
+
+
+def test_persistent_containers_merge_by_union(repo_root):
+    """Слияние накопителей — объединение, а не замена.
+
+    Ren'Py сливает persistent пофилдово, и по умолчанию побеждает более новое
+    значение поля ЦЕЛИКОМ (persistent.py: default_merge). Для своих множеств
+    движок регистрирует объединение (_seen_images и др.); наши накопители не были
+    зарегистрированы ни разу, поэтому анлоки одной из сторон молча исчезали.
+    Путь не гипотетический: savelocation.init поднимает минимум две локации
+    (config.savedir и <gamedir>/saves), а Steam Auto-Cloud синхронизирует только
+    первую."""
+    m = _compat_merges(repo_root)
+
+    # Две машины открыли разные элементы — обязаны остаться оба.
+    assert m["_merge_dict_union"]({"V1": True}, {"V2": True}, {}) == \
+        {"V1": True, "V2": True}
+    # Прогресс не уезжает назад: по каждому ключу максимум.
+    assert m["_merge_progress_max"]({"a": 5}, {"a": 2, "b": 1}, {}) == {"a": 5, "b": 1}
+    # Цели walkthrough: объединение с сохранением порядка и без дублей.
+    assert m["_merge_list_union"](["x"], ["y", "x"], []) == ["x", "y"]
+
+    # Защитность: persistent старой версии (None, чужой тип) не должен давать
+    # TypeError — исключение внутри update() роняет игру на старте.
+    for bad in (None, 0, "строка", []):
+        assert m["_merge_dict_union"](bad, {"V": True}, {}) == {"V": True}
+        assert m["_merge_progress_max"](bad, {"a": 1}, {}) == {"a": 1}
+    assert m["_merge_list_union"](None, ["x"], None) == ["x"]
+    # Нечисловой мусор в счётчике пропускается, а не валит слияние.
+    assert m["_merge_progress_max"]({"a": "нет"}, {"a": 3}, {}) == {"a": 3}
+
+
+def test_every_persistent_accumulator_is_registered_for_merge(repo_root):
+    """Список полей ведётся в одном месте, и он обязан покрывать ВСЕ накопители.
+
+    Тест обнаруживающий, а не сверяющий с копией списка: он сам находит
+    `default persistent.<имя> = {}` и `= []` во фреймворке. Забытая регистрация
+    не падает — она молча теряет прогресс игрока, поэтому ловить её должен не
+    ревьюер."""
+    import re
+
+    fields, decl = set(), {}
+    for f in sorted((repo_root / "game" / "framework").rglob("*.rpy")):
+        for m in re.finditer(r"^default persistent\.([a-z0-9_]+)\s*=\s*(\{\}|\[\])",
+                             f.read_text(encoding="utf-8"), re.M):
+            fields.add(m.group(1))
+            decl[m.group(1)] = f.name
+    assert fields, "накопителей в persistent не нашлось — тест выродился"
+
+    src = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
+           / "000_compat.rpy").read_text(encoding="utf-8")
+    table = src.split("PERSISTENT_MERGES = {", 1)[1].split("}", 1)[0]
+    registered = set(re.findall(r'"([a-z0-9_]+)":', table))
+    missing = {f: decl[f] for f in fields - registered}
+    assert not missing, (
+        f"контейнеры persistent без функции слияния: {missing} — при слиянии "
+        f"инсталляций записи одной из сторон исчезнут")
