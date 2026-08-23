@@ -167,7 +167,7 @@ items:
       - game/framework/00_core/035_platform.rpy
       - game/framework/20_ui/screens/build_overlay.rpy
     tests:
-      - tools/vn/tests/test_platform.py::test_beta_branch_is_read_once_per_process
+      - tools/vn/tests/test_platform.py::test_beta_branch_is_read_at_init_and_never_at_runtime
     status: CLOSED
     note: >
       Ветку выбирают в клиенте Steam — без перезапуска игры она не меняется,
@@ -350,7 +350,7 @@ items:
     implementation:
       - tools/vn/src/vn/cli.py
     tests:
-      - tools/vn/tests/test_cli.py::test_help_encoding_is_set_before_click_parses
+      - tools/vn/tests/test_cli.py::test_help_is_utf8_even_when_console_asks_cp1251
     status: CLOSED
     note: >
       Перекодировка вызывается и на импорте модуля (точка входа консольного
@@ -939,12 +939,14 @@ items:
       (--picks 0,1) с сохранённым `why`. Дифф просмотрен и состоит ровно из
       ожидаемого: content_version 0.1.5 -> 1.0.0, recorded_at, и появление
       переменных тестового пака ch70…ch73 в снапшоте (все на значениях по
-      умолчанию — прогон их не касается, см. RTL-046). Путь, набор
+      умолчанию — прогон их не касается). Снапшот здесь — DEV-чекаут, где
+      объявления пака есть; в сборку игрока они не уезжают (RTL-046: отдельный
+      файл генерата, исключаемый глобом). Путь, набор
       разблокированной галереи, взятые выборы и vn_save_schema не изменились —
       то есть эталон подтверждает прежнее поведение, а не узаконивает новое.
 
   RTL-046:
-    title: "Переменные тестового пака доезжают до сейва игрока: цена решения «пак вне флейворов»"
+    title: "Переменные тестового пака НЕ должны уезжать в сборку игрока (генерат один на все флейворы)"
     category: architecture
     evidence:
       - "генерат один на все флейворы, поэтому defaults.gen.rpy содержит default ch70.path и его соседей в любой сборке"

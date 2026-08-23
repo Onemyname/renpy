@@ -134,3 +134,39 @@ def test_the_guard_is_not_vacuous():
         text = (DOCS / rel).read_text(encoding="utf-8")
         total += len(SYMBOL_REF_RE.findall(text))
     assert total > 50, f"символьных ссылок всего {total} — проверять почти нечего"
+
+
+def test_audit_trackers_reference_real_files_and_tests(repo_root):
+    """Поля implementation/tests у CLOSED — это и есть сеть «закрыто ⇔ проверяемо».
+
+    Схема audit@1 требует их наличия, но резолвимость не проверяет никто, и в
+    трекере уже жили две висячие ссылки на переименованные тесты. Ирония в том,
+    что этот самый файл заведён ровно ради такой проверки — только для
+    документации. Ссылка, которая никуда не ведёт, хуже отсутствующей: она
+    создаёт видимость покрытия."""
+    import re
+
+    import yaml
+
+    dangling = []
+    for tracker in sorted((repo_root / "docs" / "audit").glob("*.audit.yaml")):
+        doc = yaml.safe_load(tracker.read_text(encoding="utf-8"))
+        where = tracker.relative_to(repo_root).as_posix()
+        for item_id, item in (doc.get("items") or {}).items():
+            for rel in item.get("implementation") or []:
+                if not (repo_root / rel).exists():
+                    dangling.append(f"{where}:{item_id} implementation -> {rel}")
+            for ref in item.get("tests") or []:
+                # Движковые гейты («vn test oversample», шаг ci.yml) — законная
+                # форма записи: это не pytest, и файла у них нет. Проверяем
+                # только то, что записано как путь к .py.
+                if ".py" not in ref:
+                    continue
+                path, _, name = ref.partition("::")
+                f = repo_root / path
+                if not f.is_file():
+                    dangling.append(f"{where}:{item_id} tests -> {path}")
+                elif name and not re.search(rf"^\s*def {re.escape(name)}\b",
+                                            f.read_text(encoding="utf-8"), re.M):
+                    dangling.append(f"{where}:{item_id} tests -> {ref}")
+    assert not dangling, "висячие ссылки в трекерах аудита:\n  " + "\n  ".join(dangling)
