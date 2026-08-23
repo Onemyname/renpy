@@ -122,7 +122,13 @@ init -980 python in vn_ach:
         reported = int(_reported().get(ach_id, 0))
         if value > reported and (value // step) > (reported // step):
             _reported()[ach_id] = value
-            if _progress_provider is not None:
+            # Скрытая ачивка не сообщает прогресс платформе. Экран достижений
+            # прогресс скрытой уже прячет («он выдал бы, ЧТО именно надо
+            # собрать» — тот же спойлер, что описание), а попап Steam показал бы
+            # и название, и счётчик мимо экрана. Копится прогресс молча, попап —
+            # только на выдаче.
+            hidden = bool((_registry().get(ach_id) or {}).get("hidden"))
+            if _progress_provider is not None and not hidden:
                 try:
                     _progress_provider(ach_id, value)
                 except Exception as e:
@@ -143,6 +149,17 @@ init -980 python in vn_ach:
         granted = []
         for ach_id, spec in _registry().items():
             if has(ach_id):
+                continue
+            # Гейт видимости — ДО расчёта прогресса, а не только внутри grant().
+            # Раньше _note_progress успевал записать persistent и дёрнуть
+            # провайдера платформы раньше любой проверки, а под Steam провайдер
+            # рисует ВИДИМЫЙ попап оверлея с названием ачивки
+            # (indicate_achievement_progress). То есть SFW-сборка показывала
+            # «N из M» для ачивки пака nsfw, если её счётчик двигает базовый
+            # контент, — ровно тот намёк на непроданное, ради запрета которого
+            # visible() и существует (G9). Побочно снимается лишняя работа на
+            # каждом якоре: невидимые ачивки больше не считаются.
+            if not visible(ach_id):
                 continue
             trigger = spec.get("trigger") or {}
             hit = False

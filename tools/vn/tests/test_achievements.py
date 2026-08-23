@@ -386,3 +386,35 @@ def test_progress_side_effects_go_through_one_replay_gate(repo_root):
     emitter = (repo_root / "tools" / "vn" / "src" / "vn" / "content"
                / "scenes.py").read_text(encoding="utf-8")
     assert "__replay:" in emitter and "__body" in emitter
+
+
+def test_progress_is_gated_by_visibility_and_never_leaks_hidden(repo_root):
+    """Два правила подсистемы, которые обходил расчёт прогресса.
+
+    (1) G9/NSFW: visible() существует ровно затем, чтобы игрок не видел намёка
+    на непроданный контент. Но _note_progress писал persistent и дёргал
+    провайдера платформы РАНЬШЕ любого гейта, а под Steam провайдер рисует
+    видимый попап оверлея с названием ачивки (indicate_achievement_progress).
+    Прогрессивная ачивка пака nsfw со счётчиком, который двигает базовый контент,
+    исправно показывала «N из M» в SFW-сборке.
+
+    (2) Спойлер скрытых: экран специально не показывает прогресс скрытой
+    («он выдал бы, ЧТО именно надо собрать»), а попап показывал и название, и
+    счётчик — мимо экрана.
+
+    Проверяется по исходнику ядра, как и остальные тесты этого набора."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "080_achievements.rpy").read_text(encoding="utf-8")
+
+    body = src.split("def check(", 1)[1].split("\n    def ", 1)[0]
+    gate = body.index("if not visible(ach_id):")
+    assert gate < body.index("_note_progress("), \
+        "прогресс считается раньше гейта видимости — попап уедет игроку"
+    assert "continue" in body[gate:gate + 120]
+
+    note = src.split("def _note_progress(", 1)[1].split("\n    def ", 1)[0]
+    guard = [ln.strip() for ln in note.splitlines()
+             if "_progress_provider" in ln and ln.strip().startswith("if ")]
+    assert guard and "not hidden" in guard[0], \
+        f"прогресс скрытой ачивки уходит в платформу мимо спойлер-правила: {guard}"
+    assert 'get("hidden")' in note, "признак hidden берётся не из реестра"
