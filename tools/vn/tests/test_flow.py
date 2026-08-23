@@ -963,3 +963,74 @@ def test_null_default_is_a_value_not_a_missing_one(tmp_path):
         "переменная без ключа default обязана оставаться ошибкой")
     # И само состояние входа: реплей входит в сцену с None, а не «никак».
     assert build_model(root).preconds["ch86_s010"] == [{"ch86.gift": None}]
+
+
+@requires_sdk
+def test_body_assign_survives_a_conditional_exit_list(tmp_path):
+    """Присваивание ТЕЛА сцены не должно исчезать из модели.
+
+    Ключ (src, exit_id, menu, idx) адресует пункт меню, но рёбер с таким ключом
+    бывает несколько: exit со списком условных целей даёт по ребру на каждую цель
+    с одинаковой атрибуцией к пункту. Список присваиваний пункта попадал в
+    аккумулятор по разу на ЦЕЛЬ, а вычитается он из общего списка сцены
+    мультимножеством — и вычитал больше, чем нужно: присваивание тела,
+    совпадающее с присваиванием пункта по (переменная, значение), выбрасывалось.
+
+    Дальше по цепочке это ложное «сцена недостижима»: пустой reach -> пустые
+    preconds -> в модалке карты нет кнопки «Переиграть», walkthrough не ведёт к
+    цели, а матрица конфликтов начинает выдавать ложное «несовместимо» — то
+    самое красное, которое ADR-0021 §3 называет прямым обманом игрока.
+
+    Такой топологии не было ни в юнит-тестах, ни в packs/qa_flow: в ch72
+    условный список есть, но его exit не возвращается из меню."""
+    root = tmp_path / "root"
+    d = root / "content" / "chapters" / "ch88_bodyassign"
+    (d / "scenes").mkdir(parents=True)
+    (d / "chapter.yaml").write_text(yaml.safe_dump(
+        {"schema": "chapter@1", "id": "ch88", "title_key": "meta.chapters.ch88.title",
+         "status": "release", "entry_scene": "s010",
+         "scene_order": ["s010", "s020", "s030", "s040"]},
+        allow_unicode=True, sort_keys=False), encoding="utf-8")
+    (d / "vars.yaml").write_text(yaml.safe_dump(
+        {"schema": "vars@1", "store": "ch88", "vars": {
+            "flag": {"type": "bool", "default": False, "doc": "t", "since": 1},
+            "mood": {"type": "str", "default": "calm", "doc": "t", "since": 1}}},
+        allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    metas = {
+        # exit go — СПИСОК условных целей: два ребра с одной атрибуцией к пункту 0.
+        "s010_fork": {"exits": {"go": [{"when": "ch88.mood == 'calm'", "to": "s020"},
+                                       {"to": "s030"}],
+                                "alt": [{"when": "ch88.flag", "to": "s040"}]}},
+        "s020_left": {}, "s030_right": {},
+        # Сцена за условием читает тот же флаг — тогда осмысленны и preconds.
+        "s040_gate": {"vars": {"reads": ["ch88.flag"]}},
+    }
+    for name, meta in metas.items():
+        doc = {"schema": "scene@1", "id": name.split("_")[0]}
+        doc.update(meta)
+        (d / "scenes" / f"{name}.scene.yaml").write_text(
+            yaml.safe_dump(doc, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    rpys = []
+    body = (
+        'label ch88_s010__body:\n'
+        '    $ ch88.flag = True\n'            # присваивание ТЕЛА
+        '    $ vn_menu = "ch88_s010_m001"\n'
+        '    menu:\n'
+        '        "Подтвердить":\n'
+        '            $ ch88.flag = True\n'    # то же (переменная, значение), что в теле
+        '            return "go"\n'
+        '        "Отказаться":\n'
+        '            return "alt"\n')
+    for name in metas:
+        sid = f"ch88_{name.split('_')[0]}"
+        f = d / "scenes" / f"{name}.scene.rpy"
+        f.write_text(body if sid == "ch88_s010"
+                     else f"label {sid}__body:\n    return\n", encoding="utf-8")
+        rpys.append(f)
+
+    model = build_model(root, analyses=analyze_scene_files(REPO_ROOT, rpys))
+    assert model.scenes["ch88_s040"].reach, (
+        "присваивание тела вычтено вместе с присваиванием пункта — сцена за "
+        "условием ch88.flag объявлена недостижимой")
+    assert model.preconds["ch88_s040"] == [{"ch88.flag": True}]

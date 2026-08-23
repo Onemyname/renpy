@@ -688,11 +688,30 @@ def compute_reach(model: FlowModel) -> None:
     for e in model.edges:
         edges_by_src.setdefault(e.src, []).append(e)
 
+    # Присваивания пунктов меню — РОВНО ПО РАЗУ на пункт.
+    #
+    # Ключ (src, exit_id, menu, idx) адресует пункт, а рёбер с таким ключом может
+    # быть несколько: exit со списком условных целей
+    # (`exits: {next: [{when: …, to: sA}, {to: sB}]}`) даёт по FlowEdge на каждую
+    # цель с ОДИНАКОВОЙ атрибуцией к пункту. Без дедупликации список пункта
+    # попадал в аккумулятор N раз, а _scene_level_assigns вычитает его из общего
+    # списка сцены мультимножеством — и вычитал БОЛЬШЕ, чем нужно: присваивание
+    # ТЕЛА сцены, совпадающее с присваиванием пункта по (переменная, значение),
+    # выбрасывалось. Дальше по цепочке это ложное «сцена недостижима»: пустой
+    # reach -> пустые preconds -> в модалке карты нет кнопки «Переиграть»,
+    # walkthrough не ведёт к цели, а compute_compat начинает выдавать ложные
+    # пары «несовместимо» — то самое красное, которое ADR-0021 §3 называет
+    # прямым обманом игрока.
     choice_assigns: dict[str, list[dict]] = {}
+    seen_choices: set[tuple] = set()
     for e in model.edges:
-        if e.menu is not None:
-            choice_assigns.setdefault(e.src, []).extend(
-                model.edge_assigns.get((e.src, e.exit_id, e.menu, e.idx), []))
+        if e.menu is None:
+            continue
+        key = (e.src, e.exit_id, e.menu, e.idx)
+        if key in seen_choices:
+            continue
+        seen_choices.add(key)
+        choice_assigns.setdefault(e.src, []).extend(model.edge_assigns.get(key, []))
 
     body_assigns = {sid: _scene_level_assigns(node, choice_assigns.get(sid, []))
                     for sid, node in model.scenes.items()}
