@@ -524,6 +524,27 @@ def rpyc_cache_lane(root: Path, dest_suffix: str = "") -> tuple[Path, list[Path]
     return lane, legacy, bool(legacy)
 
 
+def rpyc_lane_frozen(root: Path, lane: Path, version: str) -> str | None:
+    """Причина, по которой линию `.rpyc` этой версии перезаписывать нельзя, или None.
+
+    В линии выпущенной версии лежат statement-имена той сборки, которая стоит у
+    игроков: следующий релиз кладёт их в `game/` перед компиляцией, чтобы старые
+    сейвы продолжали загружаться (G6). Перезапись сегодняшними именами ломает
+    ровно это — и не обнаруживается ничем: сборка зелёная, сейвы игроков рвутся
+    в СЛЕДУЮЩЕМ релизе.
+
+    Признак «выпущена» — git-тег `v<версия>`, а не наличие каталога: до тега
+    пересборка той же версии законна и нужна (её делают десятки раз)."""
+    if not (lane / version).is_dir():
+        return None
+    if not git_tag_exists(root, f"v{version}"):
+        return None
+    return (f"кэш .rpyc версии {version} уже выпущен (есть тег v{version}) — "
+            f"перезапись {(lane / version).name}/ сломала бы перенос "
+            f"statement-имён и сейвы игроков (G6). Бампните project.yaml: "
+            f"version — или удалите тег, если он поставлен по ошибке")
+
+
 def snapshot_content(root: Path) -> dict:
     """Снимок реестра для changelog и штампа id_registry: главы ядра И паков.
 

@@ -388,7 +388,7 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     import shutil
 
     from .doctor import sdk_path
-    from .release import rpyc_cache_lane
+    from .release import rpyc_cache_lane, rpyc_lane_frozen
     from .repo import load_project
 
     root = _root()
@@ -455,6 +455,10 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     # 5) Кэш .rpyc этого релиза — для переноса имён в следующем (G6): весь game/,
     # в линию своего флейвора (см. пункт 2).
     save_dir = lane / version
+    # Линия УЖЕ ВЫПУЩЕННОЙ версии неприкосновенна (release.py: rpyc_lane_frozen).
+    frozen = rpyc_lane_frozen(root, lane, version)
+    if frozen:
+        _fail(frozen)
     if save_dir.exists():
         shutil.rmtree(save_dir)
     n = 0

@@ -5,6 +5,7 @@
 import io
 import json
 import shutil
+import subprocess
 import sys
 import textwrap
 import types
@@ -786,3 +787,41 @@ def test_unshipped_pack_vars_are_excluded_from_every_flavor(tmp_path):
             f"его переменные уедут в сейв игрока")
 
 
+def test_released_rpyc_lane_is_not_overwritten(tmp_path):
+    """Линия `.rpyc` выпущенной версии неприкосновенна.
+
+    Это самая тихая из известных мне поломок сейвов. В линии лежат
+    statement-имена сборки, которая стоит у игроков; следующий релиз кладёт их в
+    `game/` перед компиляцией — на этом держится загрузка старых сейвов (G6).
+    Перезапись сегодняшними именами не ломает НИЧЕГО сегодня: сборка зелёная,
+    дистрибутив валиден, гейт проходит. Рвётся загрузка сейвов в СЛЕДУЮЩЕМ
+    релизе, у игроков, и связать это с той сборкой уже почти невозможно.
+
+    Пойман этот случай, кстати, живым способом: проверочный прогон
+    `vn release build --flavor public` перезаписал линию выпущенной 1.0.0 в этом
+    же репозитории (56 изменённых файлов, восстановлено из git).
+
+    Ровно два состояния должны различаться, и оба проверяются:
+    ДО тега пересборка той же версии законна (её делают десятки раз),
+    ПОСЛЕ тега — запрещена.
+    """
+    from vn.release import rpyc_lane_frozen
+
+    root = _mk_root(tmp_path)
+    lane = root / "ci" / "rpyc-cache" / "public"
+    (lane / "1.0.0").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-q", "--allow-empty", "-m", "init"],
+                   cwd=root, check=True)
+
+    # Каталог есть, тега нет — пересборка законна.
+    assert rpyc_lane_frozen(root, lane, "1.0.0") is None
+    # Версия, которой в кэше нет вовсе, — тоже законна (первый релиз).
+    assert rpyc_lane_frozen(root, lane, "1.1.0") is None
+
+    subprocess.run(["git", "tag", "v1.0.0"], cwd=root, check=True)
+    reason = rpyc_lane_frozen(root, lane, "1.0.0")
+    assert reason and "1.0.0" in reason and "G6" in reason
+    # Тег на ДРУГУЮ версию линию 1.0.0 не замораживает и наоборот.
+    assert rpyc_lane_frozen(root, lane, "1.1.0") is None
