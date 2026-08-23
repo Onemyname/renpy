@@ -1,0 +1,9 @@
+# Тестовая топология qa_flow (ADR-0021). Пак вне flavors: игроку не уезжает.
+schema: vars@1
+store: ch72
+vars:
+  donation:
+    type: int
+    default: 0
+    doc: "Сумма перевода: порог 5000 открывает секретную сцену"
+    since: 1

@@ -1,0 +1,12 @@
+# Тестовая топология qa_flow (ADR-0021). Пак вне flavors: игроку не уезжает.
+schema: chapter@1
+id: ch70
+title_key: meta.chapters.ch70.title
+status: release
+entry_scene: s010
+scene_order: [s010, s020, s030, s040, s050]
+clusters:
+  - title_key: qa.flow.cluster.split
+    scenes: [s010, s020, s030]
+  - title_key: qa.flow.cluster.merge
+    scenes: [s040, s050]

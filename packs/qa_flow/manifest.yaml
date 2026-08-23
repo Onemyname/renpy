@@ -1,0 +1,12 @@
+# Тестовые топологии графа (ADR-0021). Пак СОЗНАТЕЛЬНО не перечислен ни в одном
+# flavors.packs в project.yaml: в релизной сборке vn.pack_registry.installed()
+# вернёт False и контент не виден игроку, а в dev и CI главы играбельны.
+# Это и есть «один переключатель» из задачи: строка в project.yaml.
+schema: pack_manifest@1
+id: qa_flow
+kind: mod
+version: 1.0.0
+title_key: meta.packs.qa_flow.title
+api_level: {min: 1, below: 2}
+requires:
+  core: ">=1.0.0 <2"

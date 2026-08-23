@@ -1,0 +1,14 @@
+# Тестовая топология qa_flow (ADR-0021). Пак вне flavors: игроку не уезжает.
+schema: vars@1
+store: ch71
+vars:
+  trust:
+    type: bool
+    default: false
+    doc: "Доверился на первой развилке"
+    since: 1
+  bold:
+    type: bool
+    default: false
+    doc: "Смелый выбор на второй развилке"
+    since: 1

@@ -1,0 +1,14 @@
+# Тестовая топология qa_flow (ADR-0021). Пак вне flavors: игроку не уезжает.
+schema: vars@1
+store: ch70
+vars:
+  path:
+    type: str
+    default: none
+    doc: "Ветка первого ромба: left | right | none"
+    since: 1
+  pace:
+    type: str
+    default: none
+    doc: "Ветка второго ромба: fast | slow | none"
+    since: 1

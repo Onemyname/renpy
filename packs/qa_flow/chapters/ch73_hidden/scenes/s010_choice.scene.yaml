@@ -1,0 +1,6 @@
+# Тестовая топология qa_flow (ADR-0021). Пак вне flavors: игроку не уезжает.
+schema: scene@1
+id: s010
+exits:
+  explore: s020
+  leave: s030

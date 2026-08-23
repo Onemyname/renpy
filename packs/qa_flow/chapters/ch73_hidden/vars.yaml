@@ -1,0 +1,9 @@
+# Тестовая топология qa_flow (ADR-0021). Пак вне flavors: игроку не уезжает.
+schema: vars@1
+store: ch73
+vars:
+  found:
+    type: bool
+    default: false
+    doc: "Игрок нашёл пропускаемую сцену s020"
+    since: 1
