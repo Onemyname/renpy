@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -229,9 +230,43 @@ def _extract_archive(archive: Path, dest: Path) -> None:
             # filter меняет поведение (DeprecationWarning уже сейчас).
             tf.extractall(dest, filter="data")
         return
-    # zipfile параметра filter не имеет: пути санирует сам extractall.
+    # zipfile параметра filter не имеет: пути санирует сам extract.
+    #
+    # Права он не переносит ВООБЩЕ: CPython ZipFile._extract_member открывает цель
+    # обычным open(targetpath, "wb") и external_attr не читает. Ren'Py права в
+    # архив кладёт (SDK launcher/game/package_formats.rpy: external_attr =
+    # 0o100755 << 16) и при СВОЕЙ распаковке восстанавливает их руками
+    # (launcher/game/installer.py) — то есть SDK про эту дыру знает, а наш
+    # конвейер не знал. Для mac формат ровно один и это zip (_DIST_SUFFIX), а
+    # .app мы намеренно не разворачиваем — значит в депот уезжал бандл, у
+    # которого Contents/MacOS/<exe> имеет режим 0644, и Steam на macOS такой
+    # бандл не запускает вовсе. Сборка, гейт, VDF и аплоад при этом зелёные.
     with zipfile.ZipFile(archive) as zf:
-        zf.extractall(dest)
+        for info in zf.infolist():
+            written = zf.extract(info, dest)
+            mode = (info.external_attr >> 16) & 0o777
+            # mode == 0 у архивов, собранных без POSIX-атрибутов (например, на
+            # Windows): выставлять там нечего, и придумывать права за архив нельзя.
+            if mode and not info.is_dir():
+                os.chmod(written, mode)
+
+
+def _archive_executables(archive: Path) -> int:
+    """Сколько записей архива объявлены исполняемыми (бит владельца x).
+
+    Спрашиваем АРХИВ, а не распакованное дерево, и это принципиально: на Windows
+    x-бит не представим в файловой системе вовсе, поэтому проверка по факту
+    распаковки была бы вечно красной на этой машине и ничего не сказала бы о
+    самом артефакте. Артефакт же одинаков на любом хосте."""
+    import tarfile
+    import zipfile
+
+    if archive.name.endswith(".tar.bz2"):
+        with tarfile.open(archive, "r:bz2") as tf:
+            return sum(1 for m in tf.getmembers() if m.isfile() and m.mode & 0o100)
+    with zipfile.ZipFile(archive) as zf:
+        return sum(1 for i in zf.infolist()
+                   if not i.is_dir() and ((i.external_attr >> 16) & 0o100))
 
 
 def _flatten_wrapper_dir(dest: Path) -> None:
@@ -349,6 +384,17 @@ def steam_stage_content(root: Path, flavor: str, platforms: tuple[str, ...] | No
         if dest.is_dir():
             shutil.rmtree(dest)
         dest.mkdir(parents=True, exist_ok=True)
+        # Депот без исполняемого файла — это депот, который не запускается, и
+        # заметить это можно только на живой машине игрока: сборка, VDF и аплоад
+        # проходят целиком. Спрашиваем АРХИВ (а не распакованное), потому что на
+        # Windows x-бита в файловой системе нет вовсе.
+        if platform in ("mac", "linux") and not _archive_executables(archive):
+            errors.append(
+                f"{platform}: в {archive.name} ни одной записи с битом "
+                f"исполняемости — такой депот у игрока не запустится "
+                f"(Ren'Py кладёт 0o755 сам; артефакт, собранный без POSIX-прав, "
+                f"для {platform}-депота непригоден)")
+            continue
         _extract_archive(archive, dest)
         try:
             _flatten_wrapper_dir(dest)
@@ -480,6 +526,21 @@ def steam_preflight(root: Path, flavor: str) -> list[tuple[str, str]]:
     checks.append(("PASS", f"Auto-Cloud: корень сейвов {save_dir!r}, маски *.save и "
                            f"persistent (ci/steam/README.md)") if save_dir else
                   ("FAIL", "config.save_directory не задан явно — Auto-Cloud привязать не к чему"))
+
+    # Хост раскладки. mac- и linux-депоты несут файлы с битом исполняемости; в
+    # файловой системе Windows этого бита нет вовсе, поэтому распаковка там
+    # физически не может его выставить, а Steam кладёт в депот те права, что были
+    # у источника. Артефакт при этом валиден — непригоден именно ХОСТ, и сказать
+    # об этом обязан preflight, а не игрок на macOS.
+    posix_depots = sorted(set(depots) & {"mac", "linux"})
+    if posix_depots and os.name != "posix":
+        checks.append(("WARN", f"раскладка депотов {', '.join(posix_depots)} с "
+                               f"не-POSIX хоста ({os.name}): бит исполняемости не "
+                               f"переживёт распаковку — собирайте их на Linux/macOS "
+                               f"(workflow steam-upload идёт на ubuntu-latest)"))
+    elif posix_depots:
+        checks.append(("PASS", f"хост раскладки POSIX: права на "
+                               f"{', '.join(posix_depots)} сохранятся"))
     return checks
 
 

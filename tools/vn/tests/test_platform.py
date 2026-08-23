@@ -20,6 +20,7 @@ from vn.release import (
     steam_app_build,
     steam_config,
     steam_libs_status,
+    _extract_archive,
     steam_stage_content,
 )
 
@@ -81,22 +82,37 @@ def test_steam_app_build_requires_depots(tmp_path, repo_root):
         steam_app_build(root, "public")
 
 
+def _exec_zipinfo(name):
+    """Запись zip с битом исполняемости — так их кладёт САМ Ren'Py
+    (SDK launcher/game/package_formats.rpy: external_attr = 0o100755 << 16).
+    Фикстура без прав была бы неверной моделью артефакта: mac-депот, собранный
+    из такого архива, у игрока не запускается — а тест этого не замечал."""
+    info = zipfile.ZipInfo(name)
+    info.external_attr = 0o100755 << 16
+    return info
+
+
 def _mk_dist(dist, wrapped=False):
     """Артефакты distribute: win-zip и linux-tar.bz2. wrapped — с каталогом-обёрткой
     по имени артефакта, как их реально отдаёт launcher (prepend для zip/tar.bz2)."""
+    import io
     import tarfile
 
     dist.mkdir(parents=True, exist_ok=True)
     win = "vn-0.0.1-win/" if wrapped else ""
     linux = "vn-0.0.1-linux/" if wrapped else ""
     with zipfile.ZipFile(dist / "vn-0.0.1-win.zip", "w") as zf:
-        zf.writestr(f"{win}vn.exe", b"bin")
+        zf.writestr(_exec_zipinfo(f"{win}vn.exe"), b"bin")
         zf.writestr(f"{win}game/script.rpyc", b"gen")
-    payload = dist / "vn.sh"
-    payload.write_bytes(b"#!/bin/sh\n")
+    body = b"#!/bin/sh\n"
     with tarfile.open(dist / "vn-0.0.1-linux.tar.bz2", "w:bz2") as tf:
-        tf.add(payload, arcname=f"{linux}vn.sh")
-    payload.unlink()
+        # TarInfo вручную, а не tf.add(файл): режим взялся бы из файловой системы,
+        # а на Windows x-бита в ней нет — фикстура молча стала бы неисполняемой,
+        # то есть моделировала бы ровно тот дефект, который проверяется ниже.
+        ti = tarfile.TarInfo(f"{linux}vn.sh")
+        ti.size = len(body)
+        ti.mode = 0o755
+        tf.addfile(ti, io.BytesIO(body))
 
 
 def test_steam_stage_content_unpacks_dist(tmp_path, repo_root):
@@ -139,7 +155,7 @@ def test_steam_stage_content_keeps_mac_app_bundle(tmp_path, repo_root):
     dist = root / "build" / "dist" / "0.0.1-public"
     dist.mkdir(parents=True)
     with zipfile.ZipFile(dist / "vn-0.0.1-mac.zip", "w") as zf:
-        zf.writestr("VN.app/Contents/MacOS/VN", b"bin")
+        zf.writestr(_exec_zipinfo("VN.app/Contents/MacOS/VN"), b"bin")
 
     staged, errors = steam_stage_content(root, "public")
     assert staged == ["mac"], errors
@@ -356,3 +372,50 @@ def test_every_control_hint_has_both_key_variants(repo_root):
             assert f"{key}{suffix}:" in strings, (
                 f"{key}{suffix} нет в content/ui/strings.yaml — игрок увидит ключ "
                 f"вместо подсказки на {'паде' if suffix == '_pad' else 'клавиатуре'}")
+
+
+def test_zip_extraction_restores_the_executable_bit(tmp_path):
+    """zipfile прав НЕ переносит: CPython ZipFile._extract_member открывает цель
+    обычным open(targetpath, "wb") и external_attr не читает вообще. Ren'Py права
+    в архив кладёт и при своей распаковке восстанавливает их руками
+    (SDK launcher/game/installer.py) — значит это обязан делать и наш конвейер,
+    иначе .app уезжает в депот с 0644 и Steam на macOS его не запускает.
+
+    Проверка только на POSIX: в файловой системе Windows бита исполняемости нет,
+    и утверждать там нечего."""
+    import os
+    import stat
+
+    if os.name != "posix":
+        pytest.skip("x-бит существует только на POSIX")
+
+    src = tmp_path / "a.zip"
+    with zipfile.ZipFile(src, "w") as zf:
+        zf.writestr(_exec_zipinfo("VN.app/Contents/MacOS/VN"), b"bin")
+        zf.writestr("VN.app/Contents/Info.plist", b"<plist/>")
+    dest = tmp_path / "out"
+    _extract_archive(src, dest)
+
+    exe = dest / "VN.app" / "Contents" / "MacOS" / "VN"
+    plain = dest / "VN.app" / "Contents" / "Info.plist"
+    assert exe.stat().st_mode & stat.S_IXUSR, "бит исполняемости потерян"
+    assert not (plain.stat().st_mode & stat.S_IXUSR), \
+        "права выставлены не по архиву, а всем подряд"
+
+
+def test_stage_refuses_depot_without_any_executable(tmp_path, repo_root):
+    """Депот, в котором нет ни одного исполняемого файла, не запустится у игрока —
+    и это единственный момент, когда такое ещё можно заметить: сборка, VDF и
+    аплоад проходят целиком, а дефект виден только на живой macOS.
+
+    Спрашиваем архив, а не распакованное дерево: артефакт одинаков на любом
+    хосте, а x-бит после распаковки на Windows не существует в принципе."""
+    root = _steam_root(tmp_path, repo_root, depots={"mac": 483})
+    dist = root / "build" / "dist" / "0.0.1-public"
+    dist.mkdir(parents=True)
+    with zipfile.ZipFile(dist / "vn-0.0.1-mac.zip", "w") as zf:
+        zf.writestr("VN.app/Contents/MacOS/VN", b"bin")     # БЕЗ прав
+
+    staged, errors = steam_stage_content(root, "public")
+    assert staged == []
+    assert any("бит" in e and "mac" in e for e in errors), errors

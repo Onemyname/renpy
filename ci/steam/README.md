@@ -48,6 +48,15 @@ vn release steam --flavor public [--branch beta]
 steamcmd +login <account> +run_app_build build/steam/app_build_public.vdf +quit
 ```
 
+**Шаг 2 делается на POSIX-хосте**, если в поставке есть mac- или linux-депот.
+Файлы этих депотов несут бит исполняемости, а в файловой системе Windows его нет
+вовсе — распаковка там физически не может его выставить, Steam же кладёт в депот
+те права, что были у источника, и игрок на macOS получает бандл, который Finder
+не открывает. Артефакт при этом валиден: непригоден хост. `vn release preflight`
+говорит об этом отдельным WARN, а `vn release steam` откажется раскладывать
+архив, в котором вообще нет ни одной исполняемой записи. Штатный путь —
+workflow `steam-upload` на `ubuntu-latest`.
+
 `--branch beta` выставляет `setlive beta`: выкладка уходит в бета-ветку,
 release-ветку переключают руками в Steamworks после проверки (в т.ч. на
 Steam Deck — обязательный прогон перед setlive default).
