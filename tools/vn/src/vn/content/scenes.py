@@ -485,7 +485,17 @@ def _emit_track(lines: list[str], unit: SceneUnit, decl: str,
             f"{spec.get('kind')}, а не {kind}")
         return
     channel = "music" if kind == "bgm" else "ambient"
-    stmt = f"    play {channel} {track} fadeout 1.0 fadein 1.0"
+    # if_changed: обвязка КАЖДОЙ сцены исполняет play при каждом входе, и без
+    # клаузы один и тот же трек в соседних сценах перезапускался бы с начала —
+    # с fadeout/fadein, то есть слышимым провалом на каждом переходе. Клауза
+    # штатная (common/000statements.rpy) и означает «если на канале уже играет
+    # этот файл, не трогать».
+    #
+    # Громкость при этом остаётся прежней, и это безопасно: volume объявлен у
+    # ТРЕКА в content/audio/*.yaml, а не у сцены, поэтому у одного файла она
+    # одинакова везде. Если volume когда-нибудь станет пер-сценовым, клаузу
+    # придётся снимать — она сохранит громкость первой сцены.
+    stmt = f"    play {channel} {track} if_changed fadeout 1.0 fadein 1.0"
     volume = spec.get("volume")
     if volume is not None and volume != 1:
         stmt += f" volume {volume}"
