@@ -2033,6 +2033,14 @@ def test_screens(timeout_s: int, variant: str):
     declared = {e["name"] for e in tour}
     optional = {e["name"] for e in tour if e.get("optional")}
     ignored = set(tour_screens_ignored(root))
+    # Весь гейт стоит на содержимом screens.json. Без файла все множества ниже
+    # пусты, проверка «экран не покрыт туром» отключается своим `if defined:`,
+    # и команда печатает зелёное «показано 0 из N» — то есть отсутствие отчёта
+    # трактуется как «всё хорошо». Записи может не быть при любом исключении в
+    # дампе рантайма, а прогон при этом завершится нормально.
+    if not art.screens:
+        fails.append("screens.json не записан — тур не отчитался ни об одном "
+                     "экране, проверять нечего")
     shown = set(art.screens.get("shown") or [])
     failed = art.screens.get("failed") or {}
     missing = set(art.screens.get("missing") or []) - optional
@@ -2046,6 +2054,13 @@ def test_screens(timeout_s: int, variant: str):
     for name in sorted(missing):
         fails.append(f"{name}: экран объявлен в туре, но в игре его нет "
                      f"(renpy.has_screen == False)")
+    # Объявленный экран обязан оказаться РОВНО в одном из трёх исходов. Раньше
+    # это подразумевалось: гейт верил, что рантайм честно разложил все имена по
+    # спискам, и экран, потерявшийся между ними (тур прервался на середине,
+    # исключение вне try), исчезал из проверки молча.
+    for name in sorted(declared - optional - shown - set(failed) - missing):
+        fails.append(f"{name}: экран объявлен в туре, но о нём нет отчёта — "
+                     f"ни показан, ни провален, ни отсутствует")
     # Экран есть в игре и не покрыт ни туром, ни списком исключений: это и есть
     # «добавили экран, забыли проверять». Движковые (_-префикс) не считаем.
     if defined:

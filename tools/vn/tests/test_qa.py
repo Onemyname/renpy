@@ -332,3 +332,25 @@ def test_autopilot_template_is_gated_on_env():
     иначе обычный `vn play` превращается в самопроигрывающуюся игру."""
     assert "if not vn_qa.autopilot_active()" in qa.AUTOPILOT_RPY
     assert "renpy.quit(save=False)" in qa.AUTOPILOT_RPY
+
+
+def test_screens_gate_fails_when_the_tour_did_not_report(repo_root):
+    """Гейт тура не имеет права зеленеть на отсутствующем отчёте.
+
+    Весь он стоит на содержимом screens.json: без файла все множества пусты,
+    проверка «экран не покрыт туром» отключается своим `if defined:` — и команда
+    печатала зелёное «показано 0 из N». То есть ОТСУТСТВИЕ отчёта трактовалось
+    как «всё хорошо», а записи может не быть при любом исключении в дампе
+    рантайма (прогон при этом завершается нормально, код возврата нулевой).
+
+    Второй инвариант рядом: объявленный экран обязан попасть РОВНО в один из
+    трёх исходов. Раньше гейт верил, что рантайм честно разложил все имена, и
+    экран, потерявшийся между списками, исчезал из проверки молча."""
+    src = (repo_root / "tools" / "vn" / "src" / "vn" / "cli.py").read_text(
+        encoding="utf-8")
+    body = src.split('@test.command("screens")', 1)[1].split("\n@test.command", 1)[0]
+
+    assert "if not art.screens:" in body, \
+        "пустой отчёт тура не считается провалом"
+    assert "declared - optional - shown - set(failed) - missing" in body, \
+        "экран без отчёта ни в одном из трёх списков проходит гейт молча"
