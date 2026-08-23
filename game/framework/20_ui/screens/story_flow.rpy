@@ -112,9 +112,20 @@ screen story_flow(chapter_id=None):
             # ── Подвал: план walkthrough ────────────────────────────────────
             use vn_flow_plan
 
-    key "K_PAGEUP" action SetScreenVariable(
+    # Зум — на «минус»/«плюс», НЕ на PageUp/PageDown. Оба вьюпорта экрана идут с
+    # пресетом, где pagekeys включён, а движковый keymap связывает
+    # viewport_pageup/pagedown ровно с этими клавишами (common/00keymap.rpy).
+    # Viewport обрабатывает их без проверки фокуса, поэтому зум и постраничная
+    # прокрутка полотна дрались за одно нажатие: граф шире экрана уже на пяти
+    # узлах, и клавиатурная прокрутка нужнее, чем второй способ менять масштаб
+    # (кнопка масштаба есть в шапке).
+    key "K_MINUS" action SetScreenVariable(
         "zoom_step", max(0, zoom_step - 1))
-    key "K_PAGEDOWN" action SetScreenVariable(
+    key "K_KP_MINUS" action SetScreenVariable(
+        "zoom_step", max(0, zoom_step - 1))
+    key "K_EQUALS" action SetScreenVariable(
+        "zoom_step", min(len(VN_FLOW_ZOOMS) - 1, zoom_step + 1))
+    key "K_KP_PLUS" action SetScreenVariable(
         "zoom_step", min(len(VN_FLOW_ZOOMS) - 1, zoom_step + 1))
 
 

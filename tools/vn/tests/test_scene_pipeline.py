@@ -825,3 +825,38 @@ def test_voice_ducking_is_actually_enabled(repo_root):
     prefs = (repo_root / "game" / "framework" / "20_ui" / "screens"
              / "core_screens.rpy").read_text(encoding="utf-8")
     assert 'Preference("emphasize audio", "toggle")' in prefs
+
+
+def test_play_operator_does_not_restart_the_same_track():
+    """Обвязка КАЖДОЙ сцены исполняет play при входе. Без if_changed один и тот
+    же трек в соседних сценах перезапускался бы с начала — да ещё с fadeout и
+    fadein, то есть слышимым провалом на каждом переходе.
+
+    Клауза штатная (common/000statements.rpy) и означает «если на канале уже
+    играет этот файл — не трогать». Громкость она сохраняет прежнюю, и это
+    безопасно ровно потому, что volume объявлен у ТРЕКА, а не у сцены."""
+    rep = sc.SceneCompileReport()
+    lines = []
+    tracks = {"calm_theme": {"kind": "bgm"}, "rain": {"kind": "amb", "volume": 0.5}}
+    sc._emit_track(lines, _unit(), "bgm/calm_theme", tracks, rep, "music")
+    sc._emit_track(lines, _unit(), "amb/rain", tracks, rep, "ambient")
+    assert rep.errors == []
+    assert lines[0] == "    play music calm_theme if_changed fadeout 1.0 fadein 1.0"
+    # Громкость трека по-прежнему уходит в оператор — клауза её не отменяет.
+    assert lines[1] == "    play ambient rain if_changed fadeout 1.0 fadein 1.0 volume 0.5"
+
+
+def test_chapter_map_zoom_does_not_steal_the_viewport_page_keys(repo_root):
+    """Оба вьюпорта карты идут с пресетом, где pagekeys включён, а движковый
+    keymap связывает viewport_pageup/pagedown ровно с PageUp/PageDown
+    (common/00keymap.rpy). Viewport обрабатывает их без проверки фокуса, поэтому
+    зум на тех же клавишах дрался с постраничной прокруткой полотна — а граф
+    шире экрана уже на пяти узлах, и прокрутка нужнее второго способа менять
+    масштаб (кнопка масштаба есть в шапке)."""
+    src = (repo_root / "game" / "framework" / "20_ui" / "screens"
+           / "story_flow.rpy").read_text(encoding="utf-8")
+    keys = [ln.strip() for ln in src.splitlines() if ln.strip().startswith('key "')]
+    bound = {ln.split('"')[1] for ln in keys}
+    assert not bound & {"K_PAGEUP", "K_PAGEDOWN"}, \
+        f"зум снова перехватывает клавиши прокрутки вьюпорта: {sorted(bound)}"
+    assert {"K_MINUS", "K_EQUALS"} <= bound, f"зум не привязан ни к чему: {sorted(bound)}"
