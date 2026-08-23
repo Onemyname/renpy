@@ -548,3 +548,60 @@ def test_e2e_demo_chapter_compiles(repo_root, tmp_path):
 
     res2 = compile_content(repo_root, out_dir=gen)      # анализ из кэша, байт-в-байт
     assert res2.written == []
+
+
+@pytest.mark.skipif(not (os.environ.get("RENPY_SDK")
+                         and (Path(os.environ["RENPY_SDK"]) / "renpy.py").is_file()),
+                    reason="RENPY_SDK не установлен")
+def test_unshipped_pack_vars_are_split_out_of_the_shipped_generat(repo_root, tmp_path):
+    """Переменные пака ВНЕ всех флейворов не смешиваются с переменными игры.
+
+    Мотив — не чистота, а сейв игрока: генерат один на все флейворы (иначе рвётся
+    линия .rpyc, G6), поэтому `default ch70.path = 'none'` исполнялся бы в
+    релизной сборке, а Ren'Py кладёт в сейв любую изменённую переменную стора.
+    Разделение позволяет исключить ровно один файл глобом (release.py:
+    unshipped_exclude_globs) и не заводить второй генерат.
+
+    Проверяются три места, и промах в любом тихий: объявления не должны утечь в
+    `defaults.gen.rpy`, снапшот миграций (G5) не должен знать про тестовые сторы,
+    а отдельный файл обязан быть самодостаточным — создавать сторы, иначе в
+    dev-чекауте тестовые главы упадут NameError.
+    """
+    import yaml
+
+    from vn.content.compile import compile_content
+    from vn.repo import chapter_zones, load_project
+
+    project = load_project(repo_root)
+    shipped = {"core"}
+    for cfg in (project.get("flavors") or {}).values():
+        shipped.update((cfg or {}).get("packs") or [])
+    unshipped_stores = set()
+    for pack_id, zone in chapter_zones(repo_root):
+        if pack_id in shipped:
+            continue
+        for f in sorted(zone.glob("*/vars.yaml")):
+            unshipped_stores.add(yaml.safe_load(f.read_text(encoding="utf-8"))["store"])
+    if not unshipped_stores:
+        pytest.skip("в дереве нет паков вне флейворов — разделять нечего")
+
+    gen = tmp_path / "generated"
+    compile_content(repo_root, out_dir=gen)
+    shipped_defaults = (gen / "state/defaults.gen.rpy").read_text(encoding="utf-8")
+    snapshot = (gen / "state/snapshot.gen.rpy").read_text(encoding="utf-8")
+    split = (gen / "state/defaults_unshipped.gen.rpy").read_text(encoding="utf-8")
+
+    for store in sorted(unshipped_stores):
+        assert f"default {store}." not in shipped_defaults, (
+            f"{store}: объявления тестового пака в поставляемом генерате — "
+            f"они уедут в сейв игрока (RTL-046)")
+        assert f"'{store}'" not in snapshot, (
+            f"{store}: тестовый стор в снапшоте миграций (G5)")
+        assert f"init -980 python in {store}:" in split
+        assert f"default {store}." in split
+
+    # Файл поставляемых переменных при этом не опустел: разделение не должно
+    # унести с собой переменные игры.
+    assert "default g." in shipped_defaults and "vn_save_schema" in shipped_defaults
+    # А отдельный файл не должен объявлять схему сейва: она одна на игру.
+    assert "vn_save_schema" not in split
