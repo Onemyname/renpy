@@ -21,6 +21,9 @@ screen vn_build_overlay():
 # а знать «это бета» тестеру нужно в любой сборке (43-steam-qa §2/§5).
 screen vn_beta_overlay():
     zorder 1091
+    # Экран переоценивается на каждой интеракции и в предикции, поэтому спрашивать
+    # платформу отсюда можно ровно потому, что beta_branch() кэширует ответ на
+    # процесс (035_platform.rpy) — в Steam этот вызов не ходит.
     $ _branch = vn_platform.beta_branch()
     if _branch:
         text ("BETA: " + _branch):

@@ -15,16 +15,22 @@
 
 init offset = 0
 
-default vn_gal_category = None      # выбранная вкладка; None -> первая доступная
-default vn_gal_zoom = False         # режим увеличения в просмотрщике
+# Выбранная вкладка и режим увеличения — состояние ЭКРАНА, а не игры, поэтому
+# объявлены внутри экранов, а не store-default'ами. Store-default попадает в
+# ever_been_changed движка, то есть в КАЖДЫЙ сейв и в rollback-лог (SDK
+# rollback.py: freeze/roots) — сохранённая вкладка галереи возвращалась бы из
+# сейва, а откат колесом за вход в меню сбрасывал бы её; «_»-префикс от этого не
+# спасает. Цена решения: вкладка и зум живут, пока показан экран.
 
 
 screen gallery():
     tag menu
 
+    default category = None         # None -> первая доступная категория
+
     $ _cats = vn_gal.categories()
     $ _cat_ids = [c[0] for c in _cats]
-    $ _cur = vn_gal_category if vn_gal_category in _cat_ids else (
+    $ _cur = category if category in _cat_ids else (
         _cat_ids[0] if _cat_ids else None)
     $ _done, _total = vn_gal.progress()
 
@@ -42,7 +48,13 @@ screen gallery():
                         $ _cd, _ct = vn_gal.progress(_cid)
                         textbutton "%s  %d/%d" % (vn_loc.t(_cspec["title_key"]), _cd, _ct):
                             style "vn_gal_tab"
-                            action SetVariable("vn_gal_category", _cid)
+                            # ScreenVariable адресует переменную ВЕРХНЕГО экрана —
+                            # в том числе из transclude-тела use vn_game_menu, где
+                            # живёт эта кнопка (док движка, «Data Actions»); там же
+                            # сказано, что LocalVariable нужна только внутри
+                            # use'нутого экрана, а в остальных случаях предпочтителен
+                            # ScreenVariable (кэширование экрана).
+                            action SetScreenVariable("category", _cid)
                             selected (_cid == _cur)
 
             if not _cats:
@@ -108,6 +120,7 @@ screen gallery_viewer(item_id):
     modal True
     zorder 60
     default variant = 0
+    default zoom = False
 
     $ _spec = VN_GALLERY[item_id]
     # Что листает кнопка «Вариант», решает стор: у плоской CG это файлы-варианты,
@@ -129,7 +142,7 @@ screen gallery_viewer(item_id):
         # послойного кадра для галереи — наряд листается, а не перерисовывается.
         # fit contain — без растягивания при любых пропорциях (portrait/landscape);
         # zoom переключает на cover (заполнение экрана с обрезкой).
-        add _looks[_idx] fit ("cover" if vn_gal_zoom else "contain") xysize (1920, 1080)
+        add _looks[_idx] fit ("cover" if zoom else "contain") xysize (1920, 1080)
 
     vbox:
         xpos gui.sp_xl
@@ -160,7 +173,9 @@ screen gallery_viewer(item_id):
             textbutton vn_loc.t("ui.gallery.variant") action SetLocalVariable(
                 "variant", _idx + 1)
         if _spec["kind"] != "movie":
-            textbutton vn_loc.t("ui.gallery.zoom") action ToggleVariable("vn_gal_zoom")
+            # LocalVariable — как у variant рядом: экран верхний (его Show'ят
+            # напрямую), и оба действия пишут в его же scope.
+            textbutton vn_loc.t("ui.gallery.zoom") action ToggleLocalVariable("zoom")
         # Movie перезапускается сменой _looks[_idx] — отдельного действия не нужно
         if len(_sibs) > 1:
             textbutton vn_loc.t("ui.gallery.next") action Show(

@@ -93,9 +93,10 @@ init -999 python in vn:
         """Гейт владения — ЛОГИЧЕСКИЙ (наличие .rpa ничем не защищено, G9).
         Установленность — пересечение генерата VN_PACKS и поставки сборки
         (vn_build.packs); владение — через провайдера: Steam ownership-check
-        подключается set_ownership_provider после инициализации Steam
-        (label splashscreen). Без провайдера установленный пак считается
-        купленным (dev/DRM-free поставка)."""
+        подключает set_ownership_provider фасад платформы на init 999
+        (035_platform.rpy) — после того, как движок поднял Steam на init -1499.
+        Без провайдера установленный пак считается купленным (dev/DRM-free
+        поставка, ADR-0014: fail-open)."""
 
         def __init__(self):
             self._provider = None

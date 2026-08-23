@@ -139,3 +139,101 @@ def test_gui_rebuild_exists(repo_root):
     direct = [f.name for f in (repo_root / "game" / "framework" / "20_ui").rglob("*.rpy")
               if call.search(f.read_text(encoding="utf-8"))]
     assert direct == [], f"прямой вызов gui.rebuild в {direct} — только через фасад (G18)"
+
+
+def test_framework_reads_generated_names_defensively(repo_root):
+    """Пустой чекаут обязан стартовать и честно сказать, что контента нет
+    (010_registry.rpy) — значит framework не имеет права читать имена генерата
+    голыми на init: game/generated/ в .gitignore, а persistent глобален и
+    переживает переклон. Голое `vn_build_max_oversampling` в 095_quality.rpy при
+    непустом persistent.vn_quality_cap роняло старт в NameError.
+
+    Проверяются только обращения ВНЕ функций, то есть исполняемые на init: тело
+    функции работает уже в рантайме, там голое имя — вопрос стиля, а не старта.
+    Иначе тест стал бы ловушкой для будущего автора, который читает генерат из
+    функции совершенно законно."""
+    core = repo_root / "game" / "framework" / "00_core"
+    bare = []
+    for f in sorted(core.rglob("*.rpy")):
+        def_indent = None
+        for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            code = line.split("#", 1)[0]
+            if not code.strip():
+                continue
+            indent = len(code) - len(code.lstrip())
+            if def_indent is not None and indent <= def_indent:
+                def_indent = None                     # тело функции закончилось
+            if code.lstrip().startswith("def "):
+                def_indent = indent
+                continue
+            if def_indent is not None:
+                continue                              # внутри функции — рантайм
+            for name in ("vn_build_max_oversampling",):
+                if name in code and "getattr(" not in code:
+                    bare.append(f"{f.name}:{i}")
+    assert bare == [], f"имя генерата читается голым на init: {bare} (нужен getattr)"
+
+
+# ── Контракт vn_compat.revertable ─────────────────────────────────────────────
+# Тест, обещанный докстрингом revertable(), физически отсутствовал — и ровно
+# поэтому в нём годами жила ошибка: имена list/dict/set внутри стора подменены
+# Revertable-аналогами (SDK renpy/minstore.py:41-53), так что isinstance по ним
+# НЕ распознаёт обычные контейнеры из json/миграций, то есть конвертация не
+# срабатывала в единственном случае, ради которого написана. Тест исполняет блок
+# с той же подменой, что делает движок.
+
+def _compat_module(repo_root, monkeypatch):
+    import sys
+    import textwrap
+    import types
+
+    class RevertableDict(dict):
+        pass
+
+    class RevertableList(list):
+        pass
+
+    class RevertableSet(set):
+        pass
+
+    src = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
+           / "000_compat.rpy").read_text(encoding="utf-8")
+    tail = src.partition("python in vn_compat:")[2]
+    body = []
+    for line in tail.splitlines():
+        if line.strip() and not line.startswith("    "):
+            break
+        body.append(line)
+
+    revertable_mod = types.ModuleType("renpy.revertable")
+    revertable_mod.RevertableDict = RevertableDict
+    revertable_mod.RevertableList = RevertableList
+    revertable_mod.RevertableSet = RevertableSet
+    renpy_mod = types.ModuleType("renpy")
+    renpy_mod.revertable = revertable_mod
+    fake_store = types.ModuleType("store")
+    fake_store.renpy = renpy_mod
+    monkeypatch.setitem(sys.modules, "store", fake_store)
+    monkeypatch.setitem(sys.modules, "renpy", renpy_mod)
+    monkeypatch.setitem(sys.modules, "renpy.revertable", revertable_mod)
+
+    mod = types.ModuleType("vn_compat")
+    # Как движок: типы в сторе — Revertable-аналоги.
+    mod.__dict__.update(dict=RevertableDict, list=RevertableList, set=RevertableSet)
+    exec(compile(textwrap.dedent("\n".join(body)), "000_compat.rpy", "exec"), mod.__dict__)
+    return mod, (RevertableDict, RevertableList, RevertableSet)
+
+
+def test_revertable_types(repo_root, monkeypatch):
+    """Значения из json/миграций обязаны стать Revertable: без этого их изменения
+    не попадают в rollback (G5), а именно такие значения apply_snapshot и пишет
+    обратно в сторы после миграции."""
+    mod, (RDict, RList, RSet) = _compat_module(repo_root, monkeypatch)
+
+    out = mod.revertable({"a": [1, {"b": {2}}]})
+    assert isinstance(out, RDict)
+    assert isinstance(out["a"], RList)
+    assert isinstance(out["a"][1], RDict)
+    assert isinstance(out["a"][1]["b"], RSet)
+    # Скаляры и кортежи проходят как есть — конвертировать нечего.
+    assert mod.revertable("s") == "s" and mod.revertable((1, 2)) == (1, 2)

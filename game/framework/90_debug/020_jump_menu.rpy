@@ -1,6 +1,8 @@
 # Чит-меню QA (раздел 7): прыжок в любую сцену из Scene Registry (VN_SCENES).
 # Только dev: файл вырезается из release-профиля (фаза packaging), плюс гейт
-# config.developer в рантайме. Горячая клавиша в игре: Shift+J.
+# config.developer ниже. Гейт работает и на init: в 8.5.3 движок разрешает
+# developer на init -1000 (в дистрибутиве — False по script_version.txt), строкой
+# "auto" остаётся только config.original_developer. Горячая клавиша в игре: Shift+J.
 
 init python:
     if config.developer:

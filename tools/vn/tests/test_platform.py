@@ -256,6 +256,44 @@ def test_beta_badge_is_driven_by_platform(repo_root):
     assert "def beta_branch(" in facade and "get_current_beta_name" in facade
 
 
+def test_beta_branch_is_read_at_init_and_never_at_runtime(repo_root):
+    """Два инварианта, и оба ломаются молча.
+
+    (1) Плашку беты рисует overlay-экран, то есть beta_branch() зовётся на каждой
+    интеракции и в предикции: обращаться из неё к платформе запрещает свой же
+    регламент (030_flow.rpy), поэтому в теле функции не должно быть вызовов Steam.
+
+    (2) Значение обязано присваиваться ТОЛЬКО в init. Рантайм-присваивание
+    переменной стора движок считает изменением и кладёт её в сейв (python.py:
+    get_changes -> ever_been_changed; фильтра по «_» там нет) — то есть ветка
+    чужой машины приезжала бы игроку из сейва."""
+    facade = (repo_root / "game" / "framework" / "00_core"
+              / "035_platform.rpy").read_text(encoding="utf-8")
+    body = facade.split("def beta_branch(", 1)[1].split("\n    def ", 1)[0]
+    code = "\n".join(ln.split("#", 1)[0] for ln in body.splitlines())
+    assert "get_current_beta_name" not in code and "steam()" not in code, \
+        "beta_branch обращается к платформе — это выражение экрана, так нельзя"
+    assert "global _beta" not in code, "рантайм-присваивание _beta уедет в сейв"
+    assert "return _beta" in code
+
+    # Чтение — из init-блока, где Steam уже поднят движком (init -1499).
+    init999 = facade.split("init 999 python:", 1)[1]
+    assert "vn_platform._beta = vn_platform._read_beta_branch()" in init999
+    assert "get_current_beta_name" in facade.split("def _read_beta_branch(", 1)[1]
+
+
+def test_dev_console_is_gated_by_developer_flag(repo_root):
+    """Второй слой защиты dev-зоны. Первый (вырезание 90_debug из поставки,
+    options.rpy) держится на одной строке classify — регрессия в упаковке
+    открывала бы игроку консоль. Гейт возможен: в 8.5.3 config.developer к
+    обычному init — настоящий bool (движок разрешает его на init -1000), а не
+    строка "auto", как утверждал прежний комментарий файла."""
+    dev = (repo_root / "game" / "framework" / "90_debug"
+           / "010_dev.rpy").read_text(encoding="utf-8")
+    assert "config.console = bool(config.developer)" in dev
+    assert "config.console = True" not in dev
+
+
 def test_store_offer_never_leaves_dead_button(repo_root):
     """Непринадлежащая глава показывается ТОЛЬКО когда платформа умеет открыть
     магазин: иначе карточка была бы кнопкой, которая ничего не делает."""

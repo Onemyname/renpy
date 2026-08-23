@@ -13,8 +13,15 @@ init 999 python:
     # Сохранённый выбор применяется до первой интеракции: config читается при
     # загрузке образа, к этому моменту ещё ничего не декодировано.
     if persistent.vn_quality_cap:
+        # getattr, а не голое имя: потолок сборки живёт в генерате (render.gen.rpy),
+        # а persistent глобален и переживает переклон репозитория — на свежем
+        # чекауте без vn content compile голое имя дало бы NameError на init,
+        # то есть игра не запускалась бы вообще (принцип «пустой проект стартует
+        # и честно говорит, что контента нет», 010_registry.rpy). Дефолт тот же,
+        # что у set_quality_cap ниже.
         config.automatic_oversampling = min(
-            int(persistent.vn_quality_cap), vn_build_max_oversampling)
+            int(persistent.vn_quality_cap),
+            getattr(store, "vn_build_max_oversampling", 4))
 
 
 init -998 python in vn:
