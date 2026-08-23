@@ -219,8 +219,8 @@ msgid ""
 "Сохранение сделано в более новой версии игры. Обновите игру, чтобы "
 "продолжить."
 msgstr ""
-"Der Spielstand stammt aus einer neueren Version des Spiels. Aktualisieren Sie"
-" das Spiel, um fortzufahren."
+"Der Spielstand stammt aus einer neueren Version des Spiels. Aktualisieren "
+"Sie das Spiel, um fortzufahren."
 
 #. UI/мета-строка
 msgctxt "string:meta.packs.nsfw.title"
@@ -501,8 +501,8 @@ msgid ""
 "Вы дошли до края написанной истории: продолжение этой ветки появится в "
 "следующем обновлении."
 msgstr ""
-"Du hast den Rand der geschriebenen Geschichte erreicht: Dieser Zweig geht in "
-"einem kommenden Update weiter."
+"Du hast den Rand der geschriebenen Geschichte erreicht: Dieser Zweig geht in"
+" einem kommenden Update weiter."
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.unavailable_missing"
@@ -524,8 +524,8 @@ msgid ""
 "Сцена не смогла продолжиться. Похоже, сохранение сделано в несовместимой "
 "версии игры."
 msgstr ""
-"Die Szene konnte nicht fortgesetzt werden. Der Spielstand stammt offenbar aus"
-" einer inkompatiblen Version des Spiels."
+"Die Szene konnte nicht fortgesetzt werden. Der Spielstand stammt offenbar "
+"aus einer inkompatiblen Version des Spiels."
 
 #. UI/мета-строка
 msgctxt "string:ui.prefs.graphics"
@@ -791,6 +791,11 @@ msgstr "Dach im Sonnenuntergang"
 msgctxt "string:meta.scenes.ch90_s010.title"
 msgid "Берег"
 msgstr "Das Ufer"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.duck_voice"
+msgid "Приглушать музыку под голос"
+msgstr "Musik bei Sprache absenken"
 
 #~ msgctxt "string:ui.guide.recommended"
 #~ msgid "По плану"

@@ -652,6 +652,11 @@ msgid "Режим экрана"
 msgstr "[[Рęжįм экрąнą~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.prefs.duck_voice"
+msgid "Приглушать музыку под голос"
+msgstr "[[Прįглųшąть мųзыкų пǫд гǫлǫс~~~~~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.prefs.fullscreen"
 msgid "Полный экран"
 msgstr "[[Пǫлный экрąн~~~~]"

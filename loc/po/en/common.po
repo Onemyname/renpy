@@ -231,7 +231,8 @@ msgstr "Adult content (18+)"
 msgctxt "string:ui.crash.body"
 msgid ""
 "Игра столкнулась с ошибкой. Прогресс до последнего сохранения не пострадал."
-msgstr "The game ran into an error. Your progress up to the last save is safe."
+msgstr ""
+"The game ran into an error. Your progress up to the last save is safe."
 
 #. UI/мета-строка
 msgctxt "string:ui.crash.ignore"
@@ -508,8 +509,8 @@ msgid ""
 "Эта часть истории не входит в текущую сборку игры: эпизод или дополнение не "
 "установлены."
 msgstr ""
-"This part of the story is not included in this build of the game: the episode"
-" or add-on is not installed."
+"This part of the story is not included in this build of the game: the "
+"episode or add-on is not installed."
 
 #. UI/мета-строка
 msgctxt "string:ui.flow.unavailable_title"
@@ -789,6 +790,11 @@ msgstr "Rooftop at sunset"
 msgctxt "string:meta.scenes.ch90_s010.title"
 msgid "Берег"
 msgstr "The shore"
+
+#. UI/мета-строка
+msgctxt "string:ui.prefs.duck_voice"
+msgid "Приглушать музыку под голос"
+msgstr "Lower music during voice"
 
 #~ msgctxt "string:ui.guide.recommended"
 #~ msgid "По плану"
