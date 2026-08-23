@@ -25,7 +25,13 @@ from pathlib import Path
 from ..repo import write_text_lf
 
 SAY_ID_RE = re.compile(r"^(?P<scene>ch\d{2}_s\d{3})_(?P<num>\d{4})$")
-MENU_ID_RE = re.compile(r'vn_menu\s*=\s*"(?P<id>ch\d{2}_s\d{3}_m\d{3})"')
+# Правило близости маркера к оператору `menu` и его регексп — ОДИН на проект
+# (content/scenes.py). Здесь была своя копия и литерал «3» в двух местах, хотя
+# комментарий в scenes.py называл себя единственным местом правила: расхождение
+# значений разъехало бы аллокатор id и компилятор молча — маркер, который видит
+# один, второй считал бы отсутствующим.
+from ..content.scenes import MENU_ID_IN_SOURCE_RE as MENU_ID_RE
+from ..content.scenes import menu_marker
 # Ключ меню как он лежит в журнале (без обёртки vn_menu = "…").
 MENU_KEY_RE = re.compile(r"^(?P<scene>ch\d{2}_s\d{3})_m(?P<num>\d{3})$")
 LEDGER_SCHEMA = "ledger@2"
@@ -203,7 +209,6 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
             ledger["says"][new_id] = {"who": say["who"], "text": say["what"]}
 
         # ── маркеры меню ─────────────────────────────────────────────────────
-        marker_lines = {mk["line"] for mk in a["menu_markers"]}
         used_menu_nums: set[int] = {
             int(m.group("num")) for i in known.get(ch_id, ())
             if (m := MENU_KEY_RE.match(i)) and m.group("scene") == full_id
@@ -215,22 +220,19 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
 
         menus_without_marker = []
         for menu in a["menus"]:
-            # Маркер считается существующим, если python vn_menu-стейтмент стоит
-            # в пределах 3 строк над menu (между ними могут быть пустые строки).
-            if not any(menu["line"] - 3 <= ml < menu["line"] for ml in marker_lines):
+            # Принадлежность маркера меню — общим хелпером (content/scenes.py).
+            mk = menu_marker(menu, a["menu_markers"])
+            mm = MENU_ID_RE.search((mk or {}).get("source") or "")
+            if mk is None or mm is None:
                 menus_without_marker.append(menu)
+            elif not mm.group("id").startswith(full_id):
+                rep.errors.append(
+                    f"{rpy.name}:{mk['line']}: маркер {mm.group('id')} "
+                    f"принадлежит чужой сцене (copy-paste?) — ledger главы "
+                    f"загрязнился бы чужими переводами"
+                )
             else:
-                for mk in a["menu_markers"]:
-                    mm = MENU_ID_RE.search(mk["source"])
-                    if mm and menu["line"] - 3 <= mk["line"] < menu["line"]:
-                        if not mm.group("id").startswith(full_id):
-                            rep.errors.append(
-                                f"{rpy.name}:{mk['line']}: маркер {mm.group('id')} "
-                                f"принадлежит чужой сцене (copy-paste?) — ledger главы "
-                                f"загрязнился бы чужими переводами"
-                            )
-                            continue
-                        ledger["menus"][mm.group("id")] = {"items": menu["items"]}
+                ledger["menus"][mm.group("id")] = {"items": menu["items"]}
 
         menu_assignments = []
         for menu in sorted(menus_without_marker, key=lambda m: m["line"]):

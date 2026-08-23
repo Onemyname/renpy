@@ -612,3 +612,39 @@ def test_e2e_deleted_line_number_is_not_reused(repo_root, tmp_path):
         f"номер {victim} переиспользован — новая реплика унаследует перевод удалённой")
     assert int(fresh[0].rsplit("_", 1)[1]) > int(victim.rsplit("_", 1)[1])
     assert victim in after["retired"], "журнал не должен терять отставленный номер"
+
+
+def test_menu_marker_rule_lives_in_one_place():
+    """Правило близости маркера `$ vn_menu` к оператору `menu` — одно на проект.
+
+    content/scenes.py объявляет себя единственным местом этого правила
+    (MENU_MARKER_LOOKBACK + menu_marker + MENU_ID_IN_SOURCE_RE), но из двух
+    названных потребителей мигрировал только графовый компилятор: аллокатор id
+    держал свою копию регекспа и литерал «3» в двух местах. Расхождение значений
+    разъехало бы их молча — маркер, который видит один, второй считал бы
+    отсутствующим, и меню получило бы второй id, то есть новую строку в ledger
+    вместо перевода к существующей.
+
+    Проверяется поведением: константа подменяется, и оба потребителя обязаны
+    увидеть одно и то же."""
+    from vn.content import scenes as sc
+    from vn.loc import keys as lk
+
+    assert lk.MENU_ID_RE is sc.MENU_ID_IN_SOURCE_RE, "регексп маркера продублирован"
+
+    markers = [{"line": 10, "source": 'vn_menu = "ch01_s010_m001"'}]
+    near, far = {"line": 12}, {"line": 40}
+    assert sc.menu_marker(near, markers) is markers[0]
+    assert sc.menu_marker(far, markers) is None
+
+    # Сузим окно — и «близкий» маркер обязан перестать считаться близким СРАЗУ у
+    # обоих: у keys.py своего литерала больше нет.
+    saved = sc.MENU_MARKER_LOOKBACK
+    try:
+        sc.MENU_MARKER_LOOKBACK = 1
+        assert sc.menu_marker(near, markers) is None
+    finally:
+        sc.MENU_MARKER_LOOKBACK = saved
+
+    src = (Path(lk.__file__)).read_text(encoding="utf-8")
+    assert '- 3 <=' not in src, "в аллокаторе id снова литерал окна маркера"
