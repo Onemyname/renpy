@@ -98,7 +98,21 @@ def _py_literal(value) -> str:
     """YAML-значение -> литерал Python/Ren'Py (в сейве только простые типы, G5)."""
     if isinstance(value, (str, int, float, bool)) or value is None:
         return repr(value)
-    if isinstance(value, (list, dict)):
+    if isinstance(value, dict):
+        # Ключи только строковые. Причина не стилистическая: состояние проходит
+        # json-раундтрип в цепочке миграций (run_migrations), а json приводит
+        # ключи dict к строкам — {1: x} возвращается в стор как {"1": x}, и
+        # следующий d[1] промахивается У ВСЕХ ИГРОКОВ, молча. Защита «не трогали
+        # — не пишем» закрывает только половину: миграция, которая переменную
+        # ТРОНУЛА, запишет её уже нормализованной.
+        bad = sorted(repr(k) for k in value if not isinstance(k, str))
+        if bad:
+            raise CompileError(
+                f"default-значение dict с не-строковыми ключами ({', '.join(bad)}): "
+                f"состояние проходит json-раундтрип в миграциях, и такие ключи "
+                f"молча станут строками у игрока — объявляйте ключи строками")
+        return repr(value)
+    if isinstance(value, list):
         return repr(value)
     raise CompileError(f"недопустимый тип default-значения: {type(value).__name__}")
 

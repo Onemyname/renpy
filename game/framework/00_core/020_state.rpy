@@ -125,6 +125,9 @@ init -999 python in vn_state:
         # разбор снапшота для этого не нужен. Сравниваем сериализации, а не
         # значения: иначе True и 1 считались бы одинаковыми.
         before = {k: _json.dumps(v, sort_keys=True) for k, v in state.items()}
+        # Значения ДО раундтрипа: нужны, чтобы отличить «ключи были строками» от
+        # «ключи нормализованы» — по сериализации этого не видно.
+        _orig = snapshot()
         applied = from_schema
         for number, migrate in MIGRATIONS:
             if number <= from_schema:
@@ -165,6 +168,22 @@ init -999 python in vn_state:
                            "миграция нарушает контракт плоского состояния" % k)
                     same = False
                 if not same:
+                    # Вторая половина той же защиты. «Не трогали — не пишем»
+                    # спасает переменные, которых миграция не касалась; но
+                    # ТРОНУТУЮ мы записываем уже после json-раундтрипа, а json
+                    # приводит ключи dict к строкам. Значит {1: …} вернулся бы в
+                    # стор как {"1": …}, и следующий d[1] промахнулся бы у всех
+                    # игроков. Компилятор такие дефолты запрещает (_py_literal),
+                    # но переменную мог наполнить и рантайм-код сцены — здесь
+                    # хотя бы остаётся след, а не тишина.
+                    if isinstance(v, _PLAIN_DICT):
+                        old_value = _orig.get(k)
+                        if isinstance(old_value, _PLAIN_DICT) and any(
+                                not isinstance(kk, str) for kk in old_value):
+                            vn_log("migration: %s — ключи dict нормализованы в "
+                                   "строки json-раундтрипом; обращения по "
+                                   "не-строковому ключу перестанут находить "
+                                   "значение" % k)
                     changed[k] = v
             apply_snapshot(changed)
         return applied

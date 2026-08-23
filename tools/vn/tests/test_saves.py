@@ -381,3 +381,35 @@ def test_snapshot_excludes_engine_names(repo_root, monkeypatch):
     snap = st.snapshot()
     assert snap["g.route"] == "common"
     assert "g.PY2" not in snap and "g.renpy_version" not in snap, snap
+
+
+def test_non_string_dict_keys_are_refused_by_the_compiler():
+    """dict с не-строковыми ключами в default — ошибка сборки.
+
+    Состояние проходит json-раундтрип в цепочке миграций, а json приводит ключи
+    к строкам: {1: x} возвращается в стор как {"1": x}, и следующий d[1]
+    промахивается У ВСЕХ ИГРОКОВ, молча. Защита «не трогали — не пишем»
+    закрывает только половину механизма: переменную, которую миграция ТРОНУЛА,
+    мы записываем уже нормализованной. Дешевле сделать её невозможной на входе."""
+    from vn.content.compile import _py_literal
+
+    assert _py_literal({"a": 1}) == repr({"a": 1})
+    with pytest.raises(CompileError, match="не-строковыми ключами"):
+        _py_literal({1: "x"})
+    with pytest.raises(CompileError, match="не-строковыми ключами"):
+        _py_literal({"ok": 1, (2, 3): "x"})
+
+
+def test_migration_warns_when_it_normalises_dict_keys(repo_root, monkeypatch):
+    """Вторая половина той же защиты — в рантайме.
+
+    Переменную мог наполнить не только default, но и код сцены. Если миграция
+    ТРОНУЛА такой dict, в стор уедет результат раундтрипа — уже со строковыми
+    ключами. Молча этого происходить не должно: в логе обязан остаться след с
+    именем переменной."""
+    st = _state_module(repo_root, {"g": {"tally": {1: "a", 2: "b"}}}, monkeypatch)
+    st.MIGRATIONS = [(2, lambda state: dict(state, **{"g.tally": {"1": "a", "2": "b",
+                                                                  "3": "c"}}))]
+    applied = st.run_migrations(1)
+    assert applied == 2
+    assert any("ключи dict нормализованы" in m and "g.tally" in m for m in st.log), st.log
