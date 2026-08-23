@@ -316,7 +316,17 @@ init -999 python in vn_qa:
                 # show_screen лишь помечает экран к показу: кадр рисуется только
                 # интеракцией, а screenshot() пишет последний нарисованный кадр.
                 # Короткая пауза даёт кадр с уже показанным экраном.
-                renpy.pause(0.3)
+                #
+                # modal=False обязателен, и это не перестраховка. Модальный экран
+                # ставит ev.modal на TIMEEVENT (layout.check_modal), а
+                # PauseBehavior при modal=True такой тик не считает истечением и
+                # перевзводит таймаут заново (behavior.py: PauseBehavior.event) —
+                # то есть пауза под модалкой не кончается НИКОГДА. Тур на такой
+                # модалке вис до убийства по таймауту, и именно поэтому модальные
+                # экраны в туре не проверялись вовсе: их либо не заводили, либо
+                # им приходилось иметь свой autopilot-таймер. С modal=False тур
+                # снимает и модалки — механизм перестал диктовать состав тура.
+                renpy.pause(0.3, modal=False)
                 if shots_dir:
                     renpy.screenshot(os.path.join(shots_dir, "screen_%s.png" % name))
                 renpy.hide_screen(name)

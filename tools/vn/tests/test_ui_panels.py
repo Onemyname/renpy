@@ -415,3 +415,59 @@ def test_gallery_chips_fit_their_small_buttons(repo_root):
             frame = _FRAME_RE.search(styles[name]["props"].get(key, ""))
             assert not frame or frame.group(1).startswith("chip"), (
                 f"{name}.{key}: панель {frame.group(1)} рассчитана на кнопку выше")
+
+
+def test_every_style_used_by_name_is_declared(repo_root):
+    """Стиль, названный в вёрстке строкой, обязан существовать — иначе игра падает
+    исключением на показе экрана, а не «уезжает на дефолтный шрифт».
+
+    Ren'Py выводит родителя по подчёркиванию (vn_modal -> modal), но ТОЛЬКО если
+    родитель существует: style.pyx get_style рекурсивно требует его и при
+    отсутствии бросает `Exception: Style '<имя>' does not exist` уже из
+    build_style, то есть в момент первой отрисовки. Проверено живым прогоном
+    движка на минимальном проекте: `renpy lint` при этом ЗЕЛЁНЫЙ.
+
+    Так пришёл P0: screen story_node_menu был написан на vn_modal /
+    vn_modal_title / vn_modal_text, которых в проекте не объявлено ни одного, и
+    клик по любому узлу карты главы ронял игру. Тур автопилота его не снимал
+    (модалка), а движковый lint такого класса не видит — этот тест и есть
+    единственная сеть."""
+    project = sorted((repo_root / "game").rglob("*.rpy"))
+    declared = set(_load_styles(project))
+
+    # Стили движка (default, frame, vbox, text, button, bar…) объявлены в
+    # renpy/common/*.rpy, и там они ВНУТРИ init-блоков — то есть с отступом,
+    # поэтому _load_styles их не видит (он считает отступ свойством стиля).
+    # Отдельный скан по этой причине, а не по невнимательности.
+    import os
+    from pathlib import Path
+
+    sdk = os.environ.get("RENPY_SDK")
+    if not sdk:
+        pytest.skip("RENPY_SDK не задан — набор стилей движка неизвестен")
+    common = sorted((Path(sdk) / "renpy" / "common").glob("*.rpy"))
+    if not common:
+        pytest.skip("renpy/common в SDK не найден")
+    engine = set()
+    for path in common:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = re.match(r"\s*style\s+([A-Za-z_][\w]*)\s*(?:is\s+[\w]+\s*)?:?\s*$",
+                         _strip_comment(line))
+            if m:
+                engine.add(m.group(1))
+    assert {"default", "frame", "vbox", "text", "button"} <= engine,         "скан стилей движка выродился — базовых стилей не нашлось"
+    declared |= engine
+
+    used: dict[str, list[str]] = {}
+    for path in project:
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            for m in re.finditer(r'\bstyle\s+"([a-z_][\w]*)"',
+                                 _strip_comment(line)):
+                used.setdefault(m.group(1), []).append(
+                    f"{path.relative_to(repo_root).as_posix()}:{i}")
+
+    # Гейт не должен выродиться: вёрстка обязана ссылаться на стили по имени.
+    assert len(used) > 20, f"использований стилей подозрительно мало: {len(used)}"
+    missing = {k: v for k, v in used.items() if k not in declared}
+    assert not missing, "стили используются, но не объявлены: " + "; ".join(
+        f"{k} <- {v[0]}" for k, v in sorted(missing.items()))

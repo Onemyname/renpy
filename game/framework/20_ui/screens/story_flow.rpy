@@ -202,35 +202,41 @@ screen story_node_menu(scene_id):
     zorder 70
     $ _targeted = scene_id in vn_story.targets()
     $ _blockers = vn_story.conflicts(scene_id, vn_story.targets())
-    add Solid("#000000cc")
-    frame:
-        style "vn_modal"
-        align (0.5, 0.5)
+    # Каркас модалки — общий (components.rpy: vn_modal_dialog): затемнение, рамка,
+    # отмена по B/Esc. Своей копии здесь быть не должно, и дело не в вкусе: этот
+    # экран как раз держал вторую копию каркаса со своими стилями vn_modal /
+    # vn_modal_title / vn_modal_text, которых в проекте нет ни одного объявления.
+    # Ren'Py выводит родителя по подчёркиванию, но ТОЛЬКО если родитель существует;
+    # стиля `modal` нет ни у нас, ни в SDK, поэтому build_style бросал
+    # «Exception: Style 'vn_modal' does not exist» — клик по узлу карты роняли игру.
+    # modal/zorder при use не наследуются — они объявлены выше, как требует каркас.
+    use vn_modal_dialog(Hide("story_node_menu")):
         vbox:
             spacing gui.sp_m
             text (vn_story.title(scene_id) if vn_story.revealed(scene_id) else "???"):
-                style "vn_modal_title"
+                style "vn_group"
+                xalign 0.5
             if _blockers and not _targeted:
                 text vn_loc.t("ui.chart.conflict_with").replace(
                     "[list]", ", ".join(vn_story.title(s) for s in _blockers)):
-                    style "vn_modal_text"
-            if vn_story.can_replay(scene_id):
-                for _i, _state in enumerate(vn_story.preconds(scene_id)):
-                    textbutton vn_story.precond_label(scene_id, _i):
-                        style "vn_toggle_button"
-                        action [Hide("story_node_menu"),
-                                Function(vn_story.start_replay, scene_id, _i)]
-            textbutton vn_loc.t("ui.chart.target_remove" if _targeted
-                                else "ui.chart.target_add"):
-                style "vn_toggle_button"
-                action [Function(vn_story.toggle_target, scene_id),
-                        Hide("story_node_menu")]
-            textbutton vn_loc.t("ui.common.back"):
-                style "vn_toggle_button"
-                action Hide("story_node_menu")
-                default_focus True
-    key "K_ESCAPE" action Hide("story_node_menu")
-    key "game_menu" action Hide("story_node_menu")
+                    style "vn_dialog_text"
+            vbox:
+                xalign 0.5
+                spacing gui.sp_m
+                if vn_story.can_replay(scene_id):
+                    for _i, _state in enumerate(vn_story.preconds(scene_id)):
+                        use vn_button(vn_story.precond_label(scene_id, _i),
+                                      [Hide("story_node_menu"),
+                                       Function(vn_story.start_replay, scene_id, _i)],
+                                      kind="secondary")
+                use vn_button(vn_loc.t("ui.chart.target_remove" if _targeted
+                                       else "ui.chart.target_add"),
+                              [Function(vn_story.toggle_target, scene_id),
+                               Hide("story_node_menu")],
+                              kind="secondary")
+                # Безопасная кнопка — ей же первый A с пада (каркас этого не делает).
+                use vn_button(vn_loc.t("ui.common.back"), Hide("story_node_menu"),
+                              kind="primary", focus_default=True)
 
 
 # Размер карточки — литералом: см. комментарий у VN_FLOW_NODE_W выше.
