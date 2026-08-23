@@ -1,0 +1,1056 @@
+schema: audit@1
+source: >-
+  docs/competitive-audit-reclaiming.md — «Конкурентный технический аудит:
+  Reclaiming the Lost 0.13 BETA → наш framework» (2026-08-22),
+  §5 «Повторный аудит нашего проекта» и §6 roadmap
+reviewed_at: "2026-08-22"
+
+# Статус пункта = проверяемый факт, а не запись в отчёте: CLOSED обязан назвать
+# файл реализации и тест (проверяет схема audit@1), WONT_FIX — обоснование.
+# Каждая находка §5 прошла независимую адверсариальную проверку до реализации;
+# два громких подозрения были ОПРОВЕРГНУТЫ и в этот трекер не попали — они
+# перечислены в §5.4 документа-первоисточника.
+#
+# Продуктовые и правовые решения остаются OPEN: их принимает владелец, а не
+# инженер, и «закрыть» их правкой кода нельзя.
+#
+# Соглашение про CLOSED у документационных пунктов: машинного теста на «текст
+# доки соответствует коду» не существует, поэтому там `tests` перечисляет то, что
+# реально сторожит правку (например блок C13), а где не сторожит ничего — стоит
+# пустой список и честная оговорка в note. Для таких пунктов CLOSED означает
+# «правка сделана и сверена с кодом при ревью», а не «покрыта тестом».
+#
+# Пункты RTL-030…RTL-038 заведены по итогам адверсариального ревью самих этих
+# правок (четыре независимых ревьюера по зонам): часть находок — регрессии,
+# внесённые этим же заходом, и они исправлены до сдачи.
+#
+# Заход 2026-08-22 (вторая половина): RTL-026, RTL-027 и новый RTL-040 закрыты
+# одной работой — картой главы, встроенным гайдом и пересмотром сцен как ТРЕМЯ
+# проекциями одного скомпилированного графа (ADR-0021). RTL-041…RTL-043 —
+# дефекты, найденные адверсариальной проверкой уже этой работы.
+
+items:
+  RTL-001:
+    title: "Миграции: json-раундтрип роняет загрузку старого сейва в крэш-скрин"
+    category: runtime
+    evidence:
+      - "020_state.rpy: snapshot() проверял тип только по ВЕРХНЕМУ уровню (_SIMPLE)"
+      - "020_state.rpy: run_migrations гнал весь снапшот через json.dumps до цепочки"
+      - "эмпирика: set внутри объявленного списка -> TypeError внутри label after_load"
+    implementation:
+      - game/framework/00_core/020_state.rpy
+    tests:
+      - tools/vn/tests/test_saves.py::test_snapshot_skips_value_that_breaks_json_roundtrip
+    status: CLOSED
+    note: >
+      Оракулом «переживёт ли значение раундтрип» взят сам json (_json_safe), а не
+      рекурсивная проверка типов: вторая реализация json разошлась бы с первой.
+      Пропуск логируется отдельным сообщением, значение в миграции не попадает.
+      Осознанная цена (названа в докстринге функции): такая переменная выпадает из
+      видимости миграций, то есть починить её миграцией нельзя — только записать
+      новое значение. Выбор между «миграция её не увидит» и «игрок не загрузит
+      сейв» сделан в пользу первого; наблюдаемость — строка в log.txt с именем
+      переменной. Приземлять факт пропуска в state.json автопилота и краснить
+      vn save corpus — обсуждалось и отложено: сегодня объявленные переменные
+      простые, а лишний красный гейт на легитимном контенте дороже.
+
+  RTL-002:
+    title: "Миграции: обратная запись всего снапшота портит переменные, которых миграция не касалась"
+    category: runtime
+    evidence:
+      - "020_state.rpy: apply_snapshot получал ВЕСЬ state, а не только изменённое"
+      - "эмпирика: {1: 'a'} после любой миграции возвращался как {'1': 'a'} (ключи json)"
+      - "vars@1 допускает dict-default с нестроковыми ключами (yaml даёт int)"
+    implementation:
+      - game/framework/00_core/020_state.rpy
+    tests:
+      - tools/vn/tests/test_saves.py::test_migrations_write_back_only_what_changed
+    status: CLOSED
+    note: >
+      Сравнение до/после — по канонической сериализации (json.dumps sort_keys),
+      а не по значениям: иначе True и 1 считались бы одинаковыми и запись
+      терялась. Нетронутая переменная остаётся в сторе тем же объектом.
+
+  RTL-003:
+    title: "Миграции: миграция за дырой в цепочке исполнялась и помечала сейв актуальным"
+    category: runtime
+    evidence:
+      - "020_state.rpy: при number != applied+1 был только vn_log, прогон продолжался"
+      - "after_load ставил vn_save_schema = applied, то есть перепрыгивал пропущенный номер"
+      - "комментарий там же обещал обратное: «дыра не должна помечать сейв актуальным»"
+    implementation:
+      - game/framework/00_core/020_state.rpy
+    tests:
+      - tools/vn/tests/test_saves.py::test_migration_chain_gap_breaks_the_chain
+      - tools/vn/tests/test_saves.py::test_full_chain_applies_every_step
+    status: CLOSED
+    note: >
+      Миграция N написана под состояние после N−1, поэтому цепочка обрывается на
+      первой дыре. Ветка достижима только генератом в обход сборки (непрерывность
+      гарантируют компилятор и — с RTL-004 — линтер), то есть это защита в глубину.
+
+  RTL-004:
+    title: "lint не знал правил цепочки миграций: «lint зелёный => build не падает» был неверен"
+    category: quality-gate
+    evidence:
+      - "compile.py: _collect_migrations ронял сборку на дыре/незарезервированном номере"
+      - "lint.py: о миграциях не знал ничего, кроме наличия registry.yaml в REQUIRED_FILES"
+      - "следствие: pre-push hook (vn content lint) пропускал ошибку до vn build"
+    implementation:
+      - tools/vn/src/vn/content/migrations.py
+      - tools/vn/src/vn/content/lint.py
+      - tools/vn/src/vn/content/compile.py
+    tests:
+      - tools/vn/tests/test_lint.py::test_lint_catches_migration_chain_gap
+      - tools/vn/tests/test_saves.py::test_chain_validation_gap
+      - tools/vn/tests/test_saves.py::test_unreserved_number
+    status: CLOSED
+    note: >
+      Правило вынесено в content/migrations.py и вызывается обоими — переписывать
+      его в линтере значило бы гарантировать расхождение (тот же приём, что с
+      правилами персонажей в content/characters.py). Тексты ошибок компилятора
+      сохранены дословно.
+
+  RTL-005:
+    title: "Голое имя генерата на init роняет старт свежего чекаута (NameError)"
+    category: runtime
+    evidence:
+      - "095_quality.rpy: min(..., vn_build_max_oversampling) без getattr на init 999"
+      - "имя объявлено только в game/generated/render.gen.rpy, а game/generated/ в .gitignore"
+      - "persistent глобален и переживает переклон: непустой vn_quality_cap -> NameError"
+      - "строка 30 того же файла уже читала это имя через getattr с дефолтом"
+    implementation:
+      - game/framework/00_core/095_quality.rpy
+    tests:
+      - tools/vn/tests/test_engine_compat.py::test_framework_reads_generated_names_defensively
+    status: CLOSED
+    note: >
+      Нарушался заявленный принцип «пустой проект запускается и честно говорит,
+      что контента нет» (010_registry.rpy). Тест сторожит класс целиком: имя
+      генерата, читаемое вне функций, обязано идти через getattr.
+
+  RTL-006:
+    title: "Триггеры ачивок и галереи по переменной не догонялись после загрузки"
+    category: runtime
+    evidence:
+      - "080_achievements.rpy: докстринги обещали проверку «после каждой смены состояния»"
+      - "фактически check() зовётся только с якорей (checkpoint/beat/chapter_done)"
+      - "label after_load триггеры не прогонял вовсе"
+      - "сценарий: переменная выставлена в хвосте сцены -> игрок сохранился и вышел -> ачивка не выдана"
+    implementation:
+      - game/framework/00_core/030_flow.rpy
+      - game/framework/00_core/020_state.rpy
+      - game/framework/00_core/080_achievements.rpy
+      - game/framework/00_core/090_gallery.rpy
+    tests:
+      - tools/vn/tests/test_achievements.py::test_grant_notifies_player
+    status: CLOSED
+    note: >
+      Добавлен фасад vn.recheck_triggers(), который зовётся из after_load после
+      миграций. Докстринги приведены к факту: триггер по переменной срабатывает
+      на первом якоре ПОСЛЕ присваивания. Расстановку якорей по присваиваниям
+      компилятором сознательно не вводили — беззвучных промежуточных состояний в
+      сцене больше, чем ачивок, и каждый такой якорь стоил бы попапа.
+      Отдельно рассмотрено и признано штатным: догон обновляет глобальный
+      persistent-водяной знак прогресса (vn_ach_progress) фактом загрузки. Этот
+      счётчик по замыслу глобальный и только растёт, а сообщается лишь то, что
+      игрок фактически достиг в загруженном состоянии.
+
+  RTL-007:
+    title: "Плашка беты дёргала Steam API на каждой интеракции и в предикции"
+    category: runtime
+    evidence:
+      - "build_overlay.rpy: $ _branch = vn_platform.beta_branch() в overlay-экране"
+      - "035_platform.rpy: beta_branch() без кэша вызывал s.get_current_beta_name()"
+      - "нарушение своего же правила «в выражениях экрана нет обращений к платформе» (030_flow.rpy)"
+    implementation:
+      - game/framework/00_core/035_platform.rpy
+      - game/framework/20_ui/screens/build_overlay.rpy
+    tests:
+      - tools/vn/tests/test_platform.py::test_beta_branch_is_read_once_per_process
+    status: CLOSED
+    note: >
+      Ветку выбирают в клиенте Steam — без перезапуска игры она не меняется,
+      поэтому кэш на процесс корректен. Кэш живёт в «_»-переменной стора (в сейв
+      не попадает, G5).
+
+  RTL-008:
+    title: "Галерея: шот с именем из двух и более атрибутов не разблокировался никогда"
+    category: runtime
+    evidence:
+      - "090_gallery.rpy: tag, _, attr = name.partition(' ') склеивал хвост в одну строку"
+      - "сравнение шло intersection с ОТДЕЛЬНЫМИ атрибутами ключа persistent._seen_images"
+      - "ограничение не было зафиксировано ни в коде, ни в handbook"
+    implementation:
+      - game/framework/00_core/090_gallery.rpy
+    tests:
+      - tools/vn/tests/test_gallery.py::test_store_unlocks_shot_with_several_attributes
+      - tools/vn/tests/test_gallery.py::test_store_unlocks_shot_by_tag_and_attribute
+    status: CLOSED
+    note: >
+      Дефект был латентным: генерат сегодня даёт ровно один атрибут (ссылка шота
+      без пробелов). Теперь атрибуты сверяются как подмножество показанного имени,
+      то есть стор готов к расширению схемы, а элемент не может «залипнуть
+      закрытым» у игрока, который кадр видел.
+
+  RTL-009:
+    title: "Галерея: второй, заброшенный канал уведомлений (_pending / take_pending)"
+    category: runtime
+    evidence:
+      - "090_gallery.rpy: unlock(silent=False) наполнял _pending, take_pending() не вызывался нигде"
+      - "фактические уведомления идут возвратом check() через vn._gallery_notify (030_flow.rpy)"
+      - "handbook 15 уже фиксировал статус IMPLEMENTED / UNUSED (zero call sites)"
+    implementation:
+      - game/framework/00_core/090_gallery.rpy
+      - docs/handbook/15-gallery.md
+    tests:
+      - tools/vn/tests/test_achievements.py::test_grant_notifies_player
+    status: CLOSED
+    note: >
+      Удалены очередь, take_pending() и ставший бессмысленным параметр silent
+      (значение True не использовалось нигде). Будущий вызов take_pending()
+      «уведомил» бы обо всём, открытом с начала процесса. Названный тест сторожит
+      именно оставшийся канал (возврат check() -> одно уведомление на тик,
+      RTL-034); проверки «мёртвого кода больше нет» не существует — удаление
+      держится ревью, как и любое удаление.
+
+  RTL-010:
+    title: "Состояние экрана галереи уезжало в каждый сейв и в rollback-лог"
+    category: runtime
+    evidence:
+      - "gallery.rpy: default vn_gal_category / vn_gal_zoom — store-default'ы"
+      - "SDK rollback.py (freeze/roots): в сейв попадает всё из ever_been_changed"
+      - "следствие: загрузка сейва возвращала чужую вкладку, откат за вход в меню её сбрасывал"
+    implementation:
+      - game/framework/20_ui/screens/gallery.rpy
+      - docs/handbook/15-gallery.md
+    tests:
+      - tools/vn/tests/test_gallery.py::test_gallery_screen_keeps_ui_state_out_of_saves
+    status: CLOSED
+    note: >
+      Переведено в экранные переменные (default внутри screen), как уже сделано с
+      variant в просмотрщике. Вкладку меняет SetScreenVariable — кнопка живёт в
+      transclude-теле use vn_game_menu, и LocalVariable писала бы в контекст
+      use'нутого экрана (док движка, «Data Actions»). Цена принята: вкладка и зум
+      живут, пока показан экран. Префикс «_» от попадания в сейв не спасает.
+
+  RTL-011:
+    title: "Озвучка: мастер дубля в двух форматах остаётся после импорта финала"
+    category: content-pipeline
+    evidence:
+      - "voice.py: master_path берёт ПЕРВОЕ расширение из MASTER_EXTS"
+      - "_drop_stale_masters звался только из synth_drafts (TTS), но не из import_takes"
+      - "vn voice validate дубль не видел: проверка сирот ключуется по объявленному stem"
+    implementation:
+      - tools/vn/src/vn/voice.py
+    tests:
+      - tools/vn/tests/test_voice.py::test_import_final_replaces_draft_master_in_other_format
+      - tools/vn/tests/test_voice.py::test_import_rejects_two_versions_of_one_take
+      - tools/vn/tests/test_voice.py::test_validate_two_masters_for_one_line_is_error
+    status: CLOSED
+    note: >
+      Заявленный в аудите отказ «черновик уедет в дистрибутив» проверкой был
+      ОПРОВЕРГНУТ: ветка voice_opus делает Job на каждый файл, поэтому два
+      мастера одного line_id краснят vn assets build/validate и релизный гейт
+      коллизией выходов. Дефект был в диагностике — поздно и не про то. Теперь
+      import чистит устаревший формат, две версии в одной пачке отвергаются до
+      раскладки, а validate называет проблему адресно.
+
+  RTL-012:
+    title: "C18 «сырых путей в play не существует» — норма без enforcement"
+    category: quality-gate
+    evidence:
+      - "ARCHITECTURE.md C18 и §2.9 утверждали, что запрет держит линтер"
+      - "scenes.py: строковый литерал в play/queue молча пропускался как «не разрешимый статически»"
+      - "следствие: play music \"audio/bgm/foo.ogg\" проходил все гейты"
+    implementation:
+      - tools/vn/src/vn/content/scenes.py
+    tests:
+      - tools/vn/tests/test_scene_pipeline.py::test_audio_raw_path_is_c18_violation
+      - tools/vn/tests/test_scene_pipeline.py::test_audio_expression_skipped
+    status: CLOSED
+    note: >
+      Литерал разбирается существующим хелпером на ast.literal_eval (регексы по
+      .rpy запрещены, G24), строгость подчинена статусу главы (G15). Сложные
+      выражения по-прежнему пропускаются: voice vn.voice_path(...) в генерате и
+      подобные формы легальны.
+
+  RTL-013:
+    title: "video_src@1 не валидировался схемой на пути сборки видео (брешь G16)"
+    category: quality-gate
+    evidence:
+      - "pipeline.py: load_opts читал sidecar без реестра схем"
+      - "следствие: битый YAML — трейсбек из середины сборки, незнакомый ключ — тишина"
+      - "ловил это только vn content lint, а команда сборки видео проверкой не является"
+    implementation:
+      - tools/vn/src/vn/assets/video.py
+      - tools/vn/src/vn/assets/pipeline.py
+    tests:
+      - tools/vn/tests/test_video.py::test_sidecar_schema_is_enforced_on_the_build_path
+      - tools/vn/tests/test_video.py::test_broken_sidecar_yaml_is_an_error_not_a_traceback
+    status: CLOSED
+
+  RTL-014:
+    title: "Черновой профиль энкода видео не отлавливался релизным гейтом"
+    category: quality-gate
+    evidence:
+      - "профиль (full CRF 30/1080p, draft CRF 42/720p) пишется в mov_meta и в ключ кэша"
+      - "release.py про profile не знал: видео с --profile draft проходило vn release validate"
+    implementation:
+      - tools/vn/src/vn/assets/video.py
+      - tools/vn/src/vn/release.py
+    tests:
+      - tools/vn/tests/test_release.py::test_release_gate_fails_on_draft_encoded_video
+    status: CLOSED
+    note: >
+      FAIL, а не предупреждение: черновой энкод в проданной сборке — дефект.
+      Видео без mov_meta профилем не проверяется (узнать его неоткуда), эту
+      ситуацию ловит проверка свежести ассетов.
+
+  RTL-015:
+    title: "Sidecar видео без своего мастера молча не применялся"
+    category: content-pipeline
+    evidence:
+      - "pipeline.py: sidecar исключён из мастеров как sidecar и из orphan-очистки как несуществующий выход"
+      - "следствие: anim.video.yaml рядом с anim2.mp4 не действовал и не ругался"
+    implementation:
+      - tools/vn/src/vn/assets/pipeline.py
+    tests:
+      - tools/vn/tests/test_assets.py::test_video_sidecar_without_master_is_an_error
+    status: CLOSED
+    note: >
+      Найдено при верификации RTL-013 (тот же класс: молчаливый no-op в
+      декларациях), исправлено вместе с ним.
+
+  RTL-016:
+    title: "Проверки раскладки сырцов зависели от наличия ffmpeg"
+    category: quality-gate
+    evidence:
+      - "pipeline.py: голосовая ветка при отсутствии ffmpeg обнуляла список файлов до проверок пути"
+      - "видео-ветка возвращалась до проверок группы, слага и sidecar"
+      - "следствие: на машине без ffmpeg ошибка в декларации прятАлась за сообщением про инструмент"
+      - "test_pipeline_rejects_bad_voice_layout был красным на любой машине без ffmpeg на PATH"
+    implementation:
+      - tools/vn/src/vn/assets/pipeline.py
+    tests:
+      - tools/vn/tests/test_voice.py::test_pipeline_rejects_bad_voice_layout
+      - tools/vn/tests/test_assets.py::test_video_sidecar_without_master_is_an_error
+    status: CLOSED
+    note: >
+      Конвенция пути, формат и схема проверяются по данным — инструмент им не
+      нужен. Отсутствие ffmpeg по-прежнему ошибка сборки, но теперь не глушит
+      остальные претензии.
+
+  RTL-017:
+    title: "vn --help печатал кириллицу кракозябрами"
+    category: dx
+    evidence:
+      - "cli.py: перекодировка stdout жила в callback группы click"
+      - "click печатает --help на этапе разбора аргументов, ДО вызова callback"
+    implementation:
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_cli.py::test_help_encoding_is_set_before_click_parses
+    status: CLOSED
+    note: >
+      Перекодировка вызывается и на импорте модуля (точка входа консольного
+      скрипта — vn.cli:main, то есть импорт всегда раньше разбора), и в callback:
+      поток мог быть подменён после импорта (CliRunner в тестах).
+
+  RTL-018:
+    title: "voice-домен импортировал приватную функцию loc.po"
+    category: dx
+    evidence:
+      - "voice.py: from .loc.po import _load_translations — контракт между доменами на приватном имени"
+    implementation:
+      - tools/vn/src/vn/loc/po.py
+      - tools/vn/src/vn/voice.py
+      - docs/handbook/14-localization.md
+    tests:
+      - tools/vn/tests/test_voice.py::test_tts_dub_language_speaks_translation
+    status: CLOSED
+
+  RTL-019:
+    title: "Докстринг cli.py называл заглушками давно реализованные команды"
+    category: documentation
+    evidence:
+      - "cli.py:5-7 перечислял char new|validate|sheet, migrate, shell, test replay|screens|paths"
+      - "фактически заглушка одна (save migrate), migrate|shell выведены из нормы ADR-0017"
+      - "шапка ссылалась на сверку тестом, но тест сверяет дерево команд, а не текст шапки"
+    implementation:
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_cli.py::test_stub_inventory_matches_frozen_list
+      - tools/vn/tests/test_cli.py::test_retired_commands_stay_retired
+    status: CLOSED
+    note: >
+      Шапка теперь называет источником истины EXPECTED_STUBS в тестах, а не
+      дублирует перечень.
+
+  RTL-020:
+    title: "ARCHITECTURE §2.9/§2.5 описывали непостроенный видео/аудио-дизайн без маркера"
+    category: documentation
+    evidence:
+      - "§2.9 обещал VP9 2-pass, профили hd/mobile, loudnorm −16 LUFS для музыки, side_mask, atlas"
+      - "фактически: один прогон CRF, профили full/draft, -an, copy_audio без loudnorm"
+      - "§2.5 называл зону сырцов video/ вместо video_src/"
+      - "handbook 21 предупреждал «канон — ADR-0006 и код», а сама норма молчала"
+    implementation:
+      - docs/ARCHITECTURE.md
+      - docs/handbook/21-video-generation.md
+      - docs/handbook/23-audio.md
+    tests:
+      - tools/vn/tests/test_cli.py::test_top_level_domains_match_architecture_c13
+    status: CLOSED
+    note: >
+      Правки только в описательных разделах; норма §0 не менялась.
+      Нереализованные ветви помечены явно, реализованное — маркером
+      «superseded ADR-0006». Названный тест сторожит ТОЛЬКО машиночитаемый блок
+      C13 и ни одной из переписанных строк не касается — покрытия у этого пункта
+      фактически нет, он держится ревью (см. соглашение в шапке файла).
+
+  RTL-021:
+    title: "README утверждал appid: null и хардкодил число тестов"
+    category: documentation
+    evidence:
+      - "README: «Приложения в Steamworks ещё нет (platform.steam.appid: null)» при appid 480 с 2026-08-21"
+      - "README называл 509 и 521 тест в трёх местах при фактически другом числе"
+    implementation:
+      - README.md
+    tests: []
+    status: CLOSED
+    note: >
+      Число тестов из документации убрано как принципиально устаревающее (после
+      этого же аудита оно снова изменилось). Тестов, читающих README, в проекте
+      нет — пункт держится ревью.
+
+  RTL-022:
+    title: "Миф «на init config.developer — строка auto» в коде и в двух хендбуках; консоль без гейта"
+    category: documentation
+    evidence:
+      - "010_dev.rpy: комментарий объяснял безусловное config.console = True этим мифом"
+      - "SDK 8.5.3: 00library.rpy:347-360 (init -1000) даёт bool, defaultstore.py:105-109 булевизирует даже явную строку"
+      - "handbook 05 и 28 повторяли миф; handbook 28 фиксировал отсутствие гейта как PARTIAL"
+    implementation:
+      - game/framework/90_debug/010_dev.rpy
+      - game/framework/90_debug/020_jump_menu.rpy
+      - docs/handbook/28-debugging.md
+      - docs/handbook/05-renpy-development.md
+    tests:
+      - tools/vn/tests/test_platform.py::test_dev_console_is_gated_by_developer_flag
+    status: CLOSED
+    note: >
+      Заодно закрыт сам дефект, который миф оправдывал: консоль теперь
+      config.console = bool(config.developer) — второй слой поверх вырезания
+      90_debug из поставки. Подозрение аудита, что бесполезен и гейт jump-меню,
+      проверкой ОПРОВЕРГНУТО (см. §5.4 первоисточника): гейт корректен.
+
+  RTL-023:
+    title: "Устаревшие бюджеты и стухшие ссылки в handbook 21/22/23"
+    category: documentation
+    evidence:
+      - "handbook 23 §9 и handbook 21 «Чего не делать»: video_total_mb 300 / assets_total_mb 500"
+      - "фактические бюджеты (ADR-0012): 8000 и 20000; handbook 21 §7.3 цитировал верные — документ противоречил себе"
+      - "handbook 22 §9: generated_total_kb 2048, video_file_mb 40, «200 МБ на статику»"
+    implementation:
+      - docs/handbook/21-video-generation.md
+      - docs/handbook/22-rendering.md
+      - docs/handbook/23-audio.md
+    tests: []
+    status: CLOSED
+    note: >
+      Числа заменены фактическими, ссылки переведены на блок budgets в
+      project.yaml как на источник истины вместо дрейфующих номеров строк.
+      Машинной сверки числа в прозе с project.yaml нет — пункт держится ревью
+      (см. RTL-029 про дрейф номеров строк).
+
+  RTL-024:
+    title: "ADR-0008 (лицензии AI-моделей для коммерческого 18+) в статусе «предложено»"
+    category: architecture
+    evidence:
+      - "docs/adr/0008: развилка A/B/C по restricted/unknown моделям не выбрана"
+      - "авто-гейт «модель с commercial_use != allowed не участвует в релизном контенте» не реализован"
+      - "релиз 1.0.0 уже выпущен"
+    status: OPEN
+    note: >
+      Решение правовое, а не инженерное: его принимает владелец. До выбора ветки
+      ассет, сгенерированный restricted-моделью, может попасть в коммерческую
+      сборку без блокера. Реализация гейта — механическая работа после решения,
+      но её ФОРМА зависит от варианта (при A гейт проверяет свежесть снимка
+      условий, при B — простой запрет, при C — различает билд и превью), поэтому
+      писать все три заранее незачем.
+
+      Разбор развилки для владельца — docs/decisions/owner-decisions.md §1:
+      фактическое состояние манифеста моделей, правовая рамка по каждой лицензии,
+      три варианта с производственными последствиями, план отступления и чек-лист
+      на день решения. Производство первой главы этим пунктом НЕ блокировано:
+      ядро видео-конвейера целиком Apache-2.0.
+
+  RTL-025:
+    title: "Steam: реальный App ID вместо плейсхолдера 480"
+    category: dx
+    evidence:
+      - "project.yaml: appid 480 (публичный Spacewar), депоты 481-483 — помечены плейсхолдерами"
+      - "конвейер (vn release steam, preflight, VDF, раскладка депотов) прогнан на этих числах"
+    status: OPEN
+    note: >
+      Ждёт завода приложения в Steamworks. Инженерных работ не требует: заменить
+      надо ШЕСТЬ чисел в двух местах (project.yaml — appid и три депота;
+      packs/ep_beach и packs/nsfw — steam_dlc_appid), больше нигде они не
+      хардкодятся. Полный разбор для владельца — docs/decisions/owner-decisions.md
+      §2: что работает и что нет сегодня, что придётся сделать вне репозитория
+      (Steam Direct, взрослый контент, DLC как отдельные приложения, ачивки,
+      steam_api-редистрибутивы, секреты заливки), аргументы «стоит ли вообще» и
+      чек-лист на день решения.
+
+  RTL-026:
+    title: "Встроенный walkthrough (walkthrough@1): подсветка нужных выборов по целям игрока"
+    category: architecture
+    evidence:
+      - "docs/competitive-audit-reclaiming.md §4.2: флагманская фича конкурента, доказана рынком"
+      - "несущая база у нас готова: стабильные id меню (vn_menu, idx), граф exits/when, Variable Registry"
+    implementation:
+      - docs/adr/0021-story-flow-projections.md
+      - tools/vn/src/vn/content/flow.py
+      - game/framework/00_core/100_story_graph.rpy
+      - game/framework/20_ui/screens/choice.rpy
+      - game/framework/20_ui/screens/core_screens.rpy
+    tests:
+      - tools/vn/tests/test_flow.py
+      - tools/vn/tests/test_cli.py
+      - tools/vn/tests/test_ci_config.py
+    status: CLOSED
+    note: >
+      Сделано как проекция скомпилированного графа (ADR-0021), а не как своя
+      подсистема: подсказка = «этот пункт входит в требования отмеченной цели»,
+      и текст её собирается из графа. Отличия от конкурента, ради которых фича и
+      делалась: цели МНОЖЕСТВЕННЫЕ, несовместимые раскладываются в план на
+      минимальное число прохождений, а отклонение от плана называется вслух
+      («закроет цель X»). Гайд выключен по умолчанию. Пустоту фича не оформляет:
+      топологии, на которых она проверяется, лежат в тестовом паке qa_flow.
+
+  RTL-027:
+    title: "Реплей сцен из галереи: решение не зафиксировано ни в одну сторону"
+    category: architecture
+    evidence:
+      - "grep -i replay по game/ — ноль вхождений (renpy.call_replay не используется)"
+      - "vn test replay и схема replay@1 — QA-повтор прогонов CI, не игровая фича"
+      - "ADR-0010 (галерея) фичу не упоминал ни как план, ни как отказ"
+    implementation:
+      - docs/adr/0010-gallery-extras.md
+      - docs/adr/0021-story-flow-projections.md
+      - tools/vn/src/vn/content/scenes.py
+      - game/framework/00_core/100_story_graph.rpy
+      - game/framework/00_core/030_flow.rpy
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_flow.py
+      - tools/vn/tests/test_scene_pipeline.py
+      - tools/vn/tests/test_ci_config.py
+    status: CLOSED
+    note: >
+      Решение зафиксировано: реплей делаем, но точкой входа стала карта главы, а
+      не галерея (ADR-0010, врезка «Закрыто в ADR-0021»). Состояние входа
+      выводится компилятором из графа (flow@1: preconds) и проверяется прогоном
+      движка: vn test revisit играет КАЖДЫЙ вариант входа каждой сцены (26 сцен →
+      36 вариантов). Ручного пина переменных, как у референса, нет ни одного.
+
+  RTL-028:
+    title: "Существование зон assets_src не линтуется (класс «молчаливого отказа»)"
+    category: quality-gate
+    evidence:
+      - "lint.py REQUIRED_DIRS не содержит assets_src и его зон"
+      - "исторический случай: код искал assets_src/audio, норма называла audio_stems — ветка не срабатывала никогда"
+    status: WONT_FIX
+    rationale: >
+      Отсутствие зоны — легитимное состояние до появления контента (видео, голоса,
+      Live2D нет и не должно быть), поэтому проверка «зона существует» либо ложно
+      краснит, либо даёт предупреждение на каждый пустой каталог и зашумляет гейты,
+      где сейчас 0 WARN. Класс отказа закрыт иначе: у каждой ветки конвейера есть
+      тест на фактическую раскладку (например test_audio_stems_branch_copies_ogg),
+      а RTL-015/RTL-016 убрали два места, где декларация молча не применялась.
+      Пересмотреть — если появится третий случай «зона переименована, ветка мертва».
+
+  RTL-030:
+    title: "Кэш бета-ветки в store-переменной уехал бы в сейв (регрессия этого же захода)"
+    category: runtime
+    evidence:
+      - "первая версия RTL-007 кэшировала ответ Steam рантайм-присваиванием vn_platform._beta"
+      - "python.py: get_changes -> ever_been_changed кладёт в сейв любую изменённую переменную стора; фильтра по «_» там нет"
+      - "комментарий правки утверждал обратное — и противоречил выводу RTL-010 в том же заходе"
+    implementation:
+      - game/framework/00_core/035_platform.rpy
+    tests:
+      - tools/vn/tests/test_platform.py::test_beta_branch_is_read_at_init_and_never_at_runtime
+    status: CLOSED
+    note: >
+      Найдено адверсариальным ревью. Ветка читается один раз на init 999 (после
+      того как движок поднял Steam на init -1499), beta_branch() стала чистым
+      чтением. Присваивание в init в сейв не попадает — в отличие от
+      рантайм-присваивания. Тест проверяет оба инварианта: в теле функции нет
+      обращений к платформе и нет рантайм-присваивания.
+
+  RTL-031:
+    title: "vn voice import --draft уничтожал мастер записанного дубля (регрессия этого же захода)"
+    category: content-pipeline
+    evidence:
+      - "RTL-011 стал вызывать _drop_stale_masters из import_takes для КАЖДОГО файла"
+      - "import_takes статусом не ограничен: с --draft черновик вытеснял мастер прежнего формата"
+      - "шапка voice.py обещает обратное: «final — записанный дубль, который автоматика не перезаписывает никогда»"
+      - "до правки ошибка была обратимой и шумной (коллизия выходов конвейера), после — дубль актёра исчезал с диска"
+    implementation:
+      - tools/vn/src/vn/voice.py
+    tests:
+      - tools/vn/tests/test_voice.py::test_import_draft_never_destroys_a_recorded_final_take
+    status: CLOSED
+    note: >
+      Найдено адверсариальным ревью; самая опасная находка захода (потеря
+      незакоммиченного дубля актёра). Импорт черновика поверх строки со
+      status: final теперь отказ с рецептом. Тест проверен мутацией: без гейта
+      он краснеет.
+
+  RTL-032:
+    title: "Новая секция линтера падала трейсбеком на битом registry.yaml"
+    category: quality-gate
+    evidence:
+      - "mig.collect читал registry.yaml заново и обращался к r['number'] без проверки формы"
+      - "линтер обязан ДОЛОЖИТЬ: внятную ошибку от схемы читатель уже получил, трейсбек её прячет"
+    implementation:
+      - tools/vn/src/vn/content/migrations.py
+      - tools/vn/src/vn/content/lint.py
+    tests:
+      - tools/vn/tests/test_lint.py::test_lint_reports_broken_migration_registry_instead_of_crashing
+    status: CLOSED
+
+  RTL-033:
+    title: "Проверка C18 считала спецификации движка (<silence 3.0>) сырым путём"
+    category: quality-gate
+    evidence:
+      - "renpy/audio: play sound \"<silence 3.0>\" и <from N to M> — штатные формы"
+      - "объявить такую спеку в content/audio/*.yaml нечем (audio@1 требует путь к .ogg)"
+      - "то есть новая проверка запрещала легальную паузу и предлагала невозможный выход"
+    implementation:
+      - tools/vn/src/vn/content/scenes.py
+    tests:
+      - tools/vn/tests/test_scene_pipeline.py::test_audio_engine_spec_is_not_a_raw_path
+    status: CLOSED
+    note: >
+      Найдено адверсариальным ревью до появления первого такого случая в контенте
+      (в сценах проекта play/queue пока нет вовсе).
+
+  RTL-034:
+    title: "Два уведомления в одном тике: тост ачивки затирался тостом галереи"
+    category: runtime
+    evidence:
+      - "renpy.notify держит один слот: второй вызов прячет экран и показывает заново"
+      - "_ach_notify и _gallery_notify шли подряд без интеракции между ними"
+      - "в 1.0.0 совпадение гарантировано на главном пути: сцена ch01_s030 открывает и ачивку, и видео галереи"
+      - "докстринг сам называет «получил и не заметил» худшим исходом для ачивки"
+    implementation:
+      - game/framework/00_core/030_flow.rpy
+    tests:
+      - tools/vn/tests/test_achievements.py::test_grant_notifies_player
+    status: CLOSED
+    note: >
+      Дефект предсуществовал на якорях (не внесён этим заходом), но догон
+      триггеров добавлял второй гарантированный путь, поэтому починен здесь же:
+      _notify_progress собирает обе части и зовёт notify ОДИН раз. Новых
+      строк локализации не понадобилось — существующие тексты соединяются
+      разделителем (тост по вёрстке однострочный).
+
+  RTL-035:
+    title: "Контракт migrate(state) -> dict не проверялся; плохая миграция кирпичила загрузку"
+    category: runtime
+    evidence:
+      - "забытый return -> следующая миграция получала None; текст исключения указывал на раннер, не на файл миграции"
+      - "не-json значение, положенное миграцией, роняло сравнение «до/после» уже внутри after_load — до подъёма схемы, то есть повторная загрузка падала снова"
+    implementation:
+      - game/framework/00_core/020_state.rpy
+    tests:
+      - tools/vn/tests/test_saves.py::test_migration_that_forgot_return_breaks_the_chain
+      - tools/vn/tests/test_saves.py::test_migration_result_that_is_not_json_is_written_and_logged
+    status: CLOSED
+    note: >
+      Найдено адверсариальным ревью (второе следствие — регрессия отказа,
+      внесённая RTL-002). Не-dict обрывает цепочку как дыра; не-json значение
+      записывается, но факт нарушения контракта уходит в лог.
+
+  RTL-036:
+    title: "Бронь номера миграции не сверялась со слагом файла"
+    category: quality-gate
+    evidence:
+      - "MIGRATION_FILE_RE захватывал slug, но он нигде не читался"
+      - "обязательное по схеме поле reserved[].slug ни с чем не сверялось: 0002_route_prologue.py проходил при брони другого слага"
+    implementation:
+      - tools/vn/src/vn/content/migrations.py
+    tests:
+      - tools/vn/tests/test_lint.py::test_lint_catches_migration_slug_not_matching_reservation
+    status: CLOSED
+    note: >
+      Поверхность схемы, висевшая мёртвой ещё до этого захода; закрыта в момент,
+      когда правило переносили в отдельный модуль.
+
+  RTL-037:
+    title: "Два новых теста были негодными: ловушка на будущее и греп вместо поведения"
+    category: dx
+    evidence:
+      - "guard на голое имя генерата краснел бы и на законном чтении ИЗ ФУНКЦИИ (рантайм), то есть ловушка для следующего автора"
+      - "тест кодировки --help искал строку в исходнике: выпотрошенная перекодировка оставила бы его зелёным"
+    implementation:
+      - tools/vn/tests/test_engine_compat.py
+      - tools/vn/tests/test_cli.py
+    tests:
+      - tools/vn/tests/test_engine_compat.py::test_framework_reads_generated_names_defensively
+      - tools/vn/tests/test_cli.py::test_help_is_utf8_even_when_console_asks_cp1251
+    status: CLOSED
+    note: >
+      Guard сузился до обращений вне функций (init-фаза — единственное, что ломает
+      старт); тест кодировки стал поведенческим (запуск с PYTHONIOENCODING=cp1251
+      и декодирование вывода как utf-8). Оба проверены мутацией.
+
+  RTL-038:
+    title: "Документационный дрейф, внесённый и вскрытый этим же заходом"
+    category: documentation
+    evidence:
+      - "ссылки на 020_state.rpy в handbook 07 разъехались сразу после записи (файл продолжал правиться)"
+      - "таблицы handbook 15 обновлены выборочно: диапазоны строк начали накладываться, одна строка кода приведена неверно"
+      - "новые ссылки handbook 21/23 на pipeline.py/release.py указывали не на те конструкции"
+      - "счётчики: «21 проверка» гейта при фактических 22, «39 схем» при 44, «373 теста»"
+      - "гейт консоли реализован, но handbook 05/28 в четырёх местах утверждали обратное"
+      - "§2.5 ARCHITECTURE запретила регуляркой вложенность video_src/<group>/nsfw/, которую требует конвейер"
+    implementation:
+      - docs/handbook/07-backend.md
+      - docs/handbook/15-gallery.md
+      - docs/handbook/21-video-generation.md
+      - docs/handbook/22-rendering.md
+      - docs/handbook/23-audio.md
+      - docs/handbook/05-renpy-development.md
+      - docs/handbook/28-debugging.md
+      - docs/handbook/14-localization.md
+      - docs/ARCHITECTURE.md
+      - README.md
+    tests: []
+    status: CLOSED
+    note: >
+      Найдено адверсариальным ревью. Урок зафиксирован в RTL-029: ссылка на номер
+      строки живёт до первой вставки выше неё, поэтому правки такого рода надо
+      делать последними и проверять прогоном, а не памятью.
+
+  RTL-039:
+    title: "Проверки типа по именам list/dict/set внутри сторов: класс латентных отказов, включая мёртвую Revertable-конвертацию"
+    category: runtime
+    evidence:
+      - "SDK renpy/minstore.py:41-53 подменяет в КАЖДОМ сторе list/dict/set на Revertable-аналоги; они подклассы, поэтому обычный контейнер их экземпляром НЕ является"
+      - "vn_compat.revertable(): isinstance(value, dict) не распознавал обычный dict из json.loads — конвертация не срабатывала ровно в том случае, ради которого написана (значения после миграции не участвовали в rollback, G5)"
+      - "докстринг revertable() ссылался на «КОНТРАКТ-ТЕСТ test_engine_compat::test_revertable_types», которого в проекте не существовало"
+      - "050_build_bridge.rpy: isinstance(block, list) не рекурсировал в блоки узлов «прочих» типов (AST приходит обычными списками из renpy/parser.py); isinstance(payload, dict) работал лишь потому, что payload создаётся кодом стора движка"
+      - "080_achievements.rpy: counter() давал 0 для обычного списка — прогрессивная ачивка после миграции считала бы ноль"
+      - "поймано на живом движке: vn save corpus показал «schema после загрузки: 1 (цель 2)» после того, как в run_migrations добавили проверку isinstance(result, dict)"
+    implementation:
+      - game/framework/00_core/engine_compat/000_compat.rpy
+      - game/framework/00_core/050_build_bridge.rpy
+      - game/framework/00_core/080_achievements.rpy
+      - game/framework/00_core/020_state.rpy
+      - tools/vn/tests/test_saves.py
+      - tools/vn/tests/test_engine_compat.py
+    tests:
+      - tools/vn/tests/test_engine_compat.py::test_revertable_types
+      - tools/vn/tests/test_saves.py::test_migrations_write_back_only_what_changed
+      - tools/vn/tests/test_saves.py::test_migration_that_forgot_return_breaks_the_chain
+    status: CLOSED
+    note: >
+      Дефект дожил до этого захода именно потому, что юнит-тесты исполняли код
+      стора с ОБЫЧНЫМИ builtins: любая такая ошибка оставалась зелёной. Стенды
+      test_saves.py и новый test_engine_compat::test_revertable_types теперь
+      воспроизводят подмену типов и Revertable-значения, как это делает движок, —
+      обе проверки краснеют на прежней реализации (проверено мутацией). Скан
+      game/**/*.rpy после правок: проверок типа по подменяемым именам не осталось.
+      В счётчике ачивок вместо isinstance взят __len__ — он не зависит от того,
+      какой именно контейнер пришёл.
+
+  RTL-029:
+    title: "Массовый дрейф номеров строк в ссылках handbook 21/22 на video.py и release.py"
+    category: documentation
+    evidence:
+      - "video.py вырос с 326 до 471 строки: ссылки вида video.py:NNN съехали примерно на +105"
+      - "проверенные примеры: §7.1 «validate_output (video.py:200-249)» — фактически 307-356; §6.1 encode_args «85-111» — фактически 102-128"
+      - "тот же дрейф по release.py: «release.py:28-53», «349-358», «441-452»"
+    implementation:
+      - docs/handbook/21-video-generation.md
+      - docs/handbook/22-rendering.md
+      - docs/handbook/35-agent-rules.md
+      - docs/ARCHITECTURE.md
+      - docs/competitive-audit-freshwomen.md
+    tests:
+      - tools/vn/tests/test_docs_refs.py
+    status: CLOSED
+    note: >
+      Перенумерация отвергнута как лечение: она отстанет от кода при первой же
+      вставке. Вместо неё введена адресация ИМЕНЕМ — `video.py: validate_output`,
+      — и она проверяема. 102 ссылки в handbook 21/22 переведены на символы,
+      номеров строк там не осталось ни одного; правило записано в handbook 35
+      (агентские правила) вместо прежнего совета «цитируя cli.py:NNN, открой эти
+      строки».
+
+      Гейт из двух тестов: символьная ссылка обязана резолвиться в существующий
+      символ модуля, а в вычищенных файлах номера строк не отрастают (список
+      файлов заморожен и растёт по мере чистки). Оба проверены мутацией.
+
+      Гейт сразу нашёл три дефекта вне зоны задачи, и они тоже исправлены:
+      ARCHITECTURE.md дважды ссылалась на `memory.py: _character_cost` (такого
+      символа нет — функция называется `_character_index`) и обоими абзацами
+      утверждала, что мемоизация «открытый пункт», хотя предындексация сделана;
+      competitive-audit-freshwomen.md звала `pipeline.py:_orphan_masters` вместо
+      `orphan_masters`. Приведённые в ARCHITECTURE.md числа замеров сняты ДО
+      предындексации — это в тексте теперь сказано прямо.
+
+      Что НЕ сделано намеренно: ~1900 числовых ссылок в остальных доках.
+      Переписывать их все одним заходом — это правка, которую невозможно
+      отревьюировать; чистка идёт по файлу за раз с добавлением его в
+      LINE_REF_FREE, и откат уже вычищенного теперь ловится тестом.
+
+  RTL-040:
+    title: "Карта главы (флоучарт): структура сюжета игроку — проекция того же графа"
+    category: architecture
+    evidence:
+      - "docs/competitive-audit-reclaiming.md §4.2: карту ветвления жанр ожидает, у референса её нет вовсе"
+      - "у нас в графе уже было всё нужное (сцены, exits, when, миры достижимости) — не хватало только проекции"
+      - "прогресс главы, туман войны и превью узлов выводятся из flow@1 и галереи, своего реестра не появилось"
+    implementation:
+      - docs/adr/0021-story-flow-projections.md
+      - game/framework/20_ui/screens/story_flow.rpy
+      - game/framework/00_core/100_story_graph.rpy
+      - game/framework/20_ui/components.rpy
+      - content/ui/screens.yaml
+    tests:
+      - tools/vn/tests/test_flow.py
+      - tools/vn/tests/test_qa.py::test_repo_tour_covers_every_project_screen
+      - tools/vn/tests/test_ui_panels.py
+    status: CLOSED
+    note: >
+      Раскладка считается алгоритмом (слой = длина самого долгого пути от входа,
+      порядок внутри слоя — scene_order), ручных координат в декларациях нет.
+      Кластеры главы задают только заголовок и состав; геометрия подложки
+      выводится из раскладки. Зум — один Transform над полотном: панели-фоны
+      (ADR-0009) рендерятся в полную геометрию и не сплющиваются ни на каком
+      масштабе. Экран внесён в тур vn test screens, узлы/подложки/модалка — в
+      ignore_defined с причинами.
+
+  RTL-041:
+    title: "Отражение вместо отрицания в разборе «литерал OP переменная»: граница порога уезжала на единицу"
+    category: correctness
+    evidence:
+      - "flow.py _compare для перевёрнутой формы брал таблицу _INVERTED (отрицание), а нужна таблица отражения"
+      - "parse_condition('5000 <= ch.n') давало {'lo': 5001} вместо {'lo': 5000}; '5000 > ch.n' -> {'hi': 5000} вместо 4999"
+      - "следствие: сцена за гейтом, записанным как «5000 <= ch72.donation», объявлялась недостижимой ровно при donation == 5000 — то есть на самом пороге"
+    implementation:
+      - tools/vn/src/vn/content/flow.py
+    tests:
+      - tools/vn/tests/test_flow.py::test_parse_condition_covers_declared_subset
+    status: CLOSED
+    note: >
+      Найдено адверсариальной проверкой компилятора (мутационный прогон группы
+      подмножества условий). Обе формы записи условия теперь сверяются друг с
+      другом, а не только с ожидаемым числом: тест краснеет на исходной
+      реализации (проверено мутацией). Форма «литерал OP переменная» в боевом
+      контенте не встречалась — дефект был латентным.
+
+  RTL-042:
+    title: "Поглощение миров сравнивало ограничения через as_data(): 500 сцен компилировались 39 секунд"
+    category: scalability
+    evidence:
+      - "_subsumes сверял con_a.intersect(con_b).as_data() != con_b.as_data() — с сортировкой множества на каждую пару"
+      - "профиль на 500 сценах: 11.9 млн вызовов as_data и 21 млн _sort_key внутри достижимости, 36 из 39 секунд"
+      - "ADR-0021 обещал бюджет «секунды на ~500 сцен» — обещание не выполнялось"
+    implementation:
+      - tools/vn/src/vn/content/flow.py
+    tests:
+      - tools/vn/tests/test_flow.py::test_five_hundred_scenes_stay_in_seconds
+    status: CLOSED
+    note: >
+      Constraint — frozen dataclass, то есть сравним и хешируем сам по себе:
+      as_data нужен только артефакту. После правки (плюс два дешёвых
+      короткозамыкания в _subsumes, кэш разбора when по ребру и ключ мира без
+      json.dumps) те же 500 сцен считаются ~6 с, артефакт боевого дерева
+      побайтово не изменился. Бюджет закрыт тестом с потолком 18 с — он ловит
+      смену класса сложности, а не дрожание раннера.
+
+  RTL-043:
+    title: "vn content flow --out без --json молча ничего не писал и возвращал 0"
+    category: quality-gate
+    evidence:
+      - "запись жила внутри ветки if as_json, а хелп опции обещал «файл (по умолчанию stdout)»"
+      - "у соседней vn content graph --out работает без всяких флагов — раскладка команд разъезжалась"
+      - "CI-шаг «выгрузи граф в файл» был бы зелёным с пустыми руками"
+    implementation:
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_cli.py::test_content_flow_json_writes_the_artifact_it_prints
+    status: CLOSED
+    note: >
+      --out теперь подразумевает --json: в файл уезжает только артефакт, сводка
+      остаётся текстом для человека. Заодно исправлен флаг complete: он значил
+      «аргумент analyses не None», то есть на дереве без авторских .rpy модель
+      объявляла себя полной, ни разу не позвав мост. Теперь это «AST разобран у
+      каждой объявленной сцены».
+
+  RTL-044:
+    title: "vn test paths красный на HEAD до этого захода: сцена DLC-эпизода недостижима трассами smoke"
+    category: quality-gate
+    evidence:
+      - "проверено на чистом HEAD (git stash): «error: не пройдено: ch90_s010», покрытие сцены 3/4"
+      - "ch90 живёт в паке ep_beach, пак перечислен во флейворах, статус главы release — то есть гейт требует её прохождения по делу"
+      - "трассы --picks стартуют игру обычным Start(); у ch90 своя точка входа, и никакой последовательностью выборов в неё не попасть"
+      - "джоба nightly.yml зовёт ровно эту команду, то есть ночной прогон красный и до этого захода"
+    implementation:
+      - game/framework/00_core/030_flow.rpy
+      - tools/vn/src/vn/cli.py
+      - .github/workflows/nightly.yml
+    tests:
+      - tools/vn/tests/test_ci_config.py::test_every_root_chapter_has_a_paths_trace_in_ci
+    status: CLOSED
+    note: >
+      Чинился не гейт, а способ входа. Автопилот получил VN_AUTOPILOT_CHAPTER и
+      заходит в главу ТЕМ ЖЕ путём, что игрок с карточки главы: Start(entry_label)
+      — это renpy.jump_out_of_context (SDK 00action_menu.rpy). Трасса `vn test
+      paths` получила необязательный префикс главы: `--picks ch90:`. Какие главы
+      требуют своей трассы, команда берёт из графа (корневая = в неё не ведёт ни
+      одно ребро), а не из своего представления о структуре игры, поэтому
+      следующий эпизод покраснеет сам. Забытая трасса теперь называется прямо
+      («глава chNN корневая, но ни одна трасса в неё не заходит»), а не
+      прикидывается непройденными сценами. Прогон: 4 сцены из 4 в гейте,
+      `vn test paths` зелёный впервые.
+
+  RTL-045:
+    title: "vn test replay --all красный на HEAD: запись прогона сделана на контенте 0.1.5, версия игры 1.0.0"
+    category: quality-gate
+    evidence:
+      - "ci/fixtures/replays/mira-casual-route.json: content_version = 0.1.5"
+      - "project.yaml: version = 1.0.0 (бампнуто коммитом c822d8d, до этого захода; git diff по project.yaml пуст)"
+      - "гейт сам объясняет: «сверять состояние между версиями бессмысленно» — сработала защита от version skew, а не поломка кода"
+      - "джоба nightly.yml зовёт vn test replay --all, то есть ночной прогон красный и до этого захода"
+    implementation:
+      - ci/fixtures/replays/mira-casual-route.vnrec.json
+    tests:
+      - tools/vn/tests/test_ci_config.py
+    status: CLOSED
+    note: >
+      Владелец решил перезаписать (2026-08-22). Запись пересняна тем же путём
+      (--picks 0,1) с сохранённым `why`. Дифф просмотрен и состоит ровно из
+      ожидаемого: content_version 0.1.5 -> 1.0.0, recorded_at, и появление
+      переменных тестового пака ch70…ch73 в снапшоте (все на значениях по
+      умолчанию — прогон их не касается, см. RTL-046). Путь, набор
+      разблокированной галереи, взятые выборы и vn_save_schema не изменились —
+      то есть эталон подтверждает прежнее поведение, а не узаконивает новое.
+
+  RTL-046:
+    title: "Переменные тестового пака доезжают до сейва игрока: цена решения «пак вне флейворов»"
+    category: architecture
+    evidence:
+      - "генерат один на все флейворы, поэтому defaults.gen.rpy содержит default ch70.path и его соседей в любой сборке"
+      - "python.py: get_changes -> ever_been_changed кладёт в сейв любую изменённую переменную стора, а default — это присваивание"
+      - "проверено на живом сейве (.save = zip, файл log): ch70 x6, ch71 x6, ch72 x5, ch73 x5 вхождений"
+      - "тот же факт видно в снапшоте: SNAPSHOT_STORES = ('ch01','ch70','ch71','ch72','ch73','g')"
+    implementation:
+      - tools/vn/src/vn/content/compile.py
+      - tools/vn/src/vn/release.py
+    tests:
+      - tools/vn/tests/test_release.py::test_unshipped_pack_vars_are_excluded_from_every_flavor
+      - tools/vn/tests/test_scene_pipeline.py::test_unshipped_pack_vars_are_split_out_of_the_shipped_generat
+    status: CLOSED
+    rationale: >
+      Три «быстрых лечения» отвергнуты, и это часть решения. Флейвор-зависимый
+      генерат рвёт единую линию .rpyc (G6) и делает «одну сборку» двумя. Обычное
+      init-присваивание вместо default нельзя: default сбрасывается при НОВОЙ
+      игре, а присваивание нет — тестовые главы перестали бы стартовать с чистого
+      состояния, ровно того, что они и проверяют. Исключение из SNAPSHOT_VARS
+      само по себе ничего не даёт: в сейв переменные попадают не через наш
+      снапшот, а через движок.
+    note: >
+      Лечение — разделение генерата плюс существующий механизм исключений.
+      Объявления переменных паков вне флейворов уезжают в отдельный файл
+      state/defaults_unshipped.gen.rpy, и он исключается из дистрибутива тем же
+      build_id.json: exclude, которым уже исключаются NSFW-ассеты. В dev-чекауте
+      файл есть — тестовые главы играбельны; в сборке его нет — сторов не
+      существует. Из снапшота миграций (G5) эти переменные тоже убраны: снапшот
+      про состояние ИГРЫ.
+
+      Проверено не рассуждением, а двумя измерениями. Первое: собран public-билд,
+      в архиве vn-1.0.0-win.zip нет ни .rpy, ни .rpyc этого файла (при
+      defaults.gen.* на месте). Второе: движок прогнан БЕЗ этого файла и сделан
+      настоящий сейв — переменных ch70…ch73 в нём не осталось (`store.ch70.path`
+      и соседи исчезли, было 6/6/5/5 вхождений), сейв стал на килобайт меньше.
+      Остаточные упоминания ch7x в сейве — это пиклённый реестр глав
+      (VN_CHAPTERS), то есть define, одинаковый для любого неустановленного пака.
+
+      Побочный полезный эффект: запись прогона (RTL-045) снова отличается от
+      исходной ровно двумя строками — версией и датой, — а не составом состояния.
+
+      Скомпилированные СЦЕНЫ тестовых паков не исключаются намеренно: они мертвы и
+      так (installed() в релизе False), а вырезать метки, на которые ссылается
+      реестр графа, значит завести класс «висячая ссылка» ради килобайтов.
+
+  RTL-047:
+    title: "Документация девяти файлов утверждала «platform.steam.appid: null» при фактическом плейсхолдере 480"
+    category: documentation
+    evidence:
+      - "appid стал 480 коммитом c822d8d (2026-08-21); RTL-021 тогда поправил только README.md"
+      - "handbook 01/25/26/27/29/37/39/40/41/42/43/44 продолжали описывать состояние «Steam выключен, команда падает на первом шаге»"
+      - "handbook 40 §1.1 — целый раздел про «appid: null против depots», построенный на несуществующем состоянии файла"
+      - "проверено прогоном: vn release steam --flavor public доходит до раскладки депотов и останавливается на отсутствующих архивах платформ, а не на appid"
+    implementation:
+      - docs/decisions/owner-decisions.md
+      - ci/steam/README.md
+      - docs/handbook/01-project-overview.md
+      - docs/handbook/25-custom-engine.md
+      - docs/handbook/26-automation.md
+      - docs/handbook/27-testing.md
+      - docs/handbook/29-build-and-release.md
+      - docs/handbook/37-roadmap.md
+      - docs/handbook/39-platforms.md
+      - docs/handbook/40-steamworks.md
+      - docs/handbook/41-steam-deck.md
+      - docs/handbook/42-big-picture.md
+      - docs/handbook/43-steam-qa.md
+      - docs/handbook/44-how-do-i.md
+    tests: []
+    status: CLOSED
+    note: >
+      Найдено при подготовке документа решений владельца: писать «замените
+      плейсхолдер» одновременно с двенадцатью файлами, утверждающими «значения
+      нет вовсе», нельзя. Исправлено 26 утверждений; смысловое различие
+      сохранено там, где оно нужно, — `appid: null` остаётся описанным как
+      валидное состояние «Steam выключен во всех сборках» (на нём стоят тесты),
+      а нынешнее 480 описано как плейсхолдер чужого приложения.
+
+      Тестом это не покрыто и покрыть нечем: утверждение вида «в файле стоит
+      число N» проверяемо, но таких утверждений в доке десятки, и заморозить их
+      значит запретить правки. Класс закрывается иначе — единой точкой правды:
+      весь разбор Steam-статуса теперь в docs/decisions/owner-decisions.md §2, а
+      остальные файлы ссылаются на неё вместо пересказа.
+
+  RTL-048:
+    title: "Проверочная пересборка перезаписала линию .rpyc выпущенного релиза — сейвы игроков ломались бы в следующем"
+    category: correctness
+    evidence:
+      - "vn release build --flavor public на версии 1.0.0 (тег v1.0.0 уже стоит) перезаписал ci/rpyc-cache/public/1.0.0/: 56 изменённых файлов, 12 новых"
+      - "линия — канонический носитель statement-имён выпущенной сборки (G6): следующий релиз кладёт её в game/ перед компиляцией, на этом держится загрузка старых сейвов"
+      - "сборка при этом ЗЕЛЁНАЯ: дистрибутив валиден, гейт проходит, ломается загрузка сейвов в СЛЕДУЮЩЕМ релизе"
+      - "поймано глазами по git status после прогона; восстановлено git checkout — линия побайтово вернулась к коммиченному состоянию"
+    implementation:
+      - tools/vn/src/vn/release.py
+      - tools/vn/src/vn/cli.py
+    tests:
+      - tools/vn/tests/test_release.py::test_released_rpyc_lane_is_not_overwritten
+    status: CLOSED
+    note: >
+      Найдено на себе: пересборка была нужна как ИЗМЕРЕНИЕ (проверял, что
+      defaults_unshipped не уезжает в архив, RTL-046), и она же тихо испортила
+      носитель сейв-совместимости. Отсюда и вывод, что дисциплины тут
+      недостаточно — нужен запрет.
+
+      Запрет узкий: линия версии заморожена, только если существует git-тег
+      v<версия>. До тега пересборка законна и делается десятки раз, поэтому
+      «каталог существует» признаком не годится. Проверка живёт в
+      release.rpyc_lane_frozen (одно место, вызывает vn package), краснеет на
+      мутации, и её тест различает оба состояния — до тега и после.

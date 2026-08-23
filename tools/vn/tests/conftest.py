@@ -37,6 +37,7 @@ BASE_OUTPUTS = frozenset({
     "registry/overrides.gen.rpy",
     "registry/ui_frames.gen.rpy",     # ADR-0009: Frame'ы генерируемых панелей
     "registry/gallery.gen.rpy",       # ADR-0010: реестр галереи
+    "registry/flow.gen.rpy",          # ADR-0021: граф истории (flow@1)
 })
 
 

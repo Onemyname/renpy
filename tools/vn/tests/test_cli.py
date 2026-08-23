@@ -9,10 +9,13 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 
 import click
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from vn import cli
@@ -89,6 +92,147 @@ def test_top_level_domains_match_architecture_c13(repo_root):
     documented = {name for group in re.findall(r"vn ([a-z|]+)", block.group(0))
                   for name in group.split("|")}
     assert documented == set(cli.main.commands)
+
+
+def _declarations_only_root(tmp_path, repo_root):
+    """Копия боевых деклараций БЕЗ авторских `*.scene.rpy`.
+
+    `vn content flow` зовёт build-bridge (движок) только когда в зонах глав есть
+    сцены-исходники. Убрав их, тест идёт целиком настоящим путём — chapter_zones,
+    build_model, validate_flow, flow_json на РЕАЛЬНЫХ декларациях проекта, — но не
+    поднимает движок (его тут нет) и не засоряет кэш анализа боевого репозитория
+    поддельным разбором. Декларации не подделываем: топологию графа задают они,
+    и подделка проверяла бы подделку.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    shutil.copy(repo_root / "project.yaml", root / "project.yaml")
+    shutil.copytree(repo_root / "tools" / "schemas", root / "tools" / "schemas")
+    for rel in ("content", "packs"):
+        shutil.copytree(repo_root / rel, root / rel,
+                        ignore=shutil.ignore_patterns("*.scene.rpy"))
+    assert not list(root.rglob("*.scene.rpy")), "исходники сцен остались — тест позовёт движок"
+    return root
+
+
+def test_content_flow_json_writes_the_artifact_it_prints(tmp_path, monkeypatch, repo_root):
+    """`--json` — документ для диффа и ревью между сборками, `--out` — его файл.
+    У этой пары две тихие поломки, и обе оставляют команду зелёной.
+
+    Первая: `--out` пишет НЕ то, что печатает `--json` (обрезанное, пересериализованное,
+    сводку вместо артефакта) — тогда ревью смотрит один документ, а рантайм получает
+    другой, и расхождение обнаруживается уже по поведению фичи. Вторая: запись голым
+    `Path.write_text` — на Windows артефакт уезжает в CRLF, и следующий дифф сборок
+    оказывается полным, то есть бесполезным (repo.write_text_lf, .gitattributes).
+
+    Сводка без `--json` тоже под проверкой: она обязана называть числа посчитанной
+    модели, а не нули — иначе прогон в CI печатает бодрый отчёт ни о чём.
+    """
+    from vn.content.flow import build_model, flow_json
+
+    root = _declarations_only_root(tmp_path, repo_root)
+    monkeypatch.chdir(root)
+    dest = tmp_path / "flow.json"
+
+    res = CliRunner().invoke(cli.content_flow, ["--json", "--out", str(dest)])
+    assert res.exit_code == 0, res.output
+    assert str(dest) in res.output                      # где искать записанное
+    raw = dest.read_bytes()
+    assert b"\r" not in raw, "артефакт записан с CRLF — следующий дифф сборок будет полным"
+
+    # Байт-в-байт тот же документ, что уезжает в генерат: никакой второй сборки
+    # модели «для файла» и никакой обрезки. analyses={} — ровно тот вход, что
+    # собирает сама команда: исходников сцен в дереве нет, значит мост не зовётся.
+    model = build_model(root, analyses={})
+    assert raw.decode("utf-8") == flow_json(model)
+    doc = json.loads(raw.decode("utf-8"))
+    assert doc["schema"] == "flow@1"
+    assert doc["scenes"], "модель собрана по пустому дереву — проверять нечего"
+    # …и раз мост не звался, модель обязана честно назвать себя неполной: на
+    # флаге complete стоит право строить подсказки walkthrough, а без разбора
+    # AST авторство выборов неизвестно.
+    assert doc["complete"] is False
+
+    printed = CliRunner().invoke(cli.content_flow, ["--json"])
+    assert printed.exit_code == 0, printed.output
+    assert printed.output == raw.decode("utf-8"), "stdout и --out расходятся"
+
+    # `--out` без `--json`: в файл уезжает артефакт, а не сводка. Раньше эта
+    # пара молча не писала ничего и возвращала 0 — то есть CI-шаг «выгрузи граф»
+    # был зелёным с пустыми руками.
+    only_out = tmp_path / "flow-implied.json"
+    res2 = CliRunner().invoke(cli.content_flow, ["--out", str(only_out)])
+    assert res2.exit_code == 0, res2.output
+    assert only_out.read_bytes() == raw
+
+    summary = CliRunner().invoke(cli.content_flow, [])
+    assert summary.exit_code == 0, summary.output
+    assert f"сцен: {len(model.scenes)}" in summary.output
+    assert f"рёбер: {len(model.edges)}" in summary.output
+    # Сводка — обозримый текст для человека: числа плюс не больше WARN_SAMPLES
+    # примеров конфликтов. Артефакт (тысяча строк) в этот режим попасть не должен:
+    # именно он гоняется в CI, и вывалить туда весь граф — значит утопить в нём
+    # предупреждения сборки.
+    lines = summary.output.splitlines()
+    assert len(lines) <= cli.WARN_SAMPLES + 4, (              # 2 строки чисел + «ещё N» + запас
+        f"в сводку вывалилось {len(lines)} строк — похоже на артефакт целиком")
+
+
+def _strip_default_of_a_read_var(root) -> str:
+    """Убрать `default` у переменной, чтение которой ОБЪЯВЛЕНО сценой; вернуть её ref.
+
+    Главу не хардкодим: топологии qa_flow живут вместе с ADR-0021 и меняются, а
+    дефект, который сторожит тест, общий для любой сцены.
+    """
+    from vn.repo import chapter_zones, load_yaml, write_text_lf
+
+    var_docs = {}          # store -> (путь, документ vars@1)
+    reads = []
+    for _pack_id, zone in chapter_zones(root):
+        for f in sorted(zone.glob("*/vars.yaml")):
+            doc = load_yaml(f)
+            var_docs[doc.get("store")] = (f, doc)
+        for f in sorted(zone.glob("*/scenes/*.scene.yaml")):
+            reads.extend((load_yaml(f).get("vars") or {}).get("reads") or [])
+
+    for ref in reads:
+        store, _, name = ref.partition(".")
+        path, doc = var_docs.get(store, (None, None))
+        spec = ((doc or {}).get("vars") or {}).get(name) or {}
+        # dict/list прекондиции реплея не требуют значения (ADR-0021 §2: только
+        # пустота/непустота), поэтому такая переменная ошибки не даст.
+        if spec.get("type") in ("dict", "list") or "default" not in spec:
+            continue
+        del spec["default"]
+        write_text_lf(path, yaml.safe_dump(doc, allow_unicode=True, sort_keys=False))
+        return ref
+    raise AssertionError("ни одна сцена не объявляет чтение скалярной переменной "
+                         "с default — фикстура теста устарела")
+
+
+def test_content_flow_exits_nonzero_when_replay_state_is_unbuildable(tmp_path, monkeypatch,
+                                                                     repo_root):
+    """Шаг `vn content flow` в ci.yml имеет смысл ровно настолько, насколько команда
+    умеет краснеть: ошибка модели графа обязана уйти в код выхода, а не только в
+    вывод. Гейт, который печатает «ошибка» и возвращает 0, — ложно-зелёный шаг, и
+    это хуже отсутствующего.
+
+    Ошибка взята настоящая и худшая из возможных (ADR-0021 §5): сцена читает
+    переменную, которой ни один путь до неё не даёт значения и у которой нет
+    `default`. Собрать состояние входа для реплея такой сцены нельзя — без гейта
+    это `NameError` в песочнице реплея у игрока.
+    """
+    root = _declarations_only_root(tmp_path, repo_root)
+    monkeypatch.chdir(root)
+    # Опорная точка: на нетронутых декларациях гейт зелёный, значит красное ниже —
+    # следствие внесённого дефекта, а не общего состояния дерева.
+    assert CliRunner().invoke(cli.content_flow, []).exit_code == 0
+
+    ref = _strip_default_of_a_read_var(root)
+    res = CliRunner().invoke(cli.content_flow, [])
+    assert res.exit_code == 1, res.output
+    assert ref in res.output and "default" in res.output, (
+        f"команда не назвала переменную {ref} — по выводу непонятно, что править")
 
 
 def _fake_sdk(tmp_path):

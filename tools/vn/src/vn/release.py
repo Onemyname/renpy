@@ -450,10 +450,15 @@ def steam_preflight(root: Path, flavor: str) -> list[tuple[str, str]]:
     # DLC: пак без steam_dlc_appid гейтится только установленностью (G9) — это
     # рабочее состояние для DRM-free поставки, но в Steam так пак не продать.
     packs_dir = root / "packs"
+    # Пак, не перечисленный ни в одном флейворе, ни одному игроку не уезжает
+    # (тестовые топологии графа, ADR-0021) — спрашивать про его DLC App ID
+    # значит просить владельца сделать невозможное и зашумлять список.
+    shipped = {p for f in (project.get("flavors") or {}).values()
+               for p in (f.get("packs") or [])}
     with_dlc, without = [], []
     for d in sorted(p for p in packs_dir.iterdir() if p.is_dir()) if packs_dir.is_dir() else []:
         mf = d / "manifest.yaml"
-        if not mf.is_file():
+        if not mf.is_file() or d.name not in shipped:
             continue
         (with_dlc if load_yaml(mf).get("steam_dlc_appid") else without).append(d.name)
     if with_dlc:
@@ -688,6 +693,28 @@ def nsfw_exclude_globs(root: Path) -> list[str]:
     return globs
 
 
+def unshipped_exclude_globs(root: Path) -> list[str]:
+    """Глобы classify для генерата паков ВНЕ всех флейворов (ADR-0021).
+
+    Такой пак не уезжает ни одному игроку ни в одном флейворе, поэтому глобы
+    одинаковы для всех — в отличие от NSFW, где исключение зависит от флейвора.
+
+    Исключается ровно один файл — объявления переменных тестовых паков. Без него
+    `default ch70.path = 'none'` исполнялся бы в релизной сборке (генерат один на
+    все флейворы, иначе рвётся линия .rpyc, G6), а Ren'Py кладёт в сейв любую
+    изменённую переменную стора — то есть тестовые значения ехали бы каждому
+    игроку (RTL-046).
+
+    Скомпилированные СЦЕНЫ таких паков не исключаются намеренно: они мертвы и
+    так (`pack_registry.installed()` в релизе False, глава не видна ни в выборе
+    глав, ни на карте), а вырезать метки, на которые ссылается реестр графа,
+    значит завести класс «висячая ссылка» ради килобайтов."""
+    rel = "game/generated/state/defaults_unshipped.gen.rpy"
+    # Глоб по `.gen.*`, а не по `.rpy`: рядом лежит скомпилированный `.rpyc`,
+    # и именно он определяет поведение сборки.
+    return [rel[: -len(".rpy")] + "*"] if (root / rel).is_file() else []
+
+
 def patron_tag(token: str | None) -> str | None:
     """Короткая НЕвосстановимая метка patron-сборки: blake2s(токен), 8 hex.
 
@@ -736,7 +763,10 @@ def compute_build_info(root: Path, flavor: str, patron_token: str | None = None,
         "early_content": bool(cfg.get("early_content", False)),
         "watermark": bool(cfg.get("watermark", False)),
         "patron_tag": patron_tag(patron_token),
-        "exclude": [] if cfg.get("nsfw") else nsfw_exclude_globs(root),
+        # NSFW-исключения зависят от флейвора, генерат паков вне флейворов — нет:
+        # такой пак не уезжает никому и ни в одной сборке (ADR-0021).
+        "exclude": ([] if cfg.get("nsfw") else nsfw_exclude_globs(root))
+        + unshipped_exclude_globs(root),
     }
 
 

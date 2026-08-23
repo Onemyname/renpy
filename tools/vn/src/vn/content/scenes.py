@@ -17,6 +17,33 @@ from pathlib import Path
 
 LABEL_RE = re.compile(r"^(?P<scene>ch\d{2}_s\d{3})__[a-z0-9_]+$")
 
+# Клаузы `id` у пунктов меню в движке не существует, поэтому идентичность меню
+# несёт python-маркер `$ vn_menu = "chNN_sNNN_mNNN"` НАД оператором menu (C1).
+# Сколько строк допускается между ними — правило одно на весь проект: его читают
+# и аллокатор id (loc/keys.py), и графовый компилятор (content/flow.py). Три —
+# чтобы между маркером и меню могли стоять пустые строки и комментарий.
+MENU_MARKER_LOOKBACK = 3
+MENU_ID_IN_SOURCE_RE = re.compile(r"vn_menu\s*=\s*[\"'](?P<id>ch\d{2}_s\d{3}_m\d{3})[\"']")
+
+
+def menu_marker(menu: dict, markers: list[dict]) -> dict | None:
+    """Маркер, принадлежащий этому меню, либо None. Единственное место, где живёт
+    правило близости маркера к оператору `menu`."""
+    line = menu["line"]
+    for mk in markers:
+        if line - MENU_MARKER_LOOKBACK <= mk["line"] < line:
+            return mk
+    return None
+
+
+def menu_id_of(menu: dict, markers: list[dict]) -> str | None:
+    """Стабильный id меню из его маркера (или None, если маркера ещё нет)."""
+    mk = menu_marker(menu, markers)
+    if mk is None:
+        return None
+    m = MENU_ID_IN_SOURCE_RE.search(mk.get("source") or "")
+    return m.group("id") if m else None
+
 
 @dataclass
 class SceneUnit:
@@ -54,7 +81,9 @@ def resolve_target(chapter_id: str, target: str) -> str:
 
 
 def _literal_exit(expr: str | None) -> tuple[bool, str | None]:
-    """Return-выражение -> (является ли строковым литералом/None, значение)."""
+    """Выражение (exit-id в return, файл в play) -> (это строковый литерал/None?, значение).
+
+    Разбор — только literal_eval: регексы по .rpy запрещены (G24)."""
     if expr is None:
         return True, None
     try:
@@ -67,6 +96,13 @@ def _literal_exit(expr: str | None) -> tuple[bool, str | None]:
 
 
 AUDIO_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _is_audio_spec(value: str) -> bool:
+    """Спецификация движка, а не путь: `<silence 3.0>`, `<from 2 to 5>audio.ogg`
+    и т. п. (renpy/audio/audio.py). Файла за ней может не быть вовсе, объявить её
+    в content/audio/*.yaml нечем — под запрет сырых путей (C18) она не попадает."""
+    return value.strip().startswith("<")
 
 # Какие kind'ы треков допустимы на каком канале (C18 + канал ambient из
 # framework/00_core/045_audio.rpy). Каналы вне карты (voice, movie) не проверяются.
@@ -402,6 +438,23 @@ def emit_scene(unit: SceneUnit, dispatch: dict, audio_tracks: dict[str, dict],
     lines.append('    $ vn_unavailable_reason = "unknown_exit"')
     lines.append("    jump vn_scene_unavailable")
     lines.append("")
+
+    # Реплей сцены из галереи/флоучарта (ADR-0021). Отдельная метка, потому что
+    # боевая обвязка для этого не годится: она зовёт checkpoint и после тела
+    # прыгает на следующую сцену по exit, то есть «пересмотр одного кадра»
+    # превратился бы в продолжение игры.
+    # Состояние входа выставляет САМ движок: renpy.call_replay(scope=...) пишет
+    # переменные сторов по путям вида «ch01.met_mira» уже после clean_stores и
+    # default-ов (SDK renpy/game.py: call_replay), поэтому здесь ни одной строки
+    # про переменные быть не должно. Сторы изолированы StoreBackup, а побочные
+    # эффекты прогресса гасит vn.in_replay() в фасаде.
+    lines.append(f"label {unit.full_id}__replay:")
+    lines.append('    $ renpy.scene("sprites")')
+    lines.append("    scene vn_black with dissolve")
+    lines.append(f"    call {unit.full_id}__body from _call_replay_{unit.full_id}")
+    lines.append("    $ renpy.end_replay()")
+    lines.append("")
+
     lines.append(f"# ══ Авторский источник (копия): {unit.rpy_rel} ══")
     body = _inject_voice(unit.rpy_text, unit.analysis.get("say_list") or [],
                          voiced or set())

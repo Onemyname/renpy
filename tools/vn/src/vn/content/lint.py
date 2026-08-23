@@ -340,15 +340,29 @@ def lint(root: Path, layout: bool = True) -> LintReport:
                     f"{ch_id}: сцена {sid} недостижима из entry_scene {entry} — "
                     f"на неё не ведёт ни один exit (мёртвый контент)"
                 )
-        # Тупики: сцена без exits, не являющаяся последней в scene_order.
+        # Тупики: сцена без exits, не являющаяся последней в scene_order и не
+        # объявленная концовкой. Глава с несколькими концовками (взаимоисключающие
+        # финалы — типовая топология жанра) иначе была бы невозможна: последней в
+        # scene_order может быть только одна сцена. Объявленные концовки — ещё и
+        # данные для флоучарта (ADR-0021): он помечает их отдельно.
         order = (ch_meta or {}).get("scene_order") or []
         last = order[-1] if order else None
+        endings = set((ch_meta or {}).get("endings") or [])
+        for sid in sorted(endings - set(order)):
+            complain(f"{ch_id}: endings.{sid} — такой сцены нет в scene_order")
         for sid in sorted(info["scenes"]):
             full = f"{ch_id}_{sid}"
-            if full in seen and not scene_exits.get(full) and sid != last:
+            if sid in endings and scene_exits.get(full):
+                complain(
+                    f"{ch_id}: сцена {sid} объявлена концовкой (endings), но имеет "
+                    f"exits — одно из двух неверно"
+                )
+            if full in seen and not scene_exits.get(full) \
+                    and sid != last and sid not in endings:
                 rep.warn(
                     f"{ch_id}: сцена {sid} — тупик (нет exits, но не последняя "
-                    f"в scene_order): игрок упрётся в «конец контента»"
+                    f"в scene_order и не объявлена в endings): игрок упрётся "
+                    f"в «конец контента»"
                 )
 
     # ── 4. Персонажи: id == имени папки ──────────────────────────────────────

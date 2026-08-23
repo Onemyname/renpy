@@ -711,3 +711,42 @@ def test_changelog_writes_on_a_bumped_version(tmp_path, monkeypatch):
     # Повторный прогон на той же версии обязан упереться в гейт, а не съесть дифф.
     with pytest.raises(rel.ReleaseError):
         rel.update_changelog(root)
+
+
+def test_unshipped_pack_vars_are_excluded_from_every_flavor(tmp_path):
+    """Пак вне всех флейворов никому не уезжает, поэтому его объявления
+    переменных не должны попадать ни в один дистрибутив.
+
+    Почему это вообще проблема. Генерат один на все флейворы (иначе рвётся линия
+    .rpyc, G6), значит `default ch70.path = 'none'` исполняется и в релизной
+    сборке, а Ren'Py кладёт в сейв любую изменённую переменную стора — то есть
+    тестовые значения ехали бы каждому игроку (RTL-046). Лечение — не второй
+    генерат, а глоб исключения: в dev-чекауте файл есть и тестовые главы
+    играбельны, в сборке его нет.
+
+    Проверяются два инварианта, и оба тихие: глоб зависит от НАЛИЧИЯ файла (иначе
+    build_info обещал бы исключить то, чего нет), и глоб уходит в ОБА флейвора —
+    в отличие от NSFW, где исключение зависит от флейвора и легко скопировать
+    условие не туда.
+    """
+    from vn.release import unshipped_exclude_globs
+
+    root = _mk_root(tmp_path)
+    assert unshipped_exclude_globs(root) == [], "файла нет — обещать нечего"
+
+    gen = root / "game" / "generated" / "state"
+    gen.mkdir(parents=True, exist_ok=True)
+    (gen / "defaults_unshipped.gen.rpy").write_text(
+        "init -980 python in ch70:\n    pass\n", encoding="utf-8")
+    globs = unshipped_exclude_globs(root)
+    assert globs == ["game/generated/state/defaults_unshipped.gen*"]
+    # Глоб обязан ловить и .rpyc: поведение сборки определяет он, а не .rpy.
+    assert globs[0].endswith("*") and not globs[0].endswith(".rpy")
+
+    for flavor in ("public", "patron"):
+        info = compute_build_info(root, flavor)
+        assert globs[0] in info["exclude"], (
+            f"флейвор {flavor}: генерат пака вне флейворов не исключён — "
+            f"его переменные уедут в сейв игрока")
+
+

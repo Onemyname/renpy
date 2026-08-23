@@ -16,6 +16,32 @@
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^s\\d{3}$"}
     },
+    "endings": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "Сцены-концовки: легитимные тупики (нет exits). Последняя сцена scene_order считается концовкой и без объявления; перечислять нужно остальные — иначе глава со взаимоисключающими финалами невозможна. Флоучарт помечает эти узлы отдельно (ADR-0021)",
+      "items": {"type": "string", "pattern": "^s\\d{3}$"}
+    },
+    "clusters": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Фазы главы для флоучарта (ADR-0021): только ГРУППИРОВКА узлов, не геометрия — раскладка остаётся автоматической. Сцена может не входить ни в один кластер",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title_key": {"type": "string", "pattern": "^[a-z0-9_.]+$"},
+          "scenes": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"type": "string", "pattern": "^s\\d{3}$"}
+          }
+        },
+        "required": ["title_key", "scenes"],
+        "additionalProperties": false
+      }
+    },
     "requires": {
       "type": "object",
       "properties": {

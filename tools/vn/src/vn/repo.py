@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -65,6 +66,39 @@ def chapter_zones(root: Path, packs=None) -> list[tuple[str, Path]]:
 
 def load_project(root: Path) -> dict:
     return load_yaml(root / "project.yaml")
+
+
+def unshipped_chapters(root: Path) -> set[str]:
+    """Главы, которые не уезжают НИ ОДНОМУ игроку: их пак не перечислен ни в одном
+    `flavors.*.packs` (ADR-0021).
+
+    Такой контент не участвует в гейтах, которые говорят про ИГРОКА: покрытие
+    переводов (иначе QA-топологии графа топили бы порог 98%, ничего не давая
+    игроку) и покрытие ветвления (`vn test paths` требовал бы прохождения
+    тестовых развилок в ночной джобе). Из PO главы не исключаются — в dev-сборке
+    они играбельны и должны переводиться псевдолокалью, — но помечаются
+    комментарием для переводчика.
+
+    Хелпер живёт здесь, а не у первого потребителя: «уезжает ли контент игроку» —
+    свойство раскладки репозитория, и второй ответ на этот вопрос разъехался бы
+    с первым.
+    """
+    try:
+        project = load_project(root)
+    except Exception:
+        return set()
+    shipped = {"core"}
+    for cfg in (project.get("flavors") or {}).values():
+        shipped.update((cfg or {}).get("packs") or [])
+    out: set[str] = set()
+    for pack_id, chapters_dir in chapter_zones(root):
+        if pack_id in shipped or not chapters_dir.is_dir():
+            continue
+        for d in sorted(p for p in chapters_dir.iterdir() if p.is_dir()):
+            m = re.match(r"^ch(\d{2})_", d.name)
+            if m:
+                out.add(f"ch{m.group(1)}")
+    return out
 
 
 def git_tag_exists(root: Path, tag: str) -> bool:

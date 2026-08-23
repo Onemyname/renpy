@@ -10,22 +10,78 @@
 init python:
 
     import ast as _vn_ast
+    import builtins as _vn_builtins
     import re as _vn_re
+
+    # Имена list/dict/set в сторе — Revertable-аналоги (SDK renpy/minstore.py:41-53),
+    # а AST приходит из renpy.parser (обычный python-модуль) обычными контейнерами.
+    # Проверять их тип по подменённым именам значит не распознать НИ ОДИН из них.
+    _VN_LIST = _vn_builtins.list
+    _VN_DICT = _vn_builtins.dict
 
     # Управляемые named stores (зеркало vars@1.store): только их атрибуты едут в
     # сейв и миграции. Обращение к атрибуту вне реестра — молчаливый фантом (G5).
     _VN_STORE_RE = _vn_re.compile(r"^(g|ch\d{2}|mech_[a-z0-9_]+|dlc_[a-z0-9_]+|persistent)$")
 
+    def _vn_new_entry():
+        """Пустой аккумулятор анализа файла. Той же формой разбирается ОТДЕЛЬНО
+        каждый пункт меню (см. Menu ниже): знать, какой exit возвращает пункт и
+        что он пишет, иначе неоткуда — в общем списке эта связь теряется."""
+        return {
+            "labels": [], "jumps": [], "calls": [], "returns": [],
+            "menus": [], "says": 0, "say_list": [], "menu_markers": [],
+            "var_reads": [], "var_writes": [], "assigns": [], "errors": [],
+            "image_refs": [], "audio_refs": [],
+        }
+
+    # Ключи, где дубликаты недопустимы: их накапливают проверкой «не было ли уже».
+    _VN_UNIQUE_KEYS = ("var_reads", "var_writes")
+
+    def _vn_merge_entry(dst, src):
+        """Слить под-аккумулятор пункта меню в общий: формы одинаковы, поэтому
+        списки продолжаются, счётчик реплик суммируется, а уникальные ключи
+        сохраняют семантику множества."""
+        for key, value in src.items():
+            if key == "says":
+                dst[key] += value
+            elif key in _VN_UNIQUE_KEYS:
+                for item in value:
+                    if item not in dst[key]:
+                        dst[key].append(item)
+            else:
+                dst[key].extend(value)
+
     def _vn_collect_vars(source, mode, entry):
         """Извлечь чтения/записи атрибутов управляемых stores из python-фрагмента
         или выражения-условия. Классификация по ast-контексту: Store=запись,
-        Load=чтение. Непарсящийся фрагмент молча пропускается (не валим анализ)."""
+        Load=чтение. Непарсящийся фрагмент молча пропускается (не валим анализ).
+
+        Побочно собирает `assigns` — присваивания ЛИТЕРАЛОВ (`$ ch01.flag = True`):
+        без значения запись переменной ничего не говорит о том, какое состояние
+        ветка создаёт, а на этом стоят и достижимость, и прекондиции реплея."""
         if not source:
             return
         try:
             tree = _vn_ast.parse(source, mode=mode)
         except (SyntaxError, ValueError):
             return
+        for node in _vn_ast.walk(tree):
+            if not isinstance(node, _vn_ast.Assign) or len(node.targets) != 1:
+                continue
+            target = node.targets[0]
+            if not isinstance(target, _vn_ast.Attribute):
+                continue
+            base = target.value
+            if not isinstance(base, _vn_ast.Name) or not _VN_STORE_RE.match(base.id):
+                continue
+            try:
+                literal = _vn_ast.literal_eval(node.value)
+            except (ValueError, SyntaxError, TypeError):
+                continue        # выражение, а не литерал: значение неизвестно
+            if isinstance(literal, (str, int, float, bool)) or literal is None:
+                entry["assigns"].append({
+                    "var": "%s.%s" % (base.id, target.attr), "value": literal,
+                })
         for node in _vn_ast.walk(tree):
             if not isinstance(node, _vn_ast.Attribute):
                 continue
@@ -78,7 +134,7 @@ init python:
                     stmt = ""
                 parsed = getattr(node, "parsed", None)
                 payload = parsed[1] if isinstance(parsed, tuple) and len(parsed) == 2 else None
-                if isinstance(payload, dict) and stmt.split(" ")[0] in ("play", "queue"):
+                if isinstance(payload, _VN_DICT) and stmt.split(" ")[0] in ("play", "queue"):
                     entry["audio_refs"].append({
                         "line": line, "stmt": stmt,
                         "file": payload.get("file"),
@@ -118,15 +174,34 @@ init python:
             elif cls == "Menu":
                 captions = []
                 conditions = []
-                for item in node.items:
+                choices = []
+                for idx, item in enumerate(node.items):
                     caption, condition, block = item[0], item[1], item[2]
                     captions.append(caption)
                     conditions.append(str(condition))
                     _vn_collect_vars(str(condition), "eval", entry)
+                    # Блок пункта разбирается в СВОЙ аккумулятор: только так видно,
+                    # какой exit возвращает именно этот пункт и что он пишет.
+                    # Результаты затем сливаются в общий, поэтому остальные
+                    # потребители анализа (loc, ссылки, переменные) не замечают
+                    # разницы.
+                    sub = _vn_new_entry()
                     if block:
-                        _vn_walk_ast(block, entry)
+                        _vn_walk_ast(block, sub)
+                    choices.append({
+                        "idx": idx,
+                        "caption": caption,
+                        "condition": str(condition),
+                        "returns": [r["expr"] for r in sub["returns"]
+                                    if r["expr"] is not None],
+                        "jumps": [j["target"] for j in sub["jumps"]
+                                  if not j["expression"]],
+                        "assigns": list(sub["assigns"]),
+                    })
+                    _vn_merge_entry(entry, sub)
                 entry["menus"].append({"line": line, "items": captions,
-                                       "conditions": conditions})
+                                       "conditions": conditions,
+                                       "choices": choices})
             elif cls == "If":
                 for _condition, block in node.entries:
                     _vn_collect_vars(str(_condition), "eval", entry)
@@ -136,7 +211,7 @@ init python:
                 _vn_walk_ast(node.block, entry)
             else:
                 block = getattr(node, "block", None)
-                if isinstance(block, list):
+                if isinstance(block, _VN_LIST):
                     _vn_walk_ast(block, entry)
 
     def _vn_analyze_inputs(args, ap):
@@ -171,12 +246,7 @@ init python:
 
         result = {"renpy": renpy.version_only, "files": {}}
         for fn in _vn_analyze_inputs(args, ap):
-            entry = {
-                "labels": [], "jumps": [], "calls": [], "returns": [],
-                "menus": [], "says": 0, "say_list": [], "menu_markers": [],
-                "var_reads": [], "var_writes": [], "errors": [],
-                "image_refs": [], "audio_refs": [],
-            }
+            entry = _vn_new_entry()
             try:
                 with io.open(fn, "r", encoding="utf-8") as f:
                     filedata = f.read()

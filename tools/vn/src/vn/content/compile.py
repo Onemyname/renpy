@@ -194,9 +194,29 @@ def _emit_platform(project: dict, packs: dict[str, dict], sources) -> str:
     )
 
 
-def _emit_defaults(project: dict, var_docs: list[tuple[str, dict]], sources) -> str:
+# Преамбула файла переменных паков ВНЕ всех флейворов. Почему они живут отдельно:
+# генерат один на все флейворы (иначе рвётся линия .rpyc, G6), поэтому `default`
+# тестового пака исполнялся бы и в релизной сборке, а Ren'Py кладёт в сейв любую
+# изменённую переменную стора (python.py: get_changes -> ever_been_changed) — и
+# тестовые значения ехали бы каждому игроку. Файл исключается из дистрибутива
+# глобом build_id.json (release.py: unshipped_exclude_globs): в dev-чекауте он
+# есть и тестовые главы играбельны, в сборке его нет и сторов не существует
+# вовсе. В снапшот (G5) эти переменные тоже не входят: снапшот — про состояние
+# ИГРЫ, а миграций для контента, который никому не уезжает, не бывает.
+UNSHIPPED_VARS_NOTE = (
+    "# Переменные глав паков ВНЕ всех флейворов (project.yaml: flavors.*.packs).\n"
+    "# Файл НЕ уезжает в дистрибутив (build_id.json: exclude), поэтому в релизной\n"
+    "# сборке сторов ниже не существует и в сейв игрока они не попадают.\n"
+    "# Тестовые главы играбельны в dev-чекауте, где файл есть."
+)
+
+
+def _emit_defaults(project: dict, var_docs: list[tuple[str, dict]], sources, *,
+                   schema_block: bool = True, preamble: str | None = None) -> str:
     stores = sorted({doc["store"] for _, doc in var_docs if doc["store"] != "persistent"})
     out = [_header(sources)]
+    if preamble:
+        out.append(preamble + "\n")
     if stores:
         out.append("# Создание named stores (шкала init-приоритетов — C8/ADR-0003)")
         for store in stores:
@@ -210,11 +230,12 @@ def _emit_defaults(project: dict, var_docs: list[tuple[str, dict]], sources) -> 
                     f"{rel}: persistent-переменная {name!r} обязана начинаться с vn_ (C9)"
                 )
             out.append(f"default {store}.{name} = {_py_literal(spec['default'])}")
-    out.append("")
-    out.append("# Версия схемы сейва (G5): vn_save_schema едет в сейв,")
-    out.append("# vn_build_save_schema — константа текущей сборки (сравнение в label after_load).")
-    out.append(f"default vn_save_schema = {project['save_schema']}")
-    out.append(f"define vn_build_save_schema = {project['save_schema']}")
+    if schema_block:
+        out.append("")
+        out.append("# Версия схемы сейва (G5): vn_save_schema едет в сейв,")
+        out.append("# vn_build_save_schema — константа текущей сборки (сравнение в label after_load).")
+        out.append(f"default vn_save_schema = {project['save_schema']}")
+        out.append(f"define vn_build_save_schema = {project['save_schema']}")
     return "\n".join(out) + "\n"
 
 
@@ -928,18 +949,6 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     result = CompileResult()
     errors: list[str] = []
 
-    # Переменные: глобальные + главные (chNN)
-    var_docs, var_sources = [], []
-    variables_dir = root / "content" / "variables"
-    if variables_dir.is_dir():
-        for f in sorted(variables_dir.glob("*.vars.yaml")):
-            var_sources.append(src(f))
-            var_docs.append((f.name, load_yaml(f)))
-    for f in sorted((root / "content" / "chapters").glob("*/vars.yaml")):
-        rel, _d = src(f)
-        var_docs.append((rel, load_yaml(f)))
-        var_sources.append((rel, inputs[rel]))
-
     # Достижения (achievements@1): опциональная зона content/achievements/
     ach_docs, ach_sources = [], []
     ach_dir = root / "content" / "achievements"
@@ -1064,6 +1073,35 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
 
     # Паки (G9/G10) и главы: ядро + packs/<id>/chapters
     packs = _collect_packs(root, src, registry, errors)
+
+    # Переменные: глобальные + главные (chNN). Главы берутся по ЗОНАМ
+    # (chapter_zones), а не только из content/chapters: глава пака обязана
+    # объявлять свои переменные там же, где живёт сама, иначе её ветвление по
+    # флагам невозможно в принципе. Сбор идёт после _collect_packs, потому что
+    # для компилятора пак без манифеста не существует (тот же список зон, что
+    # у глав и шотов).
+    # Пак, не перечисленный ни в одном флейворе, никому не уезжает (ADR-0021):
+    # его переменные едут в отдельный файл генерата, который исключается из
+    # дистрибутива, — иначе они попадали бы в сейв каждого игрока (RTL-046).
+    shipped_packs = {"core"}
+    for cfg in (project.get("flavors") or {}).values():
+        shipped_packs.update((cfg or {}).get("packs") or [])
+    unshipped_rels: set[str] = set()
+
+    var_docs, var_sources = [], []
+    variables_dir = root / "content" / "variables"
+    if variables_dir.is_dir():
+        for f in sorted(variables_dir.glob("*.vars.yaml")):
+            var_sources.append(src(f))
+            var_docs.append((f.name, load_yaml(f)))
+    for pack_id, chapters_dir in chapter_zones(root, packs):
+        for f in sorted(chapters_dir.glob("*/vars.yaml")):
+            rel, _d = src(f)
+            var_docs.append((rel, load_yaml(f)))
+            var_sources.append((rel, inputs[rel]))
+            if pack_id not in shipped_packs:
+                unshipped_rels.add(rel)
+
     chapters, units, voice_docs, shots_docs = _collect_chapters(
         root, src, registry, errors, packs)
     if errors:
@@ -1256,13 +1294,33 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         raise CompileError(
             f"{len(gal_errors)} ошибок галереи:\n" + "\n".join(gal_errors))
 
+    from . import flow
+
+    # Граф истории (flow@1, ADR-0021): модель строится из тех же деклараций и уже
+    # готовых AST-сводок сцен, поэтому второго прогона моста не требует.
+    flow_model = flow.build_model(
+        root, packs=packs, analyses={u.rpy_rel: u.analysis for u in units})
+    flow_errors, flow_warnings = flow.validate_flow(flow_model)
+    result.warnings.extend(flow_warnings)
+    if flow_errors:
+        raise CompileError(
+            f"{len(flow_errors)} ошибок графа истории:\n" + "\n".join(flow_errors))
+    flow_out = flow.emit_flow(flow_model, _header([proj_src]))
+
+    shipped_vars = [(rel, doc) for rel, doc in var_docs if rel not in unshipped_rels]
+    unshipped_vars = [(rel, doc) for rel, doc in var_docs if rel in unshipped_rels]
+    shipped_var_sources = [s for s in var_sources if s[0] not in unshipped_rels]
+    unshipped_var_sources = [s for s in var_sources if s[0] in unshipped_rels]
+
     outputs: dict[str, str] = {
         "registry/images.gen.rpy": images_out,
         "version.gen.rpy": _emit_version(project, git_sha(root), [proj_src]),
         "render.gen.rpy": _emit_render(root, [proj_src]),
         "platform.gen.rpy": _emit_platform(project, packs, [proj_src]),
-        "state/defaults.gen.rpy": _emit_defaults(project, var_docs, [proj_src] + var_sources),
-        "state/snapshot.gen.rpy": _emit_snapshot(var_docs, [proj_src] + var_sources),
+        "state/defaults.gen.rpy": _emit_defaults(project, shipped_vars,
+                                                 [proj_src] + shipped_var_sources),
+        "state/snapshot.gen.rpy": _emit_snapshot(shipped_vars,
+                                                 [proj_src] + shipped_var_sources),
         "state/migrations.gen.rpy": _emit_migrations(migrations, [proj_src]),
         "registry/audio.gen.rpy": _emit_audio(audio_docs, audio_sources or [proj_src]),
         "registry/ui_frames.gen.rpy": _emit_ui_frames(ui_panels, [panels_src]),
@@ -1278,10 +1336,17 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
         "registry/overrides.gen.rpy": _emit_overrides(
             renames, overrides_sources, registry_scenes=registry_scenes,
             known_scenes={u.full_id for u in units}),
+        "registry/flow.gen.rpy": flow_out,
     }
     outputs.update(scene_outputs)
     if chapters:
         outputs["screens/chapter_select.gen.rpy"] = sc.emit_chapter_select(_header([proj_src]))
+    # Файла нет, когда нет паков вне флейворов: пустой артефакт пришлось бы
+    # объяснять читающему генерат, а чистку осиротевшего делает манифест.
+    if unshipped_vars:
+        outputs["state/defaults_unshipped.gen.rpy"] = _emit_defaults(
+            project, unshipped_vars, [proj_src] + unshipped_var_sources,
+            schema_block=False, preamble=UNSHIPPED_VARS_NOTE)
 
     old_manifest_path = gen / MANIFEST_NAME
     old_manifest = load_manifest(gen)

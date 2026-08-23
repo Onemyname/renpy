@@ -39,7 +39,7 @@ cat .vncache/smoke/gallery.json     # {"unlocked": N, "total": M, "ids": [...]}
 
 - **Копий файлов ради галереи не делают.** `asset:` — это логический id (`cg/ch01/rooftop_day`), а не путь; расширение подставляет компилятор: `mov/…` → `.webm`, остальное → `.webp` (`tools/vn/src/vn/content/compile.py:142-145`).
 - **Один ассет может входить в несколько записей.** В боевой декларации `cg/ch01/rooftop_day` используется дважды (`cg_ch01_rooftop` и `cg_ch01_concept`), `cg/ch01/rooftop_sunset` — трижды.
-- **Закрытость — это состояние, а не отсутствие записи.** Locked-элемент есть в реестре, но содержимого игроку не показывает (`gallery.rpy:83-86`). На этом построен тест `test_repo_compiles_gallery_registry` (`tools/vn/tests/test_gallery.py:160-175`).
+- **Закрытость — это состояние, а не отсутствие записи.** Locked-элемент есть в реестре, но содержимого игроку не показывает (`gallery.rpy:109-113`). На этом построен тест `test_repo_compiles_gallery_registry` (`tools/vn/tests/test_gallery.py:160-175`).
 - **Реестр — `define`, не `default`** (`gallery.gen.rpy:11-13`): он не попадает ни в сейв, ни в rollback-лог. Сейв-схема не зависит от количества элементов, миграции при добавлении материала не нужны (ADR-0010 §3).
 
 ## Полная таблица полей элемента (`gallery@1`)
@@ -73,7 +73,7 @@ cat .vncache/smoke/gallery.json     # {"unlocked": N, "total": M, "ids": [...]}
 | `cg_ch01_rooftop` | image | `{seen_image: true}` | В `s030_rooftop.scene.rpy:13` есть `scene cg ch01 rooftop_day with dissolve`. Движок сам пишет показ в `persistent._seen_images`; `is_unlocked` спрашивает `renpy.seen_image("cg ch01 rooftop_day")`. Единственный элемент с `variants: [cg/ch01/rooftop_sunset]` — в просмотрщике доступна кнопка «Вариант» |
 | `mov_ch01_ambient` | movie | `{scene: ch01_s030}` | `vn.checkpoint("ch01_s030")` из обвязки сцены → `vn_gal.check(scene_id="ch01_s030")` → запись в `persistent.vn_gallery_unlocked`. `_seen_images` про видео не знает вообще, поэтому якорь-сцена. Явный `thumb: cg/ch01/rooftop_sunset` — постер-кадр |
 | `cg_ch01_finale` | image | `{chapter_done: ch01}` | Терминальная сцена главы (без `exits`) получает `$ vn.chapter_done("ch01")` от компилятора → `vn_gal.check(chapter_done="ch01")`. Награда за прохождение, а не за показ кадра |
-| `cg_ch01_concept` | image | `{always: true}` | `is_unlocked` возвращает True сразу (`090_gallery.rpy:53-54`), состояние нигде не хранится. Концепт-арт/обои. Единственный элемент без `desc_key` |
+| `cg_ch01_concept` | image | `{always: true}` | `is_unlocked` возвращает True сразу (`090_gallery.rpy:87-88`), состояние нигде не хранится. Концепт-арт/обои. Единственный элемент без `desc_key` |
 | `cg_ch01_route_mira` | image | `{var: g.route, equals: mira}` | `_var_value("g.route")` сравнивается с `"mira"` на каждом якоре. В демо-сборке `g.route` стартует как `'prologue'` и роут не проходится — элемент **намеренно остаётся locked**, чтобы в игре и на скриншотах CI была видна закрытая ячейка |
 | `shot_ch01_s030_sunset` | **shot** | `{seen_image: true}` | Послойный кадр `shots/ch01/s030/sunset` (ADR-0013), показанный в сцене как `scene shot_ch01_s030 sunset`. В сетке — композитное превью конвейера, в просмотрщике — живой layeredimage с листанием наряда Миры (`mira_auto` / `mira_school` / `mira_casual`). Разблокировка — по **тегу образа плюс атрибуту шота**, а не по точному кортежу имени (см. «Послойные шоты в галерее») |
 
@@ -113,7 +113,7 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 
 `_gallery_notify` (`030_flow.rpy:32-42`) берёт список только что открытых id и шлёт `renpy.notify` со строкой `ui.gallery.unlocked_one` / `ui.gallery.unlocked_many` (в `_many` подставляется `[n]` через `str.replace`).
 
-**Важное следствие про `var`-якоря.** В `check()` (`090_gallery.rpy:96-104`) стоит цепочка `if/elif`, и ветка `elif "var" in u` достигается при **любом** вызове — с `scene_id`, с `beat_id`, с `chapter_done`. То есть `var`-условие переоценивается на каждой границе сцены. Но не в момент присваивания: если сцена ставит `g.route = "mira"` в середине, элемент откроется только на **следующем** `checkpoint`/`chapter_done`, а не сразу. Это же верно для достижений (`080_achievements.rpy:79-84`).
+**Важное следствие про `var`-якоря.** В `check()` (`090_gallery.rpy:128-135`) стоит цепочка `if/elif`, и ветка `elif "var" in u` достигается при **любом** вызове — с `scene_id`, с `beat_id`, с `chapter_done`. То есть `var`-условие переоценивается на каждой границе сцены. Но не в момент присваивания: если сцена ставит `g.route = "mira"` в середине, элемент откроется только на **следующем** `checkpoint`/`chapter_done`, а не сразу. Это же верно для достижений (`080_achievements.rpy:79-84`).
 
 ## Runtime API стора `vn_gal` (`090_gallery.rpy`) — IMPLEMENTED
 
@@ -123,18 +123,17 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 |---|---|---|
 | `visible(item_id)` | :34 | Показывать ли вообще. `False`, если элемента нет в реестре; если `spec.nsfw` **или** `category.nsfw` при `vn_build.nsfw == False`; если пак не «во владении» (`vn.pack_registry.owned`) |
 | `_image_names(spec)` | :46 | Имена образа элемента: текущее + исторические из `renames.assets`. Игрок, увидевший кадр до переименования, не теряет его в галерее |
-| `_seen_shot(spec)` | :51 | Показывался ли **послойный шот**: скан ключей `persistent._seen_images` по тегу образа + атрибуту шота (см. «Послойные шоты в галерее»). Плоские ассеты сюда не заходят |
-| `is_unlocked(item_id)` | :74 | `False`, если невидим. `always` → True. `seen_image`: у `kind: shot` — `_seen_shot(spec)`, у остальных — `renpy.seen_image(name)` по каждому из `_image_names`. Иначе — `persistent.vn_gallery_unlocked.get(id)` |
-| `unlock(item_id, silent=False)` | :94 | Явная разблокировка, идемпотентная. Неизвестный id → `vn_log`, не краш. Возвращает `True` **только при смене состояния** — на этом стоит уведомление. При `silent=False` кладёт id в `_pending` |
-| `take_pending()` | :110 | Забрать и очистить очередь открытых. **Zero call sites** — `_gallery_notify` использует возврат `check()`. Статус: IMPLEMENTED / UNUSED |
-| `check(scene_id=None, beat_id=None, chapter_done=None)` | :121 | Прогон всех якорей, возвращает список новых id. Дёшево: линейный проход по десяткам записей |
-| `categories()` | :144 | `[(id, spec)]` в объявленном порядке, **только непустые** (категория без видимых элементов исчезает) |
-| `items(category=None)` | :153 | `[(id, spec)]` только видимые, сортировка `(order, chapter, id)` |
-| `progress(category=None)` | :161 | `(открыто, всего)` — считается динамически, никаких сохранённых счётчиков |
-| `unlocked_ids(category=None)` | :167 | Список открытых id; используется просмотрщиком для листания prev/next и автопилотом для `gallery.json` |
-| `looks(spec)` | :170 | Что листает кнопка «Вариант»: у плоского ассета — сам кадр плюс `variants` (файлы), у шота — комбинации вариантов слоёв (имя образа + по атрибуту на слой, одометром; первая комбинация = ровно то, что игрок видел в игре) |
+| `_seen_shot(spec)` | :51 | Показывался ли **послойный шот**: скан ключей `persistent._seen_images` по тегу образа, атрибуты шота — как **подмножество** показанного имени (см. «Послойные шоты в галерее»). Плоские ассеты сюда не заходят |
+| `is_unlocked(item_id)` | :80 | `False`, если невидим. `always` → True. `seen_image`: у `kind: shot` — `_seen_shot(spec)`, у остальных — `renpy.seen_image(name)` по каждому из `_image_names`. Иначе — `persistent.vn_gallery_unlocked.get(id)` |
+| `unlock(item_id)` | :100 | Явная разблокировка, идемпотентная. Неизвестный id → `vn_log`, не краш. Возвращает `True` **только при смене состояния** — на этом и стоит уведомление (`check()` → `vn._gallery_notify`). Второй, отложенной очереди уведомлений нет: `_pending`/`take_pending()` были IMPLEMENTED / UNUSED (zero call sites) и удалены 2026-08-22 |
+| `check(scene_id=None, beat_id=None, chapter_done=None)` | :118 | Прогон всех якорей, возвращает список новых id. Зовётся с якорей (`vn.checkpoint` / `vn.beat` / завершение главы) и **догоном после загрузки** (`vn.recheck_triggers`, `020_state.rpy: label after_load`) — без догона триггер по переменной, выставленной в хвосте сцены, ждал бы следующего якоря следующей сессии. Дёшево: линейный проход по десяткам записей |
+| `categories()` | :142 | `[(id, spec)]` в объявленном порядке, **только непустые** (категория без видимых элементов исчезает) |
+| `items(category=None)` | :151 | `[(id, spec)]` только видимые, сортировка `(order, chapter, id)` |
+| `progress(category=None)` | :159 | `(открыто, всего)` — считается динамически, никаких сохранённых счётчиков |
+| `unlocked_ids(category=None)` | :165 | Список открытых id; используется просмотрщиком для листания prev/next и автопилотом для `gallery.json` |
+| `looks(spec)` | :168 | Что листает кнопка «Вариант»: у плоского ассета — сам кадр плюс `variants` (файлы), у шота — комбинации вариантов слоёв (имя образа + по атрибуту на слой, одометром; первая комбинация = ровно то, что игрок видел в игре) |
 
-`default persistent.vn_gallery_unlocked = {}` (:198). Имя с префиксом `vn_` — норма C9; плоская persistent-переменная, а не dict-корень (Ren'Py мержит persistent пофилдово).
+`default persistent.vn_gallery_unlocked = {}` (:196). Имя с префиксом `vn_` — норма C9; плоская persistent-переменная, а не dict-корень (Ren'Py мержит persistent пофилдово).
 
 ## Превью
 
@@ -163,7 +162,7 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 
 Управление в просмотрщике: чип «Вариант» — единственный путь **с пада** (dpad доводит фокус, A переключает; плечи заняты листанием элементов), с клавиатуры добавлены `K_UP`/`K_DOWN` — симметрия к стрелкам «влево/вправо», которые листают элементы. Отдельной кнопки на слой нет сознательно: их число заранее не известно, а ряд чипов на ТВ уехал бы за кромку экрана.
 
-**3. Разблокировка сверяется по тегу и атрибуту, а не по кортежу имени.** Движок пишет в `persistent._seen_images` имя образа **как показано** (`renpy/exports/displayexports.py: show`), а у шота в это имя попадают ещё и «липкие» атрибуты слоёв: второй `show` того же тега приносит наряд из предыдущего кадра, причём порядок таких атрибутов берётся из множества, то есть произволен (`renpy/common/00layeredimage_ren.py: _choose_attributes`). Поэтому `renpy.seen_image("shot_ch01_s030 sunset")` дал бы **ложное «закрыто»**, и вместо него работает `_seen_shot`: скан ключей `_seen_images` по тегу образа плюс атрибуту шота (с учётом истории имён из `renames.assets`). Плоские ассеты по-прежнему идут через `renpy.seen_image` — иначе `cg ch01 a` открывался бы любым `cg ch01 *`.
+**3. Разблокировка сверяется по тегу и атрибуту, а не по кортежу имени.** Движок пишет в `persistent._seen_images` имя образа **как показано** (`renpy/exports/displayexports.py: show`), а у шота в это имя попадают ещё и «липкие» атрибуты слоёв: второй `show` того же тега приносит наряд из предыдущего кадра, причём порядок таких атрибутов берётся из множества, то есть произволен (`renpy/common/00layeredimage_ren.py: _choose_attributes`). Поэтому `renpy.seen_image("shot_ch01_s030 sunset")` дал бы **ложное «закрыто»**, и вместо него работает `_seen_shot`: скан ключей `_seen_images` по тегу образа, а атрибуты шота сверяются как **подмножество** показанного имени — свои обязаны найтись все, липкие и их порядок не мешают (с учётом истории имён из `renames.assets`). Подмножество, а не пересечение по склеенной строке: имя шота из двух и более атрибутов иначе не совпало бы **никогда** (тест `test_store_unlocks_shot_with_several_attributes`). Сегодня генерат такое имя не даёт — ссылка шота в `gallery@1` без пробелов, — но стор к нему готов. Плоские ассеты по-прежнему идут через `renpy.seen_image` — иначе `cg ch01 a` открывался бы любым `cg ch01 *`.
 
 **Проверено прогоном:** `VN_AUTOPILOT_SCREENS=gallery vn test smoke --picks 1 --lang @source` → `gallery.json`: `unlocked: 5 / total: 6`, `shot_ch01_s030_sunset` открыт; композит виден во второй ячейке сетки на `.vncache/smoke/screen_gallery.png`. Просмотрщик снимался отдельным временным пробником (живой layeredimage, переключение видов реальным путём событий). **Не проверено:** пад-путь на физическом геймпаде (устройства нет); композит на реальных DAZ-слоях с полупрозрачными краями — формула прямая (`Image.alpha_composite`), но качество краёв стоит один раз посмотреть глазами. QA-обвязка просмотрщик снимать **не умеет**: `autopilot_screens` зовёт `renpy.show_screen(name)` без аргументов, а `gallery_viewer` требует `item_id`.
 
@@ -173,18 +172,20 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 
 | Часть | Строки | Устройство |
 |---|---|---|
-| `screen gallery()` | :21 | `tag menu`, поверх `use vn_game_menu(vn_loc.t("ui.nav.gallery"))` — тот же каркас, что у save/load/preferences/achievements |
-| Прогресс | :37 | `text "[_done] / [_total]"` из `vn_gal.progress()`, стиль `vn_counter` — общий с экраном достижений (`components.rpy:81`) |
-| Вкладки | :40-45 | `textbutton "<title>  <done>/<total>"` на категорию, `action SetVariable("vn_gal_category", _cid)`, `selected (_cid == _cur)` |
-| Пустое состояние | :47-48 | `ui.gallery.empty` стилем `vn_empty_note` (общий, `components.rpy:86`), если `categories()` пуст |
-| Сетка | :55-65 | `vpgrid cols 3` + `properties vn_scroll_props`, `ysize gui.scroll_height` — пресет несёт и обязательные визуалы полосы (без них Ren'Py рисует зону **пустой**) |
-| `screen vn_gal_cell` | :73 | Ячейка `472×266`. Открытая: `add (spec["thumb"] or spec["asset"]) fit "cover"` + плашка `#0a0a0cd9` под подпись + бейдж `vn_gal_play` для `kind == "movie"`. Закрытая: `Solid(gui.panel_bg_deep)` + «?» + `ui.gallery.locked`, **контент не показывается никогда**. Стиль у обоих состояний **один** (`vn_gal_cell`, :82) — см. ниже |
-| `screen gallery_viewer(item_id)` | :105 | `modal True`, `zorder 60`, `default variant = 0` |
-| Видео в просмотрщике | :121 | `add Movie(play=_spec["asset"], loop=True) fit "contain"` — displayable существует ровно пока показан экран; `Hide` останавливает воспроизведение и освобождает ресурс |
-| Картинка / зум | :125 | `fit ("cover" if vn_gal_zoom else "contain")` — `contain` не растягивает при любых пропорциях |
-| Управление | :138-158 | prev / вариант / зум / next / назад. prev-next ходят только по **открытым** элементам той же категории (`unlocked_ids`) |
-| Клавиатура и пад | :166-171 | `K_LEFT` / `K_RIGHT` листают, LB/RB — то же с пада, `K_ESCAPE` и `game_menu` закрывают |
-| Бейдж видео | :175 | `image vn_gal_play = Transform(Solid(gui.text_color), xysize=(26,26), rotate=45, alpha=0.85)` — без бинарных ассетов |
+| `screen gallery()` | :26 | `tag menu`, поверх `use vn_game_menu(vn_loc.t("ui.nav.gallery"))` — тот же каркас, что у save/load/preferences/achievements |
+| Прогресс | :44 | `text "[_done] / [_total]"` из `vn_gal.progress()`, стиль `vn_counter` — общий с экраном достижений (`components.rpy:81`) |
+| Вкладки | :47-58 | `textbutton "<title>  <done>/<total>"` на категорию, `action SetScreenVariable("category", _cid)`, `selected (_cid == _cur)`. Именно `-ScreenVariable`: кнопка живёт в transclude-теле `use vn_game_menu`, а писать надо в **верхний** экран (док движка, «Data Actions») |
+| Пустое состояние | :60-61 | `ui.gallery.empty` стилем `vn_empty_note` (общий, `components.rpy:86`), если `categories()` пуст |
+| Сетка | :68-78 | `vpgrid cols 3` + `properties vn_scroll_props`, `ysize gui.scroll_height` — пресет несёт и обязательные визуалы полосы (без них Ren'Py рисует зону **пустой**) |
+| `screen vn_gal_cell` | :86 | Ячейка `472×266`. Открытая: `add (spec["thumb"] or spec["asset"]) fit "cover"` + плашка `#0a0a0cd9` под подпись + бейдж `vn_gal_play` для `kind == "movie"`. Закрытая: `Solid(gui.panel_bg_deep)` + «?» + `ui.gallery.locked`, **контент не показывается никогда**. Стиль у обоих состояний **один** (`vn_gal_cell`, :95) — см. ниже |
+| `screen gallery_viewer(item_id)` | :118 | `modal True`, `zorder 60`, `default variant = 0`, `default zoom = False` |
+| Видео в просмотрщике | :139 | `add Movie(play=_looks[_idx], loop=True) fit "contain" xysize (1920, 1080)` — играет именно текущий вид из `looks()`, а не всегда основной ассет; displayable существует ровно пока показан экран; `Hide` останавливает воспроизведение и освобождает ресурс |
+| Картинка / зум | :145 | `fit ("cover" if zoom else "contain")` — `contain` не растягивает при любых пропорциях |
+| Управление | :158-184 | prev / вариант / зум / next / назад. prev-next ходят только по **открытым** элементам той же категории (`unlocked_ids`) |
+| Клавиатура и пад | :189-201 | `K_LEFT` / `K_RIGHT` листают, LB/RB — то же с пада, `K_ESCAPE` и `game_menu` закрывают |
+| Бейдж видео | :205-206 | `image vn_gal_play = Transform(Solid(gui.text_color), xysize=(26,26), rotate=45, alpha=0.85)` — без бинарных ассетов |
+
+**Вкладка и зум — состояние экрана, а не игры (правка 2026-08-22).** Раньше это были store-`default`'ы `vn_gal_category` / `vn_gal_zoom`. Любой изменённый store-`default` попадает в `ever_been_changed` движка, то есть в **каждый сейв** и в rollback-лог (`renpy/rollback.py: freeze/roots`): вкладка галереи ехала в сейв игрока, возвращалась из него при загрузке, а откат колесом за вход в меню её сбрасывал. Префикс `_` от этого не спасает — фильтра по нему в `roots` нет. Теперь обе живут внутри экранов (`default` в `screen`), как и `variant` в просмотрщике. Цена решения принята сознательно: вкладка и зум держатся, пока экран показан, и сбрасываются при переоткрытии галереи (и при листании на другой элемент) — это нормальное поведение экранного состояния. **Упоминания `vn_gal_category` / `vn_gal_zoom` в любых документах устарели.**
 
 Пункт навигации условный: `if vn_gal.categories(): textbutton ui.nav.gallery` (`20_ui/screens/core_screens.rpy:110-111`) — гейт живёт в сторе, не в вёрстке. Галерея доступна и из рельсы в обоих контекстах, и из колонки `screen main_menu` (`:222`) — гейт один и тот же вызов стора, продублирована только вёрстка кнопки.
 
@@ -196,10 +197,10 @@ def chapter_done(chapter_id):                  # :26  — эмитится в т
 
 | Стиль | Строки | Фактическая высота | Рамка (минимум) |
 |---|---|---|---|
-| `vn_gal_tab` | :179-186 | padding (16, 6) + строка 19 px = **31 px** | `hover_background vn_frame_chip`, `selected_background vn_frame_chip_active` → **22 px** |
-| `vn_gal_ctl_button` | :231-236 | padding (16, 6) + строка 17 px = **29 px** | `background vn_frame_chip`, `hover_background vn_frame_chip_active` → **22 px** |
+| `vn_gal_tab` | :209-216 | padding (16, 6) + строка 19 px = **31 px** | `hover_background vn_frame_chip`, `selected_background vn_frame_chip_active` → **22 px** |
+| `vn_gal_ctl_button` | :261-265 | padding (16, 6) + строка 17 px = **29 px** | `background vn_frame_chip`, `hover_background vn_frame_chip_active` → **22 px** |
 
-Ячейка сетки (`style vn_gal_cell`, :195-199) фиксирована `xysize (472, 266)` — ей `slot` и `choice_hover` подходят без оговорок.
+Ячейка сетки (`style vn_gal_cell`, :225-229) фиксирована `xysize (472, 266)` — ей `slot` и `choice_hover` подходят без оговорок.
 
 Минимумы печатает эмиттер в комментариях `game/generated/registry/ui_frames.gen.rpy:12-19`. Регресс стерегут два теста в `tools/vn/tests/test_ui_panels.py`: `test_every_frame_consumer_is_not_smaller_than_2x_borders` (`:325`) разбирает все `style`-блоки `game/**/*.rpy` и сверяет высоту с `2*Borders` на двух масштабах, так что новая мелкая кнопка на `choice*` уронит прогон; `test_gallery_chips_fit_their_small_buttons` (`:394`) отдельно следит, чтобы чипы не растолстели, а вкладка и кнопка просмотрщика не вернулись на `choice*`. Карточка достижения проходит те же минимумы: `vn_frame_slot` требует 22×22 при её 704×168. Заводя ещё один компактный элемент, берите `chip`/`chip_active`. Подробности — [06-frontend.md](06-frontend.md).
 
@@ -317,6 +318,16 @@ reached_rooftop: trigger: {scene: ch01_s030}
 
 - Два источника состояния вместо одного — сложнее рассуждать; правило зафиксировано таблицей и тестами.
 - `_seen_images` привязан к **имени образа**: переименование CG-ассета молча «забудет» разблокировку. Кода-защиты нет. Для важных кадров используйте явный якорь (`scene`/`beat`), а имена ассетов не переименовывайте (дух G7).
+
+**Пересмотр сцены (revisit) — не в галерее.** Открытый пункт ADR-0010 закрыт в
+`docs/adr/0021-story-flow-projections.md`: пересматривать сцену можно, но точкой
+входа стала **карта главы**, а не галерея — там видно место сцены в графе, а
+галерея остаётся про кадры. Превью узла карта берёт из этой же галереи
+(`vn_story.thumb()` ищет элемент с `unlock.scene == <сцена>` и показывает его,
+только если он уже открыт), поэтому второго реестра картинок не появилось.
+Как это устроено и что от вас нужно в декларациях главы — [09-chapters.md §9а](09-chapters.md).
+Имена не путать: `replay@1` и `vn test replay` — QA-повтор прогонов CI; игровая
+механика называется **revisit** (`vn test revisit`).
 
 ## Как добавить элемент галереи — пошагово
 
