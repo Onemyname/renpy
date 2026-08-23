@@ -605,3 +605,83 @@ def test_unshipped_pack_vars_are_split_out_of_the_shipped_generat(repo_root, tmp
     assert "default g." in shipped_defaults and "vn_save_schema" in shipped_defaults
     # А отдельный файл не должен объявлять схему сейва: она одна на игру.
     assert "vn_save_schema" not in split
+
+
+def test_say_menuitem_is_a_contract_violation():
+    """Реплика-заголовок внутри `menu:` — ошибка сборки, как и условный пункт.
+
+    Форму Ren'Py разрешает, и finish_say разбирает у неё клаузу `id` — значит
+    `vn loc keys` выдаст ей say-id, она уедет в леджер и в voice-манифест
+    наравне с обычными, а компилятор вставит `voice ...` выше неё ПО НОМЕРУ
+    СТРОКИ, то есть внутрь блока menu:, где движок разбирает только пункты.
+    Без запрета: компиляция зелёная, файл записан, падает загрузка игры на
+    сгенерированном файле, которого никто не писал."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(say_list=[
+        {"line": 4, "who": "mira", "what": "Что скажешь?",
+         "id": "ch01_s010_0001", "interact": False},
+        {"line": 2, "who": None, "what": "Обычная реплика",
+         "id": "ch01_s010_0002", "interact": True},
+    ])
+    sc.validate_scene(_unit(analysis=a), {"ch01_s010"}, "release", rep)
+    hits = [e for e in rep.errors if "say menuitem" in e]
+    assert len(hits) == 1, rep.errors
+    assert ":4:" in hits[0], "ошибка обязана указывать на строку реплики"
+
+
+def test_voice_is_never_injected_into_a_menu_block():
+    """Вторая линия к запрету выше: даже если контракт когда-нибудь ослабят,
+    инжектор не имеет права писать voice внутрь блока menu: — это неразбираемый
+    генерат, а не деградация."""
+    text = ('label ch01_s010__body:\n'
+            '    $ vn_menu = "ch01_s010_m001"\n'
+            '    menu:\n'
+            '        mira "Что скажешь?" id ch01_s010_0001\n'
+            '        "Соврать":\n'
+            '            return "a"\n')
+    says = [{"line": 4, "who": "mira", "what": "Что скажешь?",
+             "id": "ch01_s010_0001", "interact": False}]
+    out = sc._inject_voice(text, says, {"ch01_s010_0001"})
+    assert out == text, "voice уехал внутрь menu: — генерат не разберётся"
+
+    # Контрольная половина: обычная реплика озвучивается как и раньше, иначе
+    # проверка выше «проходила» бы и при полностью выключенном инжекторе.
+    plain = 'label ch01_s010__body:\n    "Реплика" id ch01_s010_0002\n'
+    says2 = [{"line": 2, "who": None, "what": "Реплика",
+              "id": "ch01_s010_0002", "interact": True}]
+    assert 'voice vn.voice_path("ch01_s010_0002")' in sc._inject_voice(
+        plain, says2, {"ch01_s010_0002"})
+
+
+@pytest.mark.skipif(not (os.environ.get("RENPY_SDK")
+                         and (Path(os.environ["RENPY_SDK"]) / "renpy.py").is_file()),
+                    reason="RENPY_SDK не установлен")
+def test_bridge_marks_the_menu_caption_say_as_non_interactive(repo_root, tmp_path):
+    """Признак, на котором держится запрет выше, выставляет ПАРСЕР ДВИЖКА, а не мы.
+
+    parse_menu зовёт finish_say(..., interact=False) и кладёт получившийся Say
+    отдельным узлом ПЕРЕД Menu (renpy/parser.py) — по соседству Say и Menu не
+    различить, обычная реплика перед меню в AST выглядит так же. Различает
+    только interact. Проверять это на фабрикованном анализе бессмысленно: там
+    проверялась бы фабрикация, поэтому разбор идёт настоящим мостом."""
+    from vn.content.analyze import analyze_scene_files
+
+    scene = tmp_path / "s010_probe.scene.rpy"
+    scene.write_text(
+        'label ch01_s010__body:\n'
+        '    "Обычная реплика перед меню"\n'
+        '    $ vn_menu = "ch01_s010_m001"\n'
+        '    menu:\n'
+        '        mira "Реплика-заголовок"\n'
+        '        "Соврать":\n'
+        '            return "a"\n'
+        '        "Правду":\n'
+        '            return "b"\n', encoding="utf-8")
+
+    a = analyze_scene_files(repo_root, [scene])[str(scene)]
+    assert not a.get("errors"), a["errors"]
+    by_line = {s["line"]: s for s in a["say_list"]}
+    assert by_line[2]["interact"] is True, "обычная реплика помечена как заголовок"
+    assert by_line[5]["interact"] is False, (
+        "мост не отличает реплику-заголовок меню — запрет в validate_scene "
+        "держится ни на чём")

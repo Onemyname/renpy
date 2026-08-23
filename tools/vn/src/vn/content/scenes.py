@@ -235,6 +235,29 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
                     f"межсценовые переходы только через return \"<exit_id>\" + exits (C2)"
                 )
 
+    # Реплика-ЗАГОЛОВОК меню (say menuitem: `mira "Что скажешь?"` прямо внутри
+    # блока menu:) запрещена — по той же причине, что и условный пункт: она ломает
+    # статический контракт, а не вкус.
+    #
+    # Ren'Py разрешает эту форму, finish_say разбирает у неё клаузу `id`, поэтому
+    # `vn loc keys` выдаёт ей say-id, она уезжает в леджер и в voice-манифест
+    # наравне с обычными. После этого компилятор вставляет `voice ...` ВЫШЕ неё по
+    # номеру строки — то есть ВНУТРЬ блока menu:, где допустимы только пункты,
+    # caption, `set` и `with`. Генерат перестаёт разбираться («expected menuitem»),
+    # причём компиляция при этом зелёная: падает уже загрузка игры, на файле,
+    # которого никто не писал.
+    #
+    # Лечится одной строкой в источнике: вынести реплику ПЕРЕД `$ vn_menu` обычным
+    # say. Смысл тот же, а весь класс отказов исчезает.
+    for say in a.get("say_list", []):
+        if say.get("interact") is False:
+            rep.errors.append(
+                f"{src}:{say['line']}: реплика-заголовок внутри menu: (say menuitem) "
+                f"— запрещено (C2): ей выдаётся say-id, она попадает в озвучку, и "
+                f"voice-оператор эмитится внутрь блока menu:, где движок его не "
+                f"разбирает. Вынесите реплику обычным say перед `$ vn_menu`"
+            )
+
     # Условные пункты меню запрещены: движок фильтрует их ДО screen choice,
     # и перевод по runtime-индексу (G8) сдвинулся бы на соседние пункты.
     for menu in a.get("menus", []):
@@ -343,6 +366,13 @@ def _inject_voice(rpy_text: str, say_list: list[dict], voiced: set[str]) -> str:
         sid = say.get("id")
         i = int(say.get("line") or 0) - 1
         if not sid or sid not in voiced or not (0 <= i < len(lines)):
+            continue
+        # Реплика-заголовок меню: её строка живёт ВНУТРИ блока menu:, и voice туда
+        # вставлять нельзя — движок разбирает там только пункты. Сама форма
+        # запрещена контрактом (validate_scene), то есть сюда такая реплика не
+        # доходит; проверка стоит второй линией, чтобы снятие запрета не начало
+        # молча писать неразбираемый генерат.
+        if say.get("interact") is False:
             continue
         indent = lines[i][: len(lines[i]) - len(lines[i].lstrip())]
         lines.insert(i, f'{indent}voice vn.voice_path("{sid}")')

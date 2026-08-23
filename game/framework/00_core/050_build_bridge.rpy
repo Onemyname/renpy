@@ -165,6 +165,13 @@ init python:
                     "who": node.who if isinstance(node.who, str) else None,
                     "what": node.what,
                     "id": getattr(node, "identifier", None),
+                    # interact=False бывает ровно у реплики-ЗАГОЛОВКА меню:
+                    # parse_menu зовёт finish_say(..., interact=False) и кладёт
+                    # получившийся Say ОТДЕЛЬНЫМ узлом ПЕРЕД Menu (parser.py),
+                    # с номером строки внутри блока menu:. По соседству Say с
+                    # Menu их не различить — обычная реплика перед меню выглядит
+                    # так же, — а по этому флагу различить можно.
+                    "interact": bool(getattr(node, "interact", True)),
                 })
             elif cls == "Python":
                 src = getattr(getattr(node, "code", None), "source", "") or ""
