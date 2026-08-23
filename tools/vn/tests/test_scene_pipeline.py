@@ -733,3 +733,72 @@ def test_when_typo_is_only_a_warning_in_a_draft_chapter():
     автор ещё ходит по дереву, и красная сборка мешала бы больше, чем помогала."""
     errors, warnings = _when_errors("ch01.met_mirra", status="draft")
     assert errors == [] and warnings and "ch01.met_mirra" in warnings[0]
+
+
+def test_label_that_can_fall_through_is_an_error():
+    """Метка, из которой можно ВЫПАСТЬ, — тихая подмена ветки.
+
+    Авторский .rpy вклеивается в генерат целиком, а Ren'Py сшивает операторы
+    файла подряд (renpy/script.py: chain_block -> ast.Label.chain). Значит
+    выпадение из блока метки продолжает исполнение со СЛЕДУЮЩЕЙ метки файла:
+    игрок, выбравший «остаться», оказывается в ветке «ушёл», причём флаг
+    «остался» уже выставлен — состояние и путь разъезжаются. Если следующей
+    метки нет, цепочка упирается в None и игра тихо выходит из прохождения.
+
+    Заметить это нечем: G7-страж стоит ПОСЛЕ call ...__body, соседняя ветка
+    делает свой return, глубина стека корректна — и обвязка исполняет чужой exit
+    как свой. renpy lint тоже молчит: метка достижима, jump валиден."""
+    rep = sc.SceneCompileReport()
+    a = _analysis(labels=[{"name": "ch01_s010__body", "line": 1, "terminal": False},
+                          {"name": "ch01_s010__leave", "line": 9, "terminal": True}],
+                  returns=[{"expr": "'corridor'", "line": 10}])
+    sc.validate_scene(_unit(meta={"exits": {"corridor": "s020"}},
+                            analysis=a), {"ch01_s010", "ch01_s020"}, "release", rep)
+    hits = [e for e in rep.errors if "завершается не по всем путям" in e]
+    assert len(hits) == 1 and "ch01_s010__body" in hits[0], rep.errors
+
+
+@pytest.mark.skipif(not (os.environ.get("RENPY_SDK")
+                         and (Path(os.environ["RENPY_SDK"]) / "renpy.py").is_file()),
+                    reason="RENPY_SDK не установлен")
+def test_bridge_reports_terminality_per_label(repo_root, tmp_path):
+    """Признак терминальности считает ПАРСЕР ДВИЖКА, а не регексп по тексту:
+    завершённость определяется по всем ветвям if и по всем пунктам menu, и
+    воспроизводить эту логику вторым разборщиком запрещено (G24).
+
+    Четыре формы, и три из них — типовые ошибки автора."""
+    from vn.content.analyze import analyze_scene_files
+
+    scene = tmp_path / "s010_probe.scene.rpy"
+    scene.write_text(
+        'label ch01_s010__body:\n'
+        '    return "a"\n'
+        '\n'
+        'label ch01_s010__falls:\n'
+        '    "просто реплика"\n'
+        '\n'
+        'label ch01_s010__if_full:\n'
+        '    if ch01.met_mira:\n'
+        '        return "a"\n'
+        '    else:\n'
+        '        jump ch01_s010__body\n'
+        '\n'
+        'label ch01_s010__if_no_else:\n'
+        '    if ch01.met_mira:\n'
+        '        return "a"\n'
+        '\n'
+        'label ch01_s010__menu_partial:\n'
+        '    menu:\n'
+        '        "Уйти":\n'
+        '            return "a"\n'
+        '        "Остаться":\n'
+        '            "остался"\n', encoding="utf-8")
+
+    a = analyze_scene_files(repo_root, [scene])[str(scene)]
+    assert not a.get("errors"), a["errors"]
+    terminal = {lb["name"]: lb["terminal"] for lb in a["labels"]}
+    assert terminal["ch01_s010__body"] is True
+    assert terminal["ch01_s010__falls"] is False
+    assert terminal["ch01_s010__if_full"] is True
+    assert terminal["ch01_s010__if_no_else"] is False, "путь мимо if не учтён"
+    assert terminal["ch01_s010__menu_partial"] is False, "незакрытый пункт меню не учтён"

@@ -117,6 +117,39 @@ init python:
             "expression": bool(expr),
         })
 
+    def _vn_terminates(block):
+        """Завершается ли блок гарантированно — Return или Jump по ВСЕМ путям.
+
+        Зачем это компилятору: авторский .rpy вклеивается в генерат целиком, а
+        Ren'Py сшивает операторы файла подряд (renpy/script.py: chain_block).
+        Значит блок метки, из которого можно ВЫПАСТЬ, исполняет следующий
+        оператор файла — соседнюю авторскую метку. Игрок, выбравший «остаться»,
+        оказывается в ветке «ушёл», и заметить это нечем: G7-страж стоит после
+        call ...__body, а соседняя ветка делает свой return, так что глубина
+        стека корректна и обвязка исполняет ЧУЖОЙ exit как свой.
+
+        Разбор рекурсивный: у if обязаны завершаться все ветки И присутствовать
+        else (иначе есть путь мимо), у menu — все пункты. Всё прочее в хвосте
+        (say, show, python) завершением не является."""
+        if not block:
+            return False
+        last = block[-1]
+        cls = type(last).__name__
+        if cls in ("Return", "Jump"):
+            return True
+        if cls == "If":
+            entries = list(getattr(last, "entries", []))
+            if not entries:
+                return False
+            has_else = str(entries[-1][0]) in ("True", "None")
+            return has_else and all(_vn_terminates(b) for _cond, b in entries)
+        if cls == "Menu":
+            items = [it for it in getattr(last, "items", []) if it[2] is not None]
+            return bool(items) and all(_vn_terminates(it[2]) for it in items)
+        if cls == "While":
+            return False        # цикл может не выполниться ни разу
+        return False
+
     def _vn_walk_ast(nodes, entry):
         for node in nodes:
             cls = type(node).__name__
@@ -141,7 +174,8 @@ init python:
                         "channel": payload.get("channel"),
                     })
             elif cls == "Label":
-                entry["labels"].append({"name": node.name, "line": line})
+                entry["labels"].append({"name": node.name, "line": line,
+                                        "terminal": _vn_terminates(node.block)})
                 _vn_walk_ast(node.block, entry)
             elif cls == "Jump":
                 entry["jumps"].append({

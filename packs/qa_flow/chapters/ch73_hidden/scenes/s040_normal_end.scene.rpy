@@ -2,3 +2,4 @@
 
 label ch73_s040__body:
     "T4: обычная концовка." id ch73_s040_0001
+    return

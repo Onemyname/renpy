@@ -2,3 +2,4 @@
 
 label ch72_s050__body:
     "T3: конец главы гейтов." id ch72_s050_0001
+    return
