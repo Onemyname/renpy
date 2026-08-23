@@ -419,3 +419,32 @@ def test_stage_refuses_depot_without_any_executable(tmp_path, repo_root):
     staged, errors = steam_stage_content(root, "public")
     assert staged == []
     assert any("бит" in e and "mac" in e for e in errors), errors
+
+
+def test_peak_rss_is_measured_on_every_platform(repo_root):
+    """perf.json обязан писаться ВСЕГДА, даже когда измерить нечем.
+
+    Раньше весь блок дампа падал на `import resource` — модуля нет на Windows, —
+    файла не появлялось, а гейт бюджета трактовал «числа нет» как «в рамках».
+    То есть baseline_rss_mb на Windows не проверялся вообще и молчал об этом.
+
+    Windows-ветка идёт через GetProcessMemoryInfo, и argtypes/restype там
+    обязательны: без них ctypes считает HANDLE обычным int, на 64 битах усекает
+    его — вызов возвращает 0, то есть «не измерили» вместо числа. Ровно на этом
+    первая редакция и споткнулась, поэтому типы закреплены тестом."""
+    src = (repo_root / "game" / "framework" / "00_core"
+           / "030_flow.rpy").read_text(encoding="utf-8")
+    fn = src.split("def _peak_rss(", 1)[1].split("\n    def ", 1)[0]
+
+    assert "K32GetProcessMemoryInfo" in fn and "resource" in fn, \
+        "измеряется не на всех платформах"
+    assert "restype = wintypes.HANDLE" in fn, \
+        "HANDLE без restype усекается на 64 битах — вызов вернёт 0"
+    assert "argtypes" in fn and "wintypes.BOOL" in fn
+    # Ни одна ветка не имеет права вернуть «ничего»: только число или явный None
+    # с причиной — иначе гейт снова не отличит «не измерили» от «в рамках».
+    assert fn.count('"baseline_rss_mb"') >= 4
+    assert '"why"' in fn
+
+    dump = src.split("def autopilot_finish(", 1)[1].split("\n    def ", 1)[0]
+    assert "_peak_rss()" in dump and "perf.json" in dump

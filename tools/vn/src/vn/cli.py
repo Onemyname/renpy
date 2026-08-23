@@ -1801,6 +1801,11 @@ def test_smoke(picks: str, lang: str, timeout_s: int, record_name: str = "",
     rss = art.perf.get("baseline_rss_mb")
     if rss is not None:
         click.echo(f"пик RSS игры: {rss:.0f} МБ")
+    else:
+        # Молчать здесь нельзя: бюджет объявлен, а числа нет — это состояние
+        # обязано быть видно человеку, а не только гейту ниже.
+        click.secho("пик RSS игры не измерен: %s"
+                    % (art.perf.get("why") or "perf.json отсутствует"), fg="yellow")
     over = runtime_budget_failures(root, cold_start_s=art.cold_start_s,
                                    baseline_rss_mb=rss)
     if over:

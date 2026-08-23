@@ -877,3 +877,29 @@ def test_unshipped_pack_ids_are_never_stamped_as_released(tmp_path):
     assert "ch90.flag" in ids["vars"], (
         "переменные поставляемого пака остались без сети G7, хотя его сцены — нет")
     assert "ch01.flag" in ids["vars"]
+
+
+def test_unmeasured_runtime_budget_is_a_failure_not_silence(tmp_path):
+    """«Метрики нет» и «метрика в рамках» — разные ответы.
+
+    Раньше оба давали пустой список: проверка стояла за `if metric is not None`.
+    На Windows perf.json не создавался вовсе (в рантайме падал `import resource`,
+    а весь блок дампа был закрыт except), поэтому объявленный бюджет
+    baseline_rss_mb не проверялся НИКОГДА и прогон оставался зелёным. Бюджет,
+    который никто не проверяет, — это просто число в project.yaml."""
+    from vn.release import runtime_budget_failures
+
+    root = _mk_root(tmp_path)
+    proj = (root / "project.yaml").read_text(encoding="utf-8")
+    (root / "project.yaml").write_text(
+        proj.replace("budgets:\n", "budgets:\n  baseline_rss_mb: 1200\n"
+                                   "  cold_start_s: 30\n", 1), encoding="utf-8")
+
+    missing = runtime_budget_failures(root, cold_start_s=None, baseline_rss_mb=None)
+    assert any("RSS" in f and "не измерен" in f for f in missing), missing
+    assert any("cold start" in f and "не измерен" in f for f in missing), missing
+
+    ok = runtime_budget_failures(root, cold_start_s=3.0, baseline_rss_mb=540.0)
+    assert ok == [], ok
+    over = runtime_budget_failures(root, cold_start_s=3.0, baseline_rss_mb=1500.0)
+    assert any("1500" in f or "> бюджета" in f for f in over), over

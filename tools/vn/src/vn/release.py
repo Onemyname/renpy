@@ -47,12 +47,24 @@ def runtime_budget_failures(root: Path, *, cold_start_s: float | None = None,
     тот прогон, который и так делается."""
     budgets = load_project(root).get("budgets") or {}
     failures: list[str] = []
-    if cold_start_s is not None and budgets.get("cold_start_s"):
-        if cold_start_s > budgets["cold_start_s"]:
+    # «Метрики нет» и «метрика в рамках» — РАЗНЫЕ ответы. Раньше оба давали
+    # пустой список: объявленный бюджет baseline_rss_mb не проверялся на Windows
+    # вообще (perf.json не создавался — в рантайме падал `import resource`), и
+    # прогон был зелёным. Непроверенный бюджет обязан выглядеть как провал, иначе
+    # он превращается в число в project.yaml, за которым никто не следит.
+    if budgets.get("cold_start_s"):
+        if cold_start_s is None:
+            failures.append("cold start не измерен — бюджет "
+                            f"{budgets['cold_start_s']} c не проверен")
+        elif cold_start_s > budgets["cold_start_s"]:
             failures.append(f"cold start {cold_start_s:.2f} c > бюджета "
                             f"{budgets['cold_start_s']} c")
-    if baseline_rss_mb is not None and budgets.get("baseline_rss_mb"):
-        if baseline_rss_mb > budgets["baseline_rss_mb"]:
+    if budgets.get("baseline_rss_mb"):
+        if baseline_rss_mb is None:
+            failures.append("пик RSS игры не измерен — бюджет "
+                            f"{budgets['baseline_rss_mb']} МБ не проверен "
+                            f"(perf.json прогона пуст или отсутствует)")
+        elif baseline_rss_mb > budgets["baseline_rss_mb"]:
             failures.append(f"пик RSS игры {baseline_rss_mb:.0f} МБ > бюджета "
                             f"{budgets['baseline_rss_mb']} МБ")
     if budgets.get("rpyc_total_kb"):

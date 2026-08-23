@@ -414,6 +414,69 @@ init -999 python in vn_qa:
             except Exception as e:
                 vn_log("autopilot replays dump failed: %s" % e)
 
+    def _peak_rss():
+        """{"baseline_rss_mb": <МБ>|None, "why": ...} — пик RSS процесса игры.
+
+        Три источника, потому что единого кроссплатформенного нет:
+          * POSIX — resource.getrusage(RUSAGE_SELF).ru_maxrss (macOS отдаёт
+            байты, Linux — килобайты; поправка та же, что в corpus.py: _RSS_UNIT);
+          * Windows — GetProcessMemoryInfo().PeakWorkingSetSize через ctypes:
+            модуля resource там нет, и раньше на этом падал ВЕСЬ блок дампа;
+          * иначе — None с причиной.
+
+        None пишется явно, а не «файла нет»: отсутствие файла гейт бюджета
+        трактовал как «в рамках», то есть непроверенный бюджет выглядел
+        проверенным."""
+        import sys as _sys
+        if _sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                class _PMC(ctypes.Structure):
+                    _fields_ = [("cb", wintypes.DWORD),
+                                ("PageFaultCount", wintypes.DWORD),
+                                ("PeakWorkingSetSize", ctypes.c_size_t),
+                                ("WorkingSetSize", ctypes.c_size_t),
+                                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                                ("PagefileUsage", ctypes.c_size_t),
+                                ("PeakPagefileUsage", ctypes.c_size_t)]
+
+                # argtypes/restype обязательны: без них ctypes считает HANDLE
+                # обычным int и на 64-битной Windows усекает его до 32 бит —
+                # вызов возвращает 0, то есть «не измерили» вместо числа.
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+                # K32GetProcessMemoryInfo живёт в kernel32 начиная с Windows 7 и
+                # не требует psapi.dll; psapi — запасной путь для старых систем.
+                fn = getattr(kernel32, "K32GetProcessMemoryInfo", None)
+                if fn is None:
+                    fn = ctypes.WinDLL("psapi", use_last_error=True).GetProcessMemoryInfo
+                fn.argtypes = [wintypes.HANDLE, ctypes.POINTER(_PMC), wintypes.DWORD]
+                fn.restype = wintypes.BOOL
+
+                counters = _PMC()
+                counters.cb = ctypes.sizeof(_PMC)
+                if not fn(kernel32.GetCurrentProcess(), ctypes.byref(counters),
+                          counters.cb):
+                    return {"baseline_rss_mb": None,
+                            "why": "GetProcessMemoryInfo: err %d"
+                                   % ctypes.get_last_error()}
+                return {"baseline_rss_mb":
+                        round(counters.PeakWorkingSetSize / (1024 * 1024), 1)}
+            except Exception as e:
+                return {"baseline_rss_mb": None, "why": "ctypes: %s" % e}
+        try:
+            import resource
+            unit = 1 if _sys.platform == "darwin" else 1024
+            rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * unit
+            return {"baseline_rss_mb": round(rss / (1024 * 1024), 1)}
+        except Exception as e:
+            return {"baseline_rss_mb": None, "why": "resource: %s" % e}
+
     def autopilot_finish(reason):
         """Конец прогона: маркер результата + снапшот состояния + выход из процесса.
         state.json позволяет корпусу проверить фактическую пост-миграционную схему,
@@ -442,17 +505,17 @@ init -999 python in vn_qa:
             try:
                 # Пик RSS ИМЕННО процесса игры: снаружи его не измерить точно —
                 # renpy.sh это скрипт-обёртка, и getrusage родителя показал бы
-                # максимум по дереву. Единицы разные (macOS — байты, Linux — КБ),
-                # поправка — как в tools/vn/src/vn/corpus.py: _RSS_UNIT.
+                # максимум по дереву.
+                #
+                # perf.json пишется ВСЕГДА, даже когда измерить нечем: раньше
+                # весь блок падал на `import resource` (модуля нет на Windows),
+                # файла не появлялось, а гейт бюджета трактует «числа нет» как
+                # «в рамках» — то есть бюджет baseline_rss_mb на Windows не
+                # проверялся вообще и молчал об этом.
                 import json
-                import resource
-                import sys as _sys
-                unit = 1 if _sys.platform == "darwin" else 1024
-                rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * unit
                 with open(os.path.join(shots_dir, "perf.json"), "w",
                           encoding="utf-8") as f:
-                    json.dump({"baseline_rss_mb": round(rss / (1024 * 1024), 1)}, f,
-                              ensure_ascii=False, indent=1)
+                    json.dump(_peak_rss(), f, ensure_ascii=False, indent=1)
             except Exception as e:
                 vn_log("autopilot perf dump failed: %s" % e)
         renpy.quit(save=False)
