@@ -471,3 +471,28 @@ def test_every_style_used_by_name_is_declared(repo_root):
     missing = {k: v for k, v in used.items() if k not in declared}
     assert not missing, "стили используются, но не объявлены: " + "; ".join(
         f"{k} <- {v[0]}" for k, v in sorted(missing.items()))
+
+
+def test_chapter_map_never_prints_titles_of_unseen_scenes(repo_root):
+    """Туман войны — правило одного места, а не привычка автора экрана.
+
+    Целью walkthrough можно отметить ЛЮБОЙ узел, включая непройденный. Правило
+    «непройденное — это ???» соблюдалось только на карточке узла, а план
+    прохождений, список конфликтующих целей и подсказки гайда печатали настоящий
+    заголовок закрытой сцены — то есть выдавали ровно то, что карта прячет.
+
+    Инвариант: UI зовёт только vn_story.display_title(); vn_story.title() —
+    внутренняя функция стора."""
+    ui = sorted((repo_root / "game" / "framework" / "20_ui").rglob("*.rpy"))
+    leaks = [f"{f.relative_to(repo_root).as_posix()}:{i}"
+             for f in ui
+             for i, ln in enumerate(f.read_text(encoding="utf-8").splitlines(), 1)
+             if "vn_story.title(" in _strip_comment(ln)]
+    assert not leaks, f"заголовок берётся мимо тумана войны: {leaks}"
+
+    store = (repo_root / "game" / "framework" / "00_core"
+             / "100_story_graph.rpy").read_text(encoding="utf-8")
+    assert "def display_title(" in store
+    guide = store.split("def guide_note(", 1)[1].split("\n    def ", 1)[0]
+    assert "display_title(" in guide and "join(title(" not in guide, \
+        "подсказка гайда печатает заголовок непройденной цели"

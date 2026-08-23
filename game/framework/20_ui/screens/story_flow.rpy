@@ -136,22 +136,26 @@ screen vn_flow_node(scene_id, xy, focus_default=False):
     $ _targeted = scene_id in vn_story.targets()
     $ _conflict = bool(_targeted and vn_story.conflicts(scene_id, vn_story.targets()))
     button:
-        style "vn_flow_node"
+        # Состояние узла — СТИЛЕМ, а не инлайновым background. Беспрефиксное
+        # свойство на виджете задаёт все состояния разом, включая hover, и
+        # съедает hover_background стиля: фокус на отмеченном или конфликтном
+        # узле переставал быть виден вовсе — на карте это единственный способ
+        # понять, где ты. Та же ловушка уже задокументирована в choice.rpy и
+        # вылечена в vn_nav_button и vn_seg_button; здесь она вернулась в худшем
+        # виде — свойством прямо на виджете, а не в дочернем стиле.
+        style ("vn_flow_node_conflict" if _conflict
+               else ("vn_flow_node_target" if _targeted else "vn_flow_node"))
         xpos xy[0] + VN_FLOW_PAD
         ypos xy[1] + VN_FLOW_PAD
         action Show("story_node_menu", scene_id=scene_id)
         default_focus (gui.focus_content if focus_default else 0)
-        # Конфликтная цель — своя рамка: игрок обязан видеть, что комбинация
-        # невозможна, ДО того как начнёт её добиваться.
-        background (vn_frame_choice_chosen if _conflict
-                   else (vn_frame_chip_active if _targeted else vn_frame_slot))
         fixed:
             if _open:
                 $ _thumb = vn_story.thumb(scene_id)
                 if _thumb:
                     add _thumb fit "cover" xysize (VN_FLOW_NODE_W, VN_FLOW_NODE_H)
                     add Solid("#0a0a0cd9") xysize (VN_FLOW_NODE_W, 28) yalign 1.0
-                text vn_story.title(scene_id):
+                text vn_story.display_title(scene_id):
                     style "vn_flow_node_text"
                     xsize VN_FLOW_NODE_W - 2 * gui.sp_s
             else:
@@ -188,7 +192,7 @@ screen vn_flow_plan():
                 text vn_loc.t("ui.chart.plan_many").replace(
                     "[n]", str(len(_runs))) style "vn_flow_plan_text"
             for _i, _run in enumerate(_runs):
-                text "%d) %s" % (_i + 1, ", ".join(vn_story.title(s) for s in _run)):
+                text "%d) %s" % (_i + 1, ", ".join(vn_story.display_title(s) for s in _run)):
                     style "vn_flow_plan_run"
             textbutton vn_loc.t("ui.chart.clear_targets"):
                 style "vn_gal_tab"
@@ -213,12 +217,12 @@ screen story_node_menu(scene_id):
     use vn_modal_dialog(Hide("story_node_menu")):
         vbox:
             spacing gui.sp_m
-            text (vn_story.title(scene_id) if vn_story.revealed(scene_id) else "???"):
+            text vn_story.display_title(scene_id):
                 style "vn_group"
                 xalign 0.5
             if _blockers and not _targeted:
                 text vn_loc.t("ui.chart.conflict_with").replace(
-                    "[list]", ", ".join(vn_story.title(s) for s in _blockers)):
+                    "[list]", ", ".join(vn_story.display_title(s) for s in _blockers)):
                     style "vn_dialog_text"
             vbox:
                 xalign 0.5
@@ -244,6 +248,19 @@ style vn_flow_node:
     xysize (232, 130)
     padding (0, 0)
     background vn_frame_slot
+    hover_background vn_frame_choice_hover
+
+# Состояния узла — наследники, и у каждого СВОЙ hover_background: беспрефиксный
+# background наследника задаёт все состояния разом и без этой строки съел бы
+# hover родителя (см. choice_button_chosen — там же и объяснение).
+style vn_flow_node_target is vn_flow_node:
+    background vn_frame_chip_active
+    hover_background vn_frame_choice_hover
+
+# Конфликтная цель — своя рамка: игрок обязан видеть, что комбинация невозможна,
+# ДО того как начнёт её добиваться.
+style vn_flow_node_conflict is vn_flow_node:
+    background vn_frame_choice_chosen
     hover_background vn_frame_choice_hover
 
 style vn_flow_node_text:

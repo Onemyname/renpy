@@ -224,11 +224,12 @@ init -980 python in vn_story:
         t = renpy.store.vn_loc.t
         row = hint(menu_id)
         if row and row[0] == idx:
-            return ("goal", t("ui.guide.reason").replace("[list]", title(row[1])))
+            return ("goal", t("ui.guide.reason").replace(
+                "[list]", display_title(row[1])))
         blocked = blocked_targets(menu_id, idx)
         if blocked:
             return ("block", t("ui.guide.blocks").replace(
-                "[list]", ", ".join(title(s) for s in blocked)))
+                "[list]", ", ".join(display_title(s) for s in blocked)))
         return None
 
     # ── Реплей сцены ─────────────────────────────────────────────────────────
@@ -301,6 +302,17 @@ init -980 python in vn_story:
         spec = node(scene_id) or {}
         key = spec.get("title_key")
         return renpy.store.vn_loc.t(key) if key else scene_id
+
+    def display_title(scene_id):
+        """Имя узла ДЛЯ ПОКАЗА: заголовок, если сцена уже открыта, иначе «???».
+
+        Единственная функция отображаемого имени во всём UI — и это не удобство,
+        а требование тумана войны. Правило соблюдалось в одном месте (карточка
+        узла), а план прохождений, список конфликтующих целей и подсказки гайда
+        печатали настоящий заголовок НЕПРОЙДЕННОЙ сцены: целью можно отметить
+        любой узел, включая закрытый, — и его название тут же выдавалось.
+        title() остаётся для мест, где показ безусловен (например, отладка)."""
+        return title(scene_id) if revealed(scene_id) else "???"
 
     def thumb(scene_id):
         """Превью узла — из галереи, если её элемент привязан к этой сцене и уже
