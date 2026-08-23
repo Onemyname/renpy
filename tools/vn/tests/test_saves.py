@@ -168,7 +168,12 @@ def _state_module(repo_root, stores: dict, monkeypatch, save_schema: int = 1):
     fake_store.vn_log = log.append
     # Revertable-конвертация движка: тесту важно, ЧТО записано в стор, а не в какой
     # обёртке движка это лежит.
-    fake_store.vn_compat = types.SimpleNamespace(revertable=lambda v: v)
+    # engine_store_names: в игре это имена, которые create_store копирует в
+    # каждый стор из renpy.minstore. Тест подставляет их явно — снапшот обязан
+    # вычитать их по СПИСКУ, а не угадывать по признакам.
+    fake_store.vn_compat = types.SimpleNamespace(
+        revertable=lambda v: v,
+        engine_store_names=lambda: frozenset({"PY2", "renpy_version"}))
 
     mod = types.ModuleType("vn_state")
     # Ровно как движок: имена типов в сторе — Revertable-аналоги.
@@ -356,3 +361,23 @@ def test_start_label_does_not_bake_the_registry_into_every_save(repo_root):
     facade = src.split("def first_entry_label(", 1)[1].split("\n    def ", 1)[0]
     assert 'rows[0]["entry_label"] if rows else None' in facade, \
         "фасад возвращает не строку — в сейв снова уедет структура"
+
+
+def test_snapshot_excludes_engine_names(repo_root, monkeypatch):
+    """Имена движка не должны доезжать до состояния миграций.
+
+    renpy/python.py: create_store() копирует в каждый named store всё содержимое
+    renpy.minstore. Фильтр «не `_`, не callable, не модуль» отсеивал оттуда почти
+    всё — но не `PY2 = False`: обычный bool без подчёркивания, json-safe. В
+    state.json боевого прогона лежали `ch01.PY2` и `g.PY2`, то есть автор
+    миграции видел в плоском состоянии переменные, которых никто не объявлял и
+    которые могут появиться или исчезнуть с версией движка.
+
+    Вычитание идёт по СПИСКУ имён (vn_compat.engine_store_names), а не по новым
+    признакам: признаковый фильтр уже один раз промахнулся."""
+    st = _state_module(repo_root,
+                       {"g": {"route": "common", "PY2": False, "renpy_version": "8.5"}},
+                       monkeypatch)
+    snap = st.snapshot()
+    assert snap["g.route"] == "common"
+    assert "g.PY2" not in snap and "g.renpy_version" not in snap, snap

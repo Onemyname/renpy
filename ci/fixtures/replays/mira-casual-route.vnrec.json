@@ -14,9 +14,7 @@
   ],
   "result": "OK: vn_end_of_content",
   "state": {
-   "ch01.PY2": false,
    "ch01.met_mira": true,
-   "g.PY2": false,
    "g.mira_outfit": "casual",
    "g.route": "prologue",
    "g.scenes_seen": [
@@ -34,7 +32,7 @@
   ]
  },
  "name": "mira-casual-route",
- "recorded_at": "2026-08-22T17:48:13Z",
+ "recorded_at": "2026-08-23T20:29:55Z",
  "schema": "replay@1",
  "why": "путь через школьную форму: единственный, где g.mira_outfit меняется и открывается CG рооftop"
 }

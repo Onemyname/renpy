@@ -56,6 +56,12 @@ init -999 python in vn_state:
             return False
         return True
 
+    def vn_compat_names():
+        """Имена движка из vn_compat — лениво: стор создаётся на init -950, позже
+        этого блока (C8)."""
+        from store import vn_compat
+        return vn_compat.engine_store_names()
+
     def snapshot():
         """stores -> плоский dict простых типов (ключи 'store.var').
         Читаются ВСЕ не-'_' переменные управляемых stores, а не только объявленные:
@@ -66,8 +72,17 @@ init -999 python in vn_state:
             module = getattr(renpy.store, store_name, None)
             if module is None:
                 continue
+            # Имена движка вычитаются ЯВНО, а не ловятся признаками: create_store
+            # копирует в каждый named store всё содержимое renpy.minstore, и
+            # фильтр «не `_`, не callable, не модуль» пропускал оттуда `PY2` —
+            # обычный bool, доезжавший до состояния миграций как `g.PY2`. Автор
+            # миграции не должен видеть в плоском состоянии переменные, которых
+            # никто не объявлял (и которые меняются с версией движка).
+            engine = vn_compat_names()
             for var, value in vars(module).items():
                 if var.startswith("_") or callable(value) or type(value).__name__ == "module":
+                    continue
+                if var in engine:
                     continue
                 if not isinstance(value, _SIMPLE):
                     vn_log("snapshot: %s.%s пропущен (не-простой тип %s)"

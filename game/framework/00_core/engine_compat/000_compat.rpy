@@ -15,6 +15,30 @@ init -950 python in vn_compat:
     # ничего не делала бы ровно в том случае, ради которого написана.
     _PLAIN = (_builtins.dict, _builtins.list, _builtins.set)
 
+    _engine_names_cache = None
+
+    def engine_store_names():
+        """Имена, которые движок кладёт в КАЖДЫЙ named store.
+
+        renpy/python.py: create_store() копирует в новый стор всё содержимое
+        renpy.minstore. Почти всё оттуда снапшот отсеивает своим фильтром
+        («не `_`, не callable, не модуль»), но не всё: `PY2 = False` — обычный
+        bool без подчёркивания, и он исправно доезжал до состояния миграций
+        (`ch01.PY2`, `g.PY2` в state.json прогона). Автор миграции видит в
+        плоском состоянии переменные, которых не объявлял, и любая из них может
+        появиться или исчезнуть с версией движка.
+
+        Касание renpy.minstore живёт здесь по G18. Пустое множество — честный
+        ответ на неизвестной версии: фильтр просто останется прежним."""
+        global _engine_names_cache
+        if _engine_names_cache is None:
+            try:
+                import renpy.minstore
+                _engine_names_cache = frozenset(vars(renpy.minstore))
+            except Exception:
+                _engine_names_cache = frozenset()
+        return _engine_names_cache
+
     def call_stack_depth():
         """Глубина call-стека. renpy.call_stack_depth() документирован в новых версиях;
         fallback — длина return-стека (полудокументированный renpy.get_return_stack()).
