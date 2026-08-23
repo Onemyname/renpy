@@ -65,6 +65,7 @@ def test_retired_commands_stay_retired():
 @pytest.mark.parametrize("name", ["voice tts", "test corpus",
                                   "char new", "char validate", "char sheet",
                                   "test screens", "test paths", "test replay",
+                                  "content flow",
                                   "release android setup",
                                   "release android status",
                                   "release android preflight",
@@ -215,3 +216,24 @@ def test_voice_tts_flags_map_to_synth_drafts(monkeypatch, repo_root):
     # Дубли лежат мастерами: без транскода игрок их не услышит — это должно быть
     # сказано в выводе, а не только в доке.
     assert "vn assets build" in res.output
+
+
+def test_help_is_utf8_even_when_console_asks_cp1251(repo_root):
+    """click печатает --help на этапе РАЗБОРА аргументов, до вызова callback
+    группы, поэтому перекодировка stdout обязана случиться на импорте модуля.
+    Пока она жила только в callback, `vn --help` на cp1251-консоли выходил
+    кракозябрами — то есть первое, что видит новый человек в проекте.
+
+    Проверка поведением, а не поиском строки в исходнике: греп остался бы зелёным
+    и при выпотрошенной перекодировке."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, PYTHONIOENCODING="cp1251")
+    res = subprocess.run([sys.executable, "-m", "vn.cli", "--help"],
+                         capture_output=True, env=env,
+                         cwd=str(repo_root / "tools" / "vn"))
+    assert res.returncode == 0, res.stderr[:400]
+    text = res.stdout.decode("utf-8")      # упадёт, если поток ушёл в cp1251
+    assert "Единственный CLI проекта" in text

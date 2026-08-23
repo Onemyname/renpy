@@ -1,10 +1,13 @@
-"""vn — единая точка входа (G1). Домены (C13): bootstrap|doctor|dev|build|play|package|
-migrate|shell, assets, content, scene, chapter, char, loc, voice, save, test, release
+"""vn — единая точка входа (G1). Домены (C13): bootstrap, doctor, dev, build, play,
+package, assets, content, scene, chapter, char, loc, voice, save, test, release
 (в т.ч. release android — мобильный канал), pack, pipeline.
 
 Нереализованное — честные заглушки с номером фазы (раздел 8 ARCHITECTURE.md) и кодом
-выхода 3, а не тихие no-op: char new|validate|sheet, migrate, shell, save migrate,
-test replay|screens|paths. Перечень сверяется тестом (tests/test_cli.py).
+выхода 3, а не тихие no-op. Сейчас заглушка ровно одна: save migrate (фаза 3).
+Источник истины по заглушкам — EXPECTED_STUBS в tests/test_cli.py (сверяется с деревом
+команд тестом test_stub_inventory_matches_frozen_list, а не этой шапкой). Выведенное
+из нормы не возвращается и сторожится отдельно, test_retired_commands_stay_retired:
+домены validate|migrate|shell — ADR-0017, vn test perf — ADR-0019.
 """
 
 from __future__ import annotations
@@ -36,6 +39,23 @@ WARN_SAMPLES = 5
 # «ch01: title_key … нет в strings.yaml» и то же про ch02 сворачиваются в один
 # класс, а разные проверки не сливаются, потому что различаются словами.
 _WARN_VALUE_RE = re.compile(r"""'[^']*'|"[^"]*"|\S*[\\/]\S*|\S*\d\S*""")
+
+
+def _utf8_stdio() -> None:
+    """Консоль/пайп Windows по умолчанию в locale-кодировке (cp1251): без этого
+    русские сообщения — кракозябры, а '✓' в doctor — UnicodeEncodeError."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
+
+
+# Зовётся на импорте, а не только из callback группы: click печатает --help на
+# этапе разбора аргументов, ДО вызова callback, поэтому справка (первое, что видит
+# новый человек) выходила кракозябрами. Точка входа консольного скрипта —
+# vn.cli:main, то есть импорт этого модуля гарантированно происходит раньше разбора.
+_utf8_stdio()
 
 
 def _fail(msg: str) -> "None":
@@ -89,13 +109,9 @@ def main():
     Exit-коды: 0 — успех; 1 — ошибка проверки/сборки; 2 — usage error; 3 — команда
     ещё не реализована (номер фазы в сообщении).
     """
-    # Windows-консоль/пайп по умолчанию в locale-кодировке (cp1251): без этого
-    # русские сообщения в CI — кракозябры, а '✓' в doctor — UnicodeEncodeError.
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, OSError):
-            pass
+    # Повторно (кроме импорта модуля): поток мог быть подменён после импорта —
+    # так работает CliRunner в тестах и вызов main() из чужого процесса.
+    _utf8_stdio()
 
 
 # ── Верхний уровень ───────────────────────────────────────────────────────────
