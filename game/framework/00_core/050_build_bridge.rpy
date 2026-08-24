@@ -31,7 +31,7 @@ init python:
             "labels": [], "jumps": [], "calls": [], "returns": [],
             "menus": [], "says": 0, "say_list": [], "menu_markers": [],
             "var_reads": [], "var_writes": [], "assigns": [], "errors": [],
-            "image_refs": [], "audio_refs": [],
+            "image_refs": [], "audio_refs": [], "branch_assigns": [],
         }
 
     # Ключи, где дубликаты недопустимы: их накапливают проверкой «не было ли уже».
@@ -244,9 +244,30 @@ init python:
                                        "conditions": conditions,
                                        "choices": choices})
             elif cls == "If":
+                # Каждая ветвь — в СВОЙ аккумулятор, тем же приёмом, что пункты
+                # меню выше. Раньше все ветви писали в один плоский
+                # entry["assigns"], без пометки «условное», и потребитель
+                # (flow._apply) исполнял остаток как прямую последовательность:
+                # после `if x: v = A` / `else: v = B` мир единственный и в нём
+                # v == B, а у `if` без `else` бонусная ветка применялась
+                # БЕЗУСЛОВНО. Следствие — ложное «сцена недостижима» за условием:
+                # узел навсегда «???», в модалке карты нет ни одной кнопки
+                # «Переиграть» (они строятся по пустым preconds), и гайд к цели не
+                # ведёт. После сплющивания эта информация утеряна безвозвратно,
+                # поэтому разводить ветви обязан именно мост.
+                #
+                # В общий assigns ветви НЕ вливаются: там лежат только безусловные
+                # присваивания тела. Всё остальное (var_reads/var_writes, реплики,
+                # returns, вложенные меню) сливается как обычно — эти списки
+                # обязаны быть полными, иначе сломаются проверки деклараций и loc.
                 for _condition, block in node.entries:
                     _vn_collect_vars(str(_condition), "eval", entry)
-                    _vn_walk_ast(block, entry)
+                    sub = _vn_new_entry()
+                    if block:
+                        _vn_walk_ast(block, sub)
+                    entry["branch_assigns"].append(list(sub["assigns"]))
+                    sub["assigns"] = []
+                    _vn_merge_entry(entry, sub)
             elif cls == "While":
                 _vn_collect_vars(str(getattr(node, "condition", "")), "eval", entry)
                 _vn_walk_ast(node.block, entry)

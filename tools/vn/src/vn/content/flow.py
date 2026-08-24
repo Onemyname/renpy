@@ -40,6 +40,13 @@ FLOW_MAX_WORLDS = 32
 # Потолок на дизъюнкцию, в которую разворачивается одно условие `when`.
 FLOW_MAX_TERMS = 16
 
+# Сколько РЕАЛЬНЫХ миров сохраняется на прекондиции реплея при widening. Список
+# станет неполным — это честная и безопасная потеря; альтернатива (представитель
+# widened-мира) была ЛОЖЬЮ: игроку предлагалось состояние входа, которого нет ни
+# в одном прохождении. Число ограничено бюджетом ночного гейта: каждый вариант
+# входа — отдельный реплей в `vn test revisit`.
+FLOW_PRECOND_SAMPLE = 8
+
 
 class FlowError(RuntimeError):
     pass
@@ -224,7 +231,7 @@ def _merge_worlds(worlds: list[World]) -> list[World]:
         kept = [k for k in kept if not _subsumes(w, k)]
         kept.append(w)
     if len(kept) <= FLOW_MAX_WORLDS:
-        return sorted(kept, key=world_key)
+        return sorted(kept, key=world_key), None
     # Widening: оставляем ограничения только по переменным, которые ограничены
     # во ВСЕХ мирах, — то есть заведомо более слабое, но корректное множество.
     common = set(kept[0])
@@ -244,7 +251,10 @@ def _merge_worlds(worlds: list[World]) -> list[World]:
                                  hi=max(his) if len(his) == 2 else None)
         if not con.is_empty() and con.as_data():
             widened[var] = con
-    return [widened]
+    # Вторым значением — детерминированная выборка РЕАЛЬНЫХ миров: widened-мир
+    # годится для достижимости и конфликтов (он корректен сверху), но не для
+    # прекондиций, потому что объединяет переменные независимо.
+    return [widened], sorted(kept, key=world_key)[:FLOW_PRECOND_SAMPLE]
 
 
 # ── Разбор условий `when` в дизъюнкцию миров ─────────────────────────────────
@@ -278,11 +288,23 @@ def _cond(node, var_types) -> list[World] | None:
         parts = [_cond(v, var_types) for v in node.values]
         if any(p is None for p in parts):
             return None
+        # ПЕРЕПОЛНЕНИЕ ПОТОЛКА -> None (непрозрачное условие), а не урезанный
+        # список. Обрезать дизъюнкцию значит УСИЛИТЬ условие: отброшенные термы —
+        # это прохождения, которые рантайм принимает, а модель нет. При этом
+        # ребро не помечалось opaque (флаг ставится только при when_worlds is
+        # None), поэтому штатное предупреждение validate_flow не эмитилось, и
+        # сцена объявлялась НЕДОСТИЖИМОЙ молча: на карте «???» навсегда, кнопки
+        # «Переиграть» нет, гайд к ней не ведёт. Ломалась даже тавтология — пять
+        # пар `(x or not x)` покрывали 24 состояния из 32. Возврат None ставит
+        # ребро в непрозрачные, validate_flow предупреждает штатно, и ошибка
+        # уходит в единственно допустимую по ADR-0021 §3 ложно-зелёную сторону.
         if isinstance(node.op, pyast.Or):
             out: list[World] = []
             for p in parts:
                 out.extend(p)
-            return out[:FLOW_MAX_TERMS] or None
+            if len(out) > FLOW_MAX_TERMS:
+                return None
+            return out or None
         acc: list[World] = [{}]
         for p in parts:
             nxt: list[World] = []
@@ -291,8 +313,12 @@ def _cond(node, var_types) -> list[World] | None:
                     merged = world_and(a, b)
                     if merged is not None:
                         nxt.append(merged)
-                    if len(nxt) >= FLOW_MAX_TERMS:
-                        break
+            # Потолок проверяется ПОСЛЕ полного произведения, а не break'ом внутри
+            # внутреннего цикла: тот прерывал только его, поэтому nxt фактически
+            # перерастал заявленный потолок (24 мира вместо 16 на пяти парах) —
+            # то есть даже объявленный предел не соблюдался.
+            if len(nxt) > FLOW_MAX_TERMS:
+                return None
             acc = nxt
             if not acc:
                 return []          # противоречие внутри самого условия
@@ -387,7 +413,16 @@ class SceneNode:
     menus: list[str] = field(default_factory=list)
     reads: list[str] = field(default_factory=list)
     assigns: list[dict] = field(default_factory=list)
+    # Присваивания УСЛОВНЫХ ветвей тела сцены, по списку на ветвь. Мост отдаёт их
+    # отдельно от assigns: ветви взаимоисключающие, и применять их подряд нельзя.
+    branch_assigns: list[list[dict]] = field(default_factory=list)
     reach: list[World] = field(default_factory=list)
+    # Выборка РЕАЛЬНЫХ миров, оставленная при widening (иначе None). Прекондиции
+    # реплея обязаны быть представителями существующих миров, а widened-мир
+    # объединяет ограничения по каждой переменной НЕЗАВИСИМО и допускает
+    # комбинации, которых нет ни в одном прохождении (ADR-0021 §5 обещает
+    # представителя МИРА, а не объединения).
+    reach_exact: list[World] | None = None
 
 
 @dataclass
@@ -553,6 +588,8 @@ def build_flow(root: Path, packs=None, analyses: dict | None = None) -> FlowMode
                 continue
             analysed.add(sid)
             node.assigns = list(analysis.get("assigns") or [])
+            node.branch_assigns = [list(b) for b in
+                                   (analysis.get("branch_assigns") or [])]
             actual_reads = sorted(analysis.get("var_reads") or [])
             node.reads = sorted(set(node.reads) | set(actual_reads))
             for menu in analysis.get("menus") or []:
@@ -643,19 +680,41 @@ def _apply(world: World, assigns: list[dict]) -> World:
     return out
 
 
-def _setters(model: FlowModel) -> dict:
+def _setters(model: FlowModel, body_assigns: dict | None = None) -> dict:
     """(переменная, значение) -> решения, которые это значение выставляют.
 
     Нужно, чтобы условие по переменной ЧУЖОЙ главы превратить в требование к
     решениям: сама переменная к моменту этой главы уже зафиксирована, а вот
     выбор, которым её выставили, — это и есть то, что конфликтует с другим
-    выбором того же меню."""
+    выбором того же меню.
+
+    Значение `None` в списке — маркер «ИСТОЧНИК БЕЗ РЕШЕНИЯ»: значение можно
+    получить не выбором, а присваиванием в теле сцены или дефолтом из vars@1.
+    Индекс строился только по пунктам меню, и `_foreign_requirements` считал
+    найденные пункты ИСЧЕРПЫВАЮЩИМ списком способов получить значение. Когда то
+    же значение производит и пункт меню, и тело другой сцены, требование
+    получалось СТРОЖЕ реального, и compute_compat находил противоречие решений
+    там, где путь есть: игроку рисовался конфликт целей, а plan() раскладывал их
+    на два прохождения — то самое ложное «красное», которое ADR-0021 §3 называет
+    прямым обманом. Проверено топологией, где пункт 0 пишет флаг, а тело сцены за
+    пунктом 1 пишет тот же флаг: модель объявляла сцены несовместимыми, хотя сама
+    знала мир, где флаг истинен при решении 1."""
     out: dict = {}
     for (_src, _exit_id, menu_id, idx), assigns in sorted(
             model.edge_assigns.items(), key=lambda kv: (kv[0][0], kv[0][1],
                                                         kv[0][2], kv[0][3])):
         for a in assigns:
             out.setdefault((a["var"], repr(a["value"])), []).append((menu_id, idx))
+
+    # Тело сцены — такой же источник значения, только без решения за ним.
+    for _sid, assigns in sorted((body_assigns or {}).items()):
+        for a in assigns:
+            out.setdefault((a["var"], repr(a["value"])), []).append(None)
+
+    # Дефолт из vars@1 — тоже источник: переменная имеет это значение до любого
+    # выбора, и требовать решение для него нельзя.
+    for var, spec in sorted(model.var_types.items()):
+        out.setdefault((var, repr(spec.get("default"))), []).append(None)
     return out
 
 
@@ -672,7 +731,15 @@ def _foreign_requirements(model: FlowModel, term: World, chapter: str) -> list[W
         value = sorted(con.allow, key=_sort_key)[0]
         options = setters.get((var, repr(value))) or []
         if not options:
-            continue                      # переменную пишет тело сцены, не выбор
+            continue                      # сеттеры неизвестны вовсе
+        if any(o is None for o in options):
+            # Есть источник БЕЗ решения (присваивание в теле сцены или дефолт из
+            # vars@1) — значит требовать конкретный пункт меню нельзя: значение
+            # получается и без него. Ошибка уходит в единственно допустимую по
+            # ADR-0021 §3 ложно-зелёную сторону, а точность на реальных данных
+            # почти не страдает: _foreign_requirements нужен тем переменным,
+            # которые ставит именно ВЫБОР, и у них другого источника нет.
+            continue
         grown: list[World] = []
         for base in reqs:
             for menu_id, idx in options:
@@ -715,15 +782,43 @@ def compute_reach(model: FlowModel) -> None:
     for e in model.edges:
         if e.menu is None:
             continue
-        key = (e.src, e.exit_id, e.menu, e.idx)
+        # Ключ дедупликации — идентичность ПУНКТА МЕНЮ, и exit_id в неё не входит.
+        # Один пункт может вернуть НЕСКОЛЬКО exit'ов (`if …: return "a"` /
+        # `else: return "b"`), и build_flow создаёт запись на каждый литерал
+        # возврата с ОДНИМ И ТЕМ ЖЕ списком присваиваний. С exit_id в ключе
+        # дедупликация не срабатывала, список попадал в аккумулятор дважды, а
+        # _scene_level_assigns вычитает мультимножеством — и вычитал БОЛЬШЕ, чем
+        # есть: присваивание ТЕЛА сцены, совпадающее с присваиванием пункта по
+        # паре (переменная, значение), исчезало. Дальше по цепочке это ложное
+        # «сцена недостижима» и прекондиция реплея с состоянием, которого нет ни
+        # в одном прохождении.
+        key = (e.src, e.menu, e.idx)
         if key in seen_choices:
             continue
         seen_choices.add(key)
-        choice_assigns.setdefault(e.src, []).extend(model.edge_assigns.get(key, []))
+        choice_assigns.setdefault(e.src, []).extend(
+            model.edge_assigns.get((e.src, e.exit_id, e.menu, e.idx), []))
 
     body_assigns = {sid: _scene_level_assigns(node, choice_assigns.get(sid, []))
                     for sid, node in model.scenes.items()}
-    model._setters_cache = _setters(model)
+    # Переменные, которые пишет УСЛОВНАЯ ветвь тела сцены. Их ограничение после
+    # тела СНИМАЕТСЯ, а не переписывается: какая ветвь сработает, модель не знает.
+    # Просто «не применять» было бы неверно в другую сторону — затравка главы
+    # оставила бы переменную на дефолте, и ветка exits под другое значение стала
+    # бы ложно-недостижимой. Неограниченная переменная делает проходимыми ОБА
+    # ребра, то есть ошибка уходит в ложно-зелёную сторону — единственную,
+    # которую ADR-0021 §3 разрешает.
+    branch_vars = {sid: sorted({a["var"] for branch in node.branch_assigns
+                                for a in branch})
+                   for sid, node in model.scenes.items()}
+    # Сеттеры строятся ПОСЛЕ body_assigns: индекс обязан знать и присваивания тела
+    # сцены, иначе условие по переменной, которую пишет и меню, и тело, даёт
+    # ложное «несовместимо» (см. _setters).
+    model._setters_cache = _setters(model, body_assigns)
+
+    # Сцены, для которых уже сказано про widening: предупреждение нужно один раз
+    # на сцену, а фикспойнт проходит ребро многократно.
+    widened_targets: set[str] = set()
 
     # Условия рёбер разбираются ОДИН раз: внутри фикспойнта каждое ребро
     # проходится многократно, а разбор `when` от номера шага не зависит.
@@ -763,6 +858,7 @@ def compute_reach(model: FlowModel) -> None:
             if target is None:
                 continue
             effects = list(body_assigns.get(sid, []))
+            loosen = branch_vars.get(sid, ())
             decision: World = {}
             if e.menu is not None:
                 effects += model.edge_assigns.get((sid, e.exit_id, e.menu, e.idx), [])
@@ -771,6 +867,9 @@ def compute_reach(model: FlowModel) -> None:
             produced: list[World] = []
             for w in node.reach:
                 after = _apply(w, effects)
+                # Переменные условных ветвей тела — неограниченными (см. branch_vars).
+                for var in loosen:
+                    after.pop(var, None)
                 if decision:
                     after = world_and(after, decision)
                     if after is None:
@@ -797,7 +896,23 @@ def compute_reach(model: FlowModel) -> None:
             if not produced:
                 continue
             before = {world_key(w) for w in target.reach}
-            target.reach = _merge_worlds(target.reach + produced)
+            target.reach, sample = _merge_worlds(target.reach + produced)
+            if sample is not None:
+                # Widening сработал. Он корректен СВЕРХУ (ложных конфликтов и
+                # ложной недостижимости не даёт), но точность теряет молча, а
+                # ADR-0021 §2/§5 обещает предупреждение — и его не эмитил никто:
+                # _merge_worlds чистая функция без доступа к model.warnings.
+                target.reach_exact = sample
+                if e.target not in widened_targets:
+                    widened_targets.add(e.target)
+                    model.warnings.append(
+                        f"{e.target}: миров достижимости больше {FLOW_MAX_WORLDS} — "
+                        f"ограничения ослаблены (widening): решения схлопнулись, "
+                        f"поэтому подсказки walkthrough к этой сцене отключены, а "
+                        f"состояний входа для реплея останется не больше "
+                        f"{FLOW_PRECOND_SAMPLE}")
+            else:
+                target.reach_exact = None
             if {world_key(w) for w in target.reach} != before:
                 worklist.append(e.target)
 
@@ -872,7 +987,11 @@ def compute_preconds(model: FlowModel) -> None:
             model.preconds[sid] = [{}] if node.reach else []
             continue
         variants: list[dict] = []
-        for w in node.reach:
+        # При widening берём сохранённую выборку РЕАЛЬНЫХ миров: представитель
+        # widened-мира выбирается по каждой переменной независимо и легко попадает
+        # в несуществующую комбинацию (side=left + sky=moon при реальных парах
+        # left+sun и right+moon), а именно с этим состоянием запускается реплей.
+        for w in (node.reach_exact if node.reach_exact is not None else node.reach):
             state: dict = {}
             wv = world_vars(w)
             for var in node.reads:
@@ -991,6 +1110,19 @@ def validate_flow(model: FlowModel) -> tuple[list[str], list[str]]:
     warnings = list(model.warnings)
     for sid in sorted(model.scenes):
         node = model.scenes[sid]
+        if node.branch_assigns:
+            # Присваивание внутри условной ветви тела сцены: какая ветвь
+            # сработает, модель не знает, поэтому ограничение на переменную после
+            # тела снимается (ложно-зелёная сторона по ADR-0021 §3), а точность
+            # теряется. Молчать об этом нельзя — по этой строке автор видит, что
+            # подсказки walkthrough и конфликты на переходах после такого тела
+            # станут менее точными, и может вынести решение в пункт меню.
+            branch_vars = sorted({a["var"] for b in node.branch_assigns for a in b})
+            if branch_vars:
+                warnings.append(
+                    f"{sid}: присваивание внутри условного блока тела сцены "
+                    f"({', '.join(branch_vars)}) — ограничений из него не извлечь, "
+                    f"после тела эти переменные считаются неограниченными")
         if not node.reach:
             continue                    # недостижимость ловит lint (раздел 3a)
         for state in model.preconds.get(sid) or []:

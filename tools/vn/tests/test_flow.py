@@ -377,6 +377,92 @@ TOPOLOGIES = {
 }
 
 
+TOPOLOGIES["ch95_twice"] = {
+    # ── T6: пункт меню с ДВУМЯ return + тело, пишущее то же значение ──────────
+    # Ключ дедупликации пер-пунктовых присваиваний включал exit_id, а один пункт
+    # возвращает несколько exit'ов -> список попадал в аккумулятор дважды, и
+    # _scene_level_assigns вычитал БОЛЬШЕ, чем есть: присваивание ТЕЛА сцены,
+    # совпадающее с присваиванием пункта, исчезало (обход стража FWA-017).
+    "store": "ch95",
+    "vars": {"awake": {"type": "bool", "default": False},
+             "hurry": {"type": "bool", "default": False}},
+    "entry": "s010",
+    "order": ["s010", "s020", "s030", "s040"],
+    "scenes": {
+        "s010_wake": {
+            "reads": ["ch95.hurry"],
+            "writes": ["ch95.awake"],
+            "body": [("ch95.awake", True)],
+            "raw": [
+                '    $ vn_menu = "ch95_s010_m001"',
+                "    menu:",
+                '        "Бежать":',
+                "            $ ch95.awake = True",
+                "            if ch95.hurry:",
+                '                return "a"',
+                "            else:",
+                '                return "b"',
+                '        "Сидеть":',
+                '            return "c"',
+            ],
+            "exits": {"a": "s020", "b": "s020", "c": "s030"},
+        },
+        "s020_run": {"exits": {"on": "s040"}, "returns": ["on"]},
+        "s030_sit": {"exits": {"on": "s040"}, "returns": ["on"]},
+        "s040_gate": {"reads": ["ch95.awake"]},
+    },
+}
+
+TOPOLOGIES["ch96_after"] = {
+    # ── T7: МЕЖГЛАВНЫЙ гейт по переменной, которую пишет и меню, и тело ───────
+    # _foreign_requirements срабатывает только на переменные ЧУЖОЙ главы,
+    # поэтому проверять фикс можно лишь отдельной главой. ch95.awake пишет и
+    # пункт 0 меню ch95_s010_m001, и ТЕЛО ch95_s010 — то есть значение
+    # получается на ЛЮБОМ пути, и требовать конкретный пункт нельзя.
+    "store": "ch96",
+    "vars": {"seen": {"type": "bool", "default": False}},
+    "entry": "s010",
+    "order": ["s010", "s020", "s030"],
+    "scenes": {
+        "s010_check": {
+            "reads": ["ch95.awake"],
+            "returns": ["next"],
+            "exits": {"next": [{"when": "ch95.awake", "to": "s020"},
+                               {"to": "s030"}]},
+        },
+        "s020_yes": {},
+        "s030_no": {},
+    },
+}
+
+TOPOLOGIES["ch94_ifonly"] = {
+    # ── T5: условное присваивание в ТЕЛЕ сцены (`if` без `else`) ──────────────
+    # Реальный путь игрока: found=false (дефолт) -> mood остаётся 'calm' -> s020.
+    # Мост раньше сплющивал ветви в общий assigns, _apply применял присваивание
+    # БЕЗУСЛОВНО, и модель объявляла s020 недостижимой, а единственной достижимой
+    # — ветку 'high', которой при found=false не бывает. Следствия у игрока:
+    # узел навсегда «???», в модалке карты нет кнопки «Переиграть» (они строятся
+    # по пустым preconds), гайд к цели не ведёт.
+    "store": "ch94",
+    "vars": {"found": {"type": "bool", "default": False},
+             "mood": {"type": "str", "default": "calm"}},
+    "entry": "s010",
+    "order": ["s010", "s020", "s030"],
+    "scenes": {
+        "s010_walk": {
+            "reads": ["ch94.found"],
+            "writes": ["ch94.mood"],
+            "if_body": [("ch94.found", [[("ch94.mood", "high")]])],
+            "returns": ["next"],
+            "exits": {"next": [{"when": "ch94.mood == 'calm'", "to": "s020"},
+                               {"when": "ch94.mood == 'high'", "to": "s030"}]},
+        },
+        "s020_calm": {},
+        "s030_high": {},
+    },
+}
+
+
 def _write_topologies(root: Path) -> list[Path]:
     """Синтетическое дерево деклараций + авторские .rpy. project.yaml и схемы не
     нужны: графовый компилятор читает только `chapter.yaml`/`vars.yaml`/
@@ -414,10 +500,25 @@ def _write_topologies(root: Path) -> list[Path]:
             lines = [f"label {sid}__body:", f'    "{sid}"', ""]
             for var, value in sc.get("body") or []:
                 lines.append(f"    $ {var} = {value!r}")
+            # Условное присваивание в теле сцены. Ни одна топология набора его не
+            # имела, и весь класс дефектов «ветви if сплющены» был не покрыт
+            # ни одним входом: мост вливал присваивания ВСЕХ ветвей в один
+            # плоский список, а _apply исполнял их подряд.
+            for cond, branches in sc.get("if_body") or []:
+                lines.append(f"    if {cond}:")
+                for var, value in branches[0]:
+                    lines.append(f"        $ {var} = {value!r}")
+                if len(branches) > 1:
+                    lines.append("    else:")
+                    for var, value in branches[1]:
+                        lines.append(f"        $ {var} = {value!r}")
             for exit_id in sc.get("returns") or []:
                 lines.append(f'    return "{exit_id}"')
             if "menu" in sc:
                 lines += _menu_lines(*sc["menu"])
+            # Произвольная авторская форма: нужна для случаев, которых генератор
+            # выше выразить не может (пункт меню с ДВУМЯ return в if/else).
+            lines += sc.get("raw") or []
             p = d / "scenes" / f"{name}.scene.rpy"
             p.write_text("\n".join(lines) + "\n", encoding="utf-8")
             rpys.append(p)
@@ -1079,3 +1180,161 @@ def test_conflict_matrix_does_not_grow_quadratically():
     assert big < max(small * 8, 0.5), (
         f"матрица конфликтов растёт быстрее линейного: {small:.3f} c на 1000 сцен "
         f"против {big:.3f} c на 4000 (×{big / max(small, 1e-9):.1f})")
+
+
+def test_t5_conditional_body_assignment_does_not_hide_the_default_branch(topologies):
+    """Ветвь `if` в ТЕЛЕ сцены не имеет права делать ветку exits недостижимой.
+
+    Мост сплющивал присваивания всех ветвей в один плоский entry["assigns"], без
+    пометки «условное», а _apply исполнял остаток как прямую последовательность:
+    после `if x: v = A` мир единственный и в нём v == A, то есть присваивание
+    бонусной ветки применялось БЕЗУСЛОВНО. Модель объявляла недостижимой основную
+    ветку — ту, по которой игрок и идёт с дефолтом.
+
+    Следствия у игрока, все три проекции сразу: узел навсегда «???» и вне
+    прогресса; в модалке карты НЕТ ни одной кнопки «Переиграть» (story_flow строит
+    их по preconds, а те пусты); гайд к отмеченной цели не ведёт.
+
+    Правильный ответ — ложно-зелёный (ADR-0021 §3): какая ветвь сработает, модель
+    не знает, поэтому ограничение на переменную после тела СНИМАЕТСЯ и проходимы
+    ОБА ребра. Просто «не применять» было бы неверно в другую сторону: затравка
+    оставила бы mood на дефолте, и ветка 'high' стала бы ложно-недостижимой."""
+    model = topologies["model"]
+    calm, high = model.scenes["ch94_s020"], model.scenes["ch94_s030"]
+    assert calm.reach, "ветка дефолта объявлена недостижимой — ложное «???» у игрока"
+    assert high.reach, "ветка условия объявлена недостижимой"
+
+    # Переменная условной ветви после тела не ограничена — иначе одна из веток
+    # обязательно окажется противоречивой.
+    src = model.scenes["ch94_s010"]
+    assert src.branch_assigns, "мост не отдал присваивания условных ветвей отдельно"
+    assert not any(a["var"] == "ch94.mood" for a in src.assigns), \
+        "условное присваивание попало в общий assigns — снова применится безусловно"
+
+    # И об этом обязано быть сказано: точность потеряна, автор должен знать.
+    _errors, warnings = validate_flow(model)
+    assert any("ch94_s010" in w and "условного блока" in w for w in warnings), warnings
+
+
+def test_disjunction_over_the_cap_becomes_opaque_not_truncated(topologies):
+    """Обрезание дизъюнкции УСИЛИВАЕТ условие — это ложное «недостижимо».
+
+    `return out[:FLOW_MAX_TERMS]` отбрасывал термы, то есть прохождения, которые
+    рантайм принимает, а модель нет. Ребро при этом НЕ помечалось opaque (флаг
+    ставится только при None), поэтому штатное предупреждение validate_flow не
+    эмитилось, и сцена объявлялась недостижимой молча. Ломалась даже тавтология:
+    пять пар `(x or not x)` покрывали 24 состояния из 32.
+
+    Правильный ответ при переполнении — непрозрачность: ребро проходимо,
+    предупреждение штатное, ошибка ложно-зелёная."""
+    long_or = " or ".join(f"ch80.path == {c!r}" for c in "abcdefghijklmnopqrst")
+    assert parse_condition(long_or, VAR_TYPES) is None, \
+        "дизъюнкция сверх потолка урезана, а не объявлена непрозрачной"
+
+    # Ровно на потолке — всё ещё точный ответ.
+    at_cap = " or ".join(f"ch80.path == {c!r}" for c in "abcdefghijklmnop")
+    got = parse_condition(at_cap, VAR_TYPES)
+    assert got is not None and len(got) == 16, got
+
+    # Тавтология из пяти пар: произведение конъюнкций тоже не имеет права
+    # обрываться на полпути — заявленный потолок должен соблюдаться.
+    taut = " and ".join(f"(ch80.path == 'x' or ch80.path != 'x')" for _ in range(5))
+    assert parse_condition(taut, VAR_TYPES) is None, \
+        "произведение конъюнкций урезано вместо непрозрачности"
+
+
+def test_t6_body_assignment_survives_a_choice_with_two_returns(topologies):
+    """Обход стража FWA-017: один пункт меню, ДВА exit'а.
+
+    Ключ дедупликации пер-пунктовых присваиваний включал exit_id, а build_flow
+    создаёт запись на КАЖДЫЙ литерал возврата с одним и тем же списком
+    присваиваний. Ключи различались, дедупликация не срабатывала, список попадал
+    в аккумулятор дважды, а _scene_level_assigns вычитает мультимножеством — и
+    вычитал больше, чем есть: присваивание ТЕЛА сцены, совпадающее с присваиванием
+    пункта по паре (переменная, значение), исчезало.
+
+    Дальше по цепочке это ложное «сцена недостижима» и прекондиция реплея с
+    состоянием, которого нет ни в одном прохождении. Страж FWA-017 стоял на
+    топологии, где каждый пункт возвращает ровно один exit, то есть на входе, где
+    дедупликация случайно достаточна."""
+    model = topologies["model"]
+
+    # Тело выставило awake=True — значит после s010 он истинен на ЛЮБОМ пути,
+    # включая путь через пункт «Сидеть», у которого своих присваиваний нет.
+    sit = model.scenes["ch95_s030"]
+    assert _allowed(sit, "ch95.awake") == {True}, (
+        "присваивание тела сцены потеряно: вычтено дважды из-за пункта с двумя "
+        f"return; миры = {[{v: c.as_data() for v, c in w.items()} for w in sit.reach]}")
+
+    # И прекондиция реплея не предлагает состояния, которого не бывает.
+    assert {False} != _allowed(model.scenes["ch95_s040"], "ch95.awake")
+
+
+def test_t7_foreign_requirement_is_dropped_when_a_body_sets_the_same_value(topologies):
+    """`_setters` знал только пункты меню — отсюда ложное «несовместимо».
+
+    Индекс сеттеров строился исключительно из edge_assigns, поэтому
+    _foreign_requirements считал найденные пункты ИСЧЕРПЫВАЮЩИМ списком способов
+    получить значение и навязывал их как требования к решениям. Когда то же
+    значение производит и пункт меню, и тело другой сцены (или дефолт из vars@1),
+    требование получалось строже реального, и compute_compat находил противоречие
+    там, где путь есть: игроку рисовался конфликт целей, а plan() раскладывал их
+    на два прохождения — ложное «красное», которое ADR-0021 §3 называет прямым
+    обманом игрока.
+
+    Здесь ch95.awake пишет и пункт 0, и ТЕЛО сцены s010 (то есть значение
+    получается на любом пути). Требования к решению быть не должно."""
+    model = topologies["model"]
+    setters = model._setters_cache
+
+    # Источник «без решения» (тело сцены / дефолт) обязан быть виден индексу.
+    assert None in (setters.get(("ch95.awake", repr(True))) or []), \
+        "тело сцены не попало в индекс сеттеров — требование к решению навяжется"
+
+    # МЕЖГЛАВНЫЙ гейт: только на чужие переменные и работает
+    # _foreign_requirements. Сцена за гейтом не обязана требовать конкретный
+    # пункт меню чужой главы — значение даёт и тело сцены.
+    gate = model.scenes["ch96_s020"]
+    assert _choices(gate, "ch95_s010_m001") in ([], [0, 1]), (
+        "гейт по переменной, которую пишет и тело, превратился в требование к "
+        f"решению: {_choices(gate, 'ch95_s010_m001')}")
+
+    # И, как следствие, ложного конфликта нет: «Сидеть» в ch95 и ветка «да» в
+    # ch96 берутся в ОДНОМ прохождении, потому что awake выставляет тело.
+    assert ("ch95_s030", "ch96_s020") not in _pairs(model), (
+        "ложное «несовместимо»: plan() отправит игрока играть главу заново ради "
+        "сцены, которую он получил бы в том же заходе (ADR-0021 §3)")
+
+
+def test_widening_keeps_real_worlds_for_preconds_and_says_so():
+    """Прекондиция реплея обязана быть представителем СУЩЕСТВУЮЩЕГО мира.
+
+    При переполнении потолка все миры заменялись одним, где ограничения
+    объединены ПО КАЖДОЙ ПЕРЕМЕННОЙ НЕЗАВИСИМО, — связь между переменными
+    исчезала. Миры {side: left, sky: sun} и {side: right, sky: moon} давали
+    {side: {left,right}, sky: {moon,sun}}, который допускает и left+moon; а
+    compute_preconds берёт из мира по одному представителю на переменную и легко
+    попадает в НЕСУЩЕСТВУЮЩУЮ комбинацию — именно с ней и запускается «Переиграть».
+    ADR-0021 §5 обещает представителя МИРА, а не объединения.
+
+    Плюс ADR-0021 §2/§5 обещает предупреждение при widening, а его не эмитил
+    никто: _merge_worlds — чистая функция без доступа к model.warnings."""
+    from vn.content.flow import (FLOW_MAX_WORLDS, FLOW_PRECOND_SAMPLE,
+                                 Constraint, _merge_worlds, world_key)
+
+    # Ниже потолка — точный ответ и никакой выборки.
+    small = [{"a": Constraint(allow=frozenset({i}))} for i in range(4)]
+    merged, sample = _merge_worlds(small)
+    assert sample is None and len(merged) == 4
+
+    # Сверх потолка — один ослабленный мир И выборка РЕАЛЬНЫХ миров.
+    big = [{"side": Constraint(allow=frozenset({"left" if i % 2 else "right"})),
+            "n": Constraint(allow=frozenset({i}))}
+           for i in range(FLOW_MAX_WORLDS + 8)]
+    merged, sample = _merge_worlds(big)
+    assert len(merged) == 1, "widening обязан оставить один мир"
+    assert sample is not None, "выборка реальных миров не сохранена"
+    assert 0 < len(sample) <= FLOW_PRECOND_SAMPLE
+    real = {world_key(w) for w in big}
+    assert {world_key(w) for w in sample} <= real, \
+        "в выборку попал мир, которого не было среди входных — прекондиция соврёт"
