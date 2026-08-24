@@ -27,19 +27,55 @@ MENU_MARKER_LOOKBACK = 3
 MENU_ID_IN_SOURCE_RE = re.compile(r"vn_menu\s*=\s*[\"'](?P<id>ch\d{2}_s\d{3}_m\d{3})[\"']")
 
 
-def menu_marker(menu: dict, markers: list[dict]) -> dict | None:
-    """Маркер, принадлежащий этому меню, либо None. Единственное место, где живёт
-    правило близости маркера к оператору `menu`."""
-    line = menu["line"]
-    for mk in markers:
-        if line - MENU_MARKER_LOOKBACK <= mk["line"] < line:
-            return mk
-    return None
+def menu_markers_map(menus: list[dict], markers: list[dict]) -> dict[int, dict]:
+    """{строка меню: его маркер} — привязка сразу для ВСЕХ меню файла.
+
+    Единственное место, где живёт правило близости маркера к оператору `menu`, и
+    считать её нужно именно пачкой, потому что владение маркером ЭКСКЛЮЗИВНО.
+
+    Раньше привязка считалась по одному меню и возвращала ПЕРВЫЙ маркер в окне.
+    Два следствия, оба били по игроку.
+    1. Вложенная развилка (легальный `menu` внутри ветки другого `menu`) даёт два
+       оператора в окне ОДНОГО маркера. Маркер достаётся обоим: `vn loc keys`
+       считает, что у внутреннего меню маркер уже есть, и своего id ему не
+       вставляет; в ledger оно не попадает; в рантайме на нём остаётся vn_menu
+       ВНЕШНЕГО меню, и choice_text отдаёт подписи внешнего меню по индексу — в
+       переведённой сборке игрок видит не «непереведено», а активно неверный
+       текст, описывающий другое решение. В исходном языке дефект невидим.
+    2. Два маркера в окне (например остался маркер удалённого меню) — «первый»
+       выигрывал у компилятора, а движок исполняет ВСЕ присваивания подряд, то
+       есть побеждает последний. Компилятор, ledger, VN_MENUS_TL и flow.gen.rpy
+       знали один id, рантайм — другой; проверено picks.log живого прогона.
+
+    Поэтому: маркер получает то меню, к которому он БЛИЖЕ, и достаётся ровно
+    одному. Меню, которому маркера не хватило, остаётся без id — и это видно
+    вызывающему (flow предупредит, `vn loc keys` вставит новый)."""
+    taken: set[int] = set()
+    out: dict[int, dict] = {}
+    for menu in sorted(menus, key=lambda m: m["line"]):
+        line = menu["line"]
+        candidates = [mk for mk in markers
+                      if line - MENU_MARKER_LOOKBACK <= mk["line"] < line
+                      and mk["line"] not in taken]
+        if not candidates:
+            continue
+        mk = max(candidates, key=lambda m: m["line"])   # ближайший, а не первый
+        taken.add(mk["line"])
+        out[line] = mk
+    return out
 
 
-def menu_id_of(menu: dict, markers: list[dict]) -> str | None:
+def menu_marker(menu: dict, markers: list[dict], menus: list[dict] | None = None):
+    """Маркер этого меню, либо None. `menus` — все меню файла: без них владение
+    маркером не проверить, поэтому вызывающему настоятельно стоит их передать
+    (иначе меню рассматривается в одиночку и вложенный случай не различить)."""
+    return menu_markers_map(menus if menus is not None else [menu],
+                            markers).get(menu["line"])
+
+
+def menu_id_of(menu: dict, markers: list[dict], menus: list[dict] | None = None):
     """Стабильный id меню из его маркера (или None, если маркера ещё нет)."""
-    mk = menu_marker(menu, markers)
+    mk = menu_marker(menu, markers, menus)
     if mk is None:
         return None
     m = MENU_ID_IN_SOURCE_RE.search(mk.get("source") or "")
@@ -117,10 +153,28 @@ def _validate_when(unit, exits: dict, var_registry: set[str] | None,
                     called.add(node.func.id)
             # Имя стора само по себе (`ch01`) — часть Attribute, не свободное имя.
             free -= {ref.split(".", 1)[0] for ref in attrs}
-            # Вызовы и встроенные имена: `len(g.route) > 0` — легальное условие,
-            # просто непрозрачное для графа. Проверяем СОСТОЯНИЕ, а не словарь
-            # питона: len/min/int в сторе есть всегда.
-            free -= called | set(dir(_builtins))
+            # Вызовы: `len(g.route) > 0` — легальное условие, просто непрозрачное
+            # для графа, и имя функции в сторе есть всегда.
+            #
+            # А вот `set(dir(_builtins))` отсюда УБРАНО, и это не упрощение.
+            # Прежний комментарий обосновывал вычитание тем, что «len/min/int в
+            # сторе есть всегда» — верно, но это аргумент про ВЫЗОВ, а вызовы уже
+            # сняты множеством `called`. Единственное, что добавляло вычитание
+            # builtins, — разрешение ГОЛОМУ встроенному имени стоять условием. В
+            # dir(builtins) ~160 имён (next, id, max, min, all, any, len, set,
+            # list, dict, object, type, round, input, format, credits, quit…), и
+            # все они в py_eval разрешаются и все TRUTHY. То есть забытый префикс
+            # стора у переменной с таким именем (`when: "credits"` вместо
+            # `g.credits`) давал ВСЕГДА-ИСТИННОЕ условие: игрок молча уезжал не в
+            # ту сцену при зелёных lint/build/renpy lint и зелёном smoke.
+            # Числовое сравнение с тем же именем (`round >= 3`) вместо тихой
+            # подмены даёт краш: TypeError между builtin_function_or_method и int,
+            # ровно в точке перехода между сценами, с сейвом в предыдущей.
+            # Схема vars@1 объявить переменную с любым таким именем разрешает
+            # (propertyNames: ^[a-z][a-z0-9_]*$), так что вход достижим.
+            # ARCHITECTURE §3.11 голое `Name` в подмножестве условий не разрешает
+            # вовсе — теперь код соответствует норме, а не расходится с ней.
+            free -= called
             for ref in sorted(attrs - var_registry):
                 complain(
                     f"{where}: {ref} не объявлена в Variable Registry "
@@ -418,7 +472,25 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
     dispatch: dict[str, list[dict]] = {}
     for exit_id, spec in exits.items():
         entries = []
-        for e in _exit_entries(spec):
+        raw_entries = _exit_entries(spec)
+        # Безусловная запись обязана быть ПОСЛЕДНЕЙ. Список условных целей
+        # упорядочен, и семантика у него «первый подошедший выигрывает», потому что
+        # эмиссия ниже даёт НЕЗАВИСИМЫЕ `if _return == "<exit>"` в порядке YAML, а
+        # каждая ветка делает jump. Запись без `when:` эмитится безусловным if и
+        # перехватывает управление — всё, что объявлено ниже, в генерате мёртво.
+        # Самая вероятная авторская правка это как раз «дописать новую условную
+        # цель в конец списка, где уже лежит fallback»: новая ветка не срабатывает
+        # никогда, игрок молча идёт по старому пути, а YAML корректен и все гейты
+        # зелёные. Схема порядок не ограничивает (и не может: она не знает про
+        # семантику первого совпадения), поэтому правило живёт здесь.
+        for idx, e in enumerate(raw_entries[:-1]):
+            if not e.get("when"):
+                complain(
+                    f"{unit.yaml_rel}: exits.{exit_id}[{idx}] — запись без `when:` "
+                    f"стоит не последней, а перехватывает переход безусловно: "
+                    f"{len(raw_entries) - idx - 1} записей ниже в генерате мёртвы. "
+                    f"Перенесите безусловную цель в конец списка")
+        for e in raw_entries:
             label = resolve_target(unit.chapter_id, e["to"])
             if label not in known_scenes:
                 complain(

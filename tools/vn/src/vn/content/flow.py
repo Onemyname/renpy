@@ -29,7 +29,8 @@ from pathlib import Path
 from ..repo import chapter_zones, load_yaml
 from .compile import CHAPTER_DIR_RE, SCENE_YAML_RE
 from .graph import build_edges
-from .scenes import LABEL_RE, _literal_exit, menu_id_of
+from .scenes import (LABEL_RE, MENU_ID_IN_SOURCE_RE, _literal_exit,
+                     menu_markers_map)
 
 # Сколько миров достижимости держим на сцену. Слияние ветвей размножает миры
 # произведением, поэтому потолок обязателен: при переполнении лишние ограничения
@@ -537,6 +538,9 @@ def build_flow(root: Path, packs=None, analyses: dict | None = None) -> FlowMode
     if analyses:
         for rel, analysis in sorted(analyses.items()):
             markers = analysis.get("menu_markers") or []
+            # Владение маркером эксклюзивно и считается пачкой: у вложенной
+            # развилки иначе не было бы своего id (scenes.py: menu_markers_map).
+            marker_owner = menu_markers_map(analysis.get("menus") or [], markers)
             scene_ids = sorted({m.group("scene") for m in
                                 (LABEL_RE.match(lb["name"])
                                  for lb in analysis.get("labels") or [])
@@ -552,7 +556,11 @@ def build_flow(root: Path, packs=None, analyses: dict | None = None) -> FlowMode
             actual_reads = sorted(analysis.get("var_reads") or [])
             node.reads = sorted(set(node.reads) | set(actual_reads))
             for menu in analysis.get("menus") or []:
-                menu_id = menu_id_of(menu, markers)
+                mk = marker_owner.get(menu["line"])
+                menu_id = None
+                if mk is not None:
+                    _m = MENU_ID_IN_SOURCE_RE.search(mk.get("source") or "")
+                    menu_id = _m.group("id") if _m else None
                 if menu_id is None:
                     model.warnings.append(
                         f"{rel}: меню на строке {menu['line']} без маркера vn_menu — "

@@ -31,7 +31,7 @@ SAY_ID_RE = re.compile(r"^(?P<scene>ch\d{2}_s\d{3})_(?P<num>\d{4})$")
 # значений разъехало бы аллокатор id и компилятор молча — маркер, который видит
 # один, второй считал бы отсутствующим.
 from ..content.scenes import MENU_ID_IN_SOURCE_RE as MENU_ID_RE
-from ..content.scenes import menu_marker
+from ..content.scenes import menu_markers_map
 # Ключ меню как он лежит в журнале (без обёртки vn_menu = "…").
 MENU_KEY_RE = re.compile(r"^(?P<scene>ch\d{2}_s\d{3})_m(?P<num>\d{3})$")
 LEDGER_SCHEMA = "ledger@2"
@@ -219,9 +219,12 @@ def assign_ids(root: Path, check: bool = False) -> KeysReport:
                 used_menu_nums.add(int(mm.group("id")[-3:]))
 
         menus_without_marker = []
+        # Привязка считается для ВСЕХ меню файла сразу: владение маркером
+        # эксклюзивно, иначе вложенная развилка забирала маркер внешнего меню и
+        # своего id не получала вовсе (content/scenes.py: menu_markers_map).
+        owner = menu_markers_map(a["menus"], a["menu_markers"])
         for menu in a["menus"]:
-            # Принадлежность маркера меню — общим хелпером (content/scenes.py).
-            mk = menu_marker(menu, a["menu_markers"])
+            mk = owner.get(menu["line"])
             mm = MENU_ID_RE.search((mk or {}).get("source") or "")
             if mk is None or mm is None:
                 menus_without_marker.append(menu)
