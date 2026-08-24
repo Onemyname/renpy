@@ -650,6 +650,20 @@ def build_flow(root: Path, packs=None, analyses: dict | None = None) -> FlowMode
                     list((choice or {}).get("assigns") or [])
     model.edges.sort(key=lambda x: (x.src, x.exit_id, x.target,
                                     x.menu or "", -1 if x.idx is None else x.idx))
+
+    # «Последняя в scene_order» — не то же самое, что «концовка». Признак
+    # выводился только из порядка, поэтому сцена с выходом (в том числе в ДРУГУЮ
+    # главу: межглавные цели поддержаны штатно, см. resolve_target) получала
+    # ending=True, и карта писала над ней «Финал» там, где сюжет продолжается.
+    # Объявленный в chapter.yaml: endings список остаётся сильнее порядка: это
+    # решение автора, а противоречие «объявлена концовкой и имеет выход» —
+    # предмет линта контента, а не молчаливой правки здесь.
+    outgoing = {e.src for e in model.edges}
+    for sid, node in model.scenes.items():
+        ch = chapters.get(node.chapter) or {}
+        declared = sid[5:] in (ch.get("endings") or [])
+        if node.ending and not declared and sid in outgoing:
+            node.ending = False
     return model
 
 

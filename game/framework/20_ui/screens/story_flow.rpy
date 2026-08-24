@@ -97,18 +97,41 @@ screen story_flow(chapter_id=None):
                 # Полотно: прокрутка обеими осями и перетаскивание — граф шире
                 # экрана уже на пяти узлах, а с пада его двигает dpad по фокусу
                 # узлов (vn_scroll_props + default_focus входного узла).
-                viewport id "vp_flow":
+                # Открывается на ВХОДНОМ узле, а не в левом верхнем углу полотна.
+                # Полотно растёт с шириной развилки и ничем не ограничено: на
+                # веере из 12 листьев оно 2026 px при видимой области 748, и
+                # колонка входа при этом центрирована по вертикали — то есть
+                # игрок, открыв карту, видел пустоту и середину чужой колонки, а
+                # вход искал прокруткой. Движок гасит xinitial/yinitial после
+                # первого кадра (SDK viewport.py: update_offsets -> xoffset=None),
+                # поэтому это именно НАЧАЛЬНАЯ позиция: смена масштаба и ручная
+                # прокрутка её не перебивают. Смещение — в масштабированных
+                # пикселях: вьюпорт видит уже преобразованного ребёнка.
+                #
+                # id зависит от главы НАМЕРЕННО: при совпадающем id движок
+                # переносит позицию прокрутки со старого вьюпорта (replaces), и
+                # переключение вкладки оставляло бы игрока на координатах чужой
+                # главы. Со своим id у каждой главы своя позиция — и центровка на
+                # входе при первом открытии, и возврат туда, где игрок был.
+                $ _vh = gui.scroll_height - VN_FLOW_TABS_H
+                $ _x0, _y0 = vn_story.initial_offset(
+                    _pos, VN_FLOW_PAD, VN_FLOW_VIEW_W, _vh, _zoom,
+                    VN_FLOW_NODE_W, VN_FLOW_NODE_H)
+                viewport id ("vp_flow_" + chapter):
                     properties vn_scroll_props_xy
                     xsize VN_FLOW_VIEW_W
-                    ysize gui.scroll_height - VN_FLOW_TABS_H
+                    ysize _vh
+                    xinitial _x0
+                    yinitial _y0
                     fixed:
                         # Полотно 1:1; зум применяется ко всему сразу.
                         xysize (_pos["width"] + 2 * VN_FLOW_PAD,
                                 _pos["height"] + 2 * VN_FLOW_PAD)
                         at zoom_canvas(_zoom)
                         # Кластеры-фазы главы — подложкой ПОД узлами.
-                        for _cl in vn_story.cluster_boxes(chapter, _pos,
-                                                          VN_FLOW_NODE_W, VN_FLOW_NODE_H):
+                        for _cl in vn_story.cluster_boxes(
+                                chapter, _pos, VN_FLOW_NODE_W, VN_FLOW_NODE_H,
+                                VN_FLOW_GAP_Y):
                             use vn_flow_cluster(_cl)
                         # Рёбра рисуются до узлов, чтобы концы линий уходили под
                         # карточки. Под ЧУЖИМИ карточками сегментов больше нет —
@@ -121,7 +144,8 @@ screen story_flow(chapter_id=None):
                                 ypos _seg["y"] + VN_FLOW_PAD
                         for _sid, _xy in _pos["nodes"].items():
                             use vn_flow_node(_sid, _xy,
-                                             focus_default=(_sid == _pos["entry"]))
+                                             focus_default=(_sid == _pos["entry"]),
+                                             continues=_pos["continues"])
 
             # ── Подвал: план walkthrough ────────────────────────────────────
             use vn_flow_plan
@@ -155,7 +179,7 @@ transform zoom_canvas(z=1.0):
 # Пройденный: заголовок сцены (или её id, если заголовок не объявлен) и пометка
 # концовки. Непройденный: «???» — видно, что развилка есть, но не куда ведёт.
 
-screen vn_flow_node(scene_id, xy, focus_default=False):
+screen vn_flow_node(scene_id, xy, focus_default=False, continues=()):
     $ _open = vn_story.revealed(scene_id)
     $ _spec = vn_story.node(scene_id) or {}
     $ _targeted = scene_id in vn_story.targets()
@@ -185,20 +209,36 @@ screen vn_flow_node(scene_id, xy, focus_default=False):
                     xsize VN_FLOW_NODE_W - 2 * gui.sp_s
             else:
                 text "???" style "vn_flow_node_locked"
-            if _spec.get("ending"):
+            # «Финал» — только у ПРОЙДЕННОГО узла. Метка стояла вне тумана войны,
+            # и карта заранее говорила, какая из закрытых ветвей кончается
+            # концовкой: в ch71 это 4 подписи «Финал» на 7 узлов, ещё не
+            # открытых. Для скрытой концовки (ch73 s050 — секретная) это прямая
+            # выдача того, что игрок должен найти. Структура развилки видна и без
+            # метки — узел без исходящих линий и так лист графа.
+            if _open and _spec.get("ending"):
                 text vn_loc.t("ui.chart.ending") style "vn_flow_badge"
+            # Выход в другую главу: целевого узла на этой карте нет, рисовать
+            # ребро некуда, и раньше оно молча исчезало — узел читался тупиком.
+            # Символ, а не подпись: у «★» ниже своей строки тоже нет. Словесная
+            # метка потребовала бы строки в трёх языках сразу (de/en/pseudo) —
+            # это решение владельца, а не молчаливая правка.
+            if scene_id in continues:
+                text "→" style "vn_flow_badge" xalign 1.0 yalign 1.0
             if _targeted:
                 text "★" style "vn_flow_badge" xalign 1.0
 
 
 screen vn_flow_cluster(box):
     # Подложка фазы главы: только группировка, геометрия — из раскладки узлов.
+    # Полоса на колонку, а не общая рамка (см. vn_story.cluster_boxes), поэтому
+    # заголовок несёт только первая — у остальных title_key пуст.
     fixed:
         xpos box["x"] + VN_FLOW_PAD
         ypos box["y"] + VN_FLOW_PAD
         xysize (box["w"], box["h"])
         add Solid(gui.panel_bg_deep)
-        text vn_loc.t(box["title_key"]) style "vn_flow_cluster_text"
+        if box["title_key"]:
+            text vn_loc.t(box["title_key"]) style "vn_flow_cluster_text"
 
 
 # ── План walkthrough ─────────────────────────────────────────────────────────

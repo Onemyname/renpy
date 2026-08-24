@@ -607,12 +607,24 @@ init -980 python in vn_story:
                                     gap_x, gap_y, block_h, lanes)
             for s in segments[at:]:
                 s["edge"] = mark
+        # Сцены, у которых есть выход В ДРУГУЮ главу. Такое ребро на карте главы
+        # нарисовать нечем — целевого узла здесь нет — и раньше оно молча
+        # исчезало: узел без исходящих линий читается как тупик, а если он ещё и
+        # последний в scene_order, компилятор ставил ему `ending`, и карта прямо
+        # писала «Финал» там, где сюжет продолжается. Межглавные цели компилятор
+        # поддерживает штатно (scenes.resolve_target), и Mermaid-граф их рисует
+        # специально, так что вход в дефект — одна строка в exits.
+        # Здесь только ФАКТ; как его показать, решает экран.
+        inside = set(nodes)
+        continues = sorted({e["from"] for e in edges()
+                            if e["from"] in inside and e["to"] not in inside})
         out = {
             "nodes": dict((sid, xy) for sid, xy in nodes.items() if not is_bend[sid]),
             "width": max(ncols * (node_w + gap_x) - gap_x, node_w),
             "height": max([block_h] + [s["y"] + s["h"] for s in segments]),
             "entry": cols[0][1][0] if cols and cols[0][1] else None,
             "segments": segments,
+            "continues": continues,
         }
         _cache.layout = (key, out)
         return out
@@ -676,26 +688,89 @@ init -980 python in vn_story:
                 _seg(x2, y2, xb - x2, SEG)]
 
 
+    def initial_offset(pos, pad, view_w, view_h, zoom, node_w, node_h):
+        """Начальная позиция прокрутки полотна: входной узел на первом экране.
+
+        Полотно растёт с шириной развилки и ничем не ограничено, а колонки
+        центрируются по вертикали — поэтому у главы с веером входной узел
+        оказывался далеко ниже видимой области: на 12 листьях полотно 2026 px
+        при видимой 748 и вход на y=909, то есть игрок, открыв карту, видел
+        пустоту и середину чужой колонки. Считает стор, а не экран: арифметику в
+        экране нечем проверить, а это ровно геометрия.
+
+        Смещение в МАСШТАБИРОВАННЫХ пикселях — вьюпорт видит уже преобразованного
+        зумом ребёнка. Вход не центрируется по горизонтали, а ставится в левую
+        треть: карта читается слева направо, и за входом должно быть видно
+        продолжение, а не пустое поле перед ним."""
+        entry = pos.get("entry")
+        xy = (pos.get("nodes") or {}).get(entry)
+        if xy is None:
+            return (0, 0)
+        cx = int((xy[0] + node_w // 2 + pad) * zoom)
+        cy = int((xy[1] + node_h // 2 + pad) * zoom)
+        return (max(0, cx - view_w // 3), max(0, cy - view_h // 2))
+
     # Поля подложки кластера: сверху больше — там живёт его заголовок.
     CLUSTER_PAD = 16
     CLUSTER_TITLE_H = 34
 
-    def cluster_boxes(chapter_id, pos, node_w, node_h):
-        """Подложки фаз главы: рамка по узлам кластера. Геометрия выводится из
-        раскладки, в декларации кластера только заголовок и состав (ADR-0021)."""
+    def cluster_boxes(chapter_id, pos, node_w, node_h, gap_y=None):
+        """Подложки фаз главы: по одной плашке на УЧАСТНИКА, а не один bbox.
+
+        Геометрия выводится из раскладки — в декларации кластера только заголовок
+        и состав (ADR-0021). Плашка на участника, потому что любая объединяющая
+        фигура зачисляет в фазу посторонних, а подложка непрозрачна и рисуется
+        ПОД узлами: чужая сцена оказывается внутри рамки под чужим заголовком, и
+        игрок читает состав фазы неверно. Состав объявляется по id, а колонку и
+        ряд узла считает алгоритм в рантайме, поэтому связность состава В
+        РАСКЛАДКЕ компилятор проверить не может и не проверяет.
+
+        Одного bbox по крайним участникам не хватало на кластер, чьи сцены не
+        подряд по колонкам; полосы на колонку — на кластер, чьи сцены не подряд
+        по РЯДАМ одной колонки (проверено: состав {ряд 0, ряд 2} накрывал узел
+        ряда 1 целиком). Плашка на участника закрывает оба случая сразу.
+
+        Отступ не может достать до соседнего ряда: шаг ряда node_h + gap_y, а
+        плашка node_h + 2*pad, поэтому pad ограничен половиной зазора. Соседние
+        плашки сливаются в глазу в одну фигуру — ровно то, что нужно от подложки
+        фазы.
+
+        Заголовок один на кластер и живёт в полосе НАД карточкой, поэтому его
+        несёт участник, у которого слот сверху свободен. Если такого нет ни
+        одного (состав прижат посторонними со всех сторон), заголовок не рисуется
+        вовсе: подпись, спрятанная под чужой карточкой, — та же ложь, только
+        тише."""
         spec = chapters().get(chapter_id) or {}
         nodes = pos["nodes"]
+        if gap_y is None:
+            gap_y = 2 * CLUSTER_PAD
+        pad = min(CLUSTER_PAD, (gap_y - 2) // 2)
+        pitch = node_h + gap_y
+        occupied = set(nodes.values())
         out = []
         for cl in spec.get("clusters") or []:
-            xs = [nodes[s] for s in cl.get("scenes") or [] if s in nodes]
-            if not xs:
+            members = [s for s in cl.get("scenes") or [] if s in nodes]
+            if not members:
                 continue
-            x0 = min(p[0] for p in xs) - CLUSTER_PAD
-            y0 = min(p[1] for p in xs) - CLUSTER_TITLE_H
-            x1 = max(p[0] for p in xs) + node_w + CLUSTER_PAD
-            y1 = max(p[1] for p in xs) + node_h + CLUSTER_PAD
-            out.append({"title_key": cl["title_key"], "x": x0, "y": y0,
-                        "w": x1 - x0, "h": y1 - y0})
+            members.sort(key=lambda s: (nodes[s][0], nodes[s][1]))
+            titled = None
+            for sid in members:
+                x, y = nodes[sid]
+                if (x, y - pitch) not in occupied:
+                    titled = sid
+                    break
+            for sid in members:
+                x, y = nodes[sid]
+                top = CLUSTER_TITLE_H if sid == titled else pad
+                # `cluster` — чей это кусок подложки, `title_key` — надо ли на нём
+                # печатать заголовок. Два разных вопроса, и без первого гард не
+                # может проверить «посторонний под подложкой»: у соседнего
+                # кластера плашки тоже безымянные, и он принимал бы их за свои.
+                out.append({"cluster": cl["title_key"],
+                            "title_key": cl["title_key"] if sid == titled else None,
+                            "x": x - CLUSTER_PAD, "y": y - top,
+                            "w": node_w + 2 * CLUSTER_PAD,
+                            "h": node_h + top + pad})
         return out
 
 
