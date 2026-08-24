@@ -2,6 +2,7 @@
  "assets": [
   "bg/rooftop/day",
   "bg/school_gate/day",
+  "cg/ch01/mock_pipeline_probe",
   "cg/ch01/rooftop_day",
   "cg/ch01/rooftop_sunset",
   "mov/demo/ambient",
