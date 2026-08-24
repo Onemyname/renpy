@@ -1,6 +1,6 @@
 # 05. Разработка на Ren'Py в этом проекте
 
-> **Статус подсистемы:** IMPLEMENTED — рантайм-надстройка (22 рукописных `.rpy` в `game/framework/`) работает и покрыта обвязкой компилятора; но «но» большое: часть фасада `vn.*`, обещанная в `docs/ARCHITECTURE.md`, не существует (`register_system`, `safe_jump`, `scene_enter/leave`, `vn_pos_*`), а `vn.beat()` и `vn_qa.choice()` — мёртвые точки расширения.
+> **Статус подсистемы:** IMPLEMENTED — рантайм-надстройка (22 рукописных `.rpy` в `game/framework/`) работает и покрыта обвязкой компилятора; но «но» большое: часть фасада `vn.*`, обещанная в `docs/ARCHITECTURE.md`, не существует (`register_system`, `safe_jump`, `scene_enter/leave`, `vn_pos_*`), а `vn_qa.choice()` — мёртвая точка расширения (`vn.beat()` компилятор не эмитит, но ручной вызов в контенте есть — см. таблицу фасада).
 > **Отвечает на вопрос:** «Я умею писать на Ren'Py — куда здесь класть код, что писать нельзя и почему моя правка исчезла после сборки?»
 
 Этот файл — про Ren'Py **в этом репозитории**, а не про Ren'Py вообще. Движок — 8.5.3.26051504, SDK берётся только из `RENPY_SDK`. Игра состоит из двух половин: рукописной надстройки `game/framework/**` (в git, правится руками) и генерата `game/generated/**` + `game/assets/**` + `game/tl/**` (не в git, пишется `vn build`). Правило, которое ломает больше всего новичков: **сцены и персонажи — не код, а декларации в `content/`**; их Ren'Py-обвязку эмитит компилятор.
@@ -99,7 +99,7 @@ vn dev               # watch по content/ + assets_src/ и запущенная
 |---|---|---|---|---|
 | `vn.API_LEVEL` | `:9` | `int = 1` | IMPLEMENTED | — |
 | `vn.checkpoint(scene_id)` | `:12` | `store.vn_scene = scene_id`; прогон `vn_ach.check(scene_id=)` и `vn_gal.check(scene_id=)`, уведомление о разблокировках | IMPLEMENTED | **да**, первой строкой обвязки (`scenes.py:201`) |
-| `vn.beat(beat_id=None)` | `:19` | мелкий якорь внутри сцены; при `beat_id is None` — no-op | **IMPLEMENTED / UNUSED** | **нет.** Ни компилятор не эмитит, ни один файл в `content/` не зовёт. Тип якоря `beat:` в схемах `achievements@1`/`gallery@1` сегодня недостижим |
+| `vn.beat(beat_id=None)` | `:19` | мелкий якорь внутри сцены; при `beat_id is None` — no-op | **IMPLEMENTED** | компилятор не эмитит (осознанно), но вызов есть ровно один — `content/chapters/ch01_awakening/scenes/s030_rooftop.scene.rpy: ch01_s030__body`, и на нём держится единственная скрытая ачивка игры (`core.achievements.yaml: roof_alone`, `hidden: true`). Тип якоря `beat:` достижим и рабочий образец существует |
 | `vn.chapter_done(chapter_id)` | `:26` | `vn_ach.check(beat_id="chapter_done:<id>")` + `vn_gal.check(chapter_done=)` | IMPLEMENTED | **да**, только у терминальной сцены (без `exits`) — `scenes.py:394-397` |
 | `vn._gallery_notify(opened)` | `:32` | приватный; `renpy.notify` с ключом `ui.gallery.unlocked_one`/`_many`, `[n]` подставляется `str.replace` | IMPLEMENTED | — |
 | `vn.check_scene_stack()` | `:44` | инвариант G7: глубина call-стека на границе сцены = 0. **Только логирует**, не чинит и не прерывает | IMPLEMENTED | **да** (`scenes.py:245`) |
@@ -130,7 +130,7 @@ vn dev               # watch по content/ + assets_src/ и запущенная
 
 **Метки-точки входа** (там же, `030_flow.rpy`): `label start:` `:217` (пустой реестр глав → две локализованные реплики и `return`, игра не падает), `label vn_scene_unavailable:` `:227`, `label vn_end_of_content:` `:235`. `label after_load:` живёт отдельно — `020_state.rpy:83`.
 
-**Частые ошибки.** (1) Звать `vn.beat("x")` и ждать, что якорь `beat:` в галерее сработает — сработает, но эмитить вызов должен **автор вручную**, компилятор его не подставит. (2) Полагаться на `check_scene_stack()` как на защиту — он только пишет строку в `log.txt`. (3) Добавлять функции в `vn` без обновления `API_LEVEL` — манифесты паков сверяются именно с ним.
+**Частые ошибки.** (1) Считать `vn.beat()` мёртвым членом фасада и удалить его: вызов есть ровно один — `content/chapters/ch01_awakening/scenes/s030_rooftop.scene.rpy: ch01_s030__body`, и на нём держится единственная скрытая ачивка игры (`core.achievements.yaml: roof_alone`, `hidden: true`), а `API_LEVEL` сверяется с манифестами паков. Эмитить вызов обязан **автор вручную** — компилятор его не подставит. (2) Полагаться на `check_scene_stack()` как на защиту — он только пишет строку в `log.txt`. (3) Добавлять функции в `vn` без обновления `API_LEVEL` — манифесты паков сверяются именно с ним.
 
 ---
 

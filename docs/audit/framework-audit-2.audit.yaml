@@ -1,0 +1,529 @@
+# Аудит каркаса, проход II (2026-08-24). Второй глубокий проход после
+# framework-audit.audit.yaml: искали там, куда первый не дошёл, и в коде,
+# появившемся после него (bd368ca..de51cec, 55 коммитов).
+#
+# Каждая находка воспроизведена фактически — прогоном движка, скриптом или
+# распаковкой артефакта — и прошла адверсариальную проверку тремя скептиками
+# с установкой «по умолчанию опровергай». Префикс severity в title — как
+# аудит их приоритизировал: P0 ломает прохождение или сейв, P1 бьёт по
+# игроку или релиз-инженеру, P2 полировка и факты в нормативных документах.
+#
+# Статус пункта = проверяемый факт, а не запись в отчёте: CLOSED обязан
+# назвать файл реализации и тест (проверяют схема audit@1 и
+# test_docs_refs::test_audit_trackers_reference_real_files_and_tests),
+# WONT_FIX — техническое обоснование.
+schema: audit@1
+source: 'Аудит каркаса, проход II (2026-08-24): десять глубинных зон плюс адверсариальная перепроверка
+  каждой находки тремя независимыми скептиками (124 агента). Заявлено 38, устояло 28; вместе с находками
+  ведущего — 33, из них 32 закрыты и 1 отозвана. Рабочий отчёт — приватный артефакт claude.ai/code/artifact/52e5b603-c5c2-4e32-a1b5-a26314ed4593'
+reviewed_at: '2026-08-24'
+items:
+  APII-001:
+    title: (P0) Мост сплющивал ветви if в теле сцены — присваивания применялись подряд, и ветка exits
+      под значение по умолчанию объявлялась недостижимой
+    category: content-pipeline
+    evidence:
+    - 'game/framework/00_core/050_build_bridge.rpy: ветка If вливала присваивания ВСЕХ ветвей в один entry["assigns"]
+      без пометки «условное»; flow.py: _apply исполнял остаток как прямую последовательность, поэтому
+      после `if x: v = A` / `else: v = B` мир единственный и в нём v == B, а у if без else бонусная ветка
+      применялась безусловно'
+    - 'отказ: узел навсегда «???» и вне прогресса, в модалке карты нет ни одной кнопки «Переиграть» (строятся
+      по пустым preconds), гайд к цели не ведёт; ERR и WARN при этом пусты'
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/050_build_bridge.rpy
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_flow.py::test_t5_conditional_body_assignment_does_not_hide_the_default_branch
+  APII-002:
+    title: (P0) Пункт меню с ДВУМЯ return вычитался из присваиваний тела сцены дважды — обход стража FWA-017
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/flow.py: ключ дедупликации включал exit_id, а build_flow создаёт запись
+      на каждый литерал возврата с одним и тем же списком присваиваний — дедупликация не срабатывала,
+      и _scene_level_assigns вычитал мультимножеством больше, чем есть'
+    - 'отказ: присваивание тела сцены исчезало — ложное «сцена недостижима» и прекондиция реплея с состоянием,
+      которого нет ни в одном прохождении'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_flow.py::test_t6_body_assignment_survives_a_choice_with_two_returns
+  APII-003:
+    title: (P0) Голое встроенное имя в when проходило валидатор — условие становилось ВСЕГДА-ИСТИННЫМ,
+      и игрок молча уезжал не в ту сцену
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/content/scenes.py: вычитание set(dir(builtins)) из свободных имён. Вызовы уже сняты
+      множеством called, поэтому единственное, что оно добавляло, — разрешение ГОЛОМУ имени; таких имён
+      около 160, все разрешаются в py_eval и все truthy'
+    - 'отказ: `when: "credits"` вместо g.credits — ветка срабатывает всегда при зелёных lint, build, renpy
+      lint и зелёном smoke; `round >= 3` даёт TypeError в точке перехода между сценами. ARCHITECTURE 3.11
+      голое Name не разрешает вовсе'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/scenes.py
+    - game/framework/00_core/030_flow.rpy
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_when_rejects_a_bare_builtin_name
+  APII-004:
+    title: '(P0) Исключение внутри migrate() не перехвачено: старый сейв превращался в крэш-скрин, а результат
+      уже применённых миграций терялся целиком'
+    category: runtime
+    evidence:
+    - 'game/framework/00_core/020_state.rpy: вызов migrate(state) не обёрнут в try/except, а apply_snapshot
+      стоит ПОСЛЕ цикла'
+    - 'отказ: KeyError в миграции — крэш-скрин вместо игры; кнопка Ignore продолжает игру с ПОЛНОСТЬЮ
+      немигрированным состоянием, vn_save_schema не поднят, каждая следующая загрузка того же слота падает
+      снова'
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/020_state.rpy
+    tests:
+    - tools/vn/tests/test_saves.py::test_migration_that_raises_breaks_the_chain_instead_of_crashing
+  APII-005:
+    title: (P1) Регистрация слияний persistent на init -949 опаздывала к первому merge — стартовое слияние
+      шло через default_merge и затирало анлоки одной из сторон
+    category: runtime
+    evidence:
+    - renpy/main.py:466 renpy.persistent.update() против main.py:483 цикла по initcode — на момент стартового
+      merge в persistent.registry только четыре движковых поля
+    - 'отказ: стенд с двумя расходящимися persistent-файлами — анлоки стороны A стёрты, прогресс прогрессивной
+      ачивки уехал с 7 на 3, и main.py:608 update(True) записал усечённое состояние во ВСЕ локации'
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/engine_compat/000_compat.rpy
+    tests:
+    - tools/vn/tests/test_engine_compat.py::test_merges_are_registered_before_the_first_merge
+  APII-006:
+    title: (P1) snapshot() молча выбрасывал объявленную переменную, чьё имя совпало с именем из renpy.minstore
+      — миграции её не видели
+    category: runtime
+    evidence:
+    - 'game/framework/00_core/020_state.rpy: вычитались ВСЕ 70 имён minstore; 39 из них подходят под шаблон
+      имени контентной переменной C21 (round, position, input, open, set, range, sorted), и ветка пропуска
+      не писала ничего в лог'
+    - 'отказ: объявленные g.round и g.position отсутствовали в state.json живого прогона при исправной
+      контрольной переменной рядом; миграция, переносящая такую переменную, молча ничего не делает'
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/020_state.rpy
+    tests:
+    - tools/vn/tests/test_saves.py::test_snapshot_keeps_a_declared_name_that_collides_with_an_engine_name
+  APII-007:
+    title: (P1) Экран «История» подставлял уже подставленный текст — реплика с документированным эскейпом
+      двойной скобки роняла игру, а на pseudo ломала ночной тур
+    category: runtime
+    evidence:
+    - 'game/framework/20_ui/screens/history.rpy: text h.what без substitute False, тогда как движок кладёт
+      в _history_list УЖЕ подставленный текст (renpy/character.py) и сам от двойной подстановки защищается
+      явно, как и шаблон SDK'
+    - 'отказ: `vn test smoke --lang pseudo` затем `vn test screens` давало «history: SyntaxError» и 7
+      проблем на чистом дереве; в исходном языке — NameError на тексте в квадратных скобках'
+    status: CLOSED
+    implementation:
+    - game/framework/20_ui/screens/history.rpy
+    tests:
+    - tools/vn/tests/test_qa.py::test_screens_tour_recovers_the_ui_stack_and_names_the_root_cause
+  APII-008:
+    title: (P1) Автопилотные гейты не пиннили язык прогона — тур экранов шёл по псевдолокализации в nightly
+      и по случайному языку локально
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/cli.py: пять команд звали _autopilot_run без VN_AUTOPILOT_LANG (пиннил только deck-kit);
+      030_flow.rpy без переменной язык не трогает, а --savedir persistent не изолирует'
+    - 'отказ: в nightly последний smoke матрицы ставит pseudo, после чего screens, paths, revisit и save
+      check идут по нему; локально гейт даёт разный ответ на одном коммите в зависимости от истории машины'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/cli.py
+    tests:
+    - tools/vn/tests/test_qa.py::test_every_autopilot_run_pins_the_language
+  APII-009:
+    title: (P1) Валидатор разметки переводов не проверял, что тег СУЩЕСТВУЕТ — неизвестный парный тег
+      в UI-строке не давал нарисоваться главному меню
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/loc/po.py: _validate_markup следил только за парностью; у движка для этого есть
+      renpy/text/extras.py: check_text_tags, а при отрисовке renpy/text/text.py бросает Exception: Unknown
+      text tag (config.safe_text по умолчанию False)'
+    - 'отказ: отравление реального PO — main_menu и chapter_select не открылись; та же ошибка в подписи
+      выбора роняет игру посреди первой сцены. renpy lint словари VN_STRINGS_TL и VN_MENUS_TL не видит'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/loc/po.py
+    tests:
+    - tools/vn/tests/test_loc.py::test_markup_validator_rejects_an_unknown_text_tag
+    - tools/vn/tests/test_loc.py::test_known_text_tags_match_the_pinned_sdk
+  APII-010:
+    title: (P1) Валидатор PO считал литеральной любую квадратную скобку, не начинающуюся с латинской буквы,
+      а Ren'Py вычисляет её как выражение Python
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/loc/po.py: _BRACKET_RE съедала любую конструкцию в квадратных скобках, а _INTERP_RE
+      требовал начала с латинской буквы — поэтому дробь, срез и кириллическая ремарка не попадали ни в
+      набор подстановок, ни в остаток'
+    - 'отказ: «Chapter 1 [1/3]» игрок видит как «Chapter 1 0.3333333333333333»; деление на ноль в UI-строке
+      не даёт открыться ни главному меню, ни галерее, ни истории, ни загрузке'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/loc/po.py
+    tests:
+    - tools/vn/tests/test_loc.py::test_markup_validator_rejects_a_bracket_that_is_not_a_substitution
+  APII-011:
+    title: (P1) Гард FWA-002 не видел форму style в скобках — шесть боевых мест, из них два не покрыты
+      вообще ничем
+    category: quality-gate
+    evidence:
+    - 'tools/vn/tests/test_ui_panels.py: регексп ловил только строковый литерал сразу после style; скобочная
+      форма стоит в components.rpy, achievements.rpy, choice.rpy и story_flow.rpy'
+    - 'отказ: подмена стилей ветки гайда в screen choice (он в ignore_defined тура) оставляла зелёными
+      pytest, renpy lint, screens, smoke и revisit; движок падает Exception: Style does not exist при
+      первой отрисовке'
+    status: CLOSED
+    implementation:
+    - tools/vn/tests/test_ui_panels.py
+    tests:
+    - tools/vn/tests/test_ui_panels.py::test_every_style_used_by_name_is_declared
+    - tools/vn/tests/test_ui_panels.py::test_computed_style_names_cover_every_kind
+  APII-012:
+    title: '(P1) Widening терял корреляцию переменных: прекондиция реплея становилась комбинацией, которой
+      нет ни в одном прохождении, а обещанного ADR-0021 предупреждения не эмитил никто'
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/flow.py: _merge_worlds объединял ограничения по каждой переменной НЕЗАВИСИМО,
+      а compute_preconds брал из результата по представителю на переменную; _merge_worlds — чистая функция
+      без доступа к model.warnings'
+    - 'отказ: миры left+sun и right+moon давали мир, допускающий left+moon, и именно с этим состоянием
+      запускался реплей; decisions схлопывались в пустой набор, из-за чего гайд молчал и конфликты сцены
+      исчезали'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_flow.py::test_widening_keeps_real_worlds_for_preconds_and_says_so
+  APII-013:
+    title: (P1) _setters знал только пункты меню — условие по переменной, которую пишет и тело сцены,
+      давало ложное «несовместимо»
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/flow.py: индекс сеттеров строился исключительно из edge_assigns, и _foreign_requirements
+      считал найденные пункты исчерпывающим списком способов получить значение'
+    - 'отказ: пункт 0 пишет флаг, тело сцены за пунктом 1 пишет тот же флаг — модель объявляла сцены несовместимыми,
+      plan() раскладывал цели на два прохождения, карточка узла рисовала конфликт (ложное красное, ADR-0021
+      3)'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_flow.py::test_t7_foreign_requirement_is_dropped_when_a_body_sets_the_same_value
+  APII-014:
+    title: (P1) Гард накопителей persistent сканировал только game/framework — накопитель из декларации
+      vars@1 проходил зелёным
+    category: quality-gate
+    evidence:
+    - 'tools/vn/tests/test_engine_compat.py: скан шёл по game/framework, а строка default persistent рождается
+      и в генерате из декларации vars@1 (game/generated/state/defaults.gen.rpy)'
+    - 'отказ: поле vn_seen_endings, добавленное штатной декларацией, гейт не видел, и pytest оставался
+      зелёным при реально незарегистрированном накопителе — прогресс игрока терялся при первом же слиянии'
+    status: CLOSED
+    implementation:
+    - tools/vn/tests/test_engine_compat.py
+    tests:
+    - tools/vn/tests/test_engine_compat.py::test_every_persistent_accumulator_is_registered_for_merge
+  APII-015:
+    title: '(P1) Мемоизация каркаса уезжала в КАЖДЫЙ сейв: загруженный сейв всю сессию подсовывал старую
+      матрицу конфликтов'
+    category: runtime
+    evidence:
+    - 'game/framework/00_core/100_story_graph.rpy и 090_gallery.rpy: имена кэшей переприсваивались в рантайме
+      через global, а это делает имя корнем сейва навсегда (renpy/python.py: get_changes и ever_been_changed);
+      у индекса конфликтов инвалидатора нет вовсе'
+    - 'отказ: дамп get_roots() и скан реальных автосейвов — все четыре имени лежат в файлах; после патча
+      контента карта рисует конфликт, которого в новой сборке нет, plan() делит цели на лишние прохождения,
+      гайд врёт'
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/100_story_graph.rpy
+    - game/framework/00_core/090_gallery.rpy
+    - game/framework/00_core/engine_compat/000_compat.rpy
+    tests:
+    - tools/vn/tests/test_saves.py::test_no_store_name_is_reassigned_at_runtime
+  APII-016:
+    title: (P1) Догон ачивок на init 999 шёл по all_ids() без гейта видимости — SFW-сборка отправляла
+      в платформу ачивку скрытого контента
+    category: runtime
+    evidence:
+    - 'game/framework/00_core/035_platform.rpy: цикл догона читал persistent через vn_ach.has() и звал
+      achievement.grant() напрямую, минуя vn_ach.grant с его visible(); config.save_directory — один литерал,
+      поэтому persistent общий у флейворов'
+    - 'отказ: nsfw-ачивка, выданная в patron-сборке, лежит в том же файле, который читает public; Steam
+      на ещё не разлоченной ачивке рисует попап оверлея с названием и иконкой — SFW-сборка показывает
+      то, что прячет её экран достижений (G9)'
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/035_platform.rpy
+    tests:
+    - tools/vn/tests/test_achievements.py::test_platform_catch_up_never_pushes_an_invisible_achievement
+  APII-017:
+    title: '(P1) Variable Registry содержал переменные паков вне всех флейворов: when на них проходил
+      все гейты и давал игроку NameError в релизной сборке'
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/compile.py: var_registry строился из ВСЕХ документов vars@1, а признак
+      «пак вне флейворов» применялся только при эмиссии — переменные уезжают в state/defaults_unshipped.gen.rpy,
+      который вырезается из дистрибутива'
+    - 'отказ: условие на переменную qa_flow в сцене ЯДРА — все гейты чистые без единого предупреждения,
+      в dev играет; удаление вырезаемого файла даёт NameError на имя стора в eval_when'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/compile.py
+    - tools/vn/src/vn/content/scenes.py
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_when_rejects_a_bare_builtin_name
+  APII-018:
+    title: (P1) Переименование сохраняемой переменной через renames.vars не требовало миграции — прогресс
+      игрока молча заменялся дефолтом
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/content/lint.py секция 6: запись работала как индульгенция (линтер перестаёт жаловаться),
+      а носителя переименования в рантайм у переменных нет — в отличие от renames.assets, который протаскивается
+      в галерею'
+    - 'отказ: загрузка фикстуры после документированной процедуры — значение игрока осталось под старым
+      ключом сейва, новая переменная взяла дефолт сборки; ветвления по роуту уходят в пролог, галерейный
+      анлок не срабатывает'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/lint.py
+    tests:
+    - tools/vn/tests/test_lint.py::test_variable_rename_requires_a_transferring_migration
+  APII-019:
+    title: (P1) Защита FWA-025 от не-строковых ключей смотрела только верхний уровень — вложенный числовой
+      ключ проходил компилятор и молча нормализовался в рантайме
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/compile.py: _py_literal проверял свои ключи и не спускался в значения;
+      020_state.rpy: детектор нормализации тоже смотрел верхний уровень'
+    - 'отказ: вложенный словарь с числовыми ключами схемно валиден и компилируется; после любой миграции,
+      тронувшей переменную, ключи становятся строками, и обращение по числовому ключу промахивается у
+      каждого игрока — без строки в логе'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/compile.py
+    - game/framework/00_core/020_state.rpy
+    tests:
+    - tools/vn/tests/test_saves.py::test_nested_non_string_dict_keys_are_refused_by_the_compiler
+    - tools/vn/tests/test_saves.py::test_migration_warns_about_nested_non_string_keys
+  APII-020:
+    title: (P1) Осиротевший .rpyc движок переименовывает в .rpyc.bak, и этот файл уезжал игроку в каждом
+      дистрибутиве
+    category: quality-gate
+    evidence:
+    - 'renpy/script.py: clean_script_files переименовывает, а не удаляет, и делает это на команде compile,
+      которую третьим шагом исполняет vn package; шаблона для .bak нет ни в паттернах движка (последний
+      там всеядный), ни в game/options.rpy'
+    - 'отказ: скомпилированный скрипт УДАЛЁННОГО контента в каждом пакете и в каждом следующем релизе
+      — удалять .bak нечему, линия .rpyc (G6) и бюджет rpyc_total_kb ходят по маске *.rpyc. Для 18+ проекта
+      это выдача дата-майнеру вырезанного контента'
+    status: CLOSED
+    implementation:
+    - game/options.rpy
+    - tools/vn/src/vn/cli.py
+    tests:
+    - tools/vn/tests/test_qa.py::test_orphan_rpyc_backup_never_ships
+  APII-021:
+    title: '(P1) Два меню делили один маркер vn_menu: вложенная развилка не получала id и брала переводы
+      пунктов чужого меню'
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/scenes.py: menu_marker возвращал ПЕРВЫЙ маркер в окне и не проверял, не
+      занят ли он другим меню; loc/keys.py считал, что маркер у меню уже есть, и своего не вставлял'
+    - 'отказ: в переведённой сборке игрок видит на вложенной развилке подписи предыдущей развилки — активно
+      неверный текст, описывающий другое решение; в исходном языке дефект невидим. Второй случай — два
+      маркера в окне: компилятор знал m001, рантайм писал m002 (проверено picks.log)'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/scenes.py
+    - tools/vn/src/vn/loc/keys.py
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_marker_ownership_is_exclusive_and_nearest_wins
+  APII-022:
+    title: (P1) Безусловная запись exits, стоящая не последней, делала следующие условные цели мёртвыми
+      в генерате
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/scenes.py: эмиссия даёт НЕЗАВИСИМЫЕ проверки в порядке YAML, и каждая ветка
+      делает jump — запись без when перехватывает управление; схема порядок не ограничивает'
+    - 'отказ: самая вероятная авторская правка «дописать условную цель в конец списка, где уже лежит fallback»
+      — новая ветка не срабатывает никогда, игрок молча идёт по старому пути, YAML корректен, гейты зелёные'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/scenes.py
+    tests:
+    - tools/vn/tests/test_scene_pipeline.py::test_unconditional_exit_entry_must_be_last
+  APII-023:
+    title: (P1) Главы пака вне всех флейворов уезжали в docs/CHANGELOG.md и в release-manifest — обход
+      гарда FWA-019
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/release.py: snapshot_content фильтра не имел, фикс FWA-019 лёг только в _released_ids,
+      хотя changelog стоит в заголовке самого пункта'
+    - 'отказ: vn release changelog (штатный первый шаг релиза) пишет тестовые топологии графа как новые
+      главы и сцены; манифест впитывает их навсегда, и удаление QA-пака даёт ложное «удалены сцены — проверьте
+      renames.yaml»'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/release.py
+    tests:
+    - tools/vn/tests/test_release.py::test_content_snapshot_excludes_packs_outside_every_flavor
+  APII-024:
+    title: (P1, highly probable) Установка Android-тулчейна через zipfile.extractall теряла бит исполняемости
+      — обход гарда FWA-003 в другом месте
+    category: quality-gate
+    evidence:
+    - 'tools/vn/src/vn/android.py: install_rapt звал extractall, а CPython ZipFile._extract_member не
+      читает external_attr и не зовёт chmod; рядом в release.py была правильная ветка. Штатный путь Ren''Py
+      восстанавливает бит руками (renpy/common/00updater.rpy)'
+    - 'отказ: на Linux и macOS каталог rapt без бита x, и следующий шаг сборки APK падает Permission denied
+      посреди gradle при зелёной диагностике rapt_status. Довести до confirmed нельзя без POSIX-машины:
+      на Windows бита x не существует'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/archive.py
+    - tools/vn/src/vn/android.py
+    - tools/vn/src/vn/release.py
+    tests:
+    - tools/vn/tests/test_android.py::test_rapt_install_preserves_the_executable_bit
+    - tools/vn/tests/test_platform.py::test_zip_extraction_restores_the_executable_bit
+  APII-025:
+    title: (P2) FLOW_MAX_TERMS молча ОБРЕЗАЛ дизъюнкцию — условие модели становилось строже рантаймового,
+      и сцена объявлялась недостижимой без пометки opaque
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/content/flow.py: обрезание дизъюнкции УСИЛИВАЕТ условие; ребро при этом не помечалось
+      opaque (флаг ставится только при непрозрачности), поэтому штатное предупреждение validate_flow не
+      эмитилось. В ветке And break прерывал только внутренний цикл, и потолок фактически не соблюдался'
+    - 'отказ: путь, который рантайм принимает, модель отправляет в fallback и объявляет целевую сцену
+      недостижимой; ломается даже тавтология из пяти пар — 24 состояния из 32'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/content/flow.py
+    tests:
+    - tools/vn/tests/test_flow.py::test_disjunction_over_the_cap_becomes_opaque_not_truncated
+  APII-026:
+    title: '(P2) Тур экранов не изолировал экраны друг от друга: один корень выдавался за семь проблем
+      с ложным диагнозом'
+    category: quality-gate
+    evidence:
+    - 'game/framework/00_core/030_flow.rpy: после исключения при отрисовке оставался непустой widget и
+      layer стек, и каждый следующий экран падал сообщением про ui.interact и забытый ui.close'
+    - 'отказ: подмена стиля на одном экране давала 7 проблем и 4 показанных экрана, причём шесть сообщений
+      уводили разбор в сторону. Ручное опустошение стека пробовалось и делает хуже — нужен штатный ui.reset()'
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/030_flow.rpy
+    - tools/vn/src/vn/cli.py
+    tests:
+    - tools/vn/tests/test_qa.py::test_screens_tour_recovers_the_ui_stack_and_names_the_root_cause
+  APII-027:
+    title: (P2) Литерал реплики экранировал табуляцию по питоновской таблице, а лексер Ren'Py такого эскейпа
+      не знает — в реплике появлялась лишняя буква
+    category: content-pipeline
+    evidence:
+    - 'tools/vn/src/vn/loc/po.py: одна функция обслуживала ДВЕ грамматики; renpy/lexer.py: dequote понимает
+      фигурную и квадратную скобку, процент, перевод строки и юникод-эскейп, а всё остальное отдаёт как
+      есть'
+    - 'отказ: переводчик ставит в msgstr табуляцию (штатный эскейп PO), игрок видит лишний символ; ошибка
+      тихая — файл валиден, теги и скобки не при чём'
+    status: CLOSED
+    implementation:
+    - tools/vn/src/vn/loc/po.py
+    tests:
+    - tools/vn/tests/test_loc.py::test_dialogue_literal_uses_the_renpy_escape_table_for_tabs
+  APII-028:
+    title: (P2) defined_screens() резолвил elided-путь через abspath — фильтр «наш или движковый» зависел
+      от рабочего каталога процесса
+    category: quality-gate
+    evidence:
+    - 'game/framework/00_core/engine_compat/000_compat.rpy: location[0] — путь ОТНОСИТЕЛЬНО basedir (renpy/lexer.py:
+      elide_filename), а abspath склеивал его с текущим рабочим каталогом'
+    - 'отказ: два взаимно противоположных исхода, оба ложные — либо своими не признаётся ни один экран
+      (гейт «экран не покрыт туром» молча выключается), либо своими становятся и движковые, и тур требует
+      их в декларации'
+    status: CLOSED
+    implementation:
+    - game/framework/00_core/engine_compat/000_compat.rpy
+    - tools/vn/src/vn/cli.py
+    tests:
+    - tools/vn/tests/test_engine_compat.py::test_defined_screens_registry
+  APII-029:
+    title: '(P2) ARCHITECTURE в шести местах утверждала отменённое ADR-0010: «свой dict разблокировок
+      не ведётся»'
+    category: documentation
+    evidence:
+    - docs/ARCHITECTURE.md C9 и C24 плюс четыре прозаических места против docs/adr/0010-gallery-extras.md
+      и game/framework/00_core/090_gallery.rpy; поиск по ARCHITECTURE на ADR-0010 давал ноль вхождений,
+      хотя для ADR-0014 врезка «Уточнено» проставлена дважды
+    - 'отказ: C9 и C24 — канон, на который ссылаются в ревью как на закон проекта. Читатель, следующий
+      букве, обязан счесть накопитель галереи нарушением и убрать его — это потеря ВСЕХ разблокировок
+      видео и якорей у всех игроков'
+    status: CLOSED
+    implementation:
+    - docs/ARCHITECTURE.md
+    tests:
+    - tools/vn/tests/test_docs_refs.py::test_docs_do_not_claim_that_the_gallery_keeps_no_own_unlock_dict
+  APII-030:
+    title: (P2) G15 и раздел 7 обещали smoke затронутых глав на каждом MR — в ci.yml нет ни одного прогона
+      игры, а флага --affected не существует
+    category: documentation
+    evidence:
+    - 'docs/ARCHITECTURE.md G15 и раздел 7 против .github/workflows/ci.yml и tools/vn/src/vn/cli.py: у
+      vn test smoke нет флага --affected, поиском по tools/vn/src/vn слова affected нет вовсе, все команды
+      vn test живут в nightly.yml и canary.yml'
+    - 'отказ: правка, ломающая прохождение, мержится зелёной и всплывает на следующем nightly, а release.yml
+      QA-гейтов не гоняет вовсе — тег, поставленный до следующего nightly, увозит дефект игрокам. Норма
+      при этом убеждает, что MR прогоняют игру'
+    status: CLOSED
+    implementation:
+    - docs/ARCHITECTURE.md
+    tests:
+    - .github/workflows/ci.yml — шаги MR-пайплайна перечислены во врезке к G15
+    note: 'Зафиксировано фактическое состояние, а не реализовано: решение «делать --affected или признать
+      прогоны игры только ночными» за владельцем.'
+  APII-031:
+    title: (P2) Пять мест хендбука называли vn.beat() мёртвым членом фасада — а на нём держится единственная
+      скрытая ачивка
+    category: documentation
+    evidence:
+    - docs/handbook 05-renpy-development.md, 07-backend.md, 13-dialogue.md, 02-architecture.md и 15-gallery.md
+      против content/chapters/ch01_awakening/scenes/s030_rooftop.scene.rpy и content/achievements/core.achievements.yaml
+      (roof_alone, hidden)
+    - 'отказ: инженер удаляет «мёртвый» член фасада — ломается контент и совместимость паков (API_LEVEL);
+      либо считает гейт реплея перестраховкой, хотя FWA-001 закрыт ровно на том, что пересмотр сцены выдавал
+      ачивку через этот вызов'
+    status: CLOSED
+    implementation:
+    - docs/handbook/05-renpy-development.md
+    - docs/handbook/07-backend.md
+    - docs/handbook/13-dialogue.md
+    - docs/handbook/02-architecture.md
+    - docs/handbook/15-gallery.md
+    tests:
+    - tools/vn/tests/test_docs_refs.py::test_docs_do_not_claim_that_vn_beat_is_never_called
+  APII-032:
+    title: '(отозвано) union-слияние vn_story_targets: воскрешение очищенного плана walkthrough'
+    category: runtime
+    evidence:
+    - 'Заявлено: объединение не выражает удаление, поэтому очищенные цели возвращаются при слиянии'
+    - 'Опровергнуто двумя скептиками из трёх: слияние гейтится mtime ФАЙЛА, а не временем изменения поля
+      (renpy/persistent.py: пропуск файлов не новее persistent_mtime), поэтому устаревшая локальная копия
+      не сливается вовсе; состояние «новый mtime при старом _changed» конвейер не производит — Ren''Py
+      Sync в UI не выведен (поиск по game/framework пуст). Плюс на старте вообще работает default_merge
+      (см. APII-005), то есть очищенный план побеждает. Выбор задокументирован: цели walkthrough перечислены
+      среди накопителей осознанно, tombstone-ов для плана нет ни у одного варианта'
+    status: WONT_FIX
+    rationale: 'Отказ не следует из механизма: состояния, при котором объединение вообще применяется к
+      этому полю, конвейер не создаёт. Честный остаток — семантическое несоответствие (поле поддерживает
+      удаление, объединение его не выражает): если в UI появятся кнопки Ren''Py Sync, регистрация «побеждает
+      более новое» для vn_story_targets станет обязательной.'

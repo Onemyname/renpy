@@ -491,7 +491,7 @@ vn test smoke --lang pseudo --picks 0,0
 | Механизм | Статус |
 |---|---|
 | `$ vn_qa.choice(scene_id, menu_id, idx)` первым стейтментом каждой ветки (ARCHITECTURE.md:544-551) | **NOT IMPLEMENTED** — `030_flow.rpy:98-101` это `pass`-заглушка, компилятор её не эмитит |
-| `vn.beat("<id>")` — мелкий якорь внутри сцены для галереи/достижений | **IMPLEMENTED, но не эмитится**: `030_flow.rpy:19-24` работает, вызовов в `content/` ноль. Хотите якорь — пишите `$ vn.beat("x")` руками |
+| `vn.beat("<id>")` — мелкий якорь внутри сцены для галереи/достижений | **IMPLEMENTED, но не эмитится**: рантайм работает, а вызов пишет автор. В контенте он один — вызов есть ровно один — `content/chapters/ch01_awakening/scenes/s030_rooftop.scene.rpy: ch01_s030__body`, и на нём держится единственная скрытая ачивка игры (`core.achievements.yaml: roof_alone`, `hidden: true`). Хотите свой якорь — пишите `$ vn.beat("x")` руками |
 | `vn loc keys --migrate --from --to` (перенос id между сценами) | **NOT IMPLEMENTED** — есть только `--check` |
 | High-watermark / «пенсионные» say-id | **NOT IMPLEMENTED** (ARCHITECTURE.md:2505, 2781) |
 | TTS-черновики озвучки (`vn voice tts`) | **IMPLEMENTED** (2026-08-18): синтез непокрытых реплик главы, статус `draft`, для дубляжа текст берётся из PO. Вместе с ним весь голосовой контур (`voice@1`, `vn voice manifest\|import\|validate`, инжекция `voice vn.voice_path("<say-id>")` в генерат) — [23-audio.md](23-audio.md) §8, §8.1 |

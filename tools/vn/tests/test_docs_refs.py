@@ -170,3 +170,99 @@ def test_audit_trackers_reference_real_files_and_tests(repo_root):
                                             f.read_text(encoding="utf-8"), re.M):
                     dangling.append(f"{where}:{item_id} tests -> {ref}")
     assert not dangling, "висячие ссылки в трекерах аудита:\n  " + "\n  ".join(dangling)
+
+
+def test_docs_do_not_claim_that_the_gallery_keeps_no_own_unlock_dict(repo_root):
+    """Норма не имеет права утверждать отменённое ADR-ом как факт.
+
+    C9 и C24 говорили «свой dict не ведётся» / «ручной учёт не ведётся», а ADR-0010
+    это решение УТОЧНИЛ: видео (`Movie`) движок в `_seen_images` не пишет вовсе, а
+    якоря scene/beat/var/chapter_done/always ему неизвестны — для них ведётся
+    persistent.vn_gallery_unlocked, и код так и сделан. ARCHITECTURE при этом не
+    упоминала ADR-0010 нигде, хотя для ADR-0014 врезка «Уточнено» проставлена.
+
+    Почему это опасно, а не косметика: C9/C24 — канон, на который ссылаются в ревью
+    «как на закон проекта». Читатель, следующий букве, обязан счесть
+    vn_gallery_unlocked нарушением и убрать его — а это потеря ВСЕХ разблокировок
+    видео и якорей у всех игроков.
+
+    Зеркальный случай (FWA-021: ARCHITECTURE объявила обещания ADR-0006
+    superseded, а сам ADR не тронули) закрывали правкой ADR; здесь прав ADR, а
+    отстала норма, и эту сторону не проверял никто. Гард — по образцу
+    test_saves::test_docs_do_not_claim_that_underscore_vars_skip_the_save."""
+    compat = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
+              / "000_compat.rpy").read_text(encoding="utf-8")
+    if "vn_gallery_unlocked" not in compat:
+        pytest.skip("накопитель галереи убран — утверждение нормы снова верно")
+
+    arch = (repo_root / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    assert "ADR-0010" in arch, (
+        "ARCHITECTURE нигде не упоминает ADR-0010, хотя тот уточняет её решение о "
+        "разблокировке галереи — врезка «Уточнено» обязательна, как для ADR-0014")
+
+    # Конкретные отменённые формулировки не имеют права стоять БЕЗ оговорки.
+    # Оговоркой считается упоминание рядом самого накопителя или ADR-0010: тогда
+    # читатель видит, что «не ведётся» относится только к кадрам с seen_image.
+    # Внутри врезки «Уточнено» цитировать отменённое можно и нужно.
+    claims = ("свой dict не ведётся",
+              "ручной учёт не ведётся",
+              "собственный dict разблокировок не ведётся",
+              "собственного учёта не ведёт")
+    for i, line in enumerate(arch.splitlines(), 1):
+        if not any(c in line for c in claims):
+            continue
+        if line.lstrip().startswith(">"):
+            continue
+        assert "vn_gallery_unlocked" in line or "ADR-0010" in line, (
+            f"ARCHITECTURE.md:{i}: утверждение про «свой учёт не ведётся» отменено "
+            f"ADR-0010, а стоит без оговорки — по этой букве накопитель галереи "
+            f"удалят, и игроки потеряют разблокировки видео и якорей")
+
+
+def test_docs_do_not_claim_that_vn_beat_is_never_called(repo_root):
+    """Хендбук не имеет права звать член фасада мёртвым, пока вызов есть.
+
+    Пять мест писали про `vn.beat` как про UNUSED / «вызовов в content/ ноль» /
+    «якорь beat недостижим». Фактически вызов есть, он один, и на нём держится
+    ЕДИНСТВЕННАЯ скрытая ачивка игры (roof_alone, hidden: true).
+
+    Из этого следуют два конкретных неверных действия: (1) удалить «мёртвый» член
+    фасада — сломается контент и потребуется бамп API_LEVEL, с которым сверяются
+    манифесты паков; (2) счесть гейт реплея в vn._progress перестраховкой — а
+    FWA-001 закрыт ровно на том, что пересмотр сцены выдавал ачивку ЧЕРЕЗ ЭТОТ
+    вызов. Автор галереи, читая «ни в одной сцене вручную не вызывается», не найдёт
+    существующий рабочий образец.
+
+    Проверка в ОБЕ стороны: если вызовов не станет, красный тест напомнит вернуть
+    формулировку."""
+    calls = []
+    for zone in ("content", "packs"):
+        base = repo_root / zone
+        if not base.is_dir():
+            continue
+        for f in base.rglob("*.rpy"):
+            if "vn.beat(" in f.read_text(encoding="utf-8"):
+                calls.append(f.relative_to(repo_root).as_posix())
+
+    dead_claims = ("UNUSED", "вызовов в `content/` **ноль**",
+                   "вызовов в `content/` ноль",
+                   "ни в одной сцене вручную не вызывается",
+                   "фактически недостижим")
+    offenders = []
+    for md in sorted((repo_root / "docs" / "handbook").glob("*.md")):
+        for i, line in enumerate(md.read_text(encoding="utf-8").splitlines(), 1):
+            if "vn.beat" not in line:
+                continue
+            for claim in dead_claims:
+                if claim in line:
+                    offenders.append(f"{md.name}:{i}: {claim}")
+
+    if calls:
+        assert not offenders, (
+            f"вызов vn.beat есть ({', '.join(calls)}), а хендбук называет член фасада "
+            f"мёртвым: {offenders}. По этой букве его удалят — сломается скрытая "
+            f"ачивка и совместимость паков (API_LEVEL)")
+    else:
+        assert offenders, (
+            "вызовов vn.beat в контенте больше нет — верните в хендбук отметку "
+            "UNUSED, иначе автор будет искать несуществующий образец")

@@ -334,7 +334,7 @@ reserved:
 | Символ | Строка | Что делает | Эмитится компилятором? |
 |---|---|---|---|
 | `vn.checkpoint(scene_id)` | `:12` | `vn_scene = scene_id`; дёргает `vn_ach.check` и `vn_gal.check` по якорю `scene` | **да**, первым стейтментом обвязки |
-| `vn.beat(beat_id=None)` | `:19` | мелкий якорь внутри сцены | **нет** — автор пишет `$ vn.beat("x")` руками. Вызовов в `content/` **ноль** → IMPLEMENTED / UNUSED |
+| `vn.beat(beat_id=None)` | `:19` | мелкий якорь внутри сцены | **нет** — автор пишет `$ vn.beat("x")` руками. Вызов в `content/` есть один: вызов есть ровно один — `content/chapters/ch01_awakening/scenes/s030_rooftop.scene.rpy: ch01_s030__body`, и на нём держится единственная скрытая ачивка игры (`core.achievements.yaml: roof_alone`, `hidden: true`) → IMPLEMENTED |
 | `vn.chapter_done(chapter_id)` | `:26` | якорь «глава пройдена» | **да**, только в терминальной сцене (без `exits`) |
 | `vn.check_scene_stack()` | `:44` | инвариант G7: глубина call-стека на границе сцены = 0. **Только логирует нарушение, не чинит** | да |
 | `vn.unwind_call_stack()` | `:50` | `renpy.pop_call()` до глубины 0; никуда не прыгает | да |
