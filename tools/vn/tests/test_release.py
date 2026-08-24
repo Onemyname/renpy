@@ -934,3 +934,76 @@ def test_content_snapshot_excludes_packs_outside_every_flavor(repo_root):
         f"уедут в changelog и навсегда впитаются в release-manifest")
     # И гейт не должен выродиться: поставляемый контент в снимке остаться обязан.
     assert snap, "снимок пуст — фильтр съел всё"
+
+
+# Зоны из .gitignore, которые ЛЕГАЛЬНО не исключены из дистрибутива. Каждая с
+# причиной: список заморожен, чтобы новая зона не проехала молча.
+_DISTRIBUTION_EXEMPT_ZONES = {
+    # Движок поставляет свой lib/ и renpy/ уже скомпилированными — .pyc и
+    # __pycache__ внутри них это нормальная часть пакета, а не наш мусор.
+    "__pycache__/",
+    # Обязаны ехать игроку: это и есть игра (генерат, ассеты, переводы).
+    "game/generated/", "game/assets/", "game/tl/",
+    # Локальные зоны движка рядом с каталогом игры: их исключает сам движок
+    # (renpy/common/00build.rpy: ("game/saves/", None)) либо они не создаются в
+    # поставке вовсе.
+    "game/cache/", "game/saves/",
+    # Метаданные флейвора: vn release build кладёт их на время distribute
+    # НАМЕРЕННО — рантайм читает build_id.json, чтобы знать nsfw и состав паков.
+    "game/build_id.json",
+    # Мусор файловых менеджеров исключает сам движок:
+    # renpy/common/00build.rpy: late_base_patterns содержит ("**/Thumbs.db", None)
+    # и ("**/desktop.ini", None), а дотфайлы — общим (".*", None).
+    "Thumbs.db",
+}
+
+
+def test_every_local_zone_excluded_from_git_is_excluded_from_the_distribution(repo_root):
+    """Локальная зона, которой нет в git, не имеет права уезжать игроку.
+
+    Два контура — .gitignore и game/options.rpy — независимы, и починка одного
+    ничего не говорит про другой. Сам .gitignore это знает: у ключей подписи
+    Android прямо написано, что «оба контура на месте» и что их сверяет preflight.
+    А для reports/ был сделан только git-контур (FWA-030), и distribute исправно
+    клал зону в КАЖДЫЙ пакет: в собранном vn-1.0.1-win.zip лежали reports/audit.md
+    (138 КБ внутреннего отчёта аудита) и reports/decisions_needed.md.
+
+    Это ровно то, от чего защищается список зон в options.rpy: «источники,
+    инструменты, сырцы и прошлые артефакты — не для игроков (и не для
+    дата-майнеров)». Для 18+ проекта внутренние отчёты в поставке — подарок
+    дата-майнеру.
+
+    Дотфайлы и дот-каталоги проверять не нужно: их исключает сам движок
+    (renpy/common/00build.rpy: late_base_patterns содержит (".*", None))."""
+    options = (repo_root / "game" / "options.rpy").read_text(encoding="utf-8")
+    ignored = (repo_root / ".gitignore").read_text(encoding="utf-8")
+
+    zones = []
+    for raw in ignored.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(("#", "!", "*")) or line.startswith("."):
+            continue
+        if not line.endswith("/") and "." not in line.rsplit("/", 1)[-1]:
+            continue
+        zones.append(line)
+    assert zones, "разбор .gitignore выродился — зон не нашлось"
+
+    missing = []
+    for zone in zones:
+        if zone in _DISTRIBUTION_EXEMPT_ZONES:
+            continue
+        name = zone.rstrip("/")
+        # Исключение может быть точным ("log.txt"), зоной ("reports/**") или
+        # покрывающим префиксом ("tools/**" покрывает tools/vn/saves/).
+        covered = f'"{name}/**"' in options or f'"{name}"' in options
+        if not covered:
+            head = name.split("/")[0]
+            covered = f'"{head}/**"' in options
+        if not covered:
+            missing.append(zone)
+
+    assert not missing, (
+        "зоны есть в .gitignore, но НЕ исключены из дистрибутива — уедут игроку: "
+        + ", ".join(missing)
+        + ". Добавьте их в список build.classify(..., None) в game/options.rpy "
+          "либо в _DISTRIBUTION_EXEMPT_ZONES с причиной, почему они должны ехать")

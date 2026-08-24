@@ -44,8 +44,15 @@ init python:
     build.classify("**.bak", None)
     # В дистрибутив уходит ТОЛЬКО game/ и лаунчер-обвязка: источники, инструменты,
     # сырцы и прошлые артефакты — не для игроков (и не для дата-майнеров).
+    # reports/** — рабочая зона аудитов: черновики отчётов и вывод линтера. В
+    # .gitignore она есть с самого FWA-030, а здесь её не было, и distribute
+    # исправно клал её в КАЖДЫЙ пакет: в vn-1.0.1-win.zip лежали reports/audit.md
+    # (138 КБ внутреннего отчёта) и reports/decisions_needed.md. Это тот же класс,
+    # что «два контура» у ключей подписи ниже — там оба на месте и проверяются, а
+    # для reports/ был сделан только git-контур.
     for _zone in ("tools/**", "content/**", "assets_src/**", "loc/**", "docs/**",
-                  "ci/**", "packs/**", "build/**", ".vncache/**", ".git/**",
+                  "ci/**", "packs/**", "build/**", "reports/**", ".vncache/**",
+                  ".git/**",
                   ".gitignore", ".gitattributes", ".gitlab-ci.yml", "CODEOWNERS",
                   "README.md", "project.yaml", ".vnstorage.yaml", "hdrs.tmp",
                   "log.txt", "traceback.txt", "errors.txt"):
