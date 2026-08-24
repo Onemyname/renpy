@@ -796,6 +796,11 @@ msgctxt "string:ui.prefs.duck_voice"
 msgid "Приглушать музыку под голос"
 msgstr "Lower music during voice"
 
+#. UI/мета-строка
+msgctxt "string:ui.chart.continues"
+msgid "Дальше — другая глава"
+msgstr "Continues in another chapter"
+
 #~ msgctxt "string:ui.guide.recommended"
 #~ msgid "По плану"
 #~ msgstr ""

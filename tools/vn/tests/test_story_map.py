@@ -543,6 +543,32 @@ def test_the_ending_badge_is_gated_by_fog_of_war():
         f"концовки у непройденных узлов")
 
 
+def test_the_continues_label_is_a_translated_phrase_not_a_symbol():
+    """Продолжение в другой главе подписано СЛОВАМИ, а не значком.
+
+    Стрелка в углу карточки сообщает «что-то есть», но не что именно, а карта
+    существует ровно для того, чтобы игрок понимал структуру. Подпись стоит
+    строки в трёх языках (ru/de/en; pseudo синтетический), и это цена, которую
+    решил заплатить владелец, — поэтому её и держит гард: замена подписи на
+    символ вернула бы прежнюю немоту."""
+    from vn.repo import load_yaml
+
+    src = (REPO_ROOT / SCREEN_REL).read_text(encoding="utf-8")
+    assert 'vn_loc.t("ui.chart.continues")' in src, (
+        "метка продолжения не берёт строку из локализации — вернулся значок")
+    strings = load_yaml(REPO_ROOT / "content" / "ui" / "strings.yaml")["strings"]
+    assert "ui.chart.continues" in strings, "ключ не объявлен в strings.yaml"
+    # Переводы на месте у КАЖДОГО поставляемого языка: непереведённая метка
+    # покажет игроку русскую фразу посреди немецкого интерфейса.
+    for lang in sorted(pth.name for pth in (REPO_ROOT / "loc" / "po").iterdir()
+                       if pth.is_dir()):
+        po = (REPO_ROOT / "loc" / "po" / lang / "common.po").read_text(encoding="utf-8")
+        block = po.partition('msgctxt "string:ui.chart.continues"')[2]
+        assert block, f"{lang}: записи для ui.chart.continues нет в PO"
+        line = [l for l in block.splitlines() if l.startswith("msgstr")][0]
+        assert line.strip() != 'msgstr ""', f"{lang}: метка не переведена"
+
+
 def test_a_cross_chapter_exit_is_reported_and_is_not_an_ending(tmp_path):
     """Выход в ДРУГУЮ главу: сцена не тупик и не «Финал».
 

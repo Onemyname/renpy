@@ -237,6 +237,11 @@ msgid "Несовместимо с: [list]"
 msgstr "[[Нęсǫвмęстįмǫ с: [list]~~~~~~~~]"
 
 #. UI/мета-строка
+msgctxt "string:ui.chart.continues"
+msgid "Дальше — другая глава"
+msgstr "[[Дąльшę — дрųгąя глąвą~~~~~~~~]"
+
+#. UI/мета-строка
 msgctxt "string:ui.chart.empty"
 msgid "Карта этой главы пока пуста."
 msgstr "[[Кąртą этǫй глąвы пǫкą пųстą.~~~~~~~~~~~]"

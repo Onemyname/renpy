@@ -657,6 +657,31 @@ def test_chapter_map_never_prints_titles_of_unseen_scenes(repo_root):
         "подсказка гайда печатает заголовок непройденной цели"
 
 
+def test_every_screen_string_key_is_declared(repo_root):
+    """Каждый ключ `vn_loc.t("…")` во ВСЕЙ вёрстке объявлен в strings.yaml.
+
+    Незадекларированный ключ не падает — движок рисует сам ключ, то есть игрок
+    видит на кнопке «ui.chart.continues». Такое ловится только глазами на живом
+    экране, поэтому проверка была написана ещё для экрана достижений
+    (test_achievements.py::test_screen_string_keys_are_declared) — но ровно для
+    него одного, а ключи есть в каждом экране. Здесь тот же вопрос ко всей
+    вёрстке: гейт на класс, а не на файл."""
+    from vn.repo import load_yaml
+
+    strings = load_yaml(repo_root / "content" / "ui" / "strings.yaml")["strings"]
+    key_re = re.compile(r'vn_loc\.t\("([a-z0-9_.]+)"\)')
+    missing = {}
+    seen = 0
+    for path in sorted((repo_root / "game").rglob("*.rpy")):
+        src = path.read_text(encoding="utf-8")
+        for key in key_re.findall(src):
+            seen += 1
+            if key not in strings:
+                missing.setdefault(path.name, set()).add(key)
+    assert seen > 50, f"ключи в вёрстке не найдены вовсе ({seen}) — регексп съехал"
+    assert missing == {}, f"ключи вне content/ui/strings.yaml: {missing}"
+
+
 def test_navigation_rail_gates_are_cheap_predicates(repo_root):
     """Рельсу рисует каркас vn_game_menu, то есть КАЖДЫЙ экран игрового меню —
     и предикция ShowMenu тоже. Гейты её пунктов обязаны отвечать «да/нет», а не
