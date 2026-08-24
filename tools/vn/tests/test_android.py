@@ -509,3 +509,29 @@ def test_engine_step_names_match_the_dev_command(repo_root):
         assert f'"{step}": _vn_android_step_' in src, f"шаг {step} не объявлен в движке"
     declared = src.count('": _vn_android_step_')
     assert declared == len(android.SETUP_STEPS), "в движке шагов больше, чем знает CLI"
+
+
+def test_rapt_install_preserves_the_executable_bit():
+    """Обход гарда FWA-003: тот же дефект в установке Android-тулчейна.
+
+    `install_rapt` распаковывал скачанный архив обычным `zf.extractall(sdk)`, а
+    zipfile прав не переносит ВООБЩЕ (CPython ZipFile._extract_member не читает
+    external_attr и не зовёт chmod). Штатный путь Ren'Py так не делает: лаунчер
+    ставит RAPT своим апдейтером, который несёт отдельный список исполняемых
+    файлов и восстанавливает бит руками (SDK renpy/common/00updater.rpy).
+
+    Отказ: на Linux/macOS `vn release android setup sdk --download-rapt` кладёт
+    rapt/** без бита x, и следующий `vn release android build` падает Permission
+    denied посреди gradle — при том что диагностика врёт, `rapt_status` проверяет
+    только НАЛИЧИЕ каталога, хеш и adb. На Windows дефект невидим полностью.
+
+    Гард FWA-003 покрывал только release._extract_archive и про этот путь не знал."""
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parents[1] / "src" / "vn"
+           / "android.py").read_text(encoding="utf-8")
+    body = src.split("def install_rapt(", 1)[1].split("\ndef ", 1)[0]
+    assert "extract_zip_preserving_modes" in body, \
+        "установка RAPT снова распаковывает архив без восстановления прав"
+    assert "zf.extractall(" not in body, \
+        "в install_rapt вернулся extractall — zipfile прав не переносит"

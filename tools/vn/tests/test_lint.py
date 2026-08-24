@@ -151,8 +151,20 @@ def test_released_var_exempt_by_renames(repo_root, tmp_path):
     (root / "content" / "renames.yaml").write_text(
         "schema: renames@1\nscenes: {}\ndeleted_scenes: {}\nlabels: {}\n"
         "vars:\n  g.old_route: g.route\n", encoding="utf-8")
+    # Перенос значения обязателен ОТДЕЛЬНО от записи в renames (см.
+    # test_variable_rename_requires_a_transferring_migration): без миграции линтер
+    # теперь законно ругается, и этот тест проверял бы уже не своё правило.
+    (root / "content" / "migrations").mkdir(parents=True, exist_ok=True)
+    (root / "content" / "migrations" / "0002_move_route.py").write_text(
+        'def migrate(state):\n    if "g.old_route" in state:\n'
+        '        state["g.route"] = state.pop("g.old_route")\n    return state\n',
+        encoding="utf-8")
+    (root / "content" / "migrations" / "registry.yaml").write_text(
+        "schema: migrations_registry@1\nreserved:\n"
+        "  - {number: 2, slug: move_route, by: test}\n", encoding="utf-8")
     rep = lint(root)
-    assert not any("g.old_route" in e for e in rep.errors)
+    assert not any("исчезла без записи в renames" in e and "g.old_route" in e
+                   for e in rep.errors), rep.errors
 
 
 def test_stamp_id_registry_unions_released_ids(repo_root, tmp_path):
@@ -395,3 +407,60 @@ def test_lint_catches_rename_of_a_scene_that_still_exists(repo_root, tmp_path):
 
     rep = lint(root)
     assert any("ch03_s010" in e and "есть в дереве" in e for e in rep.errors), rep.errors
+
+
+def test_variable_rename_requires_a_transferring_migration(repo_root, tmp_path):
+    """Запись в renames.vars — ОБЯЗАТЕЛЬСТВО перенести значение, не индульгенция.
+
+    Раньше она работала только как разрешение: линтер перестаёт жаловаться на
+    исчезнувшее имя, и всё. Носителя переименования в рантайм для переменных не
+    существует, поэтому по документированной процедуре (правка декларации + правка
+    ссылок + запись в renames.yaml) игрок терял прогресс МОЛЧА: старое имя остаётся
+    в сейве и больше никем не читается, новое получает дефолт сборки. Проверено
+    загрузкой фикстуры: значение игрока лежало под старым ключом, новая переменная
+    взяла дефолт — все ветвления по роуту уходили в пролог, а галерейный анлок по
+    этой переменной не срабатывал.
+
+    Показательно, что для АССЕТОВ тот же класс закрыт: renames.assets реально
+    протаскивается в рантайм галереи (compile._asset_history).
+
+    Требуются ОБА имени в исходнике миграции. Только старое — слишком слабо: его
+    случайно удовлетворяет любая давняя миграция, трогавшая переменную по другому
+    поводу (так и вышло на первом прогоне)."""
+    from vn.content.lint import lint
+
+    root = _copy_skeleton(repo_root, tmp_path)
+    shutil.rmtree(root / "content" / "migrations", ignore_errors=True)
+    (root / "content" / "migrations").mkdir(parents=True)
+    (root / "content" / "migrations" / "registry.yaml").write_text(
+        "schema: migrations_registry@1\nreserved: []\n", encoding="utf-8")
+    (root / "content" / "renames.yaml").write_text(
+        "schema: renames@1\nscenes: {}\ndeleted_scenes: {}\nlabels: {}\n"
+        "vars:\n  g.route: g.path\nassets: {}\n", encoding="utf-8")
+
+    def _errors():
+        return [e for e in lint(root).errors if "не переносит значение" in e]
+
+    # Миграции нет вовсе.
+    assert _errors(), "переименование без миграции прошло — прогресс потеряется молча"
+
+    # Миграция есть, но упоминает только СТАРОЕ имя (трогала переменную по другому
+    # поводу) — этого недостаточно.
+    (root / "content" / "migrations" / "0002_old.py").write_text(
+        'def migrate(state):\n    if state.get("g.route") == "common":\n'
+        '        state["g.route"] = "prologue"\n    return state\n', encoding="utf-8")
+    (root / "content" / "migrations" / "registry.yaml").write_text(
+        "schema: migrations_registry@1\nreserved:\n"
+        "  - {number: 2, slug: old, by: test}\n", encoding="utf-8")
+    assert _errors(), "миграция без нового имени принята за перенос"
+
+    # Настоящий перенос: читает старый ключ, пишет новый.
+    (root / "content" / "migrations" / "0003_move.py").write_text(
+        'def migrate(state):\n    if "g.route" in state:\n'
+        '        state["g.path"] = state.pop("g.route")\n    return state\n',
+        encoding="utf-8")
+    (root / "content" / "migrations" / "registry.yaml").write_text(
+        "schema: migrations_registry@1\nreserved:\n"
+        "  - {number: 2, slug: old, by: test}\n"
+        "  - {number: 3, slug: move, by: test}\n", encoding="utf-8")
+    assert not _errors(), _errors()

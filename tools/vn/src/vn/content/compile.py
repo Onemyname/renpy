@@ -94,25 +94,47 @@ def _header(sources: list[tuple[str, str]]) -> str:
     return "\n".join(lines)
 
 
+def _nonstring_key_paths(value, prefix: str = "") -> list[str]:
+    """Пути до всех не-строковых ключей dict внутри value, РЕКУРСИВНО.
+
+    Обход обязан быть рекурсивным, потому что механизм рекурсивен: json приводит
+    ключи к строкам на ЛЮБОЙ глубине. Проверка смотрела только верхний уровень,
+    поэтому `default: {counters: {1: 0}}` компилятор пропускал, а рантайм возвращал
+    в стор `{counters: {"1": 0}}` — и следующее d["counters"][1] промахивалось у
+    КАЖДОГО игрока, загрузившего старый сейв. Тот же обход есть в рантайме
+    (020_state.rpy: _nonstring_key_path), иначе половина защиты снова смотрела бы
+    на один уровень."""
+    out: list[str] = []
+    if isinstance(value, dict):
+        for k in value:
+            if not isinstance(k, str):
+                out.append(f"{prefix}[{k!r}]")
+        for k, v in value.items():
+            out += _nonstring_key_paths(v, f"{prefix}[{k!r}]")
+    elif isinstance(value, (list, tuple)):
+        for i, v in enumerate(value):
+            out += _nonstring_key_paths(v, f"{prefix}[{i}]")
+    return out
+
+
 def _py_literal(value) -> str:
     """YAML-значение -> литерал Python/Ren'Py (в сейве только простые типы, G5)."""
     if isinstance(value, (str, int, float, bool)) or value is None:
         return repr(value)
-    if isinstance(value, dict):
-        # Ключи только строковые. Причина не стилистическая: состояние проходит
-        # json-раундтрип в цепочке миграций (run_migrations), а json приводит
-        # ключи dict к строкам — {1: x} возвращается в стор как {"1": x}, и
-        # следующий d[1] промахивается У ВСЕХ ИГРОКОВ, молча. Защита «не трогали
-        # — не пишем» закрывает только половину: миграция, которая переменную
-        # ТРОНУЛА, запишет её уже нормализованной.
-        bad = sorted(repr(k) for k in value if not isinstance(k, str))
+    if isinstance(value, (dict, list)):
+        # Ключи только строковые, на ЛЮБОЙ глубине. Причина не стилистическая:
+        # состояние проходит json-раундтрип в цепочке миграций (run_migrations),
+        # а json приводит ключи dict к строкам — {1: x} возвращается в стор как
+        # {"1": x}, и следующий d[1] промахивается У ВСЕХ ИГРОКОВ, молча. Защита
+        # «не трогали — не пишем» закрывает только половину: миграция, которая
+        # переменную ТРОНУЛА, запишет её уже нормализованной.
+        bad = _nonstring_key_paths(value)
         if bad:
             raise CompileError(
-                f"default-значение dict с не-строковыми ключами ({', '.join(bad)}): "
-                f"состояние проходит json-раундтрип в миграциях, и такие ключи "
-                f"молча станут строками у игрока — объявляйте ключи строками")
-        return repr(value)
-    if isinstance(value, list):
+                f"default-значение с не-строковыми ключами dict "
+                f"({', '.join(sorted(bad))}): состояние проходит json-раундтрип в "
+                f"миграциях, и такие ключи молча станут строками у игрока — "
+                f"объявляйте ключи строками")
         return repr(value)
     raise CompileError(f"недопустимый тип default-значения: {type(value).__name__}")
 
@@ -1142,11 +1164,27 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
 
     # Variable Registry (G5): {store.name} всех объявленных сохраняемых переменных —
     # сцены сверяют против него фактические чтения/записи (build-bridge).
+    #
+    # Реестра ДВА, и это не дублирование. Полный нужен сценам самого
+    # непоставляемого пака (они легально читают свои переменные), а поставляемый —
+    # всем остальным: переменные пака вне флейворов уезжают в
+    # state/defaults_unshipped.gen.rpy, а этот файл ВЫРЕЗАЕТСЯ из дистрибутива
+    # (release.unshipped_exclude_globs). Пока реестр был один и плоский,
+    # `when: "ch70.path == 'calm'"` в сцене ЯДРА проходил все гейты без единого
+    # предупреждения, в dev-чекауте играл (файл на месте), а в релизной сборке
+    # давал игроку необработанный NameError на несуществующий стор — с сейвом,
+    # оставшимся в предыдущей сцене. Замерено: половина реестра — именно такие
+    # имена. Проверка обязана быть НАПРАВЛЕННОЙ (зона-источник -> зона-объявления),
+    # а не глобальной фильтрацией: иначе перестанет валидироваться сам qa_flow.
     var_registry: set[str] = set()
+    var_registry_shipped: set[str] = set()
     for _vrel, vdoc in var_docs:
         vstore = vdoc.get("store")
         for vname in (vdoc.get("vars") or {}):
-            var_registry.add(f"{vstore}.{vname}")
+            ref = f"{vstore}.{vname}"
+            var_registry.add(ref)
+            if _vrel not in unshipped_rels:
+                var_registry_shipped.add(ref)
 
     scene_rep = sc.SceneCompileReport()
     scene_outputs: dict[str, str] = {}
@@ -1218,10 +1256,23 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
                         f"{u.yaml_rel}: участник {p!r} не объявлен в content/characters/ "
                         f"(say упадёт NameError в рантайме)"
                     )
+            # Сцене НЕпоставляемого пака отдаём полный реестр (её собственные
+            # переменные легальны и живут рядом с ней), всем остальным —
+            # поставляемый: ссылка из поставляемой зоны на стор пака, которого в
+            # дистрибутиве не будет, обязана быть ошибкой сборки, а не NameError
+            # у игрока. Зона сцены = зона её пака (u.pack), см. врезку у реестров.
+            # Зона выводится из пути декларации: packs/<id>/… против content/….
+            # Отдельного поля у SceneUnit для этого нет и не нужно — путь и есть
+            # признак принадлежности паку (C10: пак определяется расположением).
+            zone_pack = (u.yaml_rel.split("/", 2)[1]
+                         if u.yaml_rel.startswith("packs/") else "core")
+            zone_registry = (var_registry if zone_pack not in shipped_packs
+                             else var_registry_shipped)
             dispatch = sc.validate_scene(
                 u, known_scenes, status_by_ch.get(u.chapter_id, "draft"), scene_rep,
-                var_registry=var_registry, image_index=image_index,
+                var_registry=zone_registry, image_index=image_index,
                 audio_tracks=audio_tracks,
+                unshipped_refs=var_registry - var_registry_shipped,
             )
             header = _header([(u.yaml_rel, inputs[u.yaml_rel]), (u.rpy_rel, inputs[u.rpy_rel])])
             scene_outputs[f"scenes/{u.chapter_id}/{u.full_id}.gen.rpy"] = sc.emit_scene(

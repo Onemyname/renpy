@@ -109,8 +109,23 @@ def _exit_entries(spec) -> list[dict]:
     return list(spec)
 
 
+def _unshipped_hint(ref: str, unshipped_refs: set[str] | None) -> str:
+    """Уточнение для ссылки на переменную пака ВНЕ флейворов.
+
+    Без него сообщение «не объявлена в Variable Registry» сбивает автора с толку:
+    переменная объявлена, он её видит. Но её дефолты уезжают в
+    state/defaults_unshipped.gen.rpy, а этот файл вырезается из дистрибутива
+    (release.unshipped_exclude_globs) — значит в релизной сборке стора не будет."""
+    if unshipped_refs and ref in unshipped_refs:
+        return (" ОБЪЯВЛЕНА, но в паке вне flavors.packs: её дефолты уезжают в "
+                "state/defaults_unshipped.gen.rpy, который вырезается из "
+                "дистрибутива, поэтому в релизной сборке стора не существует. "
+                "Добавьте пак во флейвор или уберите ссылку из поставляемой зоны")
+    return ""
+
+
 def _validate_when(unit, exits: dict, var_registry: set[str] | None,
-                   rep, status: str) -> None:
+                   rep, status: str, unshipped_refs: set[str] | None = None) -> None:
     """Условия переходов `when:` из exits — против Variable Registry.
 
     Раньше их не проверял НИКТО: схема scene@1 описывает `when` обычной строкой,
@@ -180,7 +195,8 @@ def _validate_when(unit, exits: dict, var_registry: set[str] | None,
                     f"{where}: {ref} не объявлена в Variable Registry "
                     f"(content/variables/*.vars.yaml или chapters/*/vars.yaml). "
                     f"Условие исполняется py_eval в сторе игрока — несуществующее "
-                    f"имя даёт NameError в момент перехода между сценами")
+                    f"имя даёт NameError в момент перехода между сценами."
+                    + _unshipped_hint(ref, unshipped_refs))
             for name in sorted(free):
                 complain(
                     f"{where}: свободное имя {name!r} — в py_eval оно не разрешится "
@@ -314,7 +330,8 @@ def _validate_refs(unit: SceneUnit, rep: SceneCompileReport, complain,
 
 def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
                    rep: SceneCompileReport, var_registry: set[str] | None = None,
-                   image_index=None, audio_tracks: dict[str, dict] | None = None) -> dict:
+                   image_index=None, audio_tracks: dict[str, dict] | None = None,
+                   unshipped_refs: set[str] | None = None) -> dict:
     """Проверка контракта. Возвращает контекст эмиссии:
     {exit_id -> [{to_label, when?}]}; недостижимые цели draft-глав заменены на fallback."""
     a = unit.analysis
@@ -432,7 +449,7 @@ def validate_scene(unit: SceneUnit, known_scenes: set[str], status: str,
                 f"{unit.yaml_rel}: exits.{exit_id} не достигается ни одним return в {src}"
             )
 
-    _validate_when(unit, exits, var_registry, rep, status)
+    _validate_when(unit, exits, var_registry, rep, status, unshipped_refs)
 
     # ── Переменные (G5/C-save-integrity): фактические чтения/записи store-атрибутов
     # из build-bridge сверяются с Variable Registry. Незадекларированный атрибут =

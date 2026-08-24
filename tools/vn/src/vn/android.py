@@ -191,7 +191,6 @@ def install_rapt(sdk: Path, version: str) -> list[str]:
     из CLI, чтобы шаг «поставить тулчейн» не требовал GUI."""
     import io
     import urllib.request
-    import zipfile
 
     dest = sdk / "rapt"
     if dest.is_dir():
@@ -199,9 +198,15 @@ def install_rapt(sdk: Path, version: str) -> list[str]:
     url = RAPT_URL.format(version=version)
     with urllib.request.urlopen(url) as resp:          # noqa: S310 — фиксированный host renpy.org
         data = resp.read()
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        # В архиве один верхний каталог rapt/ — распаковываем в SDK как есть.
-        zf.extractall(sdk)
+    # Через общий хелпер, а НЕ zf.extractall: zipfile прав не переносит вообще
+    # (CPython ZipFile._extract_member не читает external_attr), и тулчейн
+    # оказывался без бита x. На Windows это невидимо, а на Linux/macOS следующий
+    # шаг сборки APK падал Permission denied посреди gradle — при зелёной
+    # диагностике rapt_status, которая проверяет только наличие каталога и хеш.
+    # Тот же дефект, что закрыт для mac-депота (FWA-003), но в другом месте.
+    from .archive import extract_zip_preserving_modes
+
+    extract_zip_preserving_modes(io.BytesIO(data), sdk)
     if not dest.is_dir():
         raise AndroidError(f"{url}: в архиве нет каталога rapt/")
     return [f"RAPT установлен из {url}"]

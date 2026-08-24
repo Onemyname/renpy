@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import zipfile
+from pathlib import Path
 
 import pytest
 import yaml
@@ -383,13 +384,23 @@ def test_zip_extraction_restores_the_executable_bit(tmp_path):
     (SDK launcher/game/installer.py) — значит это обязан делать и наш конвейер,
     иначе .app уезжает в депот с 0644 и Steam на macOS его не запускает.
 
-    Проверка только на POSIX: в файловой системе Windows бита исполняемости нет,
-    и утверждать там нечего."""
+    Раньше тест целиком скипался вне POSIX — и это делало ЕДИНСТВЕННЫЙ гейт,
+    наблюдающий x-бит, неисполняемым на машине владельца (все 13 skipped в наборе
+    ровно такого рода). Класс «архив теряет права» из-за этого не проверялся ни
+    разу, и второй его экземпляр (android.install_rapt) появился незамеченным.
+    Поэтому проверка разделена: наблюдение st_mode остаётся POSIX-only, а
+    наблюдение КОДА (читает ли он external_attr, зовёт ли chmod) идёт всегда —
+    тот же приём, что в test_peak_rss_is_measured_on_every_platform."""
     import os
     import stat
 
+    # Часть, работающая на любой ОС: распаковка обязана СПРАШИВАТЬ права у архива.
+    helper = (Path(__file__).resolve().parents[3] / "tools" / "vn" / "src" / "vn"
+              / "archive.py").read_text(encoding="utf-8")
+    assert "external_attr" in helper and "chmod" in helper,         "распаковка перестала восстанавливать права — .app уедет в депот с 0644"
+
     if os.name != "posix":
-        pytest.skip("x-бит существует только на POSIX")
+        pytest.skip("наблюдение st_mode возможно только на POSIX (проверка кода выше)")
 
     src = tmp_path / "a.zip"
     with zipfile.ZipFile(src, "w") as zf:

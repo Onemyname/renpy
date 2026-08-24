@@ -903,3 +903,34 @@ def test_unmeasured_runtime_budget_is_a_failure_not_silence(tmp_path):
     assert ok == [], ok
     over = runtime_budget_failures(root, cold_start_s=3.0, baseline_rss_mb=1500.0)
     assert any("1500" in f or "> бюджета" in f for f in over), over
+
+
+def test_content_snapshot_excludes_packs_outside_every_flavor(repo_root):
+    """Обход гарда FWA-019: qa_flow уезжал в changelog и в release-manifest.
+
+    Заголовок FWA-019 обещал закрыть ДВУХ потребителей («id_registry и changelog»),
+    но фильтр лёг только в _released_ids. Общий снимок фильтра не имел, поэтому
+    `vn release changelog` — штатный ПЕРВЫЙ шаг релиза — писал в docs/CHANGELOG.md
+    «Новые главы: ch70 (pack qa_flow) …» и «Новые сцены (22): …», то есть тестовые
+    топологии графа, которые не уезжают ни одному игроку ни в одном флейворе.
+
+    Второй удар отложенный: ci/release-manifest.json впитывал их навсегда, и
+    удаление QA-пака — штатная операция, ради которой FWA-019 и заводили — давало
+    в следующем разделе «Удалены сцены (см. renames.yaml)» и жёлтое предупреждение
+    про renames, хотя никаких переименований не было.
+
+    Фильтр стоит ТАМ, ГДЕ РОЖДАЕТСЯ СНИМОК, а не у каждого потребителя: иначе
+    класс промаха «забыли одного потребителя» воспроизводится снова."""
+    from vn.release import snapshot_content
+    from vn.repo import unshipped_chapters
+
+    snap = snapshot_content(repo_root)
+    unshipped = unshipped_chapters(repo_root)
+    assert unshipped, ("в дереве нет пака вне флейворов — тест выродился, "
+                       "проверять фильтр не на чем")
+    leaked = sorted(set(snap) & set(unshipped))
+    assert not leaked, (
+        f"главы пака вне всех флейворов попали в снимок релиза: {leaked} — они "
+        f"уедут в changelog и навсегда впитаются в release-manifest")
+    # И гейт не должен выродиться: поставляемый контент в снимке остаться обязан.
+    assert snap, "снимок пуст — фильтр съел всё"

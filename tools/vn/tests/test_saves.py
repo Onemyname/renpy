@@ -566,3 +566,32 @@ def test_no_store_name_is_reassigned_at_runtime(repo_root):
     # Гейт не должен выродиться: список разрешённых обязан оставаться актуальным.
     stale = _ALLOWED_STORE_GLOBALS - found
     assert not stale, f"в _ALLOWED_STORE_GLOBALS остались мёртвые записи: {stale}"
+
+
+def test_nested_non_string_dict_keys_are_refused_by_the_compiler():
+    """Обход гарда FWA-025 в КОМПИЛЯТОРЕ: вложенный не-строковый ключ.
+
+    Проверка смотрела ровно один уровень (свои ключи, без спуска в значения), а
+    механизм рекурсивен: json приводит ключи к строкам на ЛЮБОЙ глубине. Поэтому
+    `default: {counters: {1: 0}}` компилятор пропускал, а после любой миграции,
+    ТРОНУВШЕЙ переменную, в стор возвращалось `{counters: {"1": 0}}` — и следующее
+    d["counters"][1] промахивалось у КАЖДОГО игрока, загрузившего старый сейв.
+
+    Схема vars@1 тут не помогает: у default нет ни propertyNames, ни ограничения
+    глубины. В сообщении обязан быть ПУТЬ до ключа — иначе в большом словаре
+    непонятно, что чинить."""
+    from vn.content.compile import _py_literal
+
+    for bad in ({"a": {1: "x"}}, [{2: "y"}], {"a": {"b": {None: 1}}},
+                {"a": [{"b": {3.5: 1}}]}):
+        with pytest.raises(CompileError, match="не-строковыми ключами"):
+            _py_literal(bad)
+
+    # В тексте — путь, а не только факт.
+    try:
+        _py_literal({"a": {"b": {7: 1}}})
+    except CompileError as e:
+        assert "'a'" in str(e) and "'b'" in str(e) and "7" in str(e), str(e)
+
+    # Легальное вложенное значение проходит без изменений.
+    assert _py_literal({"a": {"b": [1, 2]}}) == repr({"a": {"b": [1, 2]}})

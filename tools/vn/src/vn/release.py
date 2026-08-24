@@ -276,14 +276,12 @@ def _extract_archive(archive: Path, dest: Path) -> None:
     # .app мы намеренно не разворачиваем — значит в депот уезжал бандл, у
     # которого Contents/MacOS/<exe> имеет режим 0644, и Steam на macOS такой
     # бандл не запускает вовсе. Сборка, гейт, VDF и аплоад при этом зелёные.
-    with zipfile.ZipFile(archive) as zf:
-        for info in zf.infolist():
-            written = zf.extract(info, dest)
-            mode = (info.external_attr >> 16) & 0o777
-            # mode == 0 у архивов, собранных без POSIX-атрибутов (например, на
-            # Windows): выставлять там нечего, и придумывать права за архив нельзя.
-            if mode and not info.is_dir():
-                os.chmod(written, mode)
+    # Восстановление прав живёт в общем хелпере (vn/archive.py): каждый вызов
+    # extractall в проекте — это потенциальная потеря бита x, и починка одного
+    # места ничего не говорит про остальные (так и вышло с install_rapt).
+    from .archive import extract_zip_preserving_modes
+
+    extract_zip_preserving_modes(archive, dest)
 
 
 def _archive_executables(archive: Path) -> int:
@@ -648,12 +646,27 @@ def snapshot_content(root: Path) -> dict:
     подпадают под G7 наравне с ядром. Пока снимок обходил только
     `content/chapters/`, добавление и переименование главы пака не попадало ни в
     changelog, ни в штамп реестра — то есть сеть, которая ловит «выпущенная сцена
-    исчезла», на паках просто не работала."""
+    исчезла», на паках просто не работала.
+
+    НО пак, не перечисленный ни в одном `flavors.packs`, не уезжает ни одному
+    игроку ни в одном флейворе — значит выпущенным контентом он не является, и
+    фильтр стоит ЗДЕСЬ, где рождается снимок, а не у каждого потребителя. FWA-019
+    обещал закрыть двух потребителей («id_registry и changelog»), но фильтр лёг
+    только в `_released_ids`: `vn release changelog` (штатный первый шаг релиза)
+    писал в docs/CHANGELOG.md «Новые главы: ch70 (pack qa_flow) …» и «Новые сцены
+    (22): …» — то есть тестовые топологии графа. Второй удар отложенный:
+    ci/release-manifest.json впитывал их навсегда, и удаление QA-пака (штатная
+    операция, ради которой FWA-019 и заводили) давало в следующем разделе
+    «Удалены сцены (см. renames.yaml)» и жёлтое предупреждение про renames —
+    хотя никаких переименований не было."""
+    unshipped = unshipped_chapters(root)
     chapters: dict[str, dict] = {}
     for pack_id, base in chapter_zones(root):
         for d in sorted(p for p in base.iterdir() if p.is_dir()):
             m = CHAPTER_DIR_RE.match(d.name)
             if not m:
+                continue
+            if f"ch{m.group(1)}" in unshipped:
                 continue
             ch_id = f"ch{m.group(1)}"
             meta = load_yaml(d / "chapter.yaml") if (d / "chapter.yaml").is_file() else {}
