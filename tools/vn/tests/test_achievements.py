@@ -419,3 +419,62 @@ def test_progress_is_gated_by_visibility_and_never_leaks_hidden(repo_root):
     assert guard and "not hidden" in guard[0], \
         f"прогресс скрытой ачивки уходит в платформу мимо спойлер-правила: {guard}"
     assert 'get("hidden")' in note, "признак hidden берётся не из реестра"
+
+
+def test_platform_catch_up_never_pushes_an_invisible_achievement(repo_root):
+    """Выдача ачивки в платформу обязана проходить гейт видимости — ВЕЗДЕ.
+
+    FWA-008 закрыл этот класс в vn_ach.check/_note_progress, но догон на init 999
+    (035_platform.rpy) идёт мимо vn_ach.grant: он читает persistent напрямую через
+    vn_ach.has() и зовёт achievement.grant(). По all_ids() это отправляло в Steam
+    ачивку, которую visible() в этой сборке скрывает.
+
+    Почему это достижимо: persistent глобален и ОБЩИЙ у флейворов — config.save_directory
+    задан одним литералом в game/options.rpy, — поэтому nsfw-ачивка, выданная в
+    patron-сборке, лежит в том же файле, который читает public. А Steam на ещё не
+    разлоченной ачивке рисует попап оверлея с названием и иконкой, то есть SFW-сборка
+    показывала бы ровно то, что прячет её собственный экран достижений (G9).
+
+    Регистрация в партнёрке по all_ids() при этом ЛЕГАЛЬНА и специально не проверяется:
+    она ничего не показывает игроку, а список ачивок в Steamworks обязан быть полным."""
+    raw = (repo_root / "game" / "framework" / "00_core"
+           / "035_platform.rpy").read_text(encoding="utf-8")
+
+    # Комментарии вырезаем ДО разбора: они в этом файле обсуждают и all_ids(), и
+    # visible_ids() по имени, и тест ловил бы собственную прозу вместо кода.
+    def _code(text):
+        out = []
+        for line in text.splitlines():
+            quote = None
+            cut = len(line)
+            for i, ch in enumerate(line):
+                if quote:
+                    if ch == quote:
+                        quote = None
+                elif ch in "\"'":
+                    quote = ch
+                elif ch == "#":
+                    cut = i
+                    break
+            out.append(line[:cut])
+        return "\n".join(out)
+
+    src = _code(raw)
+
+    # Догон — участок от подключения провайдеров до achievement.sync().
+    assert "set_progress_provider" in src and "achievement.sync()" in src, \
+        "структура блока init 999 изменилась — тест ослеп, перепишите разбор"
+    catch_up = src.split("set_progress_provider", 1)[1].split("achievement.sync()", 1)[0]
+
+    assert "achievement.grant(" in catch_up, \
+        "догон выданного офлайн исчез — либо перепишите тест, либо верните догон"
+    assert "visible_ids()" in catch_up, \
+        "догон идёт не по visible_ids() — невидимая ачивка уедет в попап платформы (G9)"
+    assert "all_ids()" not in catch_up, \
+        ("догон перебирает all_ids(): ачивка пака/nsfw, лежащая в общем persistent, "
+         "будет отправлена в платформу мимо гейта видимости")
+
+    # Вторая половина того же правила: других путей в платформу мимо vn_ach нет.
+    outside = src.split("set_progress_provider", 1)[0]
+    assert "achievement.grant(" not in outside, \
+        "выдача в платформу появилась ДО подключения провайдеров — гейт видимости обойдён"

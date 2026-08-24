@@ -155,6 +155,10 @@ init 999 python:
         # Ачивки: те же стабильные id, что в achievements.yaml, регистрируются
         # в движковом achievement-модуле (его SteamBackend батчит StoreStats).
         # В Steamworks API Name каждой ачивки обязан совпадать с её id.
+        #
+        # РЕГИСТРАЦИЯ идёт по all_ids() намеренно: она ничего не показывает игроку,
+        # а список ачивок в партнёрке обязан быть полным независимо от флейвора и
+        # владения паками. ВЫДАЧА в платформу — только по visible_ids(), см. догон ниже.
         for _vn_aid in vn_ach.all_ids():
             # Прогрессивным ачивкам движок сам рисует попап «N из M», если при
             # регистрации знает цель и шаг (stat_max/stat_modulo — 00achievement.rpy).
@@ -168,7 +172,16 @@ init 999 python:
         vn_ach.set_progress_provider(achievement.progress)
         # Догон: выданное офлайн/до покупки Steam-версии доезжает при первом
         # запуске под Steam (grant идемпотентен, sync сводит бэкенды).
-        for _vn_aid in vn_ach.all_ids():
+        #
+        # По visible_ids(), а НЕ по all_ids(): persistent глобален и общий у флейворов
+        # (config.save_directory — один литерал в options.rpy), поэтому ачивка, выданная
+        # в patron-сборке, лежит в том же файле, что читает public. Догон по all_ids()
+        # отправлял бы её в платформу мимо гейта видимости — а Steam на ещё не
+        # разлоченной ачивке рисует попап оверлея с её названием и иконкой, то есть
+        # SFW-сборка показывала бы то, что её собственный экран достижений прячет.
+        # Это тот же гейт G9, что закрыт в vn_ach.check/_note_progress (FWA-008);
+        # здесь он был пропущен, потому что путь идёт мимо vn_ach.grant.
+        for _vn_aid in vn_ach.visible_ids():
             if vn_ach.has(_vn_aid):
                 achievement.grant(_vn_aid)
         achievement.sync()
