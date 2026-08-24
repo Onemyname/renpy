@@ -348,6 +348,10 @@ init -999 python in vn_qa:
         зелёным при экране, который не открылся вовсе."""
         shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
         shown, failed, missing = [], {}, []
+        # Имя экрана, после которого стек UI пришлось выравнивать: всё, что
+        # провалилось ПОСЛЕ него, может быть каскадом, а не своей поломкой.
+        # Гейт печатает это отдельно, чтобы вердикт называл корень.
+        cascade_after = None
         for name, kwargs in autopilot_tour():
             if not renpy.has_screen(name):
                 missing.append(name)
@@ -375,12 +379,39 @@ init -999 python in vn_qa:
             except Exception as e:
                 failed[name] = "%s: %s" % (type(e).__name__, e)
                 vn_log("autopilot screen %s failed: %s" % (name, e))
+                # Исключение при отрисовке оставляет непустой widget/layer-стек, и
+                # КАЖДЫЙ следующий экран тура падал с «ui.interact called with
+                # non-empty widget/layer stack. Did you forget a ui.close()
+                # somewhere?» — сообщением, не имеющим отношения к причине. Один
+                # корень выдавался за семь проблем, и разбор уходил в сторону
+                # «кто забыл ui.close()». Поэтому стек выравнивается, а факт
+                # чистки пишется в лог: молча выравнивать нельзя — так можно
+                # замаскировать настоящую утечку ui.close() в своём коде.
+                try:
+                    renpy.hide_screen(name)
+                except Exception:
+                    pass
+                # Стек возвращается в ВАЛИДНОЕ состояние штатным ui.reset(): он
+                # ставит [Layer("transient")], а не пустой список (движок сам
+                # зовёт его на post_init). Ручное опустошение стека делает хуже —
+                # следующие экраны падают уже «Can't add displayable during init
+                # phase», то есть каскад просто меняет текст.
+                if cascade_after is None:
+                    cascade_after = name
+                try:
+                    import renpy.ui as _vn_ui
+                    _vn_ui.reset()
+                    vn_log("autopilot: стек UI сброшен (ui.reset) после %s — "
+                           "последующие экраны проверены ПОСЛЕ восстановления" % name)
+                except Exception as e2:
+                    vn_log("autopilot: стек UI не сброшен после %s: %s" % (name, e2))
         if shots_dir:
             try:
                 import json
                 with open(os.path.join(shots_dir, "screens.json"), "w",
                           encoding="utf-8") as f:
                     json.dump({"shown": shown, "failed": failed, "missing": missing,
+                               "cascade_after": cascade_after,
                                "defined": sorted(renpy.store.vn_compat.defined_screens()
                                                  - {"vn_autopilot"})}, f,
                               ensure_ascii=False, indent=1)

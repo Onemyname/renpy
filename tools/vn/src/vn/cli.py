@@ -438,6 +438,24 @@ def package(packages: tuple, timeout_s: int, dest_suffix: str = ""):
     if proc.returncode != 0:
         _fail(f"renpy compile упал:\n{proc.stdout[-1500:]}\n{proc.stderr[-800:]}")
 
+    # 3a) Осиротевшие .rpyc движок не удаляет, а ПЕРЕИМЕНОВЫВАЕТ в <имя>.rpyc.bak
+    # (renpy/script.py: clean_script_files). Это его страховка «удалил .rpy по
+    # ошибке», и в dev-цикле она полезна, поэтому `vn build` их не трогает. Но в
+    # РЕЛИЗНОМ пути такой файл — скомпилированный скрипт удалённого контента, и
+    # он уезжал игроку: шаблона *.bak в паттернах движка нет, а последний там
+    # всеядный. Классификация в options.rpy его теперь исключает, но чистим и
+    # здесь: файл в рабочем дереве не нужен, а его наличие означает, что сироты
+    # были — об этом стоит сказать вслух.
+    baks = sorted((root / "game").rglob("*.bak"))
+    for b in baks:
+        b.unlink()
+    if baks:
+        click.secho(
+            f"осиротевшие .rpyc: {len(baks)} шт. переименованы движком в .bak и "
+            f"удалены (скомпилированный скрипт удалённого контента в поставку не "
+            f"идёт): " + ", ".join(b.relative_to(root).as_posix() for b in baks[:5])
+            + (" …" if len(baks) > 5 else ""), fg="yellow")
+
     # 4) Дистрибутивы: dest чистится — старые архивы не должны вкладываться в новые
     dest = root / "build" / "dist" / (version + dest_suffix)
     if dest.exists():
@@ -1765,11 +1783,34 @@ def test():
 
 def _autopilot_run(root: Path, shots: Path, extra_env: dict, timeout_s: int,
                    savedir: Path | None = None) -> tuple[int, bool]:
-    """Тонкая обёртка над qa.autopilot_run: CLI переводит отказ модуля в exit 1."""
+    """Тонкая обёртка над qa.autopilot_run: CLI переводит отказ модуля в exit 1.
+
+    ЯЗЫК ПРОГОНА ПИННИТСЯ ЗДЕСЬ, а не у каждого вызова. Без переменной
+    VN_AUTOPILOT_LANG движок язык просто не трогает (030_flow.rpy), то есть берёт
+    persistent-язык, оставшийся от ПРЕДЫДУЩЕГО прогона, а `--savedir` persistent не
+    изолирует (savelocation поднимает и config.savedir, и <gamedir>/saves).
+
+    Следствия были такие. В nightly шаги идут в одном job последовательно, и
+    последний smoke матрицы ставит язык pseudo — после чего тур экранов, покрытие
+    ветвления, пересмотр сцен и проверка сейв-корпуса шли ПО ПСЕВДОЛОКАЛИЗАЦИИ.
+    То есть `vn test screens` никогда не проверял то, для чего заведён, и падал по
+    причине из другого дефекта, а красный шаг читался как «сломался pseudo».
+    Локально гейт давал разный ответ на одном коммите в зависимости от истории
+    машины: инженер, прогнавший документированный `vn test smoke --lang en`,
+    получал от следующего `vn test screens` ошибки, не имеющие отношения к правке.
+
+    Дефолт `@source` (явный сброс на исходный язык) переопределяется вызывающим:
+    smoke передаёт `--lang`, а `vn test replay` — язык из записи фикстуры.
+    Гард: test_qa::test_every_autopilot_run_pins_the_language."""
     from .qa import QaError, autopilot_run
 
+    env = {"VN_AUTOPILOT_LANG": "@source"}
+    env.update(extra_env or {})
+    # Пустая строка от `--lang ""` — это «не задано», а не «сбросить в никуда».
+    if not env.get("VN_AUTOPILOT_LANG"):
+        env["VN_AUTOPILOT_LANG"] = "@source"
     try:
-        return autopilot_run(root, shots, extra_env, timeout_s, savedir=savedir)
+        return autopilot_run(root, shots, env, timeout_s, savedir=savedir)
     except QaError as e:
         _fail(str(e))
 
@@ -2072,6 +2113,13 @@ def test_screens(timeout_s: int, variant: str):
     if not art.screens:
         fails.append("screens.json не записан — тур не отчитался ни об одном "
                      "экране, проверять нечего")
+    # Вырожденность фильтра «наш/движковый»: пустой реестр объявленных экранов
+    # означает, что defined_screens() не признал своим НИ ОДИН экран, и гейт
+    # «экран есть в игре, но его никто не проверяет» молча выключается.
+    elif not (art.screens.get("defined") or []):
+        fails.append("реестр объявленных экранов пуст — фильтр «наш/движковый» не "
+                     "сработал (vn_compat.defined_screens), и проверка «экран не "
+                     "покрыт туром» выключилась бы молча")
     shown = set(art.screens.get("shown") or [])
     failed = art.screens.get("failed") or {}
     missing = set(art.screens.get("missing") or []) - optional
@@ -2080,7 +2128,21 @@ def test_screens(timeout_s: int, variant: str):
     for name in sorted(shown):
         if not (shots / f"screen_{name}.png").is_file():
             fails.append(f"{name}: экран показан, но кадра screen_{name}.png нет")
+    # Корень отделяется от каскада. Исключение при отрисовке оставляло непустой
+    # widget/layer-стек, и каждый следующий экран падал с «ui.interact called with
+    # non-empty widget/layer stack» — сообщением не про причину. Один корень
+    # выдавался за семь проблем, и разбор уходил в «кто забыл ui.close()».
+    # Рантайм теперь стек выравнивает и сообщает, ПОСЛЕ какого экрана он это
+    # сделал; здесь виновник называется первым и явно.
+    cascade_after = art.screens.get("cascade_after")
+    root_cause = cascade_after if cascade_after in failed else None
+    if root_cause:
+        fails.append(f"{root_cause}: экран не открылся — {failed[root_cause]} "
+                     f"[КОРЕНЬ: остальные экраны тура проверены после "
+                     f"восстановления стека UI]")
     for name, why in sorted(failed.items()):
+        if name == root_cause:
+            continue
         fails.append(f"{name}: экран не открылся — {why}")
     for name in sorted(missing):
         fails.append(f"{name}: экран объявлен в туре, но в игре его нет "

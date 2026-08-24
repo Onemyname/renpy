@@ -354,3 +354,86 @@ def test_screens_gate_fails_when_the_tour_did_not_report(repo_root):
         "пустой отчёт тура не считается провалом"
     assert "declared - optional - shown - set(failed) - missing" in body, \
         "экран без отчёта ни в одном из трёх списков проходит гейт молча"
+
+
+def test_every_autopilot_run_pins_the_language(repo_root):
+    """Язык автопилотного прогона обязан быть ДЕТЕРМИНИРОВАННЫМ.
+
+    Без переменной VN_AUTOPILOT_LANG движок язык не трогает (030_flow.rpy), то есть
+    берёт persistent-язык, оставшийся от ПРЕДЫДУЩЕГО прогона, а `--savedir`
+    persistent не изолирует (savelocation поднимает и config.savedir, и
+    <gamedir>/saves).
+
+    В nightly шаги идут в одном job последовательно, и последний smoke матрицы
+    ставит pseudo — после чего тур экранов, покрытие ветвления, пересмотр сцен и
+    проверка сейв-корпуса шли по ПСЕВДОЛОКАЛИЗАЦИИ. То есть `vn test screens`
+    никогда не проверял то, для чего заведён. Локально гейт давал разный ответ на
+    одном коммите в зависимости от истории машины.
+
+    Пин стоит в ОДНОМ месте — обёртке `_autopilot_run`, — а не у каждого вызова:
+    правило, которое обязан помнить автор новой команды, рано или поздно забудут
+    (так и вышло: deck-kit пиннил, остальные пять команд — нет)."""
+    src = (repo_root / "tools" / "vn" / "src" / "vn" / "cli.py").read_text(
+        encoding="utf-8")
+    body = src.split("def _autopilot_run(", 1)[1].split("\n@", 1)[0]
+    assert "VN_AUTOPILOT_LANG" in body, \
+        "обёртка автопилота не пиннит язык — прогон возьмёт язык прошлого прогона"
+    assert '"@source"' in body, \
+        "дефолт пина не @source: прогон не сбрасывает persistent-язык явно"
+    # И ни один вызов не имеет права остаться без пина по недосмотру: обёртка
+    # обязана быть единственной точкой запуска.
+    assert "autopilot_run(root, shots" not in src.split(
+        "def _autopilot_run(", 1)[0], \
+        "есть вызов qa.autopilot_run мимо обёртки — язык там не пиннится"
+
+
+def test_screens_tour_recovers_the_ui_stack_and_names_the_root_cause(repo_root):
+    """Одна поломка экрана не должна выдаваться за семь.
+
+    Исключение при отрисовке оставляет непустой widget/layer-стек, и каждый
+    следующий экран тура падал с «ui.interact called with non-empty widget/layer
+    stack. Did you forget a ui.close() somewhere?» — сообщением, не имеющим
+    отношения к причине. Release-инженер видел «7 проблем» и шесть одинаковых
+    дампов стека, а корень был один и первый в списке.
+
+    Стек возвращается в валидное состояние ШТАТНЫМ ui.reset() (он ставит
+    [Layer("transient")], а не пустой список): ручное опустошение делает хуже —
+    следующие экраны падают уже «Can't add displayable during init phase»."""
+    flow = (repo_root / "game" / "framework" / "00_core"
+            / "030_flow.rpy").read_text(encoding="utf-8")
+    tour = flow.split("def autopilot_screens(", 1)[1].split("\n    def ", 1)[0]
+    assert "reset()" in tour, \
+        "тур не восстанавливает стек UI — одна поломка даст каскад ложных диагнозов"
+    assert "cascade_after" in tour, \
+        "тур не сообщает, после какого экрана он восстанавливался"
+
+    cli = (repo_root / "tools" / "vn" / "src" / "vn" / "cli.py").read_text(
+        encoding="utf-8")
+    assert "cascade_after" in cli and "КОРЕНЬ" in cli, \
+        "гейт не отделяет корень от каскада — вердикт называет не ту причину"
+
+
+def test_orphan_rpyc_backup_never_ships(repo_root):
+    """Осиротевший .rpyc движок ПЕРЕИМЕНОВЫВАЕТ в .bak, и он уезжал игроку.
+
+    `renpy compile` (третий шаг `vn package`) чистит осиротевшие .rpyc не
+    удалением, а os.rename(name, name + ".bak") — renpy/script.py:
+    clean_script_files. Шаблона *.bak нет ни в early_base_patterns, ни в
+    late_base_patterns движка, а последний паттерн там всеядный ("**", "all"):
+    скомпилированный скрипт УДАЛЁННОГО контента попадал в каждый пакет и в каждый
+    следующий релиз, потому что удалять .bak нечему — и линия .rpyc (G6), и бюджет
+    rpyc_total_kb ходят по glob("*.rpyc").
+
+    Для 18+ проекта это выдача дата-майнеру вырезанного контента (unrpyc —
+    публичный инструмент), то есть ровно то, от чего защищается запрет зон в
+    options.rpy. Риск повышен тем, что релизы собираются вручную на долгоживущем
+    рабочем дереве, а не в свежем чекауте CI, где сирот не бывает."""
+    options = (repo_root / "game" / "options.rpy").read_text(encoding="utf-8")
+    assert 'build.classify("**.bak", None)' in options, \
+        "*.bak не исключён из дистрибутива — уедет скомпилированный удалённый контент"
+
+    cli = (repo_root / "tools" / "vn" / "src" / "vn" / "cli.py").read_text(
+        encoding="utf-8")
+    pkg = cli.split("def package", 1)[1].split("\n@", 1)[0]
+    assert '"*.bak"' in pkg or "'*.bak'" in pkg, \
+        "релизный путь не убирает .bak из рабочего дерева"
