@@ -56,6 +56,34 @@ init -999 python in vn_state:
             return False
         return True
 
+    def _nonstring_key_path(value, _depth=0):
+        """Путь до первого не-строкового ключа dict внутри value, либо "".
+
+        Возвращает человекочитаемый суффикс вида `["counters"][1]` — автору
+        миграции нужно знать не только ИМЯ переменной, но и где именно ключ, иначе
+        по логу непонятно, что чинить. Глубина ограничена: состояние приходит из
+        сейва игрока, и зацикленную структуру json-раундтрип бы не пережил, но
+        рекурсия по чужим данным без потолка — сама по себе способ уронить старт.
+        Тот же обход обязан быть в компиляторе (compile.py: _py_literal), иначе
+        половина защиты снова смотрит на один уровень."""
+        if _depth > 12:
+            return ""
+        if isinstance(value, _PLAIN_DICT):
+            for k in value:
+                if not isinstance(k, str):
+                    return "[%r]" % (k,)
+            for k, v in value.items():
+                inner = _nonstring_key_path(v, _depth + 1)
+                if inner:
+                    return "[%r]%s" % (k, inner)
+            return ""
+        if isinstance(value, (_builtins.list, _builtins.tuple)):
+            for i, v in enumerate(value):
+                inner = _nonstring_key_path(v, _depth + 1)
+                if inner:
+                    return "[%d]%s" % (i, inner)
+        return ""
+
     def vn_compat_names():
         """Имена движка из vn_compat — лениво: стор создаётся на init -950, позже
         этого блока (C8)."""
@@ -68,6 +96,11 @@ init -999 python in vn_state:
         переменная, удалённая из новой схемы, лежит в старом сейве и обязана быть
         видима migrate(state) — иначе миграциям нечего переносить (слепое пятно G5)."""
         out = {}
+        # Что объявлено декларациями — по сторам. Нужно ниже: объявленное имя
+        # всегда НАШЕ, чем бы оно ни было в minstore.
+        declared = {}
+        for _s, _v in SNAPSHOT_VARS:
+            declared.setdefault(_s, set()).add(_v)
         for store_name in SNAPSHOT_STORES:
             module = getattr(renpy.store, store_name, None)
             if module is None:
@@ -78,11 +111,26 @@ init -999 python in vn_state:
             # обычный bool, доезжавший до состояния миграций как `g.PY2`. Автор
             # миграции не должен видеть в плоском состоянии переменные, которых
             # никто не объявлял (и которые меняются с версией движка).
-            engine = vn_compat_names()
+            #
+            # Но вычитать ВСЕ имена minstore нельзя: их там 70, и 39 подходят под
+            # шаблон имени контентной переменной (C21) — `round`, `position`,
+            # `input`, `open`, `set`, `range`, `sorted`… Объявленная переменная с
+            # таким именем МОЛЧА выпадала из снапшота, и миграция её не видела:
+            # проверено прогоном, `g.round` и `g.position` в state.json
+            # отсутствовали при исправной контрольной переменной рядом. Поэтому
+            # вычитается РАЗНИЦА: объявленное имя из декларации — наше по
+            # определению, что бы движок ни положил в стор под тем же именем.
+            engine = vn_compat_names() - declared.get(store_name, frozenset())
             for var, value in vars(module).items():
                 if var.startswith("_") or callable(value) or type(value).__name__ == "module":
                     continue
                 if var in engine:
+                    # Пропуск больше не молчит: остальные две ветки отбраковки
+                    # логируют имя, а эта — нет, и «снапшот обещает показывать
+                    # ВСЁ» расходилось с фактом без следа в логе.
+                    vn_log("snapshot: %s.%s пропущен (имя движка из minstore; "
+                           "объявите переменную, если она ваша)"
+                           % (store_name, var))
                     continue
                 if not isinstance(value, _SIMPLE):
                     vn_log("snapshot: %s.%s пропущен (не-простой тип %s)"
@@ -142,7 +190,24 @@ init -999 python in vn_state:
                 vn_log("migration chain gap: %d -> %d — цепочка прервана" % (applied, number))
                 break
             vn_log("migration %04d" % number)
-            result = migrate(state)
+            try:
+                result = migrate(state)
+            except Exception as e:
+                # Третий способ сломать цепочку, и раньше он был единственным
+                # НЕперехваченным: исключение из тела миграции (KeyError по
+                # переменной, которой в старом сейве нет; TypeError на None;
+                # опечатка) вылетало из run_migrations, из блока python: в
+                # label after_load и попадало в движковый обработчик — крэш-скрин
+                # вместо игры. Хуже побочный эффект: apply_snapshot стоит ПОСЛЕ
+                # цикла, поэтому результат УСПЕШНО прошедших миграций 2..N−1
+                # терялся целиком, а vn_save_schema оставался старым — и каждая
+                # следующая загрузка того же слота падала снова.
+                # Обрываем так же, как на забытом return и на дыре в нумерации:
+                # applied остаётся на последней успешной, apply_snapshot её
+                # запишет, а after_load честно скажет «migrations incomplete».
+                vn_log("migration %04d упала: %s: %s — цепочка прервана"
+                       % (number, type(e).__name__, e))
+                break
             if not isinstance(result, _PLAIN_DICT):
                 # Контракт migrate(state) -> dict; типичная описка — забытый return.
                 # Дальше идти нельзя (следующая миграция получила бы None), а падать
@@ -177,13 +242,18 @@ init -999 python in vn_state:
                     # но переменную мог наполнить и рантайм-код сцены — здесь
                     # хотя бы остаётся след, а не тишина.
                     if isinstance(v, _PLAIN_DICT):
-                        old_value = _orig.get(k)
-                        if isinstance(old_value, _PLAIN_DICT) and any(
-                                not isinstance(kk, str) for kk in old_value):
-                            vn_log("migration: %s — ключи dict нормализованы в "
+                        # Рекурсивно, а не по верхнему уровню: раундтрип приводит
+                        # ключи к строкам на ЛЮБОЙ глубине, а проверка смотрела
+                        # только свои ключи. `{counters: {1: 0}}` возвращался в
+                        # стор как `{counters: {"1": 0}}`, и следующее
+                        # d["counters"][1] промахивалось у КАЖДОГО игрока — без
+                        # единой строки в логе.
+                        path = _nonstring_key_path(_orig.get(k))
+                        if path:
+                            vn_log("migration: %s%s — ключи dict нормализованы в "
                                    "строки json-раундтрипом; обращения по "
                                    "не-строковому ключу перестанут находить "
-                                   "значение" % k)
+                                   "значение" % (k, path))
                     changed[k] = v
             apply_snapshot(changed)
         return applied

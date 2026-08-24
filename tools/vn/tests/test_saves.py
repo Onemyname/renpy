@@ -141,9 +141,17 @@ def _revertable(value):
     return value
 
 
-def _state_module(repo_root, stores: dict, monkeypatch, save_schema: int = 1):
+def _state_module(repo_root, stores: dict, monkeypatch, save_schema: int = 1,
+                  declared: dict | None = None):
     """Стор vn_state без движка. stores: {имя стора: {переменная: значение}} —
     так их наполняют generated/state/defaults.gen.rpy и snapshot.gen.rpy.
+
+    `declared` разводит две разные вещи, которые раньше совпадали: что ЛЕЖИТ в
+    сторе и что ОБЪЯВЛЕНО декларациями (SNAPSHOT_VARS). В игре они не совпадают
+    никогда — create_store копирует в каждый стор содержимое renpy.minstore,
+    поэтому в сторе всегда есть имена, которых никто не объявлял. По умолчанию
+    объявленным считается всё (так проще большинству тестов), но тест про имена
+    движка обязан задать это явно, иначе он проверяет не то, что думает.
     Значения кладутся в стор Revertable-обёртками, а имена list/dict/set в блоке
     подменяются, как это делает движок (см. комментарий выше).
 
@@ -181,7 +189,8 @@ def _state_module(repo_root, stores: dict, monkeypatch, save_schema: int = 1):
     monkeypatch.setitem(sys.modules, "store", fake_store)
     exec(compile(textwrap.dedent("\n".join(body)), STATE_REL, "exec"), mod.__dict__)
     mod.SNAPSHOT_STORES = tuple(stores)
-    mod.SNAPSHOT_VARS = tuple((s, v) for s, values in stores.items() for v in values)
+    decl = stores if declared is None else declared
+    mod.SNAPSHOT_VARS = tuple((s, v) for s, values in decl.items() for v in values)
     mod.stores = modules
     mod.log = log
     return mod
@@ -377,10 +386,17 @@ def test_snapshot_excludes_engine_names(repo_root, monkeypatch):
     признакам: признаковый фильтр уже один раз промахнулся."""
     st = _state_module(repo_root,
                        {"g": {"route": "common", "PY2": False, "renpy_version": "8.5"}},
-                       monkeypatch)
+                       monkeypatch,
+                       # Объявлена только route: PY2/renpy_version в сторе есть, но
+                       # их туда положил движок, а не декларация. Раньше харнесс
+                       # объявлял ВСЁ, что лежит в сторе, и тест проверял не то.
+                       declared={"g": ["route"]})
     snap = st.snapshot()
     assert snap["g.route"] == "common"
     assert "g.PY2" not in snap and "g.renpy_version" not in snap, snap
+    # Пропуск обязан быть виден в логе: две другие ветки отбраковки логируют имя,
+    # а эта молчала — и «снапшот показывает ВСЁ» расходилось с фактом без следа.
+    assert any("PY2" in line for line in st.log), st.log
 
 
 def test_non_string_dict_keys_are_refused_by_the_compiler():
@@ -413,3 +429,84 @@ def test_migration_warns_when_it_normalises_dict_keys(repo_root, monkeypatch):
     applied = st.run_migrations(1)
     assert applied == 2
     assert any("ключи dict нормализованы" in m and "g.tally" in m for m in st.log), st.log
+
+
+def test_snapshot_keeps_a_declared_name_that_collides_with_an_engine_name(
+        repo_root, monkeypatch):
+    """Объявленная переменная обязана быть в снапшоте, даже если имя есть в minstore.
+
+    Фикс FWA-024 вычитал из снапшота ВСЕ имена renpy.minstore. Их там 70, и 39
+    подходят под шаблон имени контентной переменной (C21): round, position, input,
+    open, set, range, sorted… Объявленная `g.round` (счётчик раунда мини-игры —
+    C21 прямо предусматривает сторы mech_* для механик) МОЛЧА выпадала из
+    снапшота, и migrate(state) её не видел: миграция, переносящая переменную в
+    новый формат, ничего не делала, сейв игрока оставался в старом формате, а
+    новый код читал его с новой семантикой.
+
+    Проверено прогоном движка: g.round и g.position отсутствовали в state.json при
+    исправной контрольной переменной рядом. Поэтому вычитается РАЗНИЦА: объявленное
+    имя — наше по определению."""
+    st = _state_module(
+        repo_root,
+        {"g": {"round": 3, "position": "left", "plain": 1, "PY2": False}},
+        monkeypatch,
+        # round/position объявлены декларацией, PY2 — нет: его положил движок.
+        declared={"g": ["round", "position", "plain"]})
+    snap = st.snapshot()
+    assert snap["g.round"] == 3, snap
+    assert snap["g.position"] == "left", snap
+    assert snap["g.plain"] == 1, snap
+    assert "g.PY2" not in snap, snap
+
+
+def test_migration_that_raises_breaks_the_chain_instead_of_crashing(
+        repo_root, monkeypatch):
+    """Исключение из тела миграции — третий способ сломать цепочку.
+
+    Забытый return и дыра в нумерации давали мягкий обрыв, а исключение (KeyError
+    по переменной, которой в старом сейве нет; TypeError на None; опечатка) не
+    перехватывалось вовсе: оно вылетало из run_migrations, из блока python: в
+    label after_load и попадало в движковый обработчик — крэш-скрин вместо игры.
+    Хуже побочный эффект: apply_snapshot стоит ПОСЛЕ цикла, поэтому результат
+    успешно прошедших миграций терялся ЦЕЛИКОМ, а vn_save_schema оставался старым,
+    и каждая следующая загрузка того же слота падала снова.
+
+    Инвариант: обрыв как на дыре — applied на последней успешной, её результат
+    записан, факт в логе."""
+    st = _state_module(repo_root, {"g": {"route": "common"}}, monkeypatch)
+
+    def boom(state):
+        return state["g.legacy_route"]          # KeyError: в старом сейве нет
+
+    st.MIGRATIONS = [(2, lambda state: dict(state, **{"g.route": "prologue"})),
+                     (3, boom),
+                     (4, lambda state: dict(state, **{"g.route": "never"}))]
+    applied = st.run_migrations(1)
+
+    assert applied == 2, "цепочка обязана остаться на последней УСПЕШНОЙ миграции"
+    assert st.stores["g"].route == "prologue", \
+        "результат успешной миграции 2 потерян — apply_snapshot не отработал"
+    assert any("упала" in m and "KeyError" in m for m in st.log), st.log
+
+
+def test_migration_warns_about_nested_non_string_keys(repo_root, monkeypatch):
+    """Обход гарда FWA-025: не-строковый ключ ВЛОЖЕННОГО dict.
+
+    Обе половины защиты смотрели ровно на один уровень: компилятор проверял свои
+    ключи и не спускался в значения, а детектор в run_migrations делал
+    `any(not isinstance(kk, str) for kk in old_value)`. Механизм же (json-раундтрип)
+    работает на ЛЮБОЙ глубине: `{counters: {1: 0}}` возвращается в стор как
+    `{counters: {"1": 0}}`, и следующее d["counters"][1] промахивается у КАЖДОГО
+    игрока, загрузившего старый сейв, — без единой строки в логе.
+
+    В сообщении обязан быть путь до ключа, а не только имя переменной: иначе по
+    логу непонятно, что чинить."""
+    st = _state_module(repo_root, {"g": {"tally": {"counters": {1: 0, 2: 0}}}},
+                       monkeypatch)
+    st.MIGRATIONS = [(2, lambda state: dict(
+        state, **{"g.tally": {"counters": {"1": 0, "2": 0, "3": 0}}}))]
+    assert st.run_migrations(1) == 2
+    hit = [m for m in st.log if "ключи dict нормализованы" in m]
+    assert hit, st.log
+    assert "g.tally" in hit[0] and "counters" in hit[0], \
+        f"в логе нет пути до вложенного ключа: {hit[0]}"
