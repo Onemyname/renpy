@@ -2095,7 +2095,12 @@ def test_screens(timeout_s: int, variant: str):
     tour_file = root / ".vncache" / "screens-tour.json"
     tour_file.parent.mkdir(parents=True, exist_ok=True)
     write_text_lf(tour_file, _json.dumps(tour, ensure_ascii=False))
-    env = {"VN_AUTOPILOT_SCREENS_FILE": str(tour_file)}
+    # Один прогон — ДВА контекста: тур повторяется в главном меню (до входа в
+    # игру) и в игре (из vn_end_of_content). Раньше был только второй, и класс
+    # «экран, открытый из главного меню, ведёт себя иначе» не проверялся ничем:
+    # рельса там рисует другую ветку, и из галереи не было выхода назад.
+    env = {"VN_AUTOPILOT_SCREENS_FILE": str(tour_file),
+           "VN_AUTOPILOT_SCREENS_MAIN": "1"}
     if variant:
         env["RENPY_VARIANT"] = variant
     rc, timed_out = _autopilot_run(root, shots, env, timeout_s)
@@ -2128,6 +2133,26 @@ def test_screens(timeout_s: int, variant: str):
     for name in sorted(shown):
         if not (shots / f"screen_{name}.png").is_file():
             fails.append(f"{name}: экран показан, но кадра screen_{name}.png нет")
+
+    # Второй контекст: те же экраны, открытые из ГЛАВНОГО МЕНЮ. Отдельный отчёт,
+    # потому что состав рельсы там другой, и молчание одного контекста не должно
+    # засчитываться за проверку второго.
+    art_main = read_run(root, shots / "main_menu")
+    if not art_main.screens:
+        fails.append("screens.json контекста главного меню не записан — тур туда "
+                     "не заходил, а именно там рельса рисует другую ветку")
+    else:
+        shown_main = set(art_main.screens.get("shown") or [])
+        failed_main = art_main.screens.get("failed") or {}
+        missing_main = set(art_main.screens.get("missing") or []) - optional
+        for name, err in sorted(failed_main.items()):
+            fails.append(f"{name}: не открылся из ГЛАВНОГО МЕНЮ — {err}")
+        for name in sorted(missing_main):
+            fails.append(f"{name}: объявлен в туре, но в главном меню его нет")
+        gap = (declared - optional) - shown_main - set(failed_main) - missing_main
+        if gap:
+            fails.append("не проверены в контексте главного меню: "
+                         + ", ".join(sorted(gap)))
     # Корень отделяется от каскада. Исключение при отрисовке оставляло непустой
     # widget/layer-стек, и каждый следующий экран падал с «ui.interact called with
     # non-empty widget/layer stack» — сообщением не про причину. Один корень

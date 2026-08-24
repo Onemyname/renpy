@@ -210,14 +210,28 @@ def test_main_menu_exposes_persistent_collections(repo_root):
     пустой раздел не показывался."""
     src = (repo_root / "game" / "framework" / "20_ui" / "screens"
            / "core_screens.rpy").read_text(encoding="utf-8")
+    # Пункты берутся из ОБЩЕГО списка, а не из тела main_menu: два независимых
+    # перечня и были причиной «шафла» — порядок в них разошёлся, и пункты прыгали
+    # при переходе из главного меню в подэкран. Поэтому здесь два утверждения:
+    # главное меню действительно берёт общий список, и в нём есть эти разделы под
+    # своими гейтами. Читать тело main_menu, как раньше, теперь значило бы
+    # требовать возврата второго перечня.
     menu = src.split("screen main_menu():", 1)[1].split("\nstyle ", 1)[0]
+    assert "use vn_nav_items(" in menu, (
+        "главное меню больше не берёт общий список пунктов — перечни разъедутся")
+    items = src.split("screen vn_nav_items(", 1)[1].split("\nscreen ", 1)[0]
     # Гейт — дешёвый предикат «есть ли что показывать»: главное меню рисуется
     # постоянно, и строить ради ответа «да/нет» отсортированный реестр нельзя.
     for screen_name, gate in (("gallery", "vn_gal.has_visible()"),
                               ("achievements", "vn_ach.has_visible()")):
-        assert f'ShowMenu("{screen_name}")' in menu, \
+        assert f'ShowMenu("{screen_name}")' in items, \
             f"{screen_name} недостижим из главного меню"
-        assert gate in menu, f"{screen_name} в главном меню без гейта {gate}"
+        assert gate in items, f"{screen_name} в главном меню без гейта {gate}"
+    # Карта главы — тот же случай, и её отсутствие в колонне главного меню было
+    # отдельной жалобой: пункт появлялся «только после захода в главы», хотя его
+    # гейт vn_story.has_chapters() в главном меню истинен.
+    assert 'ShowMenu("story_flow")' in items, "карта главы недостижима из главного меню"
+    assert "vn_story.has_chapters()" in items, "карта главы в главном меню без гейта"
 
 
 def test_platform_facade_is_single_steam_touchpoint(repo_root):

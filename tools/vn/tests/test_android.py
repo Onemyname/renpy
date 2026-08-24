@@ -376,7 +376,13 @@ def test_desktop_only_controls_are_gated(repo_root):
             if indent(prev) >= limit:
                 continue
             limit = indent(prev)
-            if prev.strip() == DESKTOP_GATE:
+            # Гейт — это УСЛОВИЕ, содержащее предикат, а не строка, в точности
+            # ему равная: `if main_menu and vn_platform.is_desktop():` гейтит ровно
+            # так же. Точное сравнение делало проверку зависимой от формы записи
+            # соседнего условия и краснело на верном коде.
+            head = prev.strip()
+            if (head.startswith(("if ", "elif ")) and head.endswith(":")
+                    and DESKTOP_GATE.removeprefix("if ").removesuffix(":") in head):
                 gated = True
                 break
         assert gated, f"core_screens.rpy:{lineno}: {line.strip()} — без гейта is_desktop()"

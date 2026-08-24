@@ -68,6 +68,140 @@ screen input(prompt):
 
 ## ── Навигация: рельса игрового меню / колонна главного меню ─────────────────
 
+## ── Пункты навигации: ОДИН список на оба контекста ──────────────────────────
+##
+## Список был не один, а два: рельса `navigation` и колонна `main_menu` держали
+## свои литеральные перечни, и синхронизировал их никто. Отсюда «странный шафл»,
+## который заметил владелец: «Настройки» напечатаны в главном меню ПОСЛЕ галереи
+## и достижений, а в рельсе — ДО них, поэтому при переходе из главного меню в
+## главы пункт прыгал с седьмой позиции на четвёртую. Ничто это не сортировало —
+## порядок пунктов в SL2 равен порядку строк в файле. Оттуда же и «Карта главы
+## появляется только после захода в главы»: пункта в колонне главного меню не
+## было ВОВСЕ, а гейт `vn_story.has_chapters()` в главном меню истинен и там.
+##
+## Так же устроен и штатный шаблон движка: `screen main_menu` там делает
+## `use navigation` с комментарием «The actual contents of the main menu are in
+## the navigation screen» (SDK gui/game/screens.rpy). Один список — рассинхрон
+## невозможен по построению, а не по дисциплине.
+##
+## Различаются ПРЕДСТАВЛЕНИЯ, а не состав: рельса — фрейм с брендом и полосой
+## слева, главное меню — колонна у нижнего края под wordmark. Поэтому kind задаёт
+## стиль и правила фокуса, а перечень и порядок общие.
+screen vn_nav_items(kind, here=None):
+    $ _rail = kind == "rail"
+    $ _newest = renpy.newest_slot() if not _rail else None
+    vbox:
+        spacing (gui.sp_xs if _rail else gui.sp_s + 2)
+        # «Продолжить» — только в главном меню и только при наличии сейва:
+        # в игровом меню продолжать нечего, игра уже идёт.
+        if not _rail and _newest is not None:
+            button:
+                style "vn_main_continue"
+                action Continue(confirm=False)
+                default_focus True
+                vbox:
+                    spacing gui.sp_xs + 1
+                    text vn_loc.t("ui.nav.continue") style "vn_main_continue_text"
+                    text FileTime(_newest, format=vn_loc.t("ui.file.time_format")) style "vn_main_meta"
+        if main_menu:
+            textbutton vn_loc.t("ui.nav.start"):
+                action Start()
+                style ("vn_nav_button" if _rail else "vn_main_item")
+                default_focus (0 if _rail else (_newest is None))
+            if vn_registry.chapters():
+                textbutton vn_loc.t("ui.nav.chapters"):
+                    action ShowMenu("chapter_select")
+                    style ("vn_nav_button" if _rail else "vn_main_item")
+                    default_focus (gui.focus_rail if (_rail and here == "chapter_select") else 0)
+        else:
+            textbutton vn_loc.t("ui.nav.save"):
+                action ShowMenu("save")
+                style ("vn_nav_button" if _rail else "vn_main_item")
+                default_focus (gui.focus_rail if (_rail and here == "save") else 0)
+        textbutton vn_loc.t("ui.nav.load"):
+            action ShowMenu("load")
+            style ("vn_nav_button" if _rail else "vn_main_item")
+            default_focus (gui.focus_rail if (_rail and here == "load") else 0)
+        # Галерея (ADR-0010) и достижения (achievements@1): из обоих контекстов —
+        # их состояние живёт в persistent и не зависит от сейва, поэтому игрок,
+        # вышедший в меню, обязан видеть открытое, не начиная игру заново. Пункт
+        # исчезает, если раздел пуст или скрыт флейвором/владением: гейт в
+        # vn_gal/vn_ach, не здесь.
+        if vn_gal.has_visible():
+            textbutton vn_loc.t("ui.nav.gallery"):
+                action ShowMenu("gallery")
+                style ("vn_nav_button" if _rail else "vn_main_item")
+                default_focus (gui.focus_rail if (_rail and here == "gallery") else 0)
+        if vn_ach.has_visible():
+            textbutton vn_loc.t("ui.nav.achievements"):
+                action ShowMenu("achievements")
+                style ("vn_nav_button" if _rail else "vn_main_item")
+                default_focus (gui.focus_rail if (_rail and here == "achievements") else 0)
+        # Карта главы (ADR-0021): проекция скомпилированного графа. Тоже из обоих
+        # контекстов — что игрок видел, помнит persistent.
+        if vn_story.has_chapters():
+            textbutton vn_loc.t("ui.chart.open"):
+                action ShowMenu("story_flow")
+                style ("vn_nav_button" if _rail else "vn_main_item")
+                default_focus (gui.focus_rail if (_rail and here == "story_flow") else 0)
+        if not main_menu:
+            textbutton vn_loc.t("ui.nav.history"):
+                action ShowMenu("history")
+                style ("vn_nav_button" if _rail else "vn_main_item")
+                default_focus (gui.focus_rail if (_rail and here == "history") else 0)
+        textbutton vn_loc.t("ui.nav.prefs"):
+            action ShowMenu("preferences")
+            style ("vn_nav_button" if _rail else "vn_main_item")
+            default_focus (gui.focus_rail if (_rail and here == "preferences") else 0)
+
+
+## Хвост навигации: выход из текущего места. Тоже один на оба контекста.
+##
+## Гейт `if not main_menu:` был надет на ПАРУ «Вернуться + Главное меню», а нужен
+## он только второму пункту — и именно поэтому пряталась та кнопка, которая как
+## раз работает. Движковая `main_menu` остаётся True во всём контексте главного
+## меню (00start.rpy: `store.main_menu = True` в `_main_menu`), а ShowMenu новый
+## контекст не создаёт (00action_menu.rpy: ветка `if renpy.context()._menu`),
+## поэтому галерея или главы, открытые ИЗ ГЛАВНОГО МЕНЮ, рисовали ветку
+## `if main_menu` — где из выходов был только «Выход из игры». Назад не вело
+## ничего: `_invoke_game_menu` в главном меню намеренный no-op
+## (00gamemenu.rpy: `if renpy.context()._menu: if main_menu: return`), то есть и
+## Esc, и B, и правая кнопка мыши там мертвы. Оставался Alt+F4.
+##
+## Что на самом деле умеет движок:
+##   * `Return()` знает про главное меню сам — `if self.value is None: if
+##     main_menu: ShowMenu("main_menu")()` (00action_control.rpy). Штатный шаблон
+##     показывает Return БЕЗУСЛОВНО (gui/game/screens.rpy: screen game_menu);
+##   * `MainMenu()` там действительно мёртв: `get_sensitive: return not
+##     renpy.context()._main_menu` (00action_menu.rpy) — он про «бросить игру и
+##     вернуться в меню», а бросать в главном меню нечего.
+## Отсюда и разделение ниже: Return — везде, MainMenu — только в игре.
+screen vn_nav_tail(kind, here=None):
+    $ _rail = kind == "rail"
+    vbox:
+        spacing (gui.sp_xs if _rail else gui.sp_s + 2)
+        # На самом экране главного меню возвращаться некуда — пункт нужен только
+        # подэкранам, открытым поверх него. В игре подэкран есть всегда.
+        if here != "main_menu":
+            textbutton vn_loc.t("ui.nav.return"):
+                action Return()
+                style ("vn_nav_button" if _rail else "vn_main_item")
+        if not main_menu:
+            textbutton vn_loc.t("ui.nav.main_menu"):
+                action Confirm(vn_loc.t("ui.confirm.main_menu"), MainMenu(confirm=False))
+                style ("vn_nav_button" if _rail else "vn_main_item")
+        # «Выйти» — только из главного меню и только на десктопе: на iOS кнопка
+        # выхода запрещена правилами стора, на Android приложение снимает система,
+        # и игрок, вышедший «внутри» приложения, видит чёрный экран. Штатный
+        # шаблон SDK гейтит её так же (gui/game/screens.rpy: `if
+        # renpy.variant("pc")`). Confirm со СВОИМ текстом: движковые
+        # layout.*-строки наш конвейер переводов не покрывает.
+        if main_menu and vn_platform.is_desktop():
+            textbutton vn_loc.t("ui.nav.quit"):
+                action Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False))
+                style ("vn_nav_button" if _rail else "vn_main_item")
+
+
 screen navigation():
     # Рельса — РЕЗЕРВНЫЙ владелец первого фокуса (42-big-picture.md §5.1):
     # приоритет gui.focus_rail ниже контентного gui.focus_content, поэтому
@@ -96,54 +230,17 @@ screen navigation():
                     add Solid(gui.accent_color) xysize (22, 4) yalign 0.8
                 vbox:
                     spacing gui.sp_xs
-                    if main_menu:
-                        textbutton vn_loc.t("ui.nav.start") action Start() style "vn_nav_button"
-                        if vn_registry.chapters():
-                            textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select") style "vn_nav_button" default_focus (gui.focus_rail if _here == "chapter_select" else 0)
-                    else:
-                        textbutton vn_loc.t("ui.nav.save") action ShowMenu("save") style "vn_nav_button" default_focus (gui.focus_rail if _here == "save" else 0)
-                    textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_nav_button" default_focus (gui.focus_rail if _here == "load" else 0)
-                    textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_nav_button" default_focus (gui.focus_rail if _here == "preferences" else 0)
-                    # Галерея (ADR-0010): доступна из обоих контекстов; пункт
-                    # исчезает, если галерея пуста или её элементы скрыты
-                    # флейвором/владением — гейт в vn_gal, не здесь.
-                    if vn_gal.has_visible():
-                        textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_nav_button" default_focus (gui.focus_rail if _here == "gallery" else 0)
-                    # Достижения (achievements@1): как и галерея, доступны из
-                    # обоих контекстов (прогресс в persistent). Пункт исчезает,
-                    # если ачивок нет или все скрыты флейвором/владением — гейт
-                    # в vn_ach.has_visible(), не здесь.
-                    if vn_ach.has_visible():
-                        textbutton vn_loc.t("ui.nav.achievements") action ShowMenu("achievements") style "vn_nav_button" default_focus (gui.focus_rail if _here == "achievements" else 0)
-                    # Карта главы (ADR-0021): проекция скомпилированного графа.
-                    # Доступна из обоих контекстов — что игрок видел, помнит
-                    # persistent. Пункт исчезает, если ни одна глава не
-                    # принадлежит игроку: гейт в vn_story, не здесь.
-                    if vn_story.has_chapters():
-                        textbutton vn_loc.t("ui.chart.open") action ShowMenu("story_flow") style "vn_nav_button" default_focus (gui.focus_rail if _here == "story_flow" else 0)
-                    if not main_menu:
-                        textbutton vn_loc.t("ui.nav.history") action ShowMenu("history") style "vn_nav_button" default_focus (gui.focus_rail if _here == "history" else 0)
+                    use vn_nav_items("rail", _here)
             vbox:
                 spacing gui.sp_xs
                 xpos gui.sp_l - gui.sp_xs + gui.overscan_pad
                 yanchor 1.0
-                # Safe-area ТВ (§5.6): «Выход»/«Главное меню» и строка версии
-                # уезжают из полосы overscan вместе с содержимым рельсы.
+                # Safe-area ТВ (§5.6): хвост навигации и строка версии уезжают из
+                # полосы overscan вместе с содержимым рельсы.
                 ypos 1080 - gui.sp_l - gui.overscan_pad
                 add Solid(gui.panel_border) xsize 248 ysize 1
                 null height gui.sp_m
-                if main_menu:
-                    # «Выйти» — только на десктопе: на iOS кнопка выхода запрещена
-                    # правилами стора, на Android приложение снимает система, и
-                    # игрок, вышедший «внутри» приложения, видит чёрный экран.
-                    # Штатный шаблон SDK гейтит её так же (gui/game/screens.rpy:
-                    # `if renpy.variant("pc")`). Confirm со СВОИМ текстом:
-                    # движковые layout.*-строки наш конвейер переводов не покрывает.
-                    if vn_platform.is_desktop():
-                        textbutton vn_loc.t("ui.nav.quit") action Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False)) style "vn_nav_button"
-                else:
-                    textbutton vn_loc.t("ui.nav.return") action Return() style "vn_nav_button"
-                    textbutton vn_loc.t("ui.nav.main_menu") action Confirm(vn_loc.t("ui.confirm.main_menu"), MainMenu(confirm=False)) style "vn_nav_button"
+                use vn_nav_tail("rail", _here)
                 null height gui.sp_m
                 text vn_loc.t("ui.main.version") style "vn_version"
 
@@ -198,41 +295,19 @@ screen main_menu():
         spacing gui.sp_m + 2
         text "[config.name!t]" style "vn_wordmark"
         add Solid(gui.accent_color) xysize (56, 5)
+    # Список пунктов ОБЩИЙ с рельсой (vn_nav_items): два независимых перечня и
+    # были причиной «шафла» — порядок в них разошёлся, и пункты прыгали при
+    # переходе из главного меню в подэкран. Здесь остаётся только композиция:
+    # колонна у нижнего края под wordmark. default_focus (аудит ui.md §3) живёт
+    # в самом списке — на ТВ/Deck первый A продолжает игру или начинает новую.
+    $ _here = vn_ui.menu_screen()
     vbox:
         xpos 96
         yanchor 1.0
         ypos 1080 - 140
         spacing gui.sp_s + 2
-        $ _newest = renpy.newest_slot()
-        # default_focus (аудит ui.md §3): на ТВ/Deck первый A продолжает игру
-        # (или начинает новую) — вместо «ничего не произошло».
-        if _newest is not None:
-            button:
-                style "vn_main_continue"
-                action Continue(confirm=False)
-                default_focus True
-                vbox:
-                    spacing gui.sp_xs + 1
-                    text vn_loc.t("ui.nav.continue") style "vn_main_continue_text"
-                    text FileTime(_newest, format=vn_loc.t("ui.file.time_format")) style "vn_main_meta"
-        textbutton vn_loc.t("ui.nav.start") action Start() style "vn_main_item" default_focus (_newest is None)
-        if vn_registry.chapters():
-            textbutton vn_loc.t("ui.nav.chapters") action ShowMenu("chapter_select") style "vn_main_item"
-        textbutton vn_loc.t("ui.nav.load") action ShowMenu("load") style "vn_main_item"
-        # Галерея и достижения — из ГЛАВНОГО меню тоже, а не только из игрового:
-        # их состояние живёт в persistent и не зависит от сейва, поэтому игрок,
-        # вышедший в меню, обязан видеть открытое, не начиная игру заново.
-        # Гейты — те же, что в рельсе (vn_gal.has_visible() / vn_ach.has_visible()):
-        # пустой раздел не показывается, дублирования условий нет.
-        if vn_gal.has_visible():
-            textbutton vn_loc.t("ui.nav.gallery") action ShowMenu("gallery") style "vn_main_item"
-        if vn_ach.has_visible():
-            textbutton vn_loc.t("ui.nav.achievements") action ShowMenu("achievements") style "vn_main_item"
-        textbutton vn_loc.t("ui.nav.prefs") action ShowMenu("preferences") style "vn_main_item"
-        # «Выйти» — только на десктопе (та же причина и тот же гейт, что в рельсе
-        # navigation): мобильное приложение закрывает система, а не пункт меню.
-        if vn_platform.is_desktop():
-            textbutton vn_loc.t("ui.nav.quit") action Confirm(vn_loc.t("ui.confirm.quit"), Quit(confirm=False)) style "vn_main_item"
+        use vn_nav_items("main", _here)
+        use vn_nav_tail("main", _here)
     text vn_loc.t("ui.main.version"):
         style "vn_version"
         xpos 96

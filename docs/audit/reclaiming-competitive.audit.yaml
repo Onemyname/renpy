@@ -1208,3 +1208,59 @@ items:
       Счётчик галереи объявленный элемент по-прежнему считает: «5 из 6» —
       намеренное состояние демо, а не дефект. Исключение из знаменателя меняет то,
       что видит игрок, и остаётся решением владельца.
+
+  RTL-053:
+    title: "Навигация: два независимых списка пунктов и ни одного выхода из экрана, открытого из главного меню"
+    category: correctness
+    evidence:
+      - "core_screens.rpy держал ДВА рукописных перечня пунктов — рельса `screen navigation()` и колонна `screen main_menu()`, — и синхронизировал их никто. Реестра пунктов не существовало: grep по nav_items|NAV_ITEMS|menu_items давал ноль совпадений. Порядок пунктов в SL2 равен порядку строк в файле, поэтому расхождение перечней игрок видит как перестановку: «Настройки» напечатаны в главном меню ПОСЛЕ галереи и достижений, а в рельсе — ДО них, и пункт прыгал с седьмой позиции на четвёртую. Владелец описал это как «странный шафл, как будто подменяются экраны»"
+      - "оттуда же «Карта главы появляется только после захода в главы»: пункта в колонне главного меню не было ВОВСЕ, хотя его гейт vn_story.has_chapters() в главном меню истинен. Единственное объявление ShowMenu('story_flow') жило в рельсе, а рельсу игрок впервые видит, зайдя в подэкран"
+      - "отказ хуже перестановки: из галереи или глав, открытых ИЗ ГЛАВНОГО МЕНЮ, не вело назад НИ ОДНОГО пункта. Гейт `if not main_menu:` был надет на пару «Вернуться + Главное меню», а движковая main_menu остаётся True во всём контексте главного меню (SDK 00start.rpy) и ShowMenu её не сбрасывает (00action_menu.rpy: ветка `if renpy.context()._menu`). Клавиши тоже мертвы: `_invoke_game_menu` начинается с `if renpy.context()._menu: if main_menu: return` (00gamemenu.rpy), то есть Esc, B и правая кнопка там намеренный no-op. Оставался Alt+F4"
+      - "спрятана была ровно та кнопка, которая РАБОТАЕТ: `Return()` знает про главное меню сам — `if self.value is None: if main_menu: ShowMenu('main_menu')()` (00action_control.rpy), и штатный шаблон показывает его БЕЗУСЛОВНО. Мёртв там как раз `MainMenu()`: `get_sensitive: return not renpy.context()._main_menu` (00action_menu.rpy)"
+      - "почему не поймали: тур экранов звался только из `label vn_end_of_content` (030_flow.rpy), то есть в контексте ИГРЫ, где main_menu == False. Контекст главного меню не покрывал ни один гейт, и весь класс «экран, открытый из главного меню, ведёт себя иначе» не проверялся ничем"
+    implementation:
+      - game/framework/20_ui/screens/core_screens.rpy
+      - game/framework/20_ui/components.rpy
+      - game/framework/00_core/030_flow.rpy
+      - tools/vn/src/vn/cli.py
+      - content/ui/screens.yaml
+    tests:
+      - tools/vn/tests/test_ui_panels.py::test_every_navigation_item_is_declared_once
+      - tools/vn/tests/test_ui_panels.py::test_both_menu_contexts_share_one_item_list
+      - tools/vn/tests/test_ui_panels.py::test_a_screen_opened_from_the_main_menu_has_a_way_back
+      - tools/vn/tests/test_ui_panels.py::test_escape_returns_to_the_main_menu_from_a_submenu
+      - tools/vn/tests/test_ui_panels.py::test_the_screens_tour_covers_both_menu_contexts
+      - tools/vn/tests/test_platform.py::test_main_menu_exposes_persistent_collections
+    status: CLOSED
+    note: >
+      Список пунктов стал ОДИН (vn_nav_items) плюс общий хвост (vn_nav_tail);
+      различаются только представления — рельса-фрейм и колонна под wordmark.
+      Так же устроен штатный шаблон движка: `screen main_menu` там делает
+      `use navigation` с комментарием «The actual contents of the main menu are
+      in the navigation screen». Рассинхрон стал невозможен по построению, а не
+      по дисциплине.
+
+      Выход: «Вернуться» показывается в обоих контекстах (движок сам переводит
+      Return в ShowMenu('main_menu')), «Главное меню» осталось под `not main_menu`
+      — там MainMenu() insensitive. Каркас подэкранов перехватывает Esc/B через
+      `if main_menu: key "game_menu" action ShowMenu("main_menu")`, как это делает
+      штатный шаблон.
+
+      Причина непойманности закрыта отдельно: тур экранов теперь проходит ОБА
+      контекста за один прогон — в главном меню (из autopilot_boot, до входа в
+      игру) и в игре, — и гейт требует обоих отчётов. Проверено мутацией: без
+      прохода по главному меню `vn test screens` краснеет.
+
+      Свои ошибки того же захода, пойманные проверками: (1) первая редакция
+      ставила действием ShowMenu('main_menu') вместо Return(), опираясь на
+      комментарий `_invoke_main_menu` «If the main menu returns, then start the
+      game» — но он про возврат из САМОГО главного меню, а не из подэкрана;
+      разведка по исходникам показала специальную ветку в Return; (2) гард на
+      перехват Esc сначала засчитывал за код ЦИТАТУ шаблона в комментарии рядом —
+      мутация это вскрыла, комментарии теперь вычищаются перед проверкой.
+
+      Два существующих теста читали тело `screen main_menu()` текстом и после
+      рефакторинга краснели на верном коде: они переведены на общий список, а не
+      ослаблены — свойство «галерея и достижения достижимы из главного меню»
+      проверяется по-прежнему, плюс добавлена карта главы. Гейт `is_desktop()`
+      теперь опознаётся в составном условии, а не только в точной строке.

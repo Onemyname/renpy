@@ -265,6 +265,15 @@ style vn_btn_danger_text is vn_btn_secondary_text:
 
 screen vn_game_menu(title):
     add Solid(gui.menu_bg)
+    # Esc / B / правая кнопка в контексте ГЛАВНОГО меню движок гасит намеренно:
+    # `_invoke_game_menu` начинается с `if renpy.context()._menu: if main_menu:
+    # return` (SDK 00gamemenu.rpy). В игре это верно — игрового меню поверх
+    # игрового меню не нужно, — но подэкран, открытый из главного меню,
+    # оставался вообще без клавиши выхода. Штатный шаблон компенсирует это тем
+    # же способом (gui/game/screens.rpy: `if main_menu: key "game_menu" action
+    # ShowMenu("main_menu")`).
+    if main_menu:
+        key "game_menu" action ShowMenu("main_menu")
     use navigation
     frame:
         style "vn_menu_content"

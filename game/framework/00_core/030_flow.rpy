@@ -304,6 +304,11 @@ init -999 python in vn_qa:
         slot = os.environ.get("VN_AUTOPILOT_LOAD")
         if slot:
             renpy.load(slot)    # не возвращается: контекст перезапускается, затем after_load
+        # Тур по экранам в контексте ГЛАВНОГО МЕНЮ: здесь main_menu == True, а
+        # из vn_end_of_content тур видит только main_menu == False. Тот же список
+        # экранов, тот же отчёт — только каталог другой.
+        if os.environ.get("VN_AUTOPILOT_SCREENS_MAIN"):
+            autopilot_screens("main_menu")
         chapter = os.environ.get("VN_AUTOPILOT_CHAPTER")
         if chapter:
             # Вход в главу, у которой своя точка входа (эпизод, DLC): без него
@@ -339,14 +344,28 @@ init -999 python in vn_qa:
         return [(s.strip(), {}) for s in
                 os.environ.get("VN_AUTOPILOT_SCREENS", "").split(",") if s.strip()]
 
-    def autopilot_screens():
+    def autopilot_screens(subdir=None):
         """Показать экраны тура и снять по скриншоту каждого.
 
         Проверка вёрстки меню/галереи в CI: движковый lint не видит визуальных
         поломок, а прохождение сцен эти экраны не открывает. Результат тура пишется
         в screens.json — раньше неудача уходила в vn_log, то есть прогон оставался
-        зелёным при экране, который не открылся вовсе."""
+        зелёным при экране, который не открылся вовсе.
+
+        `subdir` отделяет прогон в контексте ГЛАВНОГО МЕНЮ от прогона в игре.
+        Тур звался только из vn_end_of_content, то есть всегда при main_menu ==
+        False, и целый класс дефектов «экран, открытый из главного меню, ведёт
+        себя иначе» не проверялся ничем. Он же и сработал: рельса в этом контексте
+        рисовала другую ветку, где не было ни одного пункта назад, и игрок,
+        зашедший в галерею из главного меню, не мог вернуться. Тур это
+        сфотографировал бы сразу — если бы туда заходил."""
         shots_dir = os.environ.get("VN_AUTOPILOT_DIR")
+        if shots_dir and subdir:
+            shots_dir = os.path.join(shots_dir, subdir)
+            try:
+                os.makedirs(shots_dir)
+            except OSError:
+                pass
         shown, failed, missing = [], {}, []
         # Имя экрана, после которого стек UI пришлось выравнивать: всё, что
         # провалилось ПОСЛЕ него, может быть каскадом, а не своей поломкой.

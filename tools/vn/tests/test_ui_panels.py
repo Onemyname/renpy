@@ -728,3 +728,149 @@ def test_conflict_lookup_and_plan_are_not_recomputed_per_frame(repo_root):
     for mutator in ("def toggle_target(", "def clear_targets("):
         body = src.split(mutator, 1)[1].split("\n    def ", 1)[0]
         assert "_drop_plan_cache()" in body, f"{mutator} не сбрасывает кэш плана"
+
+
+# ── Навигация: один список пунктов и рабочий выход ───────────────────────────
+
+NAV_REL = "game/framework/20_ui/screens/core_screens.rpy"
+FRAME_REL = "game/framework/20_ui/components.rpy"
+
+# Ключи пунктов навигации. Каждый обязан упоминаться в вёрстке РОВНО ОДИН раз:
+# два перечня и были причиной «шафла» — порядок в них разошёлся, и при переходе
+# из главного меню в подэкран «Настройки» прыгали с седьмой позиции на четвёртую.
+_NAV_KEYS = (
+    "ui.nav.start", "ui.nav.chapters", "ui.nav.save", "ui.nav.load",
+    "ui.nav.gallery", "ui.nav.achievements", "ui.chart.open", "ui.nav.history",
+    "ui.nav.prefs", "ui.nav.continue", "ui.nav.return", "ui.nav.main_menu",
+    "ui.nav.quit",
+)
+
+
+def _ui_sources(repo_root):
+    return sorted((repo_root / "game" / "framework" / "20_ui").rglob("*.rpy"))
+
+
+def test_every_navigation_item_is_declared_once(repo_root):
+    """Пункт навигации объявлен в вёрстке ровно один раз.
+
+    Списка было два — рельса `navigation` и колонна `main_menu` держали свои
+    литеральные перечни, и синхронизировал их никто. Порядок пунктов в SL2 равен
+    порядку строк в файле, поэтому расхождение перечней игрок видит как
+    «странный шафл»: «Настройки» напечатаны в главном меню ПОСЛЕ галереи и
+    достижений, а в рельсе — ДО них. Оттуда же и «Карта главы появляется только
+    после захода в главы»: пункта в колонне не было вовсе, хотя его гейт
+    `vn_story.has_chapters()` в главном меню истинен.
+
+    Так же устроен штатный шаблон движка: `screen main_menu` делает
+    `use navigation` с комментарием «The actual contents of the main menu are in
+    the navigation screen» (SDK gui/game/screens.rpy)."""
+    hits = {}
+    for path in _ui_sources(repo_root):
+        text = path.read_text(encoding="utf-8")
+        for i, line in enumerate(text.splitlines(), 1):
+            code = line.split("#", 1)[0]
+            # Только ПУНКТЫ: тот же ключ законно называет и раздел в заголовке
+            # экрана (use vn_game_menu(vn_loc.t("ui.nav.gallery"))) — это не
+            # второй список, а подпись того же самого.
+            # «Продолжить» — не textbutton, а карточка со временем сейва:
+            # у неё подпись лежит вложенным text со своим стилем.
+            if "textbutton" not in code and "vn_main_continue_text" not in code:
+                continue
+            for key in _NAV_KEYS:
+                if f'vn_loc.t("{key}")' in code:
+                    hits.setdefault(key, []).append(
+                        f"{path.relative_to(repo_root).as_posix()}:{i}")
+    doubled = {k: v for k, v in hits.items() if len(v) > 1}
+    assert doubled == {}, (
+        f"пункт навигации объявлен дважды — списки разъедутся и игрок увидит "
+        f"перестановку: {doubled}")
+    missing = [k for k in _NAV_KEYS if k not in hits]
+    assert missing == [], f"пункты навигации исчезли из вёрстки: {missing}"
+
+
+def test_both_menu_contexts_share_one_item_list(repo_root):
+    """Колонна главного меню и рельса рисуют ОДИН список.
+
+    Гейт на способ, а не только на следствие: пока каждый экран строит перечень
+    сам, синхронность держится дисциплиной, а её хватило ровно до первой
+    правки."""
+    src = (repo_root / NAV_REL).read_text(encoding="utf-8")
+    assert "screen vn_nav_items(" in src, "общий список пунктов исчез"
+    for user in ("screen navigation():", "screen main_menu():"):
+        assert user in src, user
+    body = src.split("screen main_menu():", 1)[1]
+    assert "use vn_nav_items(" in body, (
+        "главное меню снова строит свой список пунктов вместо общего")
+    assert "use vn_nav_tail(" in body, "главное меню не берёт общий хвост навигации"
+
+
+def test_a_screen_opened_from_the_main_menu_has_a_way_back(repo_root):
+    """Возврат доступен в ОБОИХ контекстах.
+
+    Гейт `if not main_menu:` был надет на пару «Вернуться + Главное меню», а
+    нужен он только второму: `MainMenu()` в главном меню действительно
+    insensitive (`get_sensitive: return not renpy.context()._main_menu`,
+    SDK 00action_menu.rpy), а `Return()` там как раз РАБОТАЕТ — движок знает
+    этот случай сам (`if self.value is None: if main_menu: ShowMenu("main_menu")()`,
+    00action_control.rpy). Пряталась ровно та кнопка, которая работает, и
+    галерея, открытая из главного меню, оставалась без единого выхода."""
+    src = (repo_root / NAV_REL).read_text(encoding="utf-8")
+    tail = src.split("screen vn_nav_tail(", 1)[1].split("\nscreen ", 1)[0]
+    lines = [l for l in tail.splitlines() if l.split("#", 1)[0].strip()]
+
+    ret = next(i for i, l in enumerate(lines) if 'vn_loc.t("ui.nav.return")' in l)
+    guards = [l.strip() for l in lines[:ret]
+              if l.split("#", 1)[0].strip().startswith(("if ", "elif "))]
+    assert not any("not main_menu" in g for g in guards), (
+        f"«Вернуться» снова спрятан за `not main_menu` — из галереи, открытой из "
+        f"главного меню, выхода не будет: {guards}")
+    assert "action Return()" in tail, "«Вернуться» перестал звать Return()"
+
+    mm = next(i for i, l in enumerate(lines) if 'vn_loc.t("ui.nav.main_menu")' in l)
+    assert any("not main_menu" in l for l in lines[:mm]), (
+        "«Главное меню» показывается в контексте главного меню, где MainMenu() "
+        "insensitive — пункт будет мёртвым")
+
+
+def test_escape_returns_to_the_main_menu_from_a_submenu(repo_root):
+    """Esc/B возвращает в главное меню из подэкрана.
+
+    Движковый keysym `game_menu` в этом контексте намеренный no-op:
+    `_invoke_game_menu` начинается с `if renpy.context()._menu: if main_menu:
+    return` (SDK 00gamemenu.rpy). В игре это верно, но подэкран, открытый из
+    главного меню, оставался вообще без клавиши выхода — только Alt+F4. Штатный
+    шаблон компенсирует это тем же способом."""
+    # Комментарии вычищаются ПЕРЕД проверкой: в этом самом каркасе процитирована
+    # строка штатного шаблона, и без вычистки гард засчитывал цитату за код —
+    # проверено мутацией, удаление настоящей строки его не роняло.
+    src = "\n".join(_strip_comment(l) for l in
+                    (repo_root / FRAME_REL).read_text(encoding="utf-8").splitlines())
+    frame = src.split("screen vn_game_menu(", 1)[1].split("\nscreen ", 1)[0]
+    assert 'key "game_menu"' in frame, (
+        "каркас подэкранов не перехватывает Esc/B — в главном меню клавиша выхода "
+        "мертва по устройству движка")
+    assert 'ShowMenu("main_menu")' in frame, "перехват есть, но ведёт не в главное меню"
+
+
+def test_the_screens_tour_covers_both_menu_contexts(repo_root):
+    """Тур открывает экраны и в игре, и в ГЛАВНОМ МЕНЮ.
+
+    Он звался только из vn_end_of_content, то есть всегда при main_menu ==
+    False, и целый класс «экран, открытый из главного меню, ведёт себя иначе» не
+    проверялся ничем. Именно этот класс и сработал: рельса там рисует другую
+    ветку, где не было ни одного пункта назад."""
+    flow = (repo_root / "game" / "framework" / "00_core" / "030_flow.rpy").read_text(
+        encoding="utf-8")
+    assert "VN_AUTOPILOT_SCREENS_MAIN" in flow, (
+        "рантайм не умеет прогонять тур в контексте главного меню")
+    boot = flow.split("def autopilot_boot(", 1)[1].split("\n    def ", 1)[0]
+    assert 'autopilot_screens("main_menu")' in boot, (
+        "проход по экранам главного меню не вызывается из autopilot_boot — "
+        "то есть до входа в игру, пока main_menu ещё True")
+
+    cli = (repo_root / "tools" / "vn" / "src" / "vn" / "cli.py").read_text(
+        encoding="utf-8")
+    assert '"VN_AUTOPILOT_SCREENS_MAIN": "1"' in cli, "vn test screens не просит второй контекст"
+    assert 'read_run(root, shots / "main_menu")' in cli, (
+        "гейт не читает отчёт контекста главного меню — молчание одного контекста "
+        "засчиталось бы за проверку второго")
