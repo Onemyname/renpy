@@ -119,6 +119,22 @@ def test_defined_screens_registry(repo_root):
     assert 'getattr(screen, "location", None)' in compat, \
         "фильтр по месту объявления пропал — тур начнёт требовать экраны движка"
 
+    # location[0] — ELIDED-имя относительно basedir (renpy/lexer.py: elide_filename
+    # в list_logical_lines), а не абсолютный путь. abspath() от него склеивает
+    # относительное имя с ТЕКУЩИМ cwd процесса, и фильтр «наш/движковый» начинает
+    # зависеть от того, откуда запущена игра: либо своими не признаётся ни один
+    # экран (гейт молча выключается), либо своими становятся и движковые.
+    lexer = (Path(SDK) / "renpy" / "lexer.py").read_text(encoding="utf-8",
+                                                         errors="ignore")
+    assert "def elide_filename" in lexer and "filename = elide_filename(filename)" in lexer, \
+        "лексер больше не элайдит имя файла — перечитайте, что лежит в location[0]"
+    resolve = compat.split("def defined_screens", 1)[1].split("\n    def ", 1)[0]
+    assert "os.path.join(basedir, where)" in resolve, \
+        ("elided-имя обязано склеиваться с config.basedir; abspath() от него даёт "
+         "путь относительно cwd процесса")
+    assert "os.path.abspath(where)" not in resolve, \
+        "abspath() напрямую от location[0] — фильтр снова зависит от cwd"
+
 
 @requires_sdk
 def test_gui_rebuild_exists(repo_root):
@@ -182,6 +198,12 @@ def test_framework_reads_generated_names_defensively(repo_root):
 # срабатывала в единственном случае, ради которого написана. Тест исполняет блок
 # с той же подменой, что делает движок.
 
+# Заголовок любого блока, пишущего в стор vn_compat: `python early in vn_compat:`
+# и `init -950 python in vn_compat:` — это один и тот же стор.
+_VN_COMPAT_BLOCK_RE = re.compile(
+    r"^(?:init\s+-?\d+\s+)?python(?:\s+early)?(?:\s+hide)?\s+in\s+vn_compat\s*:\s*$")
+
+
 def _compat_module(repo_root, monkeypatch):
     import sys
     import textwrap
@@ -198,12 +220,24 @@ def _compat_module(repo_root, monkeypatch):
 
     src = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
            / "000_compat.rpy").read_text(encoding="utf-8")
-    tail = src.partition("python in vn_compat:")[2]
+    # Собираем ВСЕ блоки стора vn_compat в один namespace — именно так их видит
+    # движок: `python early in vn_compat` и `init -950 python in vn_compat` пишут
+    # в ОДИН стор (ast.EarlyPython.early_execute зовёт create_store того же
+    # имени). Раньше брался только первый блок, и после переноса слияний в early
+    # тест ронялся на `_PLAIN`, объявленном в другом блоке того же стора.
     body = []
-    for line in tail.splitlines():
+    cur = None
+    for line in src.splitlines():
+        if _VN_COMPAT_BLOCK_RE.match(line):
+            cur = True
+            continue
+        if cur is None:
+            continue
         if line.strip() and not line.startswith("    "):
-            break
+            cur = None
+            continue
         body.append(line)
+    assert body, "блоки стора vn_compat не нашлись — разбор выродился"
 
     revertable_mod = types.ModuleType("renpy.revertable")
     revertable_mod.RevertableDict = RevertableDict
@@ -220,6 +254,9 @@ def _compat_module(repo_root, monkeypatch):
     mod = types.ModuleType("vn_compat")
     # Как движок: типы в сторе — Revertable-аналоги.
     mod.__dict__.update(dict=RevertableDict, list=RevertableList, set=RevertableSet)
+    # И как minstore: имя renpy есть в КАЖДОМ сторе (minstore.py: globals()["renpy"]),
+    # поэтому early-блок обращается к нему без `from store import`.
+    mod.__dict__["renpy"] = renpy_mod
     exec(compile(textwrap.dedent("\n".join(body)), "000_compat.rpy", "exec"), mod.__dict__)
     return mod, (RevertableDict, RevertableList, RevertableSet)
 
@@ -299,10 +336,24 @@ def test_every_persistent_accumulator_is_registered_for_merge(repo_root):
     """Список полей ведётся в одном месте, и он обязан покрывать ВСЕ накопители.
 
     Тест обнаруживающий, а не сверяющий с копией списка: он сам находит
-    `default persistent.<имя> = {}` и `= []` во фреймворке. Забытая регистрация
-    не падает — она молча теряет прогресс игрока, поэтому ловить её должен не
-    ревьюер."""
+    накопители. Забытая регистрация не падает — она молча теряет прогресс игрока,
+    поэтому ловить её должен не ревьюер.
+
+    Источников у накопителя ДВА, и раньше проверялся только первый. Скан шёл по
+    game/framework, а `default persistent.<имя> = {}` рождает не только рукописный
+    каркас: любая декларация vars@1 со `store: persistent` доезжает до генерата
+    (compile.py: эмиссия дефолтов) и ложится в game/generated/state/defaults.gen.rpy —
+    каталог, которого rglob не касался, потому что генерата нет в git. Проверено:
+    поле `vn_seen_endings`, добавленное штатной декларацией, гейт НЕ ВИДЕЛ, и
+    pytest оставался зелёным при реально незарегистрированном накопителе.
+
+    Поэтому второй источник — сами ДЕКЛАРАЦИИ, а не генерат: по декларациям тест
+    работает и на чистом чекауте, где генерата ещё нет. Непоставляемые паки
+    (qa_flow) не исключаются: накопитель у них такой же настоящий, а исключение
+    зоны — ровно тот класс промаха, что был с id_registry (FWA-019)."""
     import re
+
+    import yaml
 
     fields, decl = set(), {}
     for f in sorted((repo_root / "game" / "framework").rglob("*.rpy")):
@@ -310,7 +361,26 @@ def test_every_persistent_accumulator_is_registered_for_merge(repo_root):
                              f.read_text(encoding="utf-8"), re.M):
             fields.add(m.group(1))
             decl[m.group(1)] = f.name
-    assert fields, "накопителей в persistent не нашлось — тест выродился"
+    framework_fields = set(fields)
+
+    var_docs = sorted((repo_root / "content" / "variables").glob("*.vars.yaml"))
+    var_docs += sorted((repo_root / "packs").glob("*/chapters/*/vars.yaml"))
+    var_docs += sorted((repo_root / "content" / "chapters").glob("*/vars.yaml"))
+    assert var_docs, "декларации переменных не нашлись — вторая половина скана выродилась"
+    declared_any = False
+    for path in var_docs:
+        doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if doc.get("store") != "persistent":
+            continue
+        for name, spec in (doc.get("vars") or {}).items():
+            declared_any = True
+            if (spec or {}).get("type") in ("dict", "list"):
+                fields.add(name)
+                decl[name] = path.relative_to(repo_root).as_posix()
+    # Гейт не должен выродиться молча ни одной из половин.
+    assert framework_fields, "накопителей в каркасе не нашлось — тест выродился"
+    assert declared_any, ("ни одной persistent-декларации не разобрано — проверьте "
+                          "пути к vars.yaml, скан по декларациям выродился")
 
     src = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
            / "000_compat.rpy").read_text(encoding="utf-8")
@@ -320,3 +390,64 @@ def test_every_persistent_accumulator_is_registered_for_merge(repo_root):
     assert not missing, (
         f"контейнеры persistent без функции слияния: {missing} — при слиянии "
         f"инсталляций записи одной из сторон исчезнут")
+
+
+def _vn_compat_block(repo_root, header_re):
+    """Тело одного блока стора vn_compat, чей заголовок матчится header_re."""
+    src = (repo_root / "game" / "framework" / "00_core" / "engine_compat"
+           / "000_compat.rpy").read_text(encoding="utf-8")
+    out, cur = [], None
+    for line in src.splitlines():
+        if header_re.match(line):
+            cur = True
+            continue
+        if cur is None:
+            continue
+        if line.strip() and not line.startswith("    "):
+            cur = None
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+@requires_sdk
+def test_merges_are_registered_before_the_first_merge(repo_root):
+    """Регистрация слияний обязана отработать РАНЬШЕ первого слияния persistent.
+
+    Движок делает первое слияние всех локаций до исполнения любого init-блока:
+        renpy/main.py:466  renpy.persistent.update()
+        renpy/main.py:483  for … in enumerate(game.script.initcode)
+    Пока регистрация жила на `init -949`, на этот момент в persistent.registry
+    были только четыре движковых поля, и наши накопители сливались заглушкой
+    default_merge («новее забирает поле целиком»). Проверено стендом с двумя
+    расходящимися persistent-файлами: анлоки одной из сторон исчезали, прогресс
+    прогрессивной ачивки уезжал с 7 на 3, и на выходе main.py:608 update(True)
+    записывал усечённое состояние во ВСЕ локации.
+
+    Тест держит ДВА факта: порядок фаз в самом движке (если Ren'Py когда-нибудь
+    перенесёт update() после initcode, `python early` станет не нужен, и это
+    должно быть замечено) и то, что регистрация действительно живёт в early."""
+    main = (Path(SDK) / "renpy" / "main.py").read_text(encoding="utf-8")
+    i_update = main.find("renpy.persistent.update()")
+    i_initcode = main.find("game.script.initcode")
+    assert i_update >= 0 and i_initcode >= 0, \
+        "разметка main.py изменилась — тест ослеп, перечитайте порядок фаз"
+    assert i_update < i_initcode, (
+        "движок больше НЕ сливает persistent до init-кода: перечитайте main.py и "
+        "решите, нужен ли ещё `python early` для регистрации слияний")
+
+    early = _vn_compat_block(
+        repo_root, re.compile(r"^python\s+early\s+in\s+vn_compat\s*:\s*$"))
+    assert early.strip(), (
+        "блока `python early in vn_compat` нет: регистрация слияний вернулась в init, "
+        "то есть опять опаздывает к первому merge (main.py:466)")
+    for needle in ("PERSISTENT_MERGES", "def _merge_dict_union(",
+                   "def _merge_progress_max(", "def _merge_list_union(",
+                   "register_persistent_merges()"):
+        assert needle in early, (
+            f"{needle} должен жить в early-блоке: к моменту стартового merge и таблица, "
+            "и функции обязаны существовать")
+
+    # vn_log на этой фазе ещё не создан — обращение к нему уронило бы старт игры.
+    assert "vn_log(" not in early, \
+        "early-блок зовёт vn_log, которого на этой фазе не существует"
