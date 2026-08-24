@@ -83,6 +83,11 @@ def py_modules():
     """{имя файла: [пути]} по всему дереву инструментов."""
     index: dict[str, list[Path]] = {}
     for p in sorted((REPO_ROOT / "tools").rglob("*.py")):
+        # .venv и site-packages — не дерево инструментов: pip/_pytest тоже
+        # зовут файлы main.py, и ссылка на SDK `$RENPY_SDK/renpy/main.py:
+        # choose_variants` ложно краснела бы на них.
+        if any(part in {".venv", "site-packages"} for part in p.parts):
+            continue
         index.setdefault(p.name, []).append(p)
     return index
 
