@@ -1,9 +1,27 @@
 # History / backlog (новый): «кто сказал что», прокрутка, пустое состояние.
 # Цвет имени — из who_args записи (Character(color=…) доезжает сам).
+#
+# ВАЖНО про substitute False ниже: в _history_list движок кладёт УЖЕ подставленный
+# текст (character.py: sub() на who/what -> do_done -> add_history -> h.who/h.what),
+# поэтому вторая подстановка на показе — это интерполяция того, что игрок написал
+# буквально. Реплика с документированным эскейпом `[[смету]` уже свернулась в
+# `[смету]`, и второй проход пытался вычислить `смету` как выражение: NameError у
+# игрока при открытии истории. Сам движок от этого защищается явно
+# (character.py: self.what_args = {"substitute": False}), и его же шаблон истории
+# тоже (SDK gui/game/screens.rpy: label h.who / text what — оба с substitute False).
+# Псевдолокализация оборачивает КАЖДУЮ строку в `[[…]` (loc/po.py: pseudo), поэтому
+# без этого флага история падала на первой же реплике любого pseudo-прогона.
 
 init offset = 0
 
 define config.history_length = 250
+
+# Какие теги оформления доживают до истории. Тайминговые теги реплик ({w}, {p},
+# {nw}, {cps}) в бэклоге бессмысленны и мешают, поэтому текст прогоняется через
+# filter_text_tags — так же, как в шаблоне SDK. Набор совпадает с движковым
+# дефолтом (SDK gui/game/screens.rpy: gui.history_allow_tags): у нас в репликах
+# оформления пока нет, а расширять список без сверки с дизайном незачем.
+define gui.history_allow_tags = { "alt", "noalt", "rt", "rb", "art" }
 
 screen history():
     tag menu
@@ -45,11 +63,14 @@ screen history():
                     hbox:
                         spacing gui.sp_l + gui.sp_xs
                         $ _c = ((h.who_args or {}).get("color") or gui.accent_color)
+                        # substitute False на обоих текстах — контракт движка (см. врезку
+                        # в начале файла): who/what в записи истории уже подставлены.
                         frame:
                             style "vn_hist_who_cell"
                             if h.who:
-                                text h.who style "vn_hist_who" color _c xalign 1.0
-                        text h.what style "vn_hist_what"
+                                text h.who style "vn_hist_who" color _c xalign 1.0 substitute False
+                        $ _what = renpy.filter_text_tags(h.what, allow=gui.history_allow_tags)
+                        text _what style "vn_hist_what" substitute False
                     add Solid(gui.divider_color) ysize 1
 
 style vn_hist_title:
