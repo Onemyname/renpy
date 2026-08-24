@@ -684,3 +684,114 @@ def test_source_language_cannot_get_a_translation_package(tmp_path):
     shutil.rmtree(d)
     scaffold_language(root, "fr", name="Français")
     assert [lang.code for lang in discover_languages(root)] == ["fr"]
+
+
+def test_markup_validator_rejects_an_unknown_text_tag():
+    """Парность тега ничего не говорит о его СУЩЕСТВОВАНИИ.
+
+    Валидатор следил только за стеком, а движок при отрисовке не прощает:
+    renpy/text/text.py бросает `Exception: Unknown text tag`, и config.safe_text по
+    умолчанию False (проект его не переопределяет). Типовая ошибка переводчика —
+    `{bold}` вместо `{b}`: тег парен, гейты зелёные, и у игрока с этим языком НЕ
+    РИСУЕТСЯ главное меню и экран выбора глав; та же ошибка в подписи выбора
+    роняет игру посреди первой сцены.
+
+    renpy lint этого не видит по построению: UI-строки и подписи выборов
+    поставляются как repr-словари данных (VN_STRINGS_TL / VN_MENUS_TL), для
+    линтера это литерал dict. Прежний страж проверял только НЕЗАКРЫТЫЙ тег."""
+    from vn.loc.po import _validate_markup
+
+    err = _validate_markup("Chapters", "{bold}Chapters{/bold}")
+    assert err and "не знает" in err, err
+
+    # Известные теги и самозакрывающиеся — проходят.
+    assert _validate_markup("x", "{b}x{/b}") is None
+    assert _validate_markup("x", "{i}{color=#fff}x{/color}{/i}") is None
+    assert _validate_markup("x", "x{w}{nw}") is None
+    assert _validate_markup("x", "{#context}x") is None
+
+
+def test_known_text_tags_match_the_pinned_sdk():
+    """Копия таблицы тегов обязана совпадать с SDK — иначе гейт врёт при апгрейде.
+
+    Правильное место проверки — внутри движка, через build-bridge (у движка есть
+    renpy.text.extras.check_text_tags, и она учитывает ещё custom_text_tags).
+    Пока проверка живёт копией, расхождение с пиннованным SDK должно КРАСНЕТЬ, а
+    не протекать молча: иначе новый тег Ren'Py начнёт браковаться как неизвестный,
+    а удалённый — проходить."""
+    import os
+    import re
+    from pathlib import Path
+
+    from vn.loc.po import _KNOWN_TAGS
+
+    sdk = os.environ.get("RENPY_SDK")
+    if not sdk:
+        pytest.skip("RENPY_SDK не задан — таблицу тегов сверять не с чем")
+    src = (Path(sdk) / "renpy" / "text" / "extras.py").read_text(
+        encoding="utf-8", errors="replace")
+    body = src.split("text_tags = dict(", 1)[1].split(")", 1)[0]
+    sdk_tags = set(re.findall(r"(\w+)=(?:True|False)", body))
+    sdk_tags.add("")            # extras.py: text_tags[""] = True
+    assert sdk_tags, "разбор таблицы тегов SDK выродился"
+    assert set(_KNOWN_TAGS) == sdk_tags, (
+        "копия таблицы тегов разошлась с SDK:\n"
+        f"  нет у нас: {sorted(sdk_tags - set(_KNOWN_TAGS))}\n"
+        f"  лишние у нас: {sorted(set(_KNOWN_TAGS) - sdk_tags)}")
+
+
+def test_markup_validator_rejects_a_bracket_that_is_not_a_substitution():
+    """Литеральной квадратной скобкой считается ТОЛЬКО эскейп `[[`.
+
+    Раньше хватало «скобка закрыта»: _BRACKET_RE съедала любую [...], а набор
+    подстановок собирал _INTERP_RE, требующий начала с латинской буквы. Поэтому
+    `[1/3]`, `[1:2]`, `[смеётся]` не попадали ни в набор, ни в остаток — перевод
+    признавался чистым. Движок же вычисляет содержимое как выражение Python
+    (substitutions.py: py_eval при config.interpolate_exprs=True) и трактует `:`
+    как format-spec: «Chapter 1 [1/3]» игрок видел как
+    «Chapter 1 0.3333333333333333», а `[1/0]` в UI-строке не давало открыться ни
+    главному меню, ни галерее, ни истории, ни загрузке."""
+    from vn.loc.po import _validate_markup
+
+    for bad in ("Chapter 1 [1/3]. Awakening", "Back [1:2]", "Gallery [1/0]",
+                "Он [смеётся] и уходит"):
+        err = _validate_markup("x", bad)
+        assert err and "не подстановка" in err, f"{bad!r} прошло: {err}"
+
+    # Легитимные формы обязаны проходить, иначе гейт покраснеет на живых PO.
+    # msgid == msgstr: правило «набор подстановок совпадает с исходником» здесь
+    # не проверяется, нас интересует только валидность самой скобки.
+    for ok in ("Стоит [cost] монет", "Осталось [n!q]", "Цена [cost:>6.2f]",
+               "Имя [obj.field]", "Слот [slots[0]]", "Литеральная [[скобка]",
+               "Одинокая ] закрывающая"):
+        assert _validate_markup(ok, ok) is None, ok
+
+
+def test_dialogue_literal_uses_the_renpy_escape_table_for_tabs():
+    """`_rpy_str` обслуживал ДВЕ грамматики, и эскейп таба был верен только для одной.
+
+    Текст реплики читает лексер Ren'Py, у которого своя таблица эскейпов
+    (renpy/lexer.py: dequote понимает фигурную и квадратную скобку, процент, `n` и
+    `uXXXX`, а всё остальное отдаёт как есть). Ветки для `t` там нет, поэтому
+    эскейп таба превращался в букву «t» посреди фразы: переводчик ставил в msgstr
+    табуляцию (штатный эскейп PO, который принимают все gettext-инструменты), а
+    игрок на этом языке видел лишний символ. Ошибка тихая — файл валиден, теги и
+    скобки не при чём, никто не краснеет.
+
+    Клаузы old/new у translate strings читает ПИТОН, там эскейп таба верен —
+    поэтому формы разведены на две функции."""
+    from vn.loc.po import _py_str, _rpy_str
+
+    bs = chr(92)                      # без литеральных бэкслешей: их легко потерять
+    out = _rpy_str("a" + chr(9) + "b")
+    assert bs + "t" not in out, f"лексер этот эскейп не знает, он даст букву t: {out}"
+    assert bs + "u0009" in out, out
+
+    # Грамматика питона: эскейп таба на месте.
+    assert bs + "t" in _py_str("a" + chr(9) + "b")
+
+    # Остальные эскейпы совпадают в обеих грамматиках.
+    for fn in (_rpy_str, _py_str):
+        assert fn('a"b') == '"a' + bs + '"b"'
+        assert fn("a" + chr(10) + "b") == '"a' + bs + 'nb"'
+        assert fn("a" + bs + "b") == '"a' + bs + bs + 'b"'

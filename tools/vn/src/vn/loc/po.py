@@ -371,9 +371,33 @@ def known_contexts(root: Path, domain: str) -> set[str]:
     return out
 
 
-def _rpy_str(s: str) -> str:
+def _py_str(s: str) -> str:
+    """Литерал для ПИТОНОВСКОЙ грамматики — клаузы `old`/`new` у translate strings.
+
+    Их читает питон (renpy/parser.py: compile(..., "eval")), поэтому здесь
+    действует питоновская таблица эскейпов и `\\t` — настоящая табуляция."""
     return ('"' + s.replace("\\", "\\\\").replace('"', '\\"')
             .replace("\n", "\\n").replace("\t", "\\t") + '"')
+
+
+def _rpy_str(s: str) -> str:
+    """Литерал для грамматики РЕН'ПАЯ — текст реплики в translate-блоке.
+
+    Таблица эскейпов у лексера ДРУГАЯ: renpy/lexer.py: dequote() понимает `{`,
+    `[`, `%`, `n` и `uXXXX`, а всё остальное отдаёт как есть (`else: return c`).
+    Ветки для `t` там нет, поэтому `\\t` превращался в букву «t» посреди фразы:
+    переводчик ставил в msgstr табуляцию (штатный эскейп PO, который принимают все
+    gettext-инструменты), а игрок на этом языке видел лишний символ. Ошибка тихая —
+    файл валиден, теги и скобки не при чём, никто не краснеет.
+
+    Табуляция эмитится как `\\uXXXX`: сырой таб внутри .rpy визуально неотличим от
+    отступа, а эту форму лексер понимает (lexer.py: ветка `c[0] == "u"`, и свёртка
+    пробелов `[ \\n]+` идёт ДО dequote, поэтому таб из эскейпа не съедается).
+
+    Разделение на две функции принципиально: одна форма обслуживала две грамматики,
+    и правильная для одной была неправильной для другой."""
+    return ('"' + s.replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\t", "\\u0009") + '"')
 
 
 _INTERP_RE = re.compile(r"\[([a-zA-Z_][a-zA-Z0-9_.]*)[^\]]*\]")
@@ -383,8 +407,45 @@ _TAG_RE = re.compile(r"\{(/?)([a-zA-Z_#][a-zA-Z0-9_]*)[^{}]*\}")
 _SELF_CLOSING = {"w", "p", "nw", "fast", "done", "clear", "space", "vspace",
                  "image", "#", "_"}
 
+# Теги, которые движок ЗНАЕТ. Копия таблицы renpy/text/extras.py: text_tags
+# пиннованного SDK. Проверять известность обязательно: движок при отрисовке не
+# прощает — renpy/text/text.py:1626-1629 бросает `Exception: Unknown text tag`,
+# а config.safe_text по умолчанию False (renpy/config.py) и проект его не
+# переопределяет. Парность при этом ничего не значит: `{bold}…{/bold}` парен и
+# неизвестен, и такой перевод UI-строки не давал НАРИСОВАТЬСЯ главному меню, а в
+# подписи выбора ронял игру посреди первой сцены. renpy lint это не ловит:
+# UI-строки и подписи выборов поставляются как repr-словари данных
+# (VN_STRINGS_TL / VN_MENUS_TL), для линтера это литерал dict.
+#
+# Своя копия — промежуточный шаг, и её честная цена названа здесь. Правильное
+# место проверки — внутри движка, через тот же build-bridge (G24), который уже
+# умеет запускаться в движке и возвращать JSON: у движка есть готовая
+# renpy.text.extras.check_text_tags, и она учитывает ещё и
+# config.custom_text_tags / self_closing_custom_text_tags, чего копия не умеет.
+# Пока проверки в мосте нет, копию сторожит test_loc::
+# test_known_text_tags_match_the_pinned_sdk — расхождение с SDK краснеет, а не
+# протекает молча при апгрейде.
+_KNOWN_TAGS = frozenset({
+    "", "a", "alpha", "alt", "art", "axis", "b", "color", "cps", "done", "fast",
+    "feature", "font", "i", "image", "instance", "k", "noalt", "nw", "outlinecolor",
+    "p", "plain", "rb", "rt", "s", "shader", "size", "space", "u", "vspace", "w",
+})
 
-_BRACKET_RE = re.compile(r"\[[^\[\]]*\]")
+
+# Один уровень вложенности обязателен: `[slots[0]]` — легальная подстановка с
+# индексом, а плоский `\[[^\[\]]*\]` находил в ней только `[0]` и браковал живой
+# перевод. Ложное срабатывание здесь дороже пропуска: гейт зовётся и из
+# `vn loc import`, и из `compile --check`, то есть встал бы весь конвейер.
+_BRACKET_RE = re.compile(r"\[[^\[\]]*(?:\[[^\[\]]*\][^\[\]]*)*\]")
+
+# Валидная подстановка Ren'Py целиком: имя (с точками), опциональный индекс,
+# конверсия `!q`/`!t`/… и format-spec после двоеточия.
+# Ren'Py вычисляет содержимое КАК PYTHON-ВЫРАЖЕНИЕ (renpy/substitutions.py:
+# py_eval при config.interpolate_exprs=True, по умолчанию True), а `:` внутри
+# трактует как format-spec. Поэтому «литеральной» скобкой считается ТОЛЬКО
+# эскейп `[[`: всё остальное движок попытается вычислить.
+_SUBST_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_.]*(\[[^\]]*\])?(![A-Za-z]+)?(:[^\]]*)?$")
 
 
 def _validate_markup(msgid: str, msgstr: str) -> str | None:
@@ -400,12 +461,34 @@ def _validate_markup(msgid: str, msgstr: str) -> str | None:
     residue = _TAG_RE.sub("", _BRACKET_RE.sub("", msgstr))
     if "[" in residue or "{" in residue:
         return "незакрытая скобка [ или { (литеральная скобка эскейпится: [[ и {{)"
+    # Каждая оставшаяся [подстановка] обязана БЫТЬ подстановкой. Раньше здесь
+    # хватало «скобка закрыта»: _BRACKET_RE съедала любую [...], а набор
+    # подстановок собирался _INTERP_RE, который требует начала с латинской буквы.
+    # Поэтому `[1/3]`, `[1:2]`, `[смеётся]` не попадали ни в набор, ни в остаток —
+    # перевод признавался чистым, а движок вычислял содержимое как выражение:
+    # «Chapter 1 [1/3]» превращалось в «Chapter 1 0.3333333333333333», а
+    # `[1/0]` в UI-строке не давало ОТКРЫТЬСЯ ни главному меню, ни галерее, ни
+    # истории, ни загрузке (ZeroDivisionError). Типовой случай переводчика —
+    # ремарка в скобках («[смеётся]», «[2 из 3]») — давал SyntaxError.
+    for m in _BRACKET_RE.finditer(msgstr):
+        inner = m.group(0)[1:-1]
+        if not _SUBST_RE.match(inner):
+            return (f"[{inner}] — не подстановка: Ren'Py вычислит содержимое как "
+                    f"выражение Python. Литеральная квадратная скобка эскейпится "
+                    f"как [[")
     stack: list[str] = []
     for m in _TAG_RE.finditer(msgstr):
         closing, name = m.group(1), m.group(2)
         # {#...} — контекст-теги переводов ({#file_time}%H:%M) — всегда самозакрытые
         if name in _SELF_CLOSING or name.startswith("#"):
             continue
+        # Движок при отрисовке неизвестный тег НЕ прощает: text.py бросает
+        # `Exception: Unknown text tag`, а config.safe_text по умолчанию False.
+        # Парность про известность не говорит ничего: `{bold}…{/bold}` парен.
+        if name not in _KNOWN_TAGS:
+            return (f"{{{name}}} — тег, которого движок не знает (см. таблицу "
+                    f"renpy/text/extras.py: text_tags): при отрисовке это "
+                    f"Exception: Unknown text tag, то есть экран не откроется")
         if closing:
             if not stack or stack[-1] != name:
                 return f"незакрытый/лишний тег {{{closing}{name}}}"
@@ -507,8 +590,9 @@ def import_translations(root: Path) -> LocReport:
         if pairs:
             out.append(f"translate {lang.code} strings:")
             for old, new in pairs:
-                out.append(f"    old {_rpy_str(old)}")
-                out.append(f"    new {_rpy_str(new)}")
+                # old/new читает ПИТОН, а не лексер Ren'Py — своя таблица эскейпов.
+                out.append(f"    old {_py_str(old)}")
+                out.append(f"    new {_py_str(new)}")
             out.append("")
         # Гарантированная регистрация языка в движке: renpy.known_languages()
         # видит только языки хотя бы с одним translate-стейтментом — язык,
