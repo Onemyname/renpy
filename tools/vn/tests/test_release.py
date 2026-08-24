@@ -1007,3 +1007,31 @@ def test_every_local_zone_excluded_from_git_is_excluded_from_the_distribution(re
         + ", ".join(missing)
         + ". Добавьте их в список build.classify(..., None) в game/options.rpy "
           "либо в _DISTRIBUTION_EXEMPT_ZONES с причиной, почему они должны ехать")
+
+def test_a_stale_replay_recording_fails_release_validate(repo_root):
+    """Запись повтора, снятая на прошлой версии контента, валит релизный гейт.
+
+    Записи сверяют СОСТОЯНИЕ прогона, поэтому `vn test replay` отказывается
+    сравнивать их между версиями и требует перезаписи. Бамп версии делает каждую
+    запись устаревшей МОЛЧА, и ночной гейт краснеет уже после релиза — на себе
+    это сработало дважды подряд (1.0.2 и 1.0.3), оба раза находил не гейт, а
+    ручной прогон. Проверка читает те же файлы, что и гейт, но без движка."""
+    import json
+
+    from vn.release import validate_release
+    from vn.repo import load_project
+
+    version = load_project(repo_root)["version"]
+    recs = sorted((repo_root / "ci" / "fixtures" / "replays").glob("*.vnrec.json"))
+    assert recs, "записей повтора нет — гейт проверять нечем"
+    for rec in recs:
+        was = json.loads(rec.read_text(encoding="utf-8")).get("content_version")
+        assert was == version, (
+            f"{rec.name}: запись снята на {was}, в project.yaml {version} — "
+            f"перезапишите (vn test smoke --record …), иначе vn test replay "
+            f"покраснеет сразу после релиза")
+
+    checks, ok = validate_release(repo_root, "public")
+    row = [msg for state, msg in checks if msg.startswith("записи повтора")]
+    assert row, f"релизный гейт не докладывает про записи повтора: {checks}"
+    assert [s for s, m in checks if m.startswith("записи повтора")] == ["PASS"], row

@@ -1169,4 +1169,28 @@ def validate_release(root: Path, flavor: str) -> tuple[list[tuple[str, str]], bo
         " — создайте (vn save corpus --add) до релиза, иначе совместимость "
         "сейвов не проверена"))
 
+    # Записи повтора сверяют СОСТОЯНИЕ прогона, поэтому `vn test replay` отказывается
+    # сравнивать их между версиями контента и требует перезаписи. Бамп версии делает
+    # каждую запись устаревшей молча — и ночной гейт краснеет уже ПОСЛЕ релиза.
+    # Проверено на себе дважды подряд (1.0.2 и 1.0.3): оба раза устаревшую запись
+    # находил не гейт, а ручной прогон. Здесь она находится там, где ещё дёшево.
+    stale = []
+    replays = sorted((root / "ci" / "fixtures" / "replays").glob("*.vnrec.json"))
+    for rec in replays:
+        try:
+            was = json.loads(rec.read_text(encoding="utf-8")).get("content_version")
+        except (OSError, ValueError):
+            stale.append(f"{rec.name} (не читается)")
+            continue
+        if was != project["version"]:
+            stale.append(f"{rec.name} снята на {was}")
+    if not replays:
+        add("WARN", "записей повтора нет — vn test replay проверять нечего")
+    elif stale:
+        add("FAIL", f"записи повтора устарели: {', '.join(stale)} — перезапишите "
+                    f"(vn test smoke --record <имя> --why …), иначе vn test replay "
+                    f"красный сразу после релиза")
+    else:
+        add("PASS", f"записи повтора: {len(replays)} на версии {project['version']}")
+
     return checks, ok

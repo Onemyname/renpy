@@ -1157,3 +1157,54 @@ items:
       продукте от инженера; у соседней метки «★» своей строки тоже нет. Если
       владелец захочет подпись — это одна строка в content/ui/strings.yaml плюс
       переводы.
+
+  RTL-052:
+    title: "Якорь разблокировки, который не сработает никогда, компилировался зелёным"
+    category: correctness
+    evidence:
+      - "compile.py проверял, что переменная якоря есть в Variable Registry, но не проверял, бывает ли у неё объявленное ЗНАЧЕНИЕ; имя бита (`unlock.beat`, `trigger.beat`) не проверялось вообще ничем — grep по tools/vn/src/vn/content не давал ни одной проверки"
+      - "отказ найден ВЛАДЕЛЬЦЕМ КАК ИГРОКОМ: в галерее висел закрытый кадр, а на карте главы к нему не было никакого пути. Элемент cg_ch01_route_mira открывается по `unlock: {var: g.route, equals: mira}`, при этом g.route объявлена с `default: prologue` и НИКТО в проекте ей не присваивает — единственное упоминание кроме объявления это само условие. Значение недостижимо доказуемо, счётчик галереи не мог дойти до 100%, и «5 / 6» висело бы навсегда"
+      - "опечатка в значении или в имени бита выглядит ТОЧНО ТАК ЖЕ — то есть класс шире одного демо-элемента: то же условие есть у триггеров достижений (`trigger: {var: …, equals: …}`, `trigger: {beat: …}`)"
+      - "намеренность жила КОММЕНТАРИЕМ в декларации («Остаётся закрытым в демо»), то есть компилятор не мог отличить заглушку от опечатки"
+    implementation:
+      - game/framework/00_core/050_build_bridge.rpy
+      - tools/vn/src/vn/content/flow.py
+      - tools/vn/src/vn/content/compile.py
+      - tools/schemas/gallery@1.schema.json
+      - tools/schemas/achievements@1.schema.json
+      - content/gallery/core.gallery.yaml
+      - docs/adr/0010-gallery-extras.md
+    tests:
+      - tools/vn/tests/test_gallery.py::test_an_unreachable_value_anchor_is_a_build_error
+      - tools/vn/tests/test_gallery.py::test_an_unknown_beat_anchor_is_a_build_error
+      - tools/vn/tests/test_gallery.py::test_the_mark_must_describe_the_anchor_it_covers
+      - tools/vn/tests/test_gallery.py::test_the_check_is_silent_when_the_model_is_incomplete
+      - tools/vn/tests/test_gallery.py::test_reachable_values_takes_defaults_and_every_assignment
+      - tools/vn/tests/test_scene_pipeline.py::test_the_bridge_collects_beat_names
+    status: CLOSED
+    note: >
+      Множество достижимых значений переменной считает flow.reachable_values:
+      дефолт из vars@1 плюс всё, что переменной присваивается — в пункте меню, в
+      теле сцены и в условной ветви тела (те же источники, что у _setters, и по
+      той же причине: значение можно получить не только выбором). Сравнение по
+      repr, а не по ==: в Python True == 1, и объявленное `equals: 1` не должно
+      считаться достижимым через присваивание True.
+
+      Имена битов собирает build-bridge из строки, которую отдал парсер Ren'Py
+      (node.code.source), питоновским ast — второго разборщика .rpy не появляется
+      (G24). Сбор отдельно загарден: пустой список означает «AST не разбирался», и
+      проверка на нём молчит, то есть потеря сбора выключила бы гейт ТИХО.
+
+      Заглушка привязана к ЯКОРЮ, а не к элементу: без третьей проверки подмена
+      `equals: mira` на `equals: schoool` при живой метке проходила сборку молча —
+      это было измерено, а не предположено.
+
+      Своя ошибка того же захода, поймана батареей: первая редакция путала «не
+      знаю» с «доказано, что нет» и на дереве без разбора AST объявляла
+      недостижимым живой якорь — девять тестов регрессий покраснели. Условия
+      молчания (неполная модель, пустой список битов, переменная без сведений)
+      теперь тоже загардены, и каждое краснеет на мутации.
+
+      Счётчик галереи объявленный элемент по-прежнему считает: «5 из 6» —
+      намеренное состояние демо, а не дефект. Исключение из знаменателя меняет то,
+      что видит игрок, и остаётся решением владельца.

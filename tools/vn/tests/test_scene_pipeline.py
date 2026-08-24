@@ -687,6 +687,86 @@ def test_bridge_marks_the_menu_caption_say_as_non_interactive(repo_root, tmp_pat
         "держится ни на чём")
 
 
+# Источники сцен для гардов сбора битов: биты объявлены на ВСЕХ путях, которые
+# мост разбирает в отдельные аккумуляторы — прямой $, ветви if, python-блок и
+# пункт меню. Потеря любого пути выключает проверку якоря beat молча.
+SCENE_WITH_BEATS = """label ch01_s010__body:
+    "Реплика"
+    $ vn.beat("plain_call")
+    if ch01.met_mira:
+        $ vn.beat("inside_branch")
+    else:
+        python:
+            vn.beat("inside_python_block")
+    $ vn_menu = "ch01_s010_m001"
+    menu:
+        "Первый":
+            $ vn.beat("inside_choice")
+            return "a"
+        "Второй":
+            return "b"
+"""
+
+SCENE_WITH_EXPR_BEAT = """label ch01_s010__body:
+    "Реплика"
+    $ vn.beat("literal_one")
+    $ vn.beat(g.route + "_suffix")
+"""
+
+
+def test_the_bridge_collects_beat_names(tmp_path, repo_root):
+    """Мост собирает имена битов из вызова vn.beat("…").
+
+    На этом списке стоит проверка якоря `beat` у галереи и достижений, и стоит
+    ХРУПКО: пустой список означает «AST не разбирался», поэтому проверка на нём
+    молчит. Значит потеря сбора выключила бы гейт ТИХО — опечатка в имени бита
+    снова давала бы элемент, который не откроется никогда, при зелёной сборке.
+    Отсюда гард именно на сбор, а не только на проверку.
+
+    Разбор настоящим мостом: имя достаётся из строки, которую отдал парсер
+    Ren'Py (node.code.source), питоновским ast — второго разборщика .rpy не
+    появляется (G24)."""
+    from vn.content.analyze import analyze_scene_files
+
+    scene = tmp_path / "s010_beats.scene.rpy"
+    scene.write_text(SCENE_WITH_BEATS, encoding="utf-8")
+
+    a = analyze_scene_files(repo_root, [scene])[str(scene)]
+    assert not a.get("errors"), a["errors"]
+    assert sorted(a.get("beats") or []) == [
+        "inside_branch", "inside_choice", "inside_python_block", "plain_call"], (
+        f"мост потерял биты: {a.get('beats')}. Ветви if, python-блок и пункты "
+        f"меню разбираются в свои аккумуляторы и сливаются в общий — потеря "
+        f"любого из путей выключает проверку якоря beat молча")
+
+
+def test_a_beat_that_is_only_an_expression_is_not_recorded(tmp_path, repo_root):
+    """Имя бита выражением не записывается: значение неизвестно, и записать его
+    как литерал значило бы соврать проверке — она объявила бы недостижимым
+    настоящий бит. Та же сторона ошибки, что у assigns."""
+    from vn.content.analyze import analyze_scene_files
+
+    scene = tmp_path / "s010_expr.scene.rpy"
+    scene.write_text(SCENE_WITH_EXPR_BEAT, encoding="utf-8")
+
+    a = analyze_scene_files(repo_root, [scene])[str(scene)]
+    assert not a.get("errors"), a["errors"]
+    assert sorted(a.get("beats") or []) == ["literal_one"], a.get("beats")
+
+
+def test_the_shipped_tree_still_declares_its_beats(repo_root):
+    """Биты боевого дерева видны мосту — иначе проверка якоря beat выключена."""
+    from vn.content.analyze import analyze_scene_files
+
+    scene = (repo_root / "content" / "chapters" / "ch01_awakening" / "scenes"
+             / "s030_rooftop.scene.rpy")
+    if not scene.is_file():
+        pytest.skip("боевая сцена переехала")
+    a = analyze_scene_files(repo_root, [scene])[str(scene)]
+    assert "roof_alone" in (a.get("beats") or []), (
+        f"мост не видит vn.beat в боевой сцене: {a.get('beats')}")
+
+
 def _when_errors(when, registry={"ch01.met_mira", "g.route"}, status="release"):
     rep = sc.SceneCompileReport()
     unit = _unit(meta={"exits": {"next": [{"when": when, "to": "s020"},

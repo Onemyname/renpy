@@ -15,7 +15,9 @@ import textwrap
 import types
 
 import pytest
+import yaml
 
+from vn.content import compile as cp
 from vn.content.compile import CompileError, _emit_gallery, compile_content
 from vn.repo import load_yaml
 from vn.schemas import SchemaRegistry
@@ -573,3 +575,225 @@ def test_pack_ownership_is_memoized(repo_root):
     assert "_owned_cache" in owned, "владение паком спрашивается у платформы каждый раз"
     setter = src.split("def set_ownership_provider(", 1)[1].split("\n        def ", 1)[0]
     assert "_owned_cache" in setter, "смена провайдера не сбрасывает кэш"
+
+
+# ── Якоря, которые не могут сработать никогда ────────────────────────────────
+# Реестр проверял ИМЯ переменной якоря, а бывает ли у неё это ЗНАЧЕНИЕ — нет, и
+# имя бита не проверялось вовсе. Владелец нашёл это как игрок: в галерее висел
+# закрытый кадр, а на карте главы не было к нему никакого пути. Причина —
+# unlock: {var: g.route, equals: mira} при g.route с default: prologue, которой
+# никто ничего не присваивает: значение недостижимо ДОКАЗУЕМО, а не «пока».
+
+VAR_TYPES = {
+    "g.route": {"type": "str", "default": "prologue"},
+    "g.flag": {"type": "bool", "default": False},
+    "g.seen": {"type": "list", "default": []},
+    "g.money": {"type": "int", "default": 0},
+}
+REACH = {
+    "g.route": {repr("prologue")},
+    "g.flag": {repr(False), repr(True)},
+    "g.seen": {repr([])},
+    "g.money": {repr(0), repr(5000)},
+}
+BEATS = {"roof_alone"}
+
+
+def _errors(entries, anchor_key="unlock", reach=None, beats=None):
+    return cp.validate_anchors("rel.yaml", "элемент", entries, anchor_key,
+                               REACH if reach is None else reach, VAR_TYPES,
+                               BEATS if beats is None else beats)
+
+
+def test_an_unreachable_value_anchor_is_a_build_error():
+    """Значение, которого переменная не принимает нигде, — ошибка сборки.
+
+    Именно этот случай и жил в боевом дереве, компилируясь зелёным."""
+    errs = _errors({"cg": {"unlock": {"var": "g.route", "equals": "mira"}}})
+    assert len(errs) == 1, errs
+    assert "не принимает значение 'mira'" in errs[0]
+    # Сообщение обязано назвать, что ВОЗМОЖНО: без этого автор не знает, опечатка
+    # у него в значении или в самой переменной.
+    assert "'prologue'" in errs[0], errs[0]
+
+
+def test_a_reachable_value_anchor_is_silent():
+    assert _errors({"cg": {"unlock": {"var": "g.money", "equals": 5000}}}) == []
+    assert _errors({"cg": {"unlock": {"var": "g.route", "equals": "prologue"}}}) == []
+
+
+def test_a_bool_anchor_without_equals_means_true():
+    """У якоря по bool-переменной значение по умолчанию True — так его читает и
+    рантайм. Значит недостижимость проверяется и без явного equals."""
+    assert _errors({"cg": {"unlock": {"var": "g.flag"}}}) == []
+    errs = _errors({"cg": {"unlock": {"var": "g.flag"}}},
+                   reach={"g.flag": {repr(False)}})
+    assert len(errs) == 1 and "значение True" in errs[0], errs
+
+
+def test_a_list_anchor_is_not_checked_for_equality():
+    """Якорь по list/dict — про наличие и длину (прогрессивные достижения),
+    а не про равенство: проверять его на equals значило бы ломать легальную
+    декларацию `trigger: {var: g.scenes_seen}` с goal."""
+    assert _errors({"a": {"unlock": {"var": "g.seen"}}}) == []
+
+
+def test_true_and_one_are_not_the_same_value():
+    """Сравнение идёт по repr, а не по ==: в Python True == 1, и объявленное
+    equals: 1 не должно считаться достижимым через присваивание True."""
+    errs = _errors({"cg": {"unlock": {"var": "g.flag", "equals": 1}}})
+    assert len(errs) == 1, errs
+    assert "значение 1" in errs[0], errs[0]
+
+
+def test_an_unknown_beat_anchor_is_a_build_error():
+    """Имя бита не проверялось НИЧЕМ: опечатка давала элемент, который не
+    откроется никогда, при зелёной сборке."""
+    errs = _errors({"cg": {"unlock": {"beat": "roof_allone"}}})
+    assert len(errs) == 1 and "roof_allone" in errs[0], errs
+    assert "roof_alone" in errs[0], "сообщение не показало, какие биты есть"
+    assert _errors({"cg": {"unlock": {"beat": "roof_alone"}}}) == []
+
+
+def test_beats_are_not_checked_when_the_ast_was_not_parsed():
+    """Пустой список битов означает «AST сцен не разбирался», а не «битов нет»:
+    на таком входе проверка обязана молчать, иначе дерево без RENPY_SDK или
+    неполная модель дают ложные ошибки."""
+    assert _errors({"cg": {"unlock": {"beat": "whatever"}}}, beats=set()) == []
+
+
+def test_the_check_is_silent_when_the_model_is_incomplete():
+    """Неполная модель — молчание, а не ошибка.
+
+    «Не знаю» и «доказано, что нет» — разные вещи, и первая редакция проверки их
+    путала: на дереве, где AST сцен не разбирался, присваиваний не видно вовсе, и
+    ЖИВОЙ якорь объявлялся недостижимым — девять тестов регрессий покраснели на
+    пустом месте. Флаг `flow@1: complete` для этого и существует."""
+    entries = {"cg": {"unlock": {"var": "g.route", "equals": "mira"}}}
+    # reach НЕ пустой и значения в нём нет: иначе тест не изолирует флаг —
+    # пустой reach глушит проверку сам, и снятие `complete` осталось бы незамеченным
+    # (проверено мутацией).
+    assert cp.validate_anchors("rel.yaml", "элемент", entries, "unlock",
+                               REACH, VAR_TYPES, BEATS, False) == []
+    # …а на полной модели тот же вход — ошибка.
+    assert cp.validate_anchors("rel.yaml", "элемент", entries, "unlock",
+                               REACH, VAR_TYPES, BEATS, True) != []
+
+
+def test_the_check_is_silent_about_a_variable_it_knows_nothing_about():
+    """Про переменную без объявленного дефолта и без единого присваивания
+    проверка молчит: это не «значение недостижимо», а «зона деклараций не
+    загружена». Случай «читается, но никем не пишется и без дефолта» —
+    настоящий дефект, и он принадлежит validate_flow."""
+    entries = {"cg": {"unlock": {"var": "g.unknown", "equals": "x"}}}
+    assert _errors(entries, reach={}) == []
+
+
+def test_a_stale_mark_is_not_reported_on_an_incomplete_model():
+    """Метку на неполной модели тоже не трогаем: устарела она или нет — не видно,
+    а ложная ошибка «снимите метку» заставила бы автора снять верную."""
+    entries = {"cg": {
+        "unlock": {"var": "g.route", "equals": "prologue"},
+        "unreachable": {"value": "prologue", "why": "неважно"},
+    }}
+    assert cp.validate_anchors("rel.yaml", "элемент", entries, "unlock",
+                               REACH, VAR_TYPES, BEATS, False) == []
+    assert cp.validate_anchors("rel.yaml", "элемент", entries, "unlock",
+                               REACH, VAR_TYPES, BEATS, True) != []
+
+
+def test_a_declared_unreachable_anchor_is_legal():
+    """Намеренная заглушка легальна, но объявляется ДАННЫМИ, а не комментарием."""
+    assert _errors({"cg": {
+        "unlock": {"var": "g.route", "equals": "mira"},
+        "unreachable": {"value": "mira", "why": "роут не написан"},
+    }}) == []
+
+
+def test_a_stale_unreachable_mark_is_a_build_error():
+    """Метка на ДОСТИЖИМОМ якоре — причина устарела: роут написали, метку снять
+    забыли, и декларация снова расходится с игрой."""
+    errs = _errors({"cg": {
+        "unlock": {"var": "g.route", "equals": "prologue"},
+        "unreachable": {"value": "prologue", "why": "устарела"},
+    }})
+    assert len(errs) == 1 and "устарела" in errs[0], errs
+
+
+def test_the_mark_must_describe_the_anchor_it_covers():
+    """Метка привязана к ЯКОРЮ, а не к элементу.
+
+    Без этой проверки заглушка прикрывала бы любую правку якоря: подмена
+    equals: mira на equals: schoool при живой метке проходила сборку молча —
+    проверено на боевом дереве до того, как метка стала структурной."""
+    errs = _errors({"cg": {
+        "unlock": {"var": "g.route", "equals": "schoool"},
+        "unreachable": {"value": "mira", "why": "роут не написан"},
+    }})
+    assert len(errs) == 1, errs
+    assert "'mira'" in errs[0] and "'schoool'" in errs[0], errs[0]
+    # Подмена ВИДА метки (бит вместо значения) — тот же класс.
+    errs = _errors({"cg": {
+        "unlock": {"var": "g.route", "equals": "mira"},
+        "unreachable": {"beat": "nosuchbeat", "why": "подмена вида"},
+    }})
+    assert len(errs) == 1 and "beat=" in errs[0], errs
+
+
+def test_the_shipped_gallery_declares_its_one_unreachable_anchor(repo_root):
+    """На боевом дереве недостижимый якорь ровно один и он объявлен.
+
+    Гейт на факт, а не на вкус: если появится второй необъявленный, сборка
+    покраснеет раньше этого теста, но пусть тест называет и ожидаемое состояние."""
+    from vn.repo import load_yaml
+
+    doc = load_yaml(repo_root / "content" / "gallery" / "core.gallery.yaml")
+    marked = {gid: spec["unreachable"] for gid, spec in doc["items"].items()
+              if spec.get("unreachable")}
+    assert set(marked) == {"cg_ch01_route_mira"}, marked
+    mark = marked["cg_ch01_route_mira"]
+    assert mark["value"] == "mira"
+    assert len(mark["why"]) >= 8
+    assert doc["items"]["cg_ch01_route_mira"]["unlock"]["equals"] == "mira"
+
+
+def test_reachable_values_takes_defaults_and_every_assignment(tmp_path):
+    """flow.reachable_values: дефолт из vars@1 плюс всё, что переменной
+    присваивается — в пункте меню, в теле сцены и в условной ветви тела.
+
+    Источники те же, что у _setters, и по той же причине: значение можно получить
+    не только выбором. Пропусти любой — и якорь по нему объявится недостижимым,
+    то есть гейт станет ложно-красным."""
+    from vn.content.flow import build_model, reachable_values
+
+    root = tmp_path / "root"
+    d = root / "content" / "chapters" / "ch50_vals"
+    (d / "scenes").mkdir(parents=True)
+    (d / "chapter.yaml").write_text(yaml.safe_dump(
+        {"schema": "chapter@1", "id": "ch50", "title_key": "m", "status": "release",
+         "entry_scene": "s010", "scene_order": ["s010", "s020"]},
+        allow_unicode=True, sort_keys=False), encoding="utf-8")
+    (d / "vars.yaml").write_text(yaml.safe_dump(
+        {"schema": "vars@1", "store": "ch50",
+         "vars": {"mood": {"type": "str", "default": "calm", "doc": "d", "since": 1}}},
+        allow_unicode=True, sort_keys=False), encoding="utf-8")
+    for sid, exits in (("s010", {"go": "s020"}), ("s020", None)):
+        meta = {"schema": "scene@1", "id": sid}
+        if exits:
+            meta["exits"] = exits
+        (d / "scenes" / f"{sid}_node.scene.yaml").write_text(
+            yaml.safe_dump(meta, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+    model = build_model(root)
+    assert model.errors == [], model.errors
+    # Только дефолт: присваиваний нет, AST не разбирался.
+    assert reachable_values(model)["ch50.mood"] == {repr("calm")}
+
+    # Присваивание в ТЕЛЕ сцены и в УСЛОВНОЙ ВЕТВИ тела видны обе.
+    node = model.scenes["ch50_s010"]
+    node.assigns = [{"var": "ch50.mood", "value": "angry"}]
+    node.branch_assigns = [[{"var": "ch50.mood", "value": "happy"}]]
+    model.edge_assigns[("ch50_s010", "go", "ch50_s010_m001", 0)] = [
+        {"var": "ch50.mood", "value": "sly"}]
+    got = reachable_values(model)["ch50.mood"]
+    assert got == {repr(v) for v in ("calm", "angry", "happy", "sly")}, got

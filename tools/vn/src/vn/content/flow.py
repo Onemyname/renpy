@@ -488,6 +488,48 @@ def _var_types(root: Path, packs=None) -> VAR_TYPES:
     return out
 
 
+def reachable_values(model: FlowModel) -> dict:
+    """Значения, которые переменная МОЖЕТ принять в этой сборке: `{ref: {repr}}`.
+
+    Нужно якорям галереи и достижений. Проверялось только имя переменной («есть
+    в Variable Registry»), а значение — нет, и это оставляло дыру ровно того
+    класса, от которого стоит весь реестр: элемент галереи
+    `unlock: {var: g.route, equals: mira}` компилировался зелёным, хотя `g.route`
+    объявлена с `default: prologue` и НИКТО в проекте ей не присваивает — то есть
+    кадр не открывался никогда, а игрок искал путь, которого нет. Опечатка в
+    значении выглядела бы точно так же.
+
+    Источники значения: дефолт из vars@1 плюс всё, что переменной присваивается —
+    в пунктах меню (`edge_assigns`), в теле сцены (`assigns`) и в условных ветвях
+    тела (`branch_assigns`). Тот же набор источников, что у `_setters`, и по той
+    же причине: значение можно получить не только выбором.
+
+    Ключ множества — `repr` значения: сравнивать надо literal-в-literal, а
+    `True == 1` в Python истинно, и объявленное `equals: 1` не должно считаться
+    достижимым через присваивание `True`. Переменные без объявленного `default`
+    попадают в множество только своими присваиваниями — это верно: без дефолта
+    начального значения у них нет (`validate_flow` требует, чтобы его дал
+    какой-нибудь путь)."""
+    out: dict = {}
+
+    def add(ref, value):
+        out.setdefault(ref, set()).add(repr(value))
+
+    for ref, spec in model.var_types.items():
+        if "default" in spec:
+            add(ref, spec["default"])
+    for assigns in model.edge_assigns.values():
+        for a in assigns:
+            add(a["var"], a["value"])
+    for node in model.scenes.values():
+        for a in node.assigns:
+            add(a["var"], a["value"])
+        for branch in node.branch_assigns:
+            for a in branch:
+                add(a["var"], a["value"])
+    return out
+
+
 # ── Сборка модели ────────────────────────────────────────────────────────────
 
 def _chapter_meta(root: Path, packs=None) -> dict[str, dict]:

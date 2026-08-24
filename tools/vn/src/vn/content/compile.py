@@ -377,6 +377,118 @@ def _asset_history(renames: dict) -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in history.items()}
 
 
+def anchor_target(anchor: dict, var_types: dict):
+    """Что именно объявляет якорь: ("beat", имя) или ("value", значение).
+
+    Значение по умолчанию у якоря по bool-переменной — True (так же его читает
+    рантайм); у list/dict якорь про наличие и длину, а не про равенство."""
+    if "beat" in anchor:
+        return ("beat", anchor["beat"])
+    if "var" in anchor:
+        vtype = (var_types.get(anchor["var"]) or {}).get("type")
+        if "equals" in anchor:
+            return ("value", anchor["equals"])
+        if vtype == "bool":
+            return ("value", True)
+    return (None, None)
+
+
+def unreachable_anchor(anchor: dict, reach: dict, var_types: dict,
+                       known_beats: set, complete: bool = True) -> str | None:
+    """Почему якорь не сработает НИКОГДА, или None.
+
+    `reach` — flow.reachable_values(model): множества repr значений, которые
+    переменная может принять в этой сборке. `known_beats` — биты, которые реально
+    вызывает хоть одна сцена (собирает build-bridge). `complete` — флаг модели
+    (`flow@1: complete`): разобран ли AST у КАЖДОЙ объявленной сцены.
+
+    Молчание при неполных данных — не перестраховка, а обязательное условие.
+    «Не знаю» и «доказано, что нет» — разные вещи, и первая редакция этой
+    проверки их путала: на дереве, где AST не разбирался, присваиваний не видно
+    вовсе, и живой якорь `{var: ch01.met_mira, equals: true}` объявлялся
+    недостижимым — девять тестов регрессий покраснели на пустом месте. Отсюда
+    три условия молчания:
+
+    * модель неполна — присваивания неизвестны в принципе;
+    * список битов пуст — значит AST не разбирался, а не «битов нет»;
+    * про переменную не известно НИЧЕГО (нет ни объявленного дефолта, ни одного
+      присваивания) — зона деклараций не загружена. Случай «читается, но никем не
+      пишется и без дефолта» — настоящий дефект, и его ловит validate_flow,
+      которому он и принадлежит."""
+    if "beat" in anchor:
+        if complete and known_beats and anchor["beat"] not in known_beats:
+            return (f"бита {anchor['beat']!r} не вызывает ни одна сцена "
+                    f"(есть: {', '.join(sorted(known_beats)) or 'ни одного'})")
+        return None
+    if "var" not in anchor:
+        return None
+    ref = anchor["var"]
+    kind, wanted = anchor_target(anchor, var_types)
+    if kind != "value":
+        return None             # list/dict: якорь по наличию, а не по равенству
+    if not complete or ref not in reach:
+        return None
+    values = reach[ref]
+    if repr(wanted) in values:
+        return None
+    shown = ", ".join(sorted(values)) or "ни одного"
+    return (f"переменная {ref} не принимает значение {wanted!r} нигде в этой "
+            f"сборке (возможные значения: {shown})")
+
+
+def validate_anchors(rel, kind, entries: dict, anchor_key: str, reach: dict,
+                     var_types: dict, known_beats: set,
+                     complete: bool = True) -> list[str]:
+    """Ошибки по якорям галереи и достижений: якорь, который не сработает никогда.
+
+    Реестр проверял, что переменная якоря существует, а бывает ли у неё это
+    ЗНАЧЕНИЕ — нет; имя бита не проверялось вовсе. Дыра не теоретическая: элемент
+    галереи с `unlock: {var: g.route, equals: mira}` компилировался зелёным, хотя
+    g.route объявлена с `default: prologue` и никто в проекте ей не присваивает —
+    кадр не открывался никогда, счётчик галереи не мог дойти до 100%, а игрок
+    искал путь, которого нет. Опечатка в значении или в имени бита выглядит ТОЧНО
+    ТАК ЖЕ, поэтому проверка обязана быть, а не оставаться комментарием в
+    декларации.
+
+    Намеренно недостижимый якорь легален, но объявляется ДАННЫМИ:
+    `unreachable: {value|beat: <что именно>, why: "<почему>"}`. Проверок три, и
+    каждая закрывает свой способ разъехаться:
+
+    * якорь недостижим, метки нет — ошибка (опечатка или забыли объявить);
+    * метка есть, якорь достижим — ошибка: причина устарела (роут написали, метку
+      снять забыли), и декларация опять расходится с игрой;
+    * метка описывает ДРУГОЕ значение или бит — ошибка. Без третьей проверки
+      метка стояла бы на ЭЛЕМЕНТЕ, а не на якоре, и прикрывала бы любую правку:
+      проверено, подмена `equals: mira` на `equals: schoool` при живой метке
+      проходила сборку молча."""
+    out: list[str] = []
+    for eid, spec in sorted(entries.items()):
+        anchor = spec.get(anchor_key) or {}
+        why = unreachable_anchor(anchor, reach, var_types, known_beats, complete)
+        mark = spec.get("unreachable") or {}
+        where = f"{rel}: {kind} {eid}"
+        if mark and not complete:
+            continue            # неполная модель: устарела метка или нет — не видно
+        if why and not mark:
+            out.append(f"{where}: якорь не сработает никогда — {why}. Если это "
+                       f"намеренно, объявите unreachable: {{value|beat, why}}")
+            continue
+        if mark and not why:
+            out.append(f"{where}: unreachable объявлен, но якорь достижим — "
+                       f"причина устарела, снимите метку")
+            continue
+        if not mark:
+            continue
+        declared_kind = "beat" if "beat" in mark else "value"
+        declared = mark.get(declared_kind)
+        actual_kind, actual = anchor_target(anchor, var_types)
+        if (declared_kind, declared) != (actual_kind, actual):
+            out.append(f"{where}: unreachable описывает {declared_kind}={declared!r}, "
+                       f"а якорь про {actual_kind}={actual!r} — метка прикрыла бы "
+                       f"правку якоря, обновите её")
+    return out
+
+
 def _emit_gallery(root: Path, gal_docs: list[tuple[str, dict]], known_scenes: set[str],
                   chapter_ids: set[str], var_registry: set[str],
                   ui_strings: dict, rep: CompileResult, errors: list[str],
@@ -1387,6 +1499,23 @@ def compile_content(root: Path, out_dir: Path | None = None, check: bool = False
     if flow_errors:
         raise CompileError(
             f"{len(flow_errors)} ошибок графа истории:\n" + "\n".join(flow_errors))
+    # ── Якоря, которые не могут сработать НИКОГДА ────────────────────────────
+    # Правило и его обоснование — в докстринге validate_anchors.
+    reach = flow.reachable_values(flow_model)
+    known_beats = {b for u in units for b in (u.analysis.get("beats") or [])}
+    anchor_errors: list[str] = []
+    for _grel, _gdoc in sorted(gal_docs):
+        anchor_errors += validate_anchors(
+            _grel, "элемент галереи", _gdoc.get("items") or {}, "unlock",
+            reach, flow_model.var_types, known_beats, flow_model.complete)
+    for _arel, _adoc in sorted(ach_docs):
+        anchor_errors += validate_anchors(
+            _arel, "достижение", _adoc.get("achievements") or {}, "trigger",
+            reach, flow_model.var_types, known_beats, flow_model.complete)
+    if anchor_errors:
+        raise CompileError(
+            f"{len(anchor_errors)} недостижимых якорей:\n" + "\n".join(anchor_errors))
+
     flow_out = flow.emit_flow(flow_model, _header([proj_src]))
 
     shipped_vars = [(rel, doc) for rel, doc in var_docs if rel not in unshipped_rels]

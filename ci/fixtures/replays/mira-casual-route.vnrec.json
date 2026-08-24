@@ -1,5 +1,5 @@
 {
- "content_version": "1.0.2",
+ "content_version": "1.0.3",
  "expect": {
   "gallery_ids": [
    "cg_ch01_concept",
@@ -32,7 +32,7 @@
   ]
  },
  "name": "mira-casual-route",
- "recorded_at": "2026-08-24T14:21:06Z",
+ "recorded_at": "2026-08-24T17:14:14Z",
  "schema": "replay@1",
  "why": "путь через школьную форму: единственный, где g.mira_outfit меняется и открывается CG rooftop"
 }

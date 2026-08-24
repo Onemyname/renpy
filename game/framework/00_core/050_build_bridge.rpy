@@ -32,10 +32,11 @@ init python:
             "menus": [], "says": 0, "say_list": [], "menu_markers": [],
             "var_reads": [], "var_writes": [], "assigns": [], "errors": [],
             "image_refs": [], "audio_refs": [], "branch_assigns": [],
+            "beats": [],
         }
 
     # Ключи, где дубликаты недопустимы: их накапливают проверкой «не было ли уже».
-    _VN_UNIQUE_KEYS = ("var_reads", "var_writes")
+    _VN_UNIQUE_KEYS = ("var_reads", "var_writes", "beats")
 
     def _vn_merge_entry(dst, src):
         """Слить под-аккумулятор пункта меню в общий: формы одинаковы, поэтому
@@ -82,6 +83,29 @@ init python:
                 entry["assigns"].append({
                     "var": "%s.%s" % (base.id, target.attr), "value": literal,
                 })
+        # Именованные биты: `$ vn.beat("roof_alone")`. Без этого списка ЯКОРЬ
+        # `beat` в галерее и достижениях не проверялся вообще ничем — опечатка в
+        # имени давала элемент, который не откроется никогда, при зелёной сборке.
+        # `vn` не подходит под _VN_STORE_RE (это фасад, а не управляемый store),
+        # поэтому сбор отдельным проходом по вызовам. Разбирается СТРОКА, которую
+        # отдал парсер Ren'Py (node.code.source), питоновским ast — второго
+        # разборщика .rpy здесь не появляется (G24).
+        for node in _vn_ast.walk(tree):
+            if not isinstance(node, _vn_ast.Call):
+                continue
+            func = node.func
+            if not isinstance(func, _vn_ast.Attribute) or func.attr != "beat":
+                continue
+            if not isinstance(func.value, _vn_ast.Name) or func.value.id != "vn":
+                continue
+            if not node.args:
+                continue
+            try:
+                name = _vn_ast.literal_eval(node.args[0])
+            except (ValueError, SyntaxError, TypeError):
+                continue        # выражение, а не литерал: имя неизвестно
+            if isinstance(name, str) and name not in entry["beats"]:
+                entry["beats"].append(name)
         for node in _vn_ast.walk(tree):
             if not isinstance(node, _vn_ast.Attribute):
                 continue
