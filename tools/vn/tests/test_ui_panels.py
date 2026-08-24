@@ -80,6 +80,114 @@ def _load_styles(rpy_files):
     return styles
 
 
+def _style_uses(rpy_files, repo_root):
+    """Использования стилей ПО ИМЕНИ: ({имя: [место, ...]}, {место с вычисляемым именем}).
+
+    Раньше здесь стоял регексп `\\bstyle\\s+"([a-z_][\\w]*)"` — только строковый литерал
+    сразу после `style`. Форма `style (…)` для него невидима, а именно она стоит в шести
+    местах боевой вёрстки: `style ("choice_button_chosen" if i.chosen else "choice_button")`,
+    `style ("vn_btn_" + kind)` и т.п. Проверено движком: подмена такого имени на
+    несуществующее оставляла ЗЕЛЁНЫМИ и этот тест, и `renpy lint`, и весь тур
+    `vn test screens`, а движок падал `Exception: Style '…' does not exist` при первой
+    отрисовке. Для `screen choice` (он в `ignore_defined` тура) другой сети нет вообще.
+
+    Поэтому разбираем и скобочную форму: выражение может занимать несколько строк
+    (choice.rpy), поэтому скан идёт по тексту файла с сопоставлением скобок, а не по
+    строкам. Если внутри выражения есть склейка (`+`), имя стиля в исходнике как строка
+    не существует — такое место уходит во ВТОРОЕ множество и проверяется матрицей
+    (см. _COMPUTED_STYLE_SITES)."""
+    used: dict[str, list[str]] = {}
+    computed: set[str] = set()
+    # `style` как ИСПОЛЬЗОВАНИЕ — дальше кавычка или скобка; `style vn_ach_card:` это
+    # объявление, `style_prefix`/`text_style` — другие слова (\b между `_` и `s` нет).
+    head = re.compile(r"\bstyle\b\s*(?=[(\"'])")
+    for path in rpy_files:
+        rel = path.relative_to(repo_root).as_posix()
+        text = "\n".join(_strip_comment(ln)
+                         for ln in path.read_text(encoding="utf-8").splitlines())
+        for m in head.finditer(text):
+            line = text.count("\n", 0, m.start()) + 1
+            where = f"{rel}:{line}"
+            pos = m.end()
+            if text[pos] in "\"'":
+                lit = re.match(r"([\"'])([a-z_][\w]*)\1", text[pos:])
+                if lit:
+                    used.setdefault(lit.group(2), []).append(where)
+                continue
+            expr = _balanced(text, pos)
+            if expr is None:
+                continue
+            names, unknown = _expr_style_names(expr)
+            if unknown:
+                computed.add(f"{rel}: {expr[1:-1].strip()}")
+            for name in names:
+                used.setdefault(name, []).append(where)
+    return used, computed
+
+
+def _expr_style_names(expr):
+    """({возможные имена стиля}, есть ли невыводимая ветвь) для выражения `style (…)`.
+
+    Литералы берём НЕ регекспом, а разбором: в `("choice_guide_goal" if _note[0] == "goal"
+    else "choice_guide_block")` регексп находит ещё и `"goal"` — операнд сравнения, который
+    именем стиля не является, и гейт краснел бы на исправной вёрстке. Поэтому собираем
+    только литералы в позиции ЗНАЧЕНИЯ выражения: у тернарника это body/orelse, у `or`/`and`
+    — все операнды, у склейки со неконстантой имя в исходнике не существует вовсе."""
+    import ast
+
+    try:
+        tree = ast.parse(expr, mode="eval").body
+    except SyntaxError:
+        return set(), True          # не разобрали — считаем невыводимым, а не «нет имён»
+
+    def walk(node):
+        if isinstance(node, ast.Constant):
+            return ({node.value}, False) if isinstance(node.value, str) else (set(), True)
+        if isinstance(node, ast.IfExp):          # A if C else B — значения только A и B
+            a, ua = walk(node.body)
+            b, ub = walk(node.orelse)
+            return a | b, ua or ub
+        if isinstance(node, ast.BoolOp):         # идиома `x or "fallback"`
+            out, unk = set(), False
+            for v in node.values:
+                n, u = walk(v)
+                out |= n
+                unk = unk or u
+            return out, unk
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            a, ua = walk(node.left)
+            b, ub = walk(node.right)
+            if ua or ub:                         # склейка с переменной: имени как строки нет
+                return set(), True
+            return {x + y for x in a for y in b}, False
+        return set(), True                       # Name/Call/Attribute/Subscript — невыводимо
+
+    return walk(tree)
+
+
+def _balanced(text, start):
+    """Подстрока от '(' в text[start] до парной ')' включительно, либо None.
+    Кавычки учитываются: скобка внутри строкового литерала не считается."""
+    if start >= len(text) or text[start] != "(":
+        return None
+    depth, quote = 0, None
+    for i in range(start, len(text)):
+        ch = text[i]
+        if quote:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+        elif ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+    return None
+
+
 def _prop(styles, name, key):
     """Значение свойства с учётом цепочки 'style X is Y' (наследование стилей)."""
     seen = set()
@@ -458,19 +566,70 @@ def test_every_style_used_by_name_is_declared(repo_root):
     assert {"default", "frame", "vbox", "text", "button"} <= engine,         "скан стилей движка выродился — базовых стилей не нашлось"
     declared |= engine
 
-    used: dict[str, list[str]] = {}
-    for path in project:
-        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            for m in re.finditer(r'\bstyle\s+"([a-z_][\w]*)"',
-                                 _strip_comment(line)):
-                used.setdefault(m.group(1), []).append(
-                    f"{path.relative_to(repo_root).as_posix()}:{i}")
+    used, computed = _style_uses(project, repo_root)
 
     # Гейт не должен выродиться: вёрстка обязана ссылаться на стили по имени.
     assert len(used) > 20, f"использований стилей подозрительно мало: {len(used)}"
     missing = {k: v for k, v in used.items() if k not in declared}
     assert not missing, "стили используются, но не объявлены: " + "; ".join(
         f"{k} <- {v[0]}" for k, v in sorted(missing.items()))
+
+    # Вычисляемое имя стиля литеральным сканом не проверить в принципе, поэтому
+    # набор таких мест ЗАМОРОЖЕН: новое место обязано приехать вместе со своей
+    # матричной проверкой (ниже — test_computed_style_names_cover_every_kind).
+    assert computed == _COMPUTED_STYLE_SITES, (
+        "изменился набор мест с вычисляемым именем стиля.\n"
+        f"  сейчас:  {sorted(computed)}\n"
+        f"  заморожено: {sorted(_COMPUTED_STYLE_SITES)}\n"
+        "Литеральный скан такое имя не видит: добавьте место в _COMPUTED_STYLE_SITES "
+        "и матричную проверку всех значений, из которых имя собирается.")
+
+
+# Места, где имя стиля СОБИРАЕТСЯ в рантайме, а не написано литералом. Каждое
+# перечислено здесь по одной причине: скан по литералам его не видит, а движок при
+# отсутствии стиля бросает исключение на первой отрисовке. Значения, из которых
+# имя собирается, проверяет матричный тест ниже.
+_COMPUTED_STYLE_SITES = {
+    'game/framework/20_ui/components.rpy: "vn_btn_" + kind',
+    'game/framework/20_ui/components.rpy: "vn_btn_" + kind + "_text"',
+}
+
+
+def test_computed_style_names_cover_every_kind(repo_root):
+    """У vn_button имя стиля собирается из kind — значит проверять надо МАТРИЦУ.
+
+    `style ("vn_btn_" + kind)` (components.rpy) литеральным сканом невидимо и
+    останется невидимым: имени как строки в исходнике нет. Единственная честная
+    проверка — взять ВСЕ значения kind, с которыми экран реально зовут (плюс
+    дефолт из его сигнатуры), и потребовать, чтобы для каждого существовали и
+    `vn_btn_<kind>`, и `vn_btn_<kind>_text`. Иначе `use vn_button(..., kind="warning")`
+    роняет экран исключением `Style 'vn_btn_warning' does not exist` при первой
+    отрисовке, а renpy lint такого класса не видит (он стили не проверяет)."""
+    project = sorted((repo_root / "game").rglob("*.rpy"))
+    declared = set(_load_styles(project))
+
+    kinds: dict[str, str] = {}
+    for path in project:
+        for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            body = _strip_comment(line)
+            # Дефолт из сигнатуры screen vn_button(... kind="primary" ...)
+            for m in re.finditer(r'screen\s+vn_button\s*\([^)]*?kind\s*=\s*"([a-z_]\w*)"',
+                                 body):
+                kinds[m.group(1)] = f"{path.relative_to(repo_root).as_posix()}:{i}"
+            # Значения из вызовов: use vn_button(..., kind="secondary")
+            if "vn_button" in body:
+                for m in re.finditer(r'kind\s*=\s*"([a-z_]\w*)"', body):
+                    kinds[m.group(1)] = f"{path.relative_to(repo_root).as_posix()}:{i}"
+
+    # Гейт не должен выродиться: kind у компонента есть, и значений у него больше одного.
+    assert len(kinds) >= 2, f"значения kind не нашлись — скан выродился: {kinds}"
+
+    missing = [f"vn_btn_{k}{suffix} <- {where}"
+               for k, where in sorted(kinds.items())
+               for suffix in ("", "_text")
+               if f"vn_btn_{k}{suffix}" not in declared]
+    assert not missing, ("vn_button зовут с kind, для которого стиль не объявлен "
+                         "(движок упадёт при отрисовке): " + "; ".join(missing))
 
 
 def test_chapter_map_never_prints_titles_of_unseen_scenes(repo_root):
