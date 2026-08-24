@@ -537,7 +537,10 @@ def test_gallery_hot_path_does_not_scan_all_seen_images(repo_root):
     assert "len(seen)" in index, "индекс не инвалидируется по размеру _seen_images"
 
     unlocked = src.split("def is_unlocked(", 1)[1].split("\n    def ", 1)[0]
-    assert "_unlocked_cache" in unlocked, "повторный опрос движка не кэшируется"
+    # Кэш живёт атрибутом объекта, созданного на init, а не именем стора: имя,
+    # переприсвоенное в рантайме, становится корнем сейва навсегда — см.
+    # test_saves::test_no_store_name_is_reassigned_at_runtime.
+    assert "_cache.unlocked" in unlocked, "повторный опрос движка не кэшируется"
 
 
 def test_gallery_screen_walks_the_registry_once_per_build(repo_root):

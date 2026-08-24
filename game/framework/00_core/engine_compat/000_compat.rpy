@@ -124,9 +124,7 @@ init -950 python in vn_compat:
 
     from store import renpy
 
-    _engine_names_cache = None
-
-    def engine_store_names():
+    def _read_engine_store_names():
         """Имена, которые движок кладёт в КАЖДЫЙ named store.
 
         renpy/python.py: create_store() копирует в новый стор всё содержимое
@@ -139,14 +137,23 @@ init -950 python in vn_compat:
 
         Касание renpy.minstore живёт здесь по G18. Пустое множество — честный
         ответ на неизвестной версии: фильтр просто останется прежним."""
-        global _engine_names_cache
-        if _engine_names_cache is None:
-            try:
-                import renpy.minstore
-                _engine_names_cache = frozenset(vars(renpy.minstore))
-            except Exception:
-                _engine_names_cache = frozenset()
-        return _engine_names_cache
+        try:
+            import renpy.minstore
+            return frozenset(vars(renpy.minstore))
+        except Exception:
+            return frozenset()
+
+    # Считается ОДИН раз на init, а не лениво с global: рантайм-присваивание имени
+    # в сторе движок считает изменением и делает имя корнем сейва навсегда
+    # (renpy/python.py: get_changes -> ever_been_changed). Прежний ленивый кэш
+    # исправно лежал в файлах сейва — безвредно по содержимому, но это лишний
+    # корень в каждом слоте, а инвариант «имена стора в рантайме не
+    # переприсваиваются» должен быть без исключений (см. кэши в vn_gal/vn_story).
+    _ENGINE_STORE_NAMES = _read_engine_store_names()
+
+    def engine_store_names():
+        """Готовый набор имён движка (см. _read_engine_store_names)."""
+        return _ENGINE_STORE_NAMES
 
     def call_stack_depth():
         """Глубина call-стека. renpy.call_stack_depth() документирован в новых версиях;

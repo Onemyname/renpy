@@ -695,7 +695,11 @@ def test_conflict_lookup_and_plan_are_not_recomputed_per_frame(repo_root):
     assert "for x, y in" not in comp
 
     plan = src.split("def plan(", 1)[1].split("\n    def ", 1)[0]
-    assert "_plan_cache" in plan, "план пересчитывается на каждый вызов"
+    # Кэш живёт атрибутом объекта, созданного на init, а не именем стора: имя,
+    # переприсвоенное в рантайме, становится корнем сейва навсегда, и загруженный
+    # сейв всю сессию подсовывал старую матрицу конфликтов — см.
+    # test_saves::test_no_store_name_is_reassigned_at_runtime.
+    assert "_cache.plan" in plan, "план пересчитывается на каждый вызов"
     for mutator in ("def toggle_target(", "def clear_targets("):
         body = src.split(mutator, 1)[1].split("\n    def ", 1)[0]
         assert "_drop_plan_cache()" in body, f"{mutator} не сбрасывает кэш плана"

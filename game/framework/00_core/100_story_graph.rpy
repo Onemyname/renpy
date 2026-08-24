@@ -102,10 +102,32 @@ init -980 python in vn_story:
     def _decision_sets(scene_id):
         return (node(scene_id) or {}).get("decisions") or []
 
-    # Индекс матрицы конфликтов и мемоизация плана. Оба — на процесс: артефакт
-    # неизменен, а цели меняются только действием игрока.
-    _conflict_index = None
-    _plan_cache = None          # (ключ, результат)
+    class _Cache(object):
+        """Мемоизация горячего пути: индекс матрицы конфликтов и план прохождений.
+
+        Живёт АТРИБУТАМИ объекта, созданного на init, а не именами стора — и это
+        не стиль, а обязательное условие. Рантайм-присваивание имени в сторе
+        движок считает изменением и делает имя КОРНЕМ СЕЙВА навсегда
+        (renpy/python.py: get_changes -> ever_been_changed; фильтра ни по «_», ни
+        по «это named store» там нет), а на загрузке корни пишутся обратно в стор
+        безусловно (renpy/rollback.py: unfreeze_core). Проверено дампом
+        get_roots(): store.vn_story._conflict_index и _plan_cache лежали в файле
+        сейва, а инвалидатора у индекса конфликтов нет вовсе — то есть после
+        патча контента загруженный сейв всю сессию подсовывал СТАРУЮ матрицу:
+        карта рисовала конфликт, которого в новой сборке нет, plan() делил цели
+        на лишние прохождения, а гайд говорил «этот вариант закрывает цель X».
+
+        Образец — vn.pack_registry._owned_cache (030_flow.rpy): имя объекта в
+        рантайме не переприсваивается, поэтому в корни сейва не попадает, а сам
+        объект из корней недостижим и не сериализуется. При reload скрипта
+        разработчиком init исполняется заново и кэш создаётся чистым — отдельный
+        инвалидатор для этого не нужен."""
+
+        def __init__(self):
+            self.conflicts = None
+            self.plan = None        # (ключ, результат)
+
+    _cache = _Cache()
 
     def _conflicts_set():
         """Пары конфликтов как множество — вместо линейного скана списка.
@@ -114,17 +136,15 @@ init -980 python in vn_story:
         compatible() пачками: карточка КАЖДОГО узла спрашивает conflicts() по
         всем целям, план — по каждой паре целей, а подсказка гайда — на КАЖДЫЙ
         пункт меню в точке выбора. Линейный скан там платился в каждом кадре."""
-        global _conflict_index
-        if _conflict_index is None:
-            _conflict_index = frozenset(
+        if _cache.conflicts is None:
+            _cache.conflicts = frozenset(
                 (x, y) for x, y in (_flow().get("incompatible") or []))
-        return _conflict_index
+        return _cache.conflicts
 
     def _drop_plan_cache():
         """Сбрасывается при смене целей — иначе карта перестаёт реагировать на
         отметку цели, а это тише и хуже, чем медленная карта."""
-        global _plan_cache
-        _plan_cache = None
+        _cache.plan = None
 
     def compatible(a, b):
         """Достижимы ли обе сцены в ОДНОМ прохождении. Сначала готовый список
@@ -177,10 +197,9 @@ init -980 python in vn_story:
         Жадность здесь честна: точное разбиение — это раскраска графа
         конфликтов, а на десятках целей разница не наблюдаема, зато порядок
         стабилен и объясним игроку («сначала это, потом то»)."""
-        global _plan_cache
         key = tuple(targets())
-        if _plan_cache is not None and _plan_cache[0] == key:
-            return _plan_cache[1]
+        if _cache.plan is not None and _cache.plan[0] == key:
+            return _cache.plan[1]
         rows = [t for t in targets() if node(t) is not None]
         rows.sort(key=lambda sid: (scenes()[sid].get("chapter"),
                                    scenes()[sid].get("order", 0), sid))
@@ -195,7 +214,7 @@ init -980 python in vn_story:
         # План зовут из подвала карты и из подсказки гайда на КАЖДЫЙ пункт меню,
         # а зависит он только от набора целей — значит считать его в каждом кадре
         # незачем. Ключ — сам набор: сброс по toggle/clear страхует от промаха.
-        _plan_cache = (key, runs)
+        _cache.plan = (key, runs)
         return runs
 
     def current_run():

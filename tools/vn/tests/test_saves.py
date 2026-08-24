@@ -510,3 +510,59 @@ def test_migration_warns_about_nested_non_string_keys(repo_root, monkeypatch):
     assert hit, st.log
     assert "g.tally" in hit[0] and "counters" in hit[0], \
         f"в логе нет пути до вложенного ключа: {hit[0]}"
+
+
+# Рантайм-присваивания имён стора, которые РАЗРЕШЕНЫ. Каждое здесь потому, что
+# зовётся только с init, а не из рантайма: присваивание в init корнем сейва не
+# становится (тот же аргумент, что у vn_platform._beta). Список заморожен —
+# новый `global` в сторе обязан приехать вместе с обоснованием.
+_ALLOWED_STORE_GLOBALS = {
+    # set_provider / set_progress_provider зовёт только 035_platform.rpy на init 999.
+    "game/framework/00_core/080_achievements.rpy: _provider",
+    "game/framework/00_core/080_achievements.rpy: _progress_provider",
+}
+
+
+def test_no_store_name_is_reassigned_at_runtime(repo_root):
+    """Мемоизация не имеет права жить именем стора — она уедет в КАЖДЫЙ сейв.
+
+    Рантайм-присваивание имени в named store движок считает изменением и делает
+    имя КОРНЕМ СЕЙВА навсегда (renpy/python.py: get_changes -> ever_been_changed;
+    фильтра ни по «_», ни по «это named store» там нет), а на загрузке корень
+    пишется обратно в стор безусловно (renpy/rollback.py: unfreeze_core).
+
+    Так в сейвы уехали три кэша. store.vn_story._conflict_index — без
+    инвалидатора вовсе: после патча контента загруженный сейв всю сессию
+    подсовывал СТАРУЮ матрицу конфликтов, и карта главы рисовала конфликт,
+    которого в новой сборке нет. store.vn_gal._seen_index_cache/_seen_index_len —
+    индекс увиденных кадров, чья единственная проверка валидности это равенство
+    длин, то есть чужой сейв мог подсунуть чужой индекс; плюс каждая перестройка
+    кладёт полную копию в rollback-лог, а он весь пишется в файл.
+
+    Проверено дампом get_roots() и сканом реальных автосейвов репозитория.
+
+    Правильный приём — атрибуты объекта, созданного на init: имя объекта в
+    рантайме не переприсваивается, поэтому в корни не попадает (образец —
+    vn.pack_registry._owned_cache). Существующий гейт этого класса
+    (test_start_label_does_not_bake_the_registry_into_every_save) смотрел только
+    тело label start и `global` внутри `python in <store>` не видел."""
+    import re
+
+    found = set()
+    for path in sorted((repo_root / "game" / "framework").rglob("*.rpy")):
+        rel = path.relative_to(repo_root).as_posix()
+        for m in re.finditer(r"^\s*global\s+([A-Za-z_][\w]*(?:\s*,\s*[A-Za-z_][\w]*)*)",
+                             path.read_text(encoding="utf-8"), re.M):
+            for name in m.group(1).split(","):
+                found.add(f"{rel}: {name.strip()}")
+
+    extra = found - _ALLOWED_STORE_GLOBALS
+    assert not extra, (
+        "рантайм-присваивание имени стора делает его корнем сейва навсегда:\n  "
+        + "\n  ".join(sorted(extra))
+        + "\nДержите мемоизацию атрибутами объекта, созданного на init (образец — "
+          "vn.pack_registry._owned_cache), либо добавьте место в "
+          "_ALLOWED_STORE_GLOBALS с обоснованием «зовётся только с init».")
+    # Гейт не должен выродиться: список разрешённых обязан оставаться актуальным.
+    stale = _ALLOWED_STORE_GLOBALS - found
+    assert not stale, f"в _ALLOWED_STORE_GLOBALS остались мёртвые записи: {stale}"

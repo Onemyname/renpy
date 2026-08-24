@@ -32,12 +32,42 @@ init -980 python in vn_gal:
         return persistent.vn_gallery_unlocked
 
     # ── Кэши горячего пути ───────────────────────────────────────────────────
-    # Оба живут ПРОЦЕСС, а не сейв: это ответы про уже известное состояние, и
-    # писать их в persistent из выражения экрана было бы побочным эффектом в
-    # предикции (запрещено правилом чистоты экранов).
-    _seen_index_cache = None      # {тег: [frozenset(атрибуты), ...]}
-    _seen_index_len = -1          # по чему инвалидируем: размер _seen_images
-    _unlocked_cache = {}          # item_id -> True (разблокировка монотонна)
+    # Живут ПРОЦЕСС, а не сейв — и теперь это действительно так. Прежняя редакция
+    # утверждала то же самое, но имена переприсваивались в рантайме через global
+    # из выражения экрана галереи, а рантайм-присваивание имени в сторе движок
+    # считает изменением и делает имя КОРНЕМ СЕЙВА навсегда (renpy/python.py:
+    # get_changes -> ever_been_changed), после чего на загрузке корень пишется в
+    # стор безусловно (renpy/rollback.py: unfreeze_core). Проверено сканом
+    # реальных файлов: store.vn_gal._seen_index_cache и _seen_index_len лежали во
+    # ВСЕХ автосейвах. Persistent авторы обошли сознательно, а кэш уехал в сейв —
+    # что хуже: persistent хотя бы не подменяется снапшотом из чужого файла.
+    #
+    # Почему это опасно, а не только некрасиво. Единственная проверка валидности
+    # индекса — равенство len(persistent._seen_images) сохранённой длине. Посылка
+    # «ключ может быть только добавлен» верна в пределах ОДНОГО процесса (движок
+    # из _seen_images не удаляет), но восстановленный из сейва индекс — снапшот
+    # ЧУЖОГО persistent, и равенство длин про совпадение содержимого не говорит
+    # ничего. Шаринг сейва «со всеми CG» — штатный канал в VN-сообществах.
+    # Второе: каждая перестройка индекса кладёт полную предыдущую копию в запись
+    # rollback-лога, а он весь пишется в файл — на целевом масштабе (десятки
+    # тысяч ключей, см. докстринг _seen_index) это мегабайты в каждом слоте.
+    #
+    # Поэтому кэш — атрибуты объекта, созданного на init: имя _cache в рантайме
+    # не переприсваивается, значит в корни сейва не попадает (тот же приём, что у
+    # vn.pack_registry._owned_cache). Класс — наследник ОБЫЧНОГО python-object, а
+    # не store-object: в сторе имя `object` подменено на RevertableObject
+    # (renpy/minstore.py), и мутация его атрибутов попадала бы в rollback-лог.
+    # Кэшу участие в rollback не нужно и вредно: он пересчитывается сам.
+    import builtins as _builtins
+
+    class _Cache(_builtins.object):
+
+        def __init__(self):
+            self.seen_index = None   # {тег: [frozenset(атрибуты), ...]}
+            self.seen_len = -1       # по чему инвалидируем: размер _seen_images
+            self.unlocked = {}       # item_id -> True (разблокировка монотонна)
+
+    _cache = _Cache()
 
     def _seen_index():
         """Индекс показанных кадров по ТЕГУ образа.
@@ -57,16 +87,15 @@ init -980 python in vn_gal:
 
         Инвалидация по длине: ключ может быть только добавлен (движок никогда не
         удаляет из _seen_images), поэтому длина — точный признак изменения."""
-        global _seen_index_cache, _seen_index_len
         seen = getattr(persistent, "_seen_images", None) or {}
-        if _seen_index_cache is not None and len(seen) == _seen_index_len:
-            return _seen_index_cache
+        if _cache.seen_index is not None and len(seen) == _cache.seen_len:
+            return _cache.seen_index
         index = {}
         for key in seen:
             if isinstance(key, tuple) and key:
                 index.setdefault(key[0], []).append(frozenset(key[1:]))
-        _seen_index_cache = index
-        _seen_index_len = len(seen)
+        _cache.seen_index = index
+        _cache.seen_len = len(seen)
         return index
 
     def visible(item_id):
@@ -124,21 +153,21 @@ init -980 python in vn_gal:
         # Разблокировка монотонна в пределах процесса: открытый элемент закрыться
         # уже не может. Кэш снимает повторный опрос движка на каждой перерисовке
         # сетки — но НЕ в persistent: запись оттуда шла бы из выражения экрана.
-        if _unlocked_cache.get(item_id):
+        if _cache.unlocked.get(item_id):
             return True
         if unlock.get("seen_image"):
             if spec["kind"] == "shot":
                 if _seen_shot(spec):
-                    _unlocked_cache[item_id] = True
+                    _cache.unlocked[item_id] = True
                     return True
             else:
                 # image_name — имя образа через пробелы (cg ch01 rooftop_day).
                 for name in _image_names(spec):
                     if renpy.seen_image(name):
-                        _unlocked_cache[item_id] = True
+                        _cache.unlocked[item_id] = True
                         return True
         if _store().get(item_id):
-            _unlocked_cache[item_id] = True
+            _cache.unlocked[item_id] = True
             return True
         return False
 
