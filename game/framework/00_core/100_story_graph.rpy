@@ -65,10 +65,18 @@ init -980 python in vn_story:
         return sum(1 for sid, _s in rows if revealed(sid)), len(rows)
 
     def layers(chapter_id):
-        """Раскладка узлов по колонкам слева направо: слой = длина самого долгого
-        пути от входа. Ручных координат в декларациях нет и не будет (ADR-0021),
-        поэтому геометрию считает алгоритм, а порядок внутри слоя берётся из
-        scene_order — так узлы не прыгают между сборками."""
+        """Слои узлов слева направо: слой = длина самого долгого пути от входа.
+        Ручных координат в декларациях нет и не будет (ADR-0021), поэтому
+        геометрию считает алгоритм, а порядок ВНУТРИ слоя берётся из scene_order.
+
+        Что именно устойчиво: порядок внутри слоя и, при неизменном контенте,
+        весь результат. Позиция узла — НЕ инвариант, и раньше здесь обещалось
+        больше, чем алгоритм даёт. Правка контента карту двигает: вставка сцены в
+        цепочку сдвигает всё ниже по потоку на колонку, а появление сквозного
+        ребра добавляет ряд в пропущенные колонки (layout ведёт такое ребро
+        точками перегиба) и сдвигает карточки по вертикали — в ch01 это 2 узла
+        из 3. Плата принята осознанно: без ряда под сквозное ребро развилка на
+        карте не отличима от цепочки, и ровно этим карта врала игроку."""
         ids = [sid for sid, _s in chapter_scenes(chapter_id)]
         index = {sid: i for i, sid in enumerate(ids)}
         outgoing = {}
@@ -126,6 +134,10 @@ init -980 python in vn_story:
         def __init__(self):
             self.conflicts = None
             self.plan = None        # (ключ, результат)
+            self.layout = None      # (ключ, результат)
+            # Есть ли на диске превью фона локации: ответ зависит только от
+            # файлов, поэтому за сессию не меняется.
+            self.loc_thumb = {}
 
     _cache = _Cache()
 
@@ -373,9 +385,30 @@ init -980 python in vn_story:
         return title(scene_id) if revealed(scene_id) else "???"
 
     def thumb(scene_id):
-        """Превью узла — из галереи, если её элемент привязан к этой сцене и уже
-        открыт. Своего реестра картинок у флоучарта нет: два источника правды на
-        один кадр разъехались бы (ADR-0010)."""
+        """Кадр для карточки узла: элемент галереи, привязанный к этой сцене,
+        иначе фон её локации.
+
+        Своего реестра ОТКРЫТИЙ у флоучарта нет и не будет — два источника правды
+        про «что игроку уже доступно» разъехались бы (ADR-0010). Но кадр и
+        открытие — разные вещи, и на этом месте они были спутаны: отбор шёл по
+        `unlock.scene`, то есть по УСЛОВИЮ РАЗБЛОКИРОВКИ, как будто это привязка
+        картинки к сцене. Из шести элементов галереи проекта такой якорь ровно у
+        одного (видео-луп mov_ch01_ambient -> ch01_s030), поэтому превью могла
+        получить единственная сцена игры из двадцати шести — и получала превью
+        ВИДЕО, а не свой CG. Остальные карточки оставались пустыми рамками, и
+        именно это выглядело как «карта недоделана». Привязки элемента к сцене в
+        gallery@1 нет вовсе: элемент объявляется к ГЛАВЕ.
+
+        Поэтому второй источник — локация сцены из её же декларации (scene.yaml:
+        `location`, проецируется flow.py). Это не второй реестр открытий: фон
+        локации ничего не открывает, а карточка вообще рисуется только для
+        revealed(), то есть игрок в этой сцене уже был и этот фон видел.
+
+        Приоритет у галереи: если автор привязал к сцене элемент, показываем его
+        (карточка ch01_s030 не меняется). Превью фона берётся, только если
+        конвейер его сделал — та же проверка существования, что у превью галереи
+        (compile.py: GALLERY_THUMB_SUFFIX), иначе уходит сам образ `bg <loc>
+        <вариант>` из images.gen.rpy, который гарантирован сборкой."""
         registry = getattr(renpy.store, "VN_GALLERY", {}) or {}
         for item_id in sorted(registry):
             spec = registry[item_id]
@@ -384,44 +417,264 @@ init -980 python in vn_story:
             if not renpy.store.vn_gal.is_unlocked(item_id):
                 continue
             return spec.get("thumb") or spec.get("asset")
-        return None
+        return location_frame(scene_id)
 
-    def grid(cols, node_w, node_h, gap_x, gap_y):
-        """Координаты узлов: колонка = слой графа, ряд = порядок в scene_order.
-        Колонки центрируются по вертикали — так ромб выглядит ромбом."""
-        rows_max = max([len(ids) for _d, ids in cols] or [0])
-        nodes = {}
-        for col, (_depth, ids) in enumerate(cols):
-            offset = (rows_max - len(ids)) * (node_h + gap_y) // 2
-            for row, sid in enumerate(ids):
-                nodes[sid] = (col * (node_w + gap_x), offset + row * (node_h + gap_y))
-        entry = cols[0][1][0] if cols and cols[0][1] else None
-        return {
-            "nodes": nodes,
-            "width": max(len(cols) * (node_w + gap_x) - gap_x, node_w),
-            "height": max(rows_max * (node_h + gap_y) - gap_y, node_h),
-            "entry": entry,
-        }
+    def location_frame(scene_id):
+        """Кадр локации сцены или None. Отдельной функцией — её же спрашивает
+        гард геометрии и она же остаётся точкой расширения, если у сцены появится
+        собственный объявленный кадр."""
+        loc = (node(scene_id) or {}).get("location")
+        if not loc or "/" not in loc:
+            return None
+        if loc not in _cache.loc_thumb:
+            loc_id, _, variant = loc.partition("/")
+            small = "assets/bg/%s/%s.thumb.webp" % (loc_id, variant)
+            _cache.loc_thumb[loc] = (small if renpy.loadable(small)
+                                     else "bg %s %s" % (loc_id, variant))
+        return _cache.loc_thumb[loc]
 
-    def connectors(chapter_id, pos, node_w, node_h):
-        """Ортогональные линии рёбер: горизонталь от правого края узла, вертикаль
-        по середине промежутка, горизонталь до левого края цели. Такой же излом,
-        как на референсе; рисуется Solid-ами, бинарных ассетов у UI нет."""
-        nodes = pos["nodes"]
-        out = []
-        for e in edges():
-            a, b = nodes.get(e["from"]), nodes.get(e["to"])
-            if a is None or b is None:
+    def _chapter_edges(ids):
+        """Рёбра главы в детерминированном порядке.
+
+        Фильтр по составу главы — тот же, что в layers(). Порядок берётся из
+        scene_order и адреса пункта меню, а не из порядка списка в артефакте: от
+        него зависят разнос веера и номера дорожек, то есть КАРТИНКА, а зависеть
+        она обязана только от контента."""
+        index = {sid: i for i, sid in enumerate(ids)}
+        rows = [e for e in edges() if e["from"] in index and e["to"] in index]
+        rows.sort(key=lambda e: (index[e["from"]], index[e["to"]],
+                                 e.get("exit") or "", e.get("menu") or "",
+                                 -1 if e.get("idx") is None else e["idx"]))
+        return rows
+
+    def layout(chapter_id, node_w, node_h, gap_x, gap_y):
+        """Полная геометрия карты главы: позиции узлов И сегменты рёбер.
+
+        Раскладка и маршрутизация считаются ОДНИМ проходом, и это условие
+        правдивости, а не удобство. Пока их считали раздельно, карта врала
+        игроку про структуру: слой узла = длина самого долгого пути от входа,
+        поэтому в цепочке с пропуском (s010 -> s020 -> s030 плюс s010 -> s030) в
+        каждой колонке оказывался ровно один узел, все узлы стояли на одной
+        высоте, а маршрут ребра шёл от середины источника к середине цели.
+        Ребро-пропуск рисовалось горизонталью ровно по центрам карточек — то
+        есть НАСКВОЗЬ под промежуточной карточкой (рёбра рисуются до узлов), а
+        его видимые обрезки ложились точно на коридоры цепочки. Замерено на
+        кадре самого движка: в каждом промежутке карты ch01 горела ОДНА строка
+        пикселей, а рёбер через промежуток проходило ДВА. Игрок видел прямую
+        цепочку и не мог узнать, что из первой сцены есть второй путь. То же
+        было в ch73 — QA-главе, заведённой ради этой топологии (ADR-0021
+        перечисляет «пропускаемые сцены» среди проверяемых).
+
+        Лечение — классическое для слоевых раскладок: ребро, перепрыгивающее
+        колонку, получает в каждой пропущенной колонке ТОЧКУ ПЕРЕГИБА, и точка
+        занимает в колонке такой же слот, как карточка. Следствий два, и оба
+        нужные: колонка с пропуском становится двухрядной, то есть развилка
+        выглядит развилкой, а каждый сегмент лежит в коридоре между колонками,
+        где карточек нет по построению. Ширина у точки перегиба та же, что у
+        карточки, и это не мелочь: с нулевой шириной её сегмент растягивался на
+        всю колонку и излом попадал внутрь чужой карточки — на синтетике это
+        давало 9 нарушений инварианта, с шириной карточки 0.
+
+        Ручных координат здесь нет и не появляется (ADR-0021): всё выводится из
+        графа и четырёх констант сетки, которые задаёт экран.
+
+        Мемоизация — АТРИБУТОМ объекта _Cache, никогда именем стора: присваивание
+        имени стора в рантайме делает имя корнем сейва навсегда (механизм
+        расписан в докстринге _Cache). Считать раскладку в каждом кадре нельзя:
+        экран зовёт её на каждом обновлении, а маршруты дороже прежнего расчёта.
+        """
+        key = (chapter_id, node_w, node_h, gap_x, gap_y)
+        if _cache.layout is not None and _cache.layout[0] == key:
+            return _cache.layout[1]
+        cols = layers(chapter_id)
+        ids = [sid for _d, col_ids in cols for sid in col_ids]
+        rows = _chapter_edges(ids)
+        depth = {}
+        slots = {}
+        for col, (_d, col_ids) in enumerate(cols):
+            slots[col] = list(col_ids)
+            for sid in col_ids:
+                depth[sid] = col
+        # Точки перегиба: по одной в каждой пропущенной колонке. Имя включает
+        # номер ребра в ОТСОРТИРОВАННОМ списке, поэтому устойчиво между сборками.
+        bends = {}
+        for k, e in enumerate(rows):
+            span = depth[e["to"]] - depth[e["from"]]
+            if span <= 1:
                 continue
-            x1, y1 = a[0] + node_w, a[1] + node_h // 2
-            x2, y2 = b[0], b[1] + node_h // 2
-            mid = (x1 + x2) // 2 if x2 > x1 else x1 + 24
-            out.append({"x": x1, "y": y1, "w": max(2, mid - x1), "h": 2})
-            top, bottom = min(y1, y2), max(y1, y2)
-            if bottom > top:
-                out.append({"x": mid, "y": top, "w": 2, "h": bottom - top})
-            out.append({"x": mid, "y": y2, "w": max(2, x2 - mid), "h": 2})
+            chain = []
+            for col in range(depth[e["from"]] + 1, depth[e["to"]]):
+                bid = ("bend", k, col)
+                slots[col].append(bid)
+                chain.append(bid)
+            bends[k] = chain
+        ncols = len(cols)
+        rows_max = max([len(slots[c]) for c in range(ncols)] or [0])
+        nodes, is_bend = {}, {}
+        for col in range(ncols):
+            items = slots[col]
+            offset = (rows_max - len(items)) * (node_h + gap_y) // 2
+            for row, sid in enumerate(items):
+                nodes[sid] = (col * (node_w + gap_x), offset + row * (node_h + gap_y))
+                is_bend[sid] = not isinstance(sid, str)
+        block_h = max(rows_max * (node_h + gap_y) - gap_y, node_h)
+        # Сколько рёбер у пары: несколько пунктов меню могут вести в одну сцену
+        # (в проекте это ch70_s040 -> s050 двумя выходами и ТРИ пункта
+        # ch72_s010 -> s020), и без разноса они рисовались одной линией — то
+        # есть на карте не было развилки там, где принимается решение.
+        pairs = {}
+        for k, e in enumerate(rows):
+            pairs.setdefault((e["from"], e["to"]), []).append(k)
+        # ── Звенья ломаных: сначала собираем ВСЕ, потом рисуем ──────────────
+        # Разнос нельзя решить, глядя на одно ребро. У «креста» (две сцены
+        # колонки ведут в две сцены следующей — одно меню там, одно тут) все
+        # четыре ребра давали РАЗНЫЕ наборы сегментов и при этом НИ ОДНОГО
+        # своего пикселя: прямые рёбра целиком накрывались стубами косых, а
+        # косые накрывали друг друга, потому что излом у всех стоял на одной
+        # середине промежутка. Карта показывала прямоугольник, и какие из
+        # четырёх переходов существуют, узнать было нельзя. Поэтому решение о
+        # положении излома и о дуге принимается по всему КОРИДОРУ сразу, а
+        # годный инвариант — пиксельный: у каждого ребра обязан быть хоть один
+        # пиксель, которого не рисует никто другой.
+        step = node_w + gap_x
+        links, lane_edges = [], []
+        for k, e in enumerate(rows):
+            src, dst = e["from"], e["to"]
+            # Каждое звено называет своё ребро. Экран ключ игнорирует, а гард по
+            # нему группирует линии — иначе ему пришлось бы пересказывать
+            # раскладку и он проверял бы собственный пересказ.
+            mark = (src, dst, pairs[(src, dst)].index(k))
+            if depth[dst] <= depth[src]:
+                lane_edges.append((mark, src, dst))
+                continue
+            # Ломаная задаётся ТОЧКАМИ, а точка перегиба даёт их две — свой левый
+            # и свой правый край. Иначе линия рвётся ровно на ширину карточки:
+            # перегиб невидим, и участок «сквозь» него не рисуется вообще. На
+            # карте ch01 это выглядело как два обрубка и две скобки вместо
+            # непрерывного объезда — то есть как артефакт отрисовки, а не как
+            # второй путь.
+            pts = [(nodes[src][0] + node_w, nodes[src][1] + node_h // 2)]
+            for bid in bends.get(k, ()):
+                bx, by = nodes[bid]
+                pts.append((bx, by + node_h // 2))
+                pts.append((bx + node_w, by + node_h // 2))
+            pts.append((nodes[dst][0], nodes[dst][1] + node_h // 2))
+            for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+                # Звено «сквозь перегиб» лежит ВНУТРИ колонки (начинается на её
+                # левой границе), остальные — в коридоре справа от колонки.
+                through = x1 % step == 0
+                links.append({"mark": mark, "corridor": None if through else x1 // step,
+                              "x1": x1, "y1": y1, "x2": x2, "y2": y2})
+        by_corridor = {}
+        for ln in links:
+            if ln["corridor"] is not None:
+                by_corridor.setdefault(ln["corridor"], []).append(ln)
+        segments, lanes = [], []
+        for ln in links:
+            if ln["corridor"] is None:
+                segments.append(_seg(ln["x1"], ln["y1"], ln["x2"] - ln["x1"], SEG))
+                segments[-1]["edge"] = ln["mark"]
+                continue
+            group = by_corridor[ln["corridor"]]
+            j, m = group.index(ln), len(group)
+            x1, y1, x2, y2 = ln["x1"], ln["y1"], ln["x2"], ln["y2"]
+            # Свой излом каждому звену коридора: иначе два косых ребра рисуют
+            # одну и ту же вертикаль на всю её длину.
+            mid = x1 + gap_x * (j + 1) // (m + 1)
+            if y1 != y2:
+                at = len(segments)
+                segments += _elbow(x1, y1, x2, y2, mid)
+            else:
+                # Прямое звено: если его высоту в этом коридоре занимает ещё
+                # кто-то, оно обязано уйти на СВОЙ уровень. Нулевого смещения
+                # здесь быть не может — именно оно и делало ребро невидимым.
+                touching = [o for o in group
+                            if o is not ln and y1 in (o["y1"], o["y2"])]
+                at = len(segments)
+                if touching:
+                    rank = len([o for o in group[:j]
+                                if o["y1"] == o["y2"] == y1])
+                    off = (rank // 2 + 1) * (gap_y // 2)
+                    level = y1 - off if rank % 2 == 0 else y1 + off
+                    segments += _bow(x1, y1, x2, y2, gap_x, level)
+                else:
+                    segments.append(_seg(x1, y1, x2 - x1, SEG))
+            for s in segments[at:]:
+                s["edge"] = ln["mark"]
+        for mark, src, dst in lane_edges:
+            at = len(segments)
+            segments += _lane_route(nodes, src, dst, node_w, node_h,
+                                    gap_x, gap_y, block_h, lanes)
+            for s in segments[at:]:
+                s["edge"] = mark
+        out = {
+            "nodes": dict((sid, xy) for sid, xy in nodes.items() if not is_bend[sid]),
+            "width": max(ncols * (node_w + gap_x) - gap_x, node_w),
+            "height": max([block_h] + [s["y"] + s["h"] for s in segments]),
+            "entry": cols[0][1][0] if cols and cols[0][1] else None,
+            "segments": segments,
+        }
+        _cache.layout = (key, out)
         return out
+
+    # Толщина линии ребра в виртуальных пикселях. Не константа экрана: сегменты
+    # считает стор, а экран их только рисует.
+    SEG = 2
+
+    def _seg(x, y, w, h):
+        # Ни один сегмент не тоньше SEG: нулевую высоту даёт любая прямая
+        # горизонталь, а Solid нулевого размера движок рисует как ничто.
+        return {"x": x, "y": y, "w": max(SEG, w), "h": max(SEG, h)}
+
+    def _elbow(x1, y1, x2, y2, mid):
+        """Ортогональный излом: горизонталь, вертикаль на `mid`, горизонталь.
+        Излом гарантированно в коридоре между колонками — оба конца лежат на
+        границах соседних колонок, потому что пропуски разобраны точками
+        перегиба, а `mid` выдаёт коридор, а не середина отрезка: два косых ребра
+        на одной середине рисовали одну и ту же вертикаль на всю её длину."""
+        out = [_seg(x1, y1, mid - x1, SEG)]
+        if y1 != y2:
+            out.append(_seg(mid, min(y1, y2), SEG, abs(y2 - y1)))
+        out.append(_seg(mid, y2, x2 - mid, SEG))
+        return out
+
+    def _bow(x1, y1, x2, y2, gap_x, level):
+        """Прямое звено, уведённое на свой уровень в коридоре: так у каждого
+        пункта меню и у каждого ребра «креста» есть отрезок, которого не рисует
+        никто другой."""
+        xa, xb = x1 + gap_x // 3, x2 - gap_x // 3
+        return [_seg(x1, y1, xa - x1, SEG),
+                _seg(xa, min(y1, level), SEG, abs(level - y1)),
+                _seg(xa, level, xb - xa, SEG),
+                _seg(xb, min(level, y2), SEG, abs(y2 - level)),
+                _seg(xb, y2, x2 - xb, SEG)]
+
+    def _lane_route(nodes, src, dst, node_w, node_h, gap_x, gap_y, block_h, lanes):
+        """Ребро, которое НЕ идёт вперёд (цель в той же или в более левой колонке).
+
+        Возможно только при цикле в `exits`; компилятор его пока лишь помечает
+        предупреждением. Прежний код рисовал здесь обрубок: `mid = x1 + 24`,
+        третий сегмент вырождался в 2 px, и всё это СПРАВА от источника, тогда
+        как цель слева. Возврат не был нарисован вовсе, а игрок видел крючок в
+        пустоте, утверждающий переход вперёд. Здесь ребро выходит левым краем
+        источника, идёт по свободной дорожке ниже всех карточек и входит в цель
+        справа."""
+        x1 = nodes[src][0]
+        y1 = nodes[src][1] + node_h // 2
+        x2 = nodes[dst][0] + node_w
+        y2 = nodes[dst][1] + node_h // 2
+        xa, xb = x1 - gap_x // 3, x2 + gap_x // 3
+        lo, hi = min(xa, xb), max(xa, xb)
+        lane = block_h + gap_y
+        while any(lane == y and lo < b and a < hi for a, b, y in lanes):
+            lane += gap_y
+        lanes.append((lo, hi, lane))
+        return [_seg(xa, y1, x1 - xa, SEG),
+                _seg(xa, y1, SEG, lane - y1),
+                _seg(lo, lane, hi - lo, SEG),
+                _seg(xb, y2, SEG, lane - y2),
+                _seg(x2, y2, xb - x2, SEG)]
+
 
     # Поля подложки кластера: сверху больше — там живёт его заголовок.
     CLUSTER_PAD = 16

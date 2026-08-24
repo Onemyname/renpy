@@ -408,6 +408,12 @@ class SceneNode:
     pack: str
     order: int
     title_key: str | None = None
+    # Локация сцены (`location: <id>/<вариант>`), как объявлена в scene.yaml.
+    # Проекции нужна не сама локация, а КАДР: карточка узла карты берёт её фон,
+    # когда к сцене не привязан элемент галереи. До этой правки превью узла
+    # могла получить единственная сцена проекта — та, на которую случайно
+    # указывал unlock-якорь видео-лупа (см. vn_story.thumb).
+    location: str | None = None
     cluster: str | None = None
     ending: bool = False
     menus: list[str] = field(default_factory=list)
@@ -509,7 +515,7 @@ def _chapter_meta(root: Path, packs=None) -> dict[str, dict]:
 
 
 def _scene_meta(chapters: dict[str, dict]) -> dict[str, dict]:
-    """scene.yaml всех глав: заголовок и объявленные чтения."""
+    """scene.yaml всех глав: заголовок, локация и объявленные чтения."""
     out: dict[str, dict] = {}
     for ch_id, ch in chapters.items():
         scenes_dir = ch["dir"] / "scenes"
@@ -520,6 +526,7 @@ def _scene_meta(chapters: dict[str, dict]) -> dict[str, dict]:
             doc = load_yaml(f) or {}
             out[f"{ch_id}_s{sm.group(1)}"] = {
                 "title_key": doc.get("title_key"),
+                "location": doc.get("location"),
                 "reads": list(((doc.get("vars") or {}).get("reads")) or []),
                 "rel": f,
             }
@@ -561,6 +568,7 @@ def build_flow(root: Path, packs=None, analyses: dict | None = None) -> FlowMode
             id=sid, chapter=ch_id, pack=ch.get("pack", "core"),
             order=order.index(short) if short in order else len(order),
             title_key=meta.get("title_key"),
+            location=meta.get("location"),
             cluster=cluster_of.get(sid),
             ending=(short in (ch.get("endings") or [])
                     or (bool(order) and short == order[-1])),
@@ -1026,6 +1034,7 @@ def flow_data(model: FlowModel) -> dict:
             "pack": n.pack,
             "order": n.order,
             "title_key": n.title_key,
+            "location": n.location,
             "cluster": n.cluster,
             "ending": n.ending,
             "menus": sorted(n.menus),
@@ -1089,7 +1098,8 @@ def emit_flow(model: FlowModel, header: str) -> str:
         "# Скомпилированный граф истории (flow@1, ADR-0021). Единственный источник\n"
         "# правды для флоучарта главы, встроенного walkthrough и реплея сцены.\n"
         "#\n"
-        "# scenes[sid]: chapter/pack/order, title_key, cluster, ending, menus, reads,\n"
+        "# scenes[sid]: chapter/pack/order, title_key, location, cluster,\n"
+        "#   ending, menus, reads,\n"
         "#   reach   — миры достижимости (ограничения на переменные НА ВХОДЕ в сцену),\n"
         "#   decisions — принятые решения {menu_id: индекс} для каждого мира,\n"
         "#   preconds  — состояния входа для реплея (по одному на мир).\n"

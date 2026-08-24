@@ -2,13 +2,22 @@
 #
 # Экран НЕ знает ни сюжета, ни раскладки: узлы, рёбра, слои, туман войны и
 # прогресс отдаёт стор vn_story (данные — generated/registry/flow.gen.rpy).
-# Ручных координат нет: слой (колонка) считается по графу, порядок внутри
-# колонки — по scene_order главы, поэтому узлы не прыгают между сборками.
+# Ручных координат нет: и колонки, и ряды, и маршруты рёбер считает
+# vn_story.layout — экран рисует ровно то, что она отдала. Порядок внутри колонки
+# берётся из scene_order главы; позиция узла инвариантом НЕ является (правка
+# контента карту двигает — см. докстринг vn_story.layers).
 #
 # Что видно игроку: пройденные узлы с заголовком, непройденные — силуэтом «???»
 # (структура развилки видна, содержимое — нет), концовки помечены, фазы главы
 # сгруппированы подложкой (clusters из chapter.yaml). Клик по узлу — цель для
 # walkthrough, а у пройденной сцены ещё и «Переиграть».
+#
+# «Структура развилки видна» — это требование, а не пожелание, и держит его гард
+# tools/vn/tests/test_story_map.py: ни один сегмент ребра не заходит под чужую
+# карточку, и у каждого ребра есть пиксели, которых не рисует никто другой. Пока
+# нормы не было, карта ch01 показывала прямую цепочку вместо развилки: ребро в
+# обход второй сцены рисовалось ровно по центрам карточек, то есть насквозь под
+# ней, а его видимые обрезки ложились на коридоры цепочки.
 #
 # Зум сделан ОДНИМ Transform над всем полотном, а не умножением каждого размера
 # на коэффициент. Так панели-фоны (ADR-0009) не сплющиваются: Frame рендерится
@@ -43,9 +52,12 @@ screen story_flow(chapter_id=None):
     default zoom_step = 1
     default chapter = chapter_id or vn_story.default_chapter()
 
-    $ _cols = vn_story.layers(chapter) if chapter else []
-    $ _pos = vn_story.grid(_cols, VN_FLOW_NODE_W, VN_FLOW_NODE_H,
-                           VN_FLOW_GAP_X, VN_FLOW_GAP_Y)
+    # Раскладка и маршруты рёбер — ОДИН вызов: пока экран считал их двумя
+    # (layers + grid, потом connectors по всем рёбрам игры), ребро-пропуск
+    # рисовалось насквозь под промежуточной карточкой и развилка на карте
+    # исчезала. Разбор — в докстринге vn_story.layout.
+    $ _pos = vn_story.layout(chapter, VN_FLOW_NODE_W, VN_FLOW_NODE_H,
+                             VN_FLOW_GAP_X, VN_FLOW_GAP_Y) if chapter else None
     $ _done, _total = vn_story.progress(chapter) if chapter else (0, 0)
     $ _zoom = VN_FLOW_ZOOMS[zoom_step]
 
@@ -79,7 +91,7 @@ screen story_flow(chapter_id=None):
                             action SetScreenVariable("chapter", _cid)
                             selected (_cid == chapter)
 
-            if not _cols:
+            if not _pos or not _pos["nodes"]:
                 text vn_loc.t("ui.chart.empty") style "vn_empty_note"
             else:
                 # Полотно: прокрутка обеими осями и перетаскивание — граф шире
@@ -98,9 +110,11 @@ screen story_flow(chapter_id=None):
                         for _cl in vn_story.cluster_boxes(chapter, _pos,
                                                           VN_FLOW_NODE_W, VN_FLOW_NODE_H):
                             use vn_flow_cluster(_cl)
-                        # Рёбра рисуются до узлов, чтобы линии уходили под карточки.
-                        for _seg in vn_story.connectors(chapter, _pos,
-                                                        VN_FLOW_NODE_W, VN_FLOW_NODE_H):
+                        # Рёбра рисуются до узлов, чтобы концы линий уходили под
+                        # карточки. Под ЧУЖИМИ карточками сегментов больше нет —
+                        # маршрут это гарантирует по построению (vn_story.layout),
+                        # и держит гард test_story_map.py.
+                        for _seg in _pos["segments"]:
                             add Solid(gui.panel_border2):
                                 xysize (_seg["w"], _seg["h"])
                                 xpos _seg["x"] + VN_FLOW_PAD
